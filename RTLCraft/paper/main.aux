@@ -1,0 +1,154 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\newlabel{sec:intro}{{1}{1}{Introduction}{section.1}{}}
+\newlabel{sec:intro@cref}{{[section][1][]1}{[1][1][]1}}
+\citation{thakur2023verigen}
+\citation{blocklove2023chipchat}
+\citation{myhdl}
+\citation{amaranth}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Our Approach: White-Box LLM-Driven RTL}{2}{subsection.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Contributions}{2}{subsection.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{2}{section.2}\protected@file@percent }
+\newlabel{sec:related}{{2}{2}{Related Work}{section.2}{}}
+\newlabel{sec:related@cref}{{[section][2][]2}{[1][2][]2}}
+\citation{cocotb}
+\citation{uvm}
+\citation{legup}
+\citation{bambu}
+\@writefile{toc}{\contentsline {section}{\numberline {3}RTLCraft Framework}{3}{section.3}\protected@file@percent }
+\newlabel{sec:framework}{{3}{3}{RTLCraft Framework}{section.3}{}}
+\newlabel{sec:framework@cref}{{[section][3][]3}{[1][3][]3}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces RTLCraft architecture. The LLM agent generates or patches Python-RTL code. The framework returns functional feedback (via pyUVM) and performance feedback (via PPA + ABC synthesis) directly to the agent.\relax }}{3}{figure.caption.1}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:architecture}{{1}{3}{RTLCraft architecture. The LLM agent generates or patches Python-RTL code. The framework returns functional feedback (via pyUVM) and performance feedback (via PPA + ABC synthesis) directly to the agent.\relax }{figure.caption.1}{}}
+\newlabel{fig:architecture@cref}{{[figure][1][]1}{[1][3][]3}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Python-Based RTL API: Why Python and Why This Object Model?}{3}{subsection.3.1}\protected@file@percent }
+\newlabel{sec:api}{{3.1}{3}{Python-Based RTL API: Why Python and Why This Object Model?}{subsection.3.1}{}}
+\newlabel{sec:api@cref}{{[subsection][1][3]3.1}{[1][3][]3}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.1.1}Core Abstractions and Design Rationale}{4}{subsubsection.3.1.1}\protected@file@percent }
+\newlabel{lst:counter_buggy}{{1}{4}{Initial agent-generated Counter (contains a bug)}{lstlisting.1}{}}
+\newlabel{lst:counter_buggy@cref}{{[listing][1][]1}{[1][4][]4}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Initial agent-generated Counter (contains a bug)}}{4}{lstlisting.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.1.2}Programmatic Manipulation by the Agent}{5}{subsubsection.3.1.2}\protected@file@percent }
+\newlabel{lst:agent_patch}{{2}{5}{Agent-driven surgical modification of arithmetic style}{lstlisting.2}{}}
+\newlabel{lst:agent_patch@cref}{{[listing][2][]2}{[1][5][]5}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {2}{\ignorespaces Agent-driven surgical modification of arithmetic style}}{5}{lstlisting.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}AST Representation and Simulation}{5}{subsection.3.2}\protected@file@percent }
+\newlabel{sec:ast}{{3.2}{5}{AST Representation and Simulation}{subsection.3.2}{}}
+\newlabel{sec:ast@cref}{{[subsection][2][3]3.2}{[1][5][]5}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Cycle-Accurate AST Interpreter}{5}{subsubsection.3.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Static and Dynamic PPA Estimation}{6}{subsubsection.3.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Python-Native UVM Verification (pyUVM)}{7}{subsection.3.3}\protected@file@percent }
+\newlabel{sec:uvm}{{3.3}{7}{Python-Native UVM Verification (pyUVM)}{subsection.3.3}{}}
+\newlabel{sec:uvm@cref}{{[subsection][3][3]3.3}{[1][6][]7}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Agent-Readable Feedback}{7}{subsubsection.3.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}Async/Await Semantics and Virtual Interface}{7}{subsubsection.3.3.2}\protected@file@percent }
+\newlabel{lst:driver}{{3}{7}{pyUVM Driver snippet}{lstlisting.3}{}}
+\newlabel{lst:driver@cref}{{[listing][3][]3}{[1][7][]7}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {3}{\ignorespaces pyUVM Driver snippet}}{7}{lstlisting.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.3}Dual-Mode Execution}{8}{subsubsection.3.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Synthesis Backend: RTL-IR, BLIF, and ABC}{8}{subsection.3.4}\protected@file@percent }
+\newlabel{sec:synthesis}{{3.4}{8}{Synthesis Backend: RTL-IR, BLIF, and ABC}{subsection.3.4}{}}
+\newlabel{sec:synthesis@cref}{{[subsection][4][3]3.4}{[1][8][]8}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.4.1}Bit-Blasting and Parameterized Arithmetic}{8}{subsubsection.3.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.4.2}Control Flow Lowering}{9}{subsubsection.3.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.4.3}Sequential Logic Lowering}{9}{subsubsection.3.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.4.4}ABC Integration and QoR Feedback}{9}{subsubsection.3.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}LLM-in-the-Loop Case Studies}{10}{section.4}\protected@file@percent }
+\newlabel{sec:cases}{{4}{10}{LLM-in-the-Loop Case Studies}{section.4}{}}
+\newlabel{sec:cases@cref}{{[section][4][]4}{[1][9][]10}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Case Study 1: SHA3-256 Keccak Core -- Architecture-Level Performance Optimization}{10}{subsection.4.1}\protected@file@percent }
+\newlabel{sec:case_sha3}{{4.1}{10}{Case Study 1: SHA3-256 Keccak Core -- Architecture-Level Performance Optimization}{subsection.4.1}{}}
+\newlabel{sec:case_sha3@cref}{{[subsection][1][4]4.1}{[1][10][]10}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.1}Round 0 -- Combinational Single Round}{10}{subsubsection.4.1.1}\protected@file@percent }
+\newlabel{lst:keccak_rc}{{4}{10}{Agent-generated round-constant MUX tree in KeccakRoundComb}{lstlisting.4}{}}
+\newlabel{lst:keccak_rc@cref}{{[listing][4][]4}{[1][10][]10}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {4}{\ignorespaces Agent-generated round-constant MUX tree in KeccakRoundComb}}{10}{lstlisting.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.2}Round 1 -- PPA-Guided Pipeline Insertion}{10}{subsubsection.4.1.2}\protected@file@percent }
+\newlabel{lst:sha3_pipe}{{5}{11}{Agent-generated 24-stage SHA3-256 pipeline}{lstlisting.5}{}}
+\newlabel{lst:sha3_pipe@cref}{{[listing][5][]5}{[1][11][]11}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {5}{\ignorespaces Agent-generated 24-stage SHA3-256 pipeline}}{11}{lstlisting.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.3}Round 2 -- Micro-Architecture Exploration via Parameterized Arithmetic}{11}{subsubsection.4.1.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces SHA3 Keccak round with different adder parameterizations.\relax }}{11}{table.caption.2}\protected@file@percent }
+\newlabel{tab:sha3_adder}{{1}{11}{SHA3 Keccak round with different adder parameterizations.\relax }{table.caption.2}{}}
+\newlabel{tab:sha3_adder@cref}{{[table][1][]1}{[1][11][]11}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Case Study 2: FP8 ALU -- Functional Self-Consistency in a Complex Datapath}{12}{subsection.4.2}\protected@file@percent }
+\newlabel{sec:case_fp8}{{4.2}{12}{Case Study 2: FP8 ALU -- Functional Self-Consistency in a Complex Datapath}{subsection.4.2}{}}
+\newlabel{sec:case_fp8@cref}{{[subsection][2][4]4.2}{[1][12][]12}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Round 0 -- Initial Generation}{12}{subsubsection.4.2.1}\protected@file@percent }
+\newlabel{lst:fp8_stage2}{{6}{12}{Agent-generated FP8 ALU Stage-2 compute path}{lstlisting.6}{}}
+\newlabel{lst:fp8_stage2@cref}{{[listing][6][]6}{[1][12][]12}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {6}{\ignorespaces Agent-generated FP8 ALU Stage-2 compute path}}{12}{lstlisting.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Round 1 -- Functional Feedback via pyUVM}{13}{subsubsection.4.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.3}Round 2 -- Performance Feedback and Multiplier Exploration}{13}{subsubsection.4.2.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Iterative refinement of the FP8 ALU (gf65.lib).\relax }}{13}{table.caption.3}\protected@file@percent }
+\newlabel{tab:fp8_qor}{{2}{13}{Iterative refinement of the FP8 ALU (gf65.lib).\relax }{table.caption.3}{}}
+\newlabel{tab:fp8_qor@cref}{{[table][2][]2}{[1][13][]13}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Agent--Environment Interaction Protocol}{14}{subsection.4.3}\protected@file@percent }
+\newlabel{sec:protocol}{{4.3}{14}{Agent--Environment Interaction Protocol}{subsection.4.3}{}}
+\newlabel{sec:protocol@cref}{{[subsection][3][4]4.3}{[1][14][]14}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Experimental Evaluation}{14}{section.5}\protected@file@percent }
+\newlabel{sec:experiments}{{5}{14}{Experimental Evaluation}{section.5}{}}
+\newlabel{sec:experiments@cref}{{[section][5][]5}{[1][14][]14}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Benchmarks and Setup}{14}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Convergence of the Functional Loop}{14}{subsection.5.2}\protected@file@percent }
+\newlabel{sec:exp_func}{{5.2}{14}{Convergence of the Functional Loop}{subsection.5.2}{}}
+\newlabel{sec:exp_func@cref}{{[subsection][2][5]5.2}{[1][14][]14}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Functional convergence via pyUVM.\relax }}{15}{table.caption.4}\protected@file@percent }
+\newlabel{tab:func_convergence}{{3}{15}{Functional convergence via pyUVM.\relax }{table.caption.4}{}}
+\newlabel{tab:func_convergence@cref}{{[table][3][]3}{[1][14][]15}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Convergence of the Performance Loop}{15}{subsection.5.3}\protected@file@percent }
+\newlabel{sec:exp_perf}{{5.3}{15}{Convergence of the Performance Loop}{subsection.5.3}{}}
+\newlabel{sec:exp_perf@cref}{{[subsection][3][5]5.3}{[1][14][]15}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Performance convergence via PPA + ABC synthesis.\relax }}{15}{table.caption.5}\protected@file@percent }
+\newlabel{tab:perf_convergence}{{4}{15}{Performance convergence via PPA + ABC synthesis.\relax }{table.caption.5}{}}
+\newlabel{tab:perf_convergence@cref}{{[table][4][]4}{[1][14][]15}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Parameterized Arithmetic Exploration}{15}{subsection.5.4}\protected@file@percent }
+\newlabel{sec:exp_arith}{{5.4}{15}{Parameterized Arithmetic Exploration}{subsection.5.4}{}}
+\newlabel{sec:exp_arith@cref}{{[subsection][4][5]5.4}{[1][15][]15}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Agent-driven 8-bit multiplier exploration (used inside the FP8 ALU).\relax }}{15}{table.caption.6}\protected@file@percent }
+\newlabel{tab:mul_params}{{5}{15}{Agent-driven 8-bit multiplier exploration (used inside the FP8 ALU).\relax }{table.caption.6}{}}
+\newlabel{tab:mul_params@cref}{{[table][5][]5}{[1][15][]15}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Simulation Speed and Iteration Latency}{15}{subsection.5.5}\protected@file@percent }
+\newlabel{sec:exp_speed}{{5.5}{15}{Simulation Speed and Iteration Latency}{subsection.5.5}{}}
+\newlabel{sec:exp_speed@cref}{{[subsection][5][5]5.5}{[1][15][]15}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Simulation speed comparison.\relax }}{16}{table.caption.7}\protected@file@percent }
+\newlabel{tab:sim_speed}{{6}{16}{Simulation speed comparison.\relax }{table.caption.7}{}}
+\newlabel{tab:sim_speed@cref}{{[table][6][]6}{[1][15][]16}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.6}PPA Estimation Accuracy as a Surrogate}{16}{subsection.5.6}\protected@file@percent }
+\newlabel{sec:exp_ppa}{{5.6}{16}{PPA Estimation Accuracy as a Surrogate}{subsection.5.6}{}}
+\newlabel{sec:exp_ppa@cref}{{[subsection][6][5]5.6}{[1][16][]16}}
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces PPA depth estimation accuracy.\relax }}{16}{table.caption.8}\protected@file@percent }
+\newlabel{tab:ppa_accuracy}{{7}{16}{PPA depth estimation accuracy.\relax }{table.caption.8}{}}
+\newlabel{tab:ppa_accuracy@cref}{{[table][7][]7}{[1][16][]16}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Discussion}{16}{section.6}\protected@file@percent }
+\newlabel{sec:discussion}{{6}{16}{Discussion}{section.6}{}}
+\newlabel{sec:discussion@cref}{{[section][6][]6}{[1][16][]16}}
+\bibstyle{IEEEtran}
+\bibdata{refs}
+\bibcite{thakur2023verigen}{1}
+\bibcite{blocklove2023chipchat}{2}
+\bibcite{myhdl}{3}
+\bibcite{amaranth}{4}
+\bibcite{cocotb}{5}
+\bibcite{uvm}{6}
+\bibcite{legup}{7}
+\bibcite{bambu}{8}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{17}{section.7}\protected@file@percent }
+\newlabel{sec:conclusion}{{7}{17}{Conclusion}{section.7}{}}
+\newlabel{sec:conclusion@cref}{{[section][7][]7}{[1][17][]17}}
+\gdef \@abspage@last{17}
