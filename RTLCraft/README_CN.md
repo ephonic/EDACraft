@@ -403,4 +403,3 @@ RTLCraft 最重要的用法是支持 Claude Code / Kimi Code 等 AI 代码助手
 - [RTLGEN_CN.md](RTLGEN_CN.md) — AI 自动 RTL 生成教程（中文版）
 - [RTLGEN.md](RTLGEN.md) — Automated RTL Generation Tutorial (English)
 - [skills/skills.md](skills/skills.md) — Skills 目录总览
-- [paper/main.pdf](paper/main.pdf) — 研究论文

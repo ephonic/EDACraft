@@ -401,6 +401,5 @@ See [LICENSE](LICENSE) for details.
 
 ## Related Documentation
 
-- [pyRTL.md](pyRTL.md) — Complete API specification
 - [skills/skills.md](skills/skills.md) — Skills directory overview
 - [README_CN.md](README_CN.md) — Chinese version of this document
