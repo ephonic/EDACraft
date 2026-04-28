@@ -22,10 +22,7 @@ A Python-to-Verilog RTL generation and verification framework. RTLCraft provides
 
 Key directories under `RTLCraft/`:
 - `rtlgen/` — Core framework (AST, codegen, simulation, UVM)
-- `examples/` — Design examples (counter, decoder_8b10b, FP8 ALU, etc.)
-- `tests/` — Pytest-based functional and pyUVM test suites
 - `skills/` — Reusable design skills (arithmetic, cryptography, memory, etc.)
-- `generated_*` — Auto-generated Verilog and UVM testbenches
 
 ## License
 
