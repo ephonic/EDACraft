@@ -52,5 +52,5 @@ A comprehensive EDA (Electronic Design Automation) toolkit collection for digita
 
 
 
-MIT License — see [LICENSE](LICENSE) for details. Commercial use of this Software requires a separate written license agreement
+See [LICENSE](LICENSE) for details. Commercial use of this Software requires a separate written license agreement
 with the author and Fudan University.
