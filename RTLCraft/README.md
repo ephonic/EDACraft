@@ -378,11 +378,6 @@ RTLCraft supports end-to-end automation with AI coding assistants (Claude Code /
 
 For the full tutorial, see [RTLGEN.md](RTLGEN.md).
 
----
-## Citation
-
-Please cite our paper here as follows if necessary:
-
 
 ---
 
