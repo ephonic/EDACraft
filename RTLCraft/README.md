@@ -367,13 +367,6 @@ print(VerilogEmitter().emit_design(top))
 
 ---
 
-## Roadmap
-
-- **C++ Simulation Engine**: Boost simulation speed 50-500x via pybind11
-- **Backend Completion**: Gate sizing, global/detailed routing, RC extraction
-
----
-
 ## AI-Driven Automated RTL Generation
 
 RTLCraft supports end-to-end automation with AI coding assistants (Claude Code / Kimi Code):
