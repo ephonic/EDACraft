@@ -995,4 +995,3 @@ Yes. Any AI assistant that can execute Python code (Claude Code, Kimi Code, Curs
 
 - [README.md](README.md) — Project overview
 - [skills/skills.md](skills/skills.md) — Skills directory
-- [paper/main.pdf](paper/main.pdf) — Research paper
