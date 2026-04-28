@@ -14,21 +14,21 @@ RTLCraft is not just a Verilog generator. It provides six capabilities that, whe
 
 | # | Capability | Tool | What It Does |
 |---|-----------|------|-------------|
-| 1 | **描述 (Description)** | Python DSL | Object-oriented RTL description — every signal, module, and logic block is an AST node |
-| 2 | **仿真和调试 (Simulation & Debug)** | AST Simulator | Cycle-accurate 4-state logic interpreter with VCD waveform export |
-| 3 | **优化 (Optimization)** | PPAAnalyzer + ABC | Static PPA analysis (ms-scale) + Berkeley ABC synthesis for area/timing |
-| 4 | **UVM覆盖率 (UVM Coverage)** | pyUVM | Native Python UVM framework — scoreboard, coverage, directed + random tests |
-| 5 | **工具自演化 (Co-Evolution)** | Protocol bundles, Pipeline, lib | Framework grows alongside designs — verified components become reusable libraries |
-| 6 | **编译器和仿真模型生成 (Code Generation)** | VerilogEmitter, UVMEmitter, CocotbEmitter | Emit Verilog / SV UVM testbench / cocotb test scaffold automatically |
+| 1 | **Description** | Python DSL | Object-oriented RTL description — every signal, module, and logic block is an AST node |
+| 2 | **Simulation & Debug** | AST Simulator | Cycle-accurate 4-state logic interpreter with VCD waveform export |
+| 3 | **Optimization** | PPAAnalyzer + ABC | Static PPA analysis (ms-scale) + Berkeley ABC synthesis for area/timing |
+| 4 | **UVM Coverage** | pyUVM | Native Python UVM framework — scoreboard, coverage, directed + random tests |
+| 5 | **Co-Evolution** | Protocol bundles, Pipeline, lib | Framework grows alongside designs — verified components become reusable libraries |
+| 6 | **Code Generation** | VerilogEmitter, UVMEmitter, CocotbEmitter | Emit Verilog / SV UVM testbench / cocotb test scaffold automatically |
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  AI Coding Assistant (Claude Code / Kimi Code)               │
 │                                                              │
-│  1. 描述  ── Python DSL ──▶ AST (Signals, Modules, Logic)   │
+│  1. Description  ── Python DSL ──▶ AST (Signals, Modules, Logic)   │
 │       │                                                        │
 │       ▼                                                        │
-│  2. 仿真  ── AST Simulator ──▶ Pass / Fail + Waveform        │
+│  2. Simulation  ── AST Simulator ──▶ Pass / Fail + Waveform        │
 │       │         │                                              │
 │       │         ▼                                              │
 │       │    3. 优化  ── PPA + ABC ──▶ Area / Delay / Gates     │
@@ -37,10 +37,10 @@ RTLCraft is not just a Verilog generator. It provides six capabilities that, whe
 │  4. UVM   ── pyUVM ──▶ Coverage Report + Scoreboard           │
 │       │                                                        │
 │       ▼                                                        │
-│  5. 自演化 ── Reusable libs grow (APB, AXI, FIFO, FSM...)     │
+│  5. Evolve ── Reusable libs grow (APB, AXI, FIFO, FSM...)     │
 │       │                                                        │
 │       ▼                                                        │
-│  6. 生成  ── Verilog / SV UVM / cocotb / Compiler IR          │
+│  6. Generation  ── Verilog / SV UVM / cocotb / Compiler IR          │
 │                                                              │
 │  Structured feedback (coverage / PPA / lint) feeds back       │
 │  to the AI → diagnose → patch → re-verify → converge          │
@@ -92,7 +92,7 @@ print('RTLCraft is ready')
 
 ---
 
-## 3. Step 1: 描述 — Python DSL for RTL
+## 3. Step 1: Description — Python DSL for RTL
 
 RTLCraft uses a Python DSL where hardware is described as objects, not text. Every signal is a typed node with width, every module is a Python class, and logic blocks are decorated functions.
 
@@ -184,7 +184,7 @@ div = Divider(dividend_width=8, divisor_width=8)
 
 ---
 
-## 4. Step 2: 仿真和调试 — AST Simulator
+## 4. Step 2: Simulation & Debug — AST Simulator
 
 ### 4.1 Basic Simulation
 
@@ -258,7 +258,7 @@ The native interpreter is **~70x faster** for small designs because it eliminate
 
 ---
 
-## 5. Step 3: 优化 — PPA Analysis
+## 5. Step 3: Optimization — PPA Analysis
 
 ### 5.1 Static PPA (milliseconds)
 
@@ -294,7 +294,7 @@ Static analysis completes in **<1 ms**, making it suitable for rapid iteration. 
 
 ---
 
-## 6. Step 4: UVM覆盖率 — pyUVM Framework
+## 6. Step 4: UVM Coverage — pyUVM Framework
 
 ### 6.1 Native Python UVM
 
@@ -379,7 +379,7 @@ The same pyUVM testbench can be:
 
 ---
 
-## 7. Step 5: 工具自演化 — Framework Grows with Designs
+## 7. Step 5: Tool Evolution — Framework Grows with Designs
 
 ### 7.1 Protocol Bundles
 
@@ -449,7 +449,7 @@ This is the **co-evolution loop**: the framework and the designs it produces evo
 
 ---
 
-## 8. Step 6: 代码生成 — Verilog / UVM / cocotb
+## 8. Step 6: Code Generation — Verilog / UVM / cocotb
 
 ### 8.1 Verilog-2001 / SystemVerilog
 
