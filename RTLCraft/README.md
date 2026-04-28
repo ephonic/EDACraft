@@ -370,9 +370,6 @@ print(VerilogEmitter().emit_design(top))
 ## Roadmap
 
 - **C++ Simulation Engine**: Boost simulation speed 50-500x via pybind11
-- **CDC Modules**: Gray code counter, full async FIFO implementation
-- **TrueDualPortRAM**: Both ports read/write capable
-- **CHISEL Export**: AST → FIRRTL backend
 - **Backend Completion**: Gate sizing, global/detailed routing, RC extraction
 
 ---
@@ -387,6 +384,12 @@ RTLCraft supports end-to-end automation with AI coding assistants (Claude Code /
 4. **Code Generation**: Automatic output of Verilog / SV UVM Testbench / cocotb tests
 
 For the full tutorial, see [RTLGEN.md](RTLGEN.md).
+
+---
+## Citation
+
+Please cite our paper here as follows if necessary:
+
 
 ---
 
