@@ -1,4 +1,4 @@
-\# EDACraft
+# EDACraft
 
 
 
@@ -6,7 +6,7 @@ A comprehensive EDA (Electronic Design Automation) toolkit collection for digita
 
 
 
-\## Overview
+## Overview
 
 
 
@@ -14,11 +14,11 @@ EDACraft is a monorepo hosting multiple EDA sub-projects, each focusing on diffe
 
 
 
-\## Sub-projects
+## Sub-projects
 
 
 
-\### RTLCraft (`RTLCraft/`)
+### RTLCraft (`RTLCraft/`)
 
 
 
@@ -76,7 +76,7 @@ A 3D quantum-corrected semiconductor device simulator with an evolutionary desig
 
 
 
-\## License
+## License
 
 
 
