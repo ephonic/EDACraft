@@ -24,7 +24,7 @@ dut._comb_blocks  # list of all combinational logic blocks
 dut._seq_blocks   # list of all sequential logic blocks
 ```
 
-### Bidirectional Flow: Verilog ↔ pyRTL
+### Bidirectional Flow: Verilog ↔ Python DSL
 
 RTLCraft supports a **bidirectional workflow**:
 
