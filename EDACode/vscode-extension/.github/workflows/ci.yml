@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'vscode-extension/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'vscode-extension/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./vscode-extension
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: vscode-extension/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint || true
+
+      - name: Type check
+        run: npm run check-types
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Package VSIX
+        run: npm run pack
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eda-agent-extension
+          path: vscode-extension/*.vsix

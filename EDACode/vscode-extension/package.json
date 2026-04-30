@@ -1,0 +1,239 @@
+{
+  "name": "eda-agent",
+  "displayName": "EDA Agent",
+  "description": "AI agent for analog/mixed-signal IC design",
+  "version": "0.1.0",
+  "publisher": "eda-team",
+  "license": "MIT",
+  "homepage": "https://github.com/eda-team/eda-agent#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eda-team/eda-agent.git",
+    "directory": "vscode-extension"
+  },
+  "bugs": {
+    "url": "https://github.com/eda-team/eda-agent/issues"
+  },
+  "icon": "media/icon-128.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "qna": "https://github.com/eda-team/eda-agent/discussions",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "eda",
+    "analog",
+    "circuit",
+    "agent",
+    "ai",
+    "ic design",
+    "spice"
+  ],
+  "activationEvents": [
+    "onCommand:eda-agent.openChat",
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "eda-agent.openChat",
+        "title": "Open EDA Agent Chat",
+        "category": "EDA Agent",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "eda-agent.openSettings",
+        "title": "Open Settings",
+        "category": "EDA Agent",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "eda-agent.stopAgent",
+        "title": "Stop Agent",
+        "category": "EDA Agent",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "eda-agent.restartAgent",
+        "title": "Restart Agent",
+        "category": "EDA Agent",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "eda-agent.runHarness",
+        "title": "Run Circuit Harness",
+        "category": "EDA Agent",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "eda-agent.clearChat",
+        "title": "Clear Chat History",
+        "category": "EDA Agent",
+        "icon": "$(clear-all)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "eda-agent-sidebar",
+          "title": "EDA Agent",
+          "icon": "media/icon-sidebar.svg"
+        }
+      ]
+    },
+    "views": {
+      "eda-agent-sidebar": [
+        {
+          "type": "webview",
+          "id": "eda-agent.chatView",
+          "name": "Chat",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "eda-agent.openChat",
+          "group": "eda@1",
+          "when": "editorHasSelection"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "eda-agent.stopAgent",
+          "when": "view == eda-agent.chatView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "eda-agent.restartAgent",
+          "when": "view == eda-agent.chatView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "eda-agent.clearChat",
+          "when": "view == eda-agent.chatView",
+          "group": "navigation@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "eda-agent.openChat",
+          "when": "true"
+        },
+        {
+          "command": "eda-agent.runHarness",
+          "when": "edaAgent.hasDesignOpen"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "eda-agent.openChat",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "true"
+      }
+    ],
+    "configuration": {
+      "title": "EDA Agent",
+      "properties": {
+        "eda-agent.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to Python interpreter (must have pydantic and openai/anthropic installed; eda-agent source is bundled)",
+          "scope": "machine"
+        },
+        "eda-agent.provider": {
+          "type": "string",
+          "enum": ["openai", "anthropic"],
+          "default": "openai",
+          "description": "LLM provider",
+          "scope": "application"
+        },
+        "eda-agent.model": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "Model identifier",
+          "scope": "application"
+        },
+        "eda-agent.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for the selected provider",
+          "scope": "application"
+        },
+        "eda-agent.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for OpenAI-compatible APIs (e.g., vLLM, Ollama)",
+          "scope": "application"
+        },
+        "eda-agent.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-start agent on VSCode launch",
+          "scope": "application"
+        },
+        "eda-agent.projectRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Project root directory (defaults to workspace root)",
+          "scope": "resource"
+        },
+        "eda-agent.showToolCalls": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show tool execution details in chat",
+          "scope": "application"
+        },
+        "eda-agent.maxIterations": {
+          "type": "integer",
+          "default": 50,
+          "description": "Maximum agent iterations per request",
+          "scope": "application"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "lint:fix": "eslint src --ext ts --fix",
+    "check-types": "tsc --noEmit",
+    "package": "npm run compile && npm run copy-media",
+    "copy-media": "cp -r media out/",
+    "build": "npm run package",
+    "clean": "rm -rf out build *.vsix",
+    "pack": "node scripts/pack.js",
+    "pack:vsce": "vsce package --no-dependencies",
+    "publish": "vsce publish",
+    "publish:pre": "vsce publish --pre-release",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/test-cli": "^0.0.6",
+    "@vscode/test-electron": "^2.3.9",
+    "@vscode/vsce": "^2.24.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
