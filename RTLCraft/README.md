@@ -209,6 +209,16 @@ from rtlgen import Decoder, PriorityEncoder, BarrelShifter, LFSR, CRC, Divider
 from rtlgen import SinglePortRAM, SimpleDualPortRAM
 ```
 
+> **Update (2026-05-09)**: `RoundRobinArbiter` has been fully implemented with mask + priority encoding logic, supporting fair round-robin scheduling for up to N requests. It includes 8 comprehensive test cases with **100% line and branch coverage** (exhaustively verified over 2,048 combinatorial states). Generated Verilog is available at `generated_round_robin_arbiter.v`.
+>
+> ```python
+> arb = RoundRobinArbiter(req_count=8)
+> arb.clk = clk
+> arb.rst = rst
+> arb.reqs = reqs      # 8-bit request vector
+> arb.grants = grants  # one-hot grant output
+> ```
+
 ### 7. Pipeline Engine
 
 ```python

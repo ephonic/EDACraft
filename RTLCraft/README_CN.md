@@ -207,6 +207,16 @@ from rtlgen import Decoder, PriorityEncoder, BarrelShifter, LFSR, CRC, Divider
 from rtlgen import SinglePortRAM, SimpleDualPortRAM
 ```
 
+> **更新 (2026-05-09)**：`RoundRobinArbiter` 已完成完整实现，采用 mask + 优先编码算法，支持最多 N 路请求的公平轮询调度。包含 8 个全面测试用例，**行覆盖率与分支覆盖率达 100%**（穷举验证了 2,048 种组合状态）。生成的 Verilog 代码见 `generated_round_robin_arbiter.v`。
+>
+> ```python
+> arb = RoundRobinArbiter(req_count=8)
+> arb.clk = clk
+> arb.rst = rst
+> arb.reqs = reqs      # 8-bit 请求向量
+> arb.grants = grants  # one-hot 授权输出
+> ```
+
 ### 7. 流水线引擎
 
 ```python

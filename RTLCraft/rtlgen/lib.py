@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from rtlgen.core import Input, Module, Output, Parameter, Reg, Signal, Wire
-from rtlgen.logic import Const, Else, If, Switch
+from rtlgen.core import Input, Module, Output, Reg, Signal, Wire
+from rtlgen.logic import Cat, Const, Else, If, Switch
 
 
 # ---------------------------------------------------------------------
@@ -278,27 +278,78 @@ class AsyncFIFO(Module):
 # ---------------------------------------------------------------------
 
 class RoundRobinArbiter(Module):
-    """轮询调度器。
+    """轮询调度器 (Round-Robin Arbiter)。
 
-    目前为接口与状态寄存器占位，核心仲裁逻辑（mask + priority）后续可补充。
+    每次从 reqs 中选择一个请求进行授权，授权后指针指向下一个请求，
+    保证公平性。grants 为 one-hot 输出。
     """
 
-    def __init__(self, req_count: int, name: str = "RoundRobinArbiter"):
+    def __init__(self, req_count: int = 8, name: str = "RoundRobinArbiter"):
         super().__init__(name)
-        ptr_w = max(req_count.bit_length(), 1)
+        ptr_w = max((req_count - 1).bit_length(), 1)
 
         self.clk = Input(1, "clk")
         self.rst = Input(1, "rst")
         self.reqs = Input(req_count, "reqs")
         self.grants = Output(req_count, "grants")
-        self._pointer = Reg(ptr_w, "pointer")
+
+        self.pointer = Reg(ptr_w, "pointer")
+
+        # 组合逻辑中间信号（注册到模块以便 seq 引用及 Verilog 声明生成）
+        self._double_reqs = Wire(req_count * 2, "double_reqs")
+        self._shifted = Wire(req_count * 2, "shifted")
+        self._masked = Wire(req_count, "masked")
+        self._grant_vec = Wire(req_count, "grant_vec")
+        self._grant_idx = Wire(ptr_w, "grant_idx")
+        self._pe_masked = Wire(ptr_w, "pe_masked")
+        self._pe_unmasked = Wire(ptr_w, "pe_unmasked")
+        self._pe_masked_valid = Wire(1, "pe_masked_valid")
 
         @self.comb
         def _arb():
-            # 占位：简单的 one-hot  granting（仅作接口演示）
-            g = Wire(req_count, "grant_vec")
-            g <<= self.reqs  # 实际应实现轮询优先级
-            self.grants <<= g
+            # 将 reqs 拼接两次并右移 pointer 位，构造轮询窗口
+            self._double_reqs <<= Cat(self.reqs, self.reqs)
+            self._shifted <<= self._double_reqs >> self.pointer
+            self._masked <<= self._shifted[req_count - 1:0]
+
+            # masked 优先编码（最低位1）
+            self._pe_masked <<= 0
+            for i in range(req_count - 1, -1, -1):
+                with If(self._masked[i] == 1):
+                    self._pe_masked <<= i
+
+            self._pe_masked_valid <<= self._masked != 0
+
+            # unmasked 优先编码（最低位1）
+            self._pe_unmasked <<= 0
+            for i in range(req_count - 1, -1, -1):
+                with If(self.reqs[i] == 1):
+                    self._pe_unmasked <<= i
+
+            # 选择 grant 索引
+            with If(self._pe_masked_valid == 1):
+                self._grant_idx <<= (self._pe_masked + self.pointer) & (req_count - 1)
+            with Else():
+                self._grant_idx <<= self._pe_unmasked
+
+            # 生成 one-hot grant
+            self._grant_vec <<= 0
+            for i in range(req_count):
+                with If(self._grant_idx == i):
+                    self._grant_vec <<= 1 << i
+
+            with If(self.reqs == 0):
+                self._grant_vec <<= 0
+
+            self.grants <<= self._grant_vec
+
+        @self.seq(self.clk, self.rst)
+        def _update():
+            with If(self.rst == 1):
+                self.pointer <<= 0
+            with Else():
+                with If(self.reqs != 0):
+                    self.pointer <<= (self._grant_idx + 1) & (req_count - 1)
 
 
 # ---------------------------------------------------------------------
