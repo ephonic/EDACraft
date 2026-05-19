@@ -680,7 +680,7 @@ RTLCraft supports end-to-end automation with AI coding assistants (Claude Code /
 3. **PPA Optimization**: AST-based static analysis + ABC synthesis — area/timing reports guide AI optimization
 4. **Code Generation**: Automatic output of Verilog / SV UVM Testbench / cocotb tests
 
-For the full tutorial, see [RTLGEN.md](RTLGEN.md).
+For the full tutorial, see [Tutorial.md](Tutorial.md).
 
 ---
 

@@ -690,7 +690,7 @@ RTLCraft 最重要的用法是支持 Claude Code / Kimi Code 等 AI 代码助手
 3. **PPA 优化**：基于 AST 的静态分析 + ABC 综合，面积/时序报告反馈给 AI
 4. **代码生成**：自动输出 Verilog / SV UVM Testbench / cocotb 测试
 
-详细教程请查看 [RTLGEN_CN.md](RTLGEN_CN.md)。
+详细教程请查看 [Tutorial_CN.md](Tutorial_CN.md)。
 
 ---
 
