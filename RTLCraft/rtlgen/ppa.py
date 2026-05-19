@@ -31,6 +31,7 @@ from rtlgen.core import (
     UnaryOp,
 )
 from rtlgen.sim import Simulator
+from rtlgen.tech_library import TechNode
 
 # ---------------------------------------------------------------------------
 # Area weight table (equivalent NAND2 gate units, normalized)
@@ -68,8 +69,14 @@ _AREA_WEIGHTS: Dict[str, float] = {
 class PPAAnalyzer:
     """PPA 分析器：静态分析时序/面积，动态分析功耗。"""
 
-    def __init__(self, module: Module):
+    def __init__(self, module: Module, tech_node: Optional[str] = None):
         self.module = module
+        self._tech_node: Optional[TechNode] = None
+        if tech_node:
+            try:
+                self._tech_node = TechNode(tech_node)
+            except ValueError:
+                pass
 
     # =====================================================================
     # Public API
@@ -83,6 +90,8 @@ class PPAAnalyzer:
         result = self.analyze_static()
         if sim is not None:
             result["dynamic"] = self.analyze_dynamic(sim, n_cycles)
+        if self._tech_node is not None:
+            result["tech_aware"] = self._tech_node_analysis()
         return result
 
     def analyze_static(self) -> Dict[str, Any]:
@@ -96,6 +105,68 @@ class PPAAnalyzer:
             "dead_signals": self._find_dead_signals(),
             "submodule_summary": self._submodule_summary(),
         }
+
+    def check_intent(self) -> List[Dict[str, Any]]:
+        """对照模块声明的 design intent 检查 PPA 是否达标。
+
+        返回检查结果列表，每项包含 intent 字段、目标值、实际值、是否通过。
+        """
+        intent = getattr(self.module, "_design_intent", None)
+        if intent is None:
+            return []
+
+        results: List[Dict[str, Any]] = []
+        static = self.analyze_static()
+
+        # 检查逻辑深度 vs 延迟约束
+        if intent.latency_cycles is not None:
+            max_depth = 0
+            depths = static.get("logic_depth", {})
+            if depths:
+                max_depth = max(depths.values()) if depths else 0
+            # 粗略估计：每级逻辑深度约需 1 个周期
+            passed = max_depth <= intent.latency_cycles
+            results.append({
+                "field": "latency_cycles",
+                "target": intent.latency_cycles,
+                "actual": max_depth,
+                "pass": passed,
+                "message": f"Logic depth {max_depth} vs target {intent.latency_cycles} cycles" if passed
+                    else f"Logic depth {max_depth} exceeds target {intent.latency_cycles} cycles — consider pipelining"
+            })
+
+        # 检查面积 vs 面积预算
+        if intent.area_budget is not None:
+            gate_count = static.get("gate_count", 0)
+            passed = gate_count <= intent.area_budget
+            results.append({
+                "field": "area_budget",
+                "target": intent.area_budget,
+                "actual": gate_count,
+                "pass": passed,
+                "message": f"Gate count {gate_count} within budget {intent.area_budget}" if passed
+                    else f"Gate count {gate_count} exceeds budget {intent.area_budget}"
+            })
+
+        # 检查频率可行性（基于最大逻辑深度）
+        if intent.clock_freq is not None:
+            depths = static.get("logic_depth", {})
+            max_depth = max(depths.values()) if depths else 0
+            # 粗略估计：每级 NAND2 延迟 ~50ps，目标周期
+            target_period_ns = 1e9 / intent.clock_freq
+            estimated_delay_ns = max(max_depth * 0.05, 0.05)  # 50ps per level, min 50ps
+            max_freq_mhz = 1 / (estimated_delay_ns * 1e-3)  # MHz
+            passed = estimated_delay_ns < target_period_ns
+            results.append({
+                "field": "clock_freq",
+                "target": f"{intent.clock_freq/1e6:.0f}MHz",
+                "actual": f"~{max_freq_mhz:.0f}MHz max (depth={max_depth})",
+                "pass": passed,
+                "message": f"Estimated max frequency ok for {intent.clock_freq/1e6:.0f}MHz target" if passed
+                    else f"Logic depth {max_depth} may not meet {intent.clock_freq/1e6:.0f}MHz target"
+            })
+
+        return results
 
     def analyze_dynamic(
         self, sim: Simulator, n_cycles: Optional[int] = None
@@ -224,7 +295,19 @@ class PPAAnalyzer:
         def _collect(body: List[Any], select_extra: int = 0):
             for stmt in body:
                 if isinstance(stmt, Assign):
-                    drivers[stmt.target.name] = (stmt.value, select_extra)
+                    if hasattr(stmt.target, 'name'):
+                        key = self._assign_target_name(stmt)
+                    elif isinstance(stmt.target, Slice):
+                        operand = stmt.target.operand
+                        if hasattr(operand, 'name'):
+                            key = f"{operand.name}[{stmt.target.hi}:{stmt.target.lo}]"
+                        elif isinstance(operand, Ref):
+                            key = f"{operand.signal.name}[{stmt.target.hi}:{stmt.target.lo}]"
+                        else:
+                            key = self._expr_to_str(operand)
+                    else:
+                        key = self._expr_to_str(stmt.target)
+                    drivers[key] = (stmt.value, select_extra)
                 elif isinstance(stmt, IndexedAssign):
                     key = f"{stmt.target_signal.name}[{self._expr_to_str(stmt.index)}]"
                     drivers[key] = (stmt.value, select_extra)
@@ -395,7 +478,7 @@ class PPAAnalyzer:
         def _scan(body: List[Any]):
             for stmt in body:
                 if isinstance(stmt, Assign):
-                    driven.add(stmt.target.name)
+                    driven.add(self._assign_target_name(stmt))
                 elif isinstance(stmt, IfNode):
                     _scan(stmt.then_body)
                     _scan(stmt.else_body)
@@ -527,7 +610,7 @@ class PPAAnalyzer:
         def _scan(body: List[Any]):
             for stmt in body:
                 if isinstance(stmt, Assign):
-                    driven.add(stmt.target.name)
+                    driven.add(self._assign_target_name(stmt))
                 elif isinstance(stmt, IndexedAssign):
                     driven.add(stmt.target_signal.name)
                 elif isinstance(stmt, IfNode):
@@ -648,6 +731,198 @@ class PPAAnalyzer:
                 return d[name].width
         return 1
 
+    # =====================================================================
+    # Technology-Node-Aware Analysis
+    # =====================================================================
+
+    def _tech_node_analysis(self) -> Dict[str, Any]:
+        """Process node-aware PPA estimation using the tech library.
+
+        Returns timing, area, and power estimates mapped to a specific
+        process node (e.g., 28nm, 7nm).
+        """
+        if self._tech_node is None:
+            return {}
+
+        static = self.analyze_static()
+        depths = static.get("logic_depth", {})
+        max_depth = max(depths.values()) if depths else 0
+        gate_count = static.get("gate_count", 0)
+
+        # Estimate RTL constructs from module structure
+        rtl_constructs = self._extract_rtl_constructs()
+        widths = self._extract_bit_widths()
+
+        # Area estimate
+        area_est = self._tech_node.estimate_area_from_rtl(rtl_constructs, widths)
+
+        # Power estimate (with rough cell count from gate_count)
+        power_est = self._tech_node.estimate_power({"nand2": int(gate_count)})
+
+        # Logic depth estimate
+        critical_path_constructs = self._estimate_critical_path_constructs()
+        logic_depth = self._tech_node.estimate_logic_depth(critical_path_constructs, widths)
+
+        # Pipeline recommendation at various frequencies
+        pipeline_recs = {}
+        for freq in [0.5, 1.0, 2.0, 3.0]:
+            stages = self._tech_node.recommend_pipeline(logic_depth, freq)
+            pipeline_recs[f"{freq}GHz"] = stages
+
+        # Timing check at default target
+        target_freq_ghz = 1.0
+        timing_check = self._tech_node.check_critical_path(
+            logic_depth * self._tech_node.gate_delay("nand2"),
+            target_freq_ghz,
+        )
+
+        return {
+            "node": self._tech_node.name,
+            "min_feature_nm": self._tech_node.min_feature_nm,
+            "estimated_area_um2": area_est.total_area_um2,
+            "estimated_area_mm2": area_est.die_area_mm2,
+            "estimated_power_mw": power_est.total_mw,
+            "estimated_dynamic_mw": power_est.dynamic_mw,
+            "estimated_leakage_mw": power_est.leakage_mw,
+            "estimated_logic_depth": logic_depth,
+            "max_depth_at_1ghz": self._tech_node.max_logic_depth(1.0),
+            "critical_path_slack_ps": timing_check[1],
+            "critical_path_meets_timing": timing_check[0],
+            "pipeline_recommendations": pipeline_recs,
+            "rtl_constructs": rtl_constructs,
+        }
+
+    def set_tech_node(self, node_name: str):
+        """Set or change the process node for analysis."""
+        self._tech_node = TechNode(node_name)
+
+    def _extract_rtl_constructs(self) -> Dict[str, int]:
+        """Extract RTL construct counts from module AST."""
+        counts: Dict[str, int] = {}
+
+        def _scan(body):
+            for stmt in body:
+                if isinstance(stmt, Assign):
+                    self._classify_expr(stmt.value, counts)
+                elif isinstance(stmt, IfNode):
+                    counts["mux2"] = counts.get("mux2", 0) + 1
+                    _scan(stmt.then_body)
+                    _scan(stmt.else_body)
+                elif isinstance(stmt, SwitchNode):
+                    n = len(stmt.cases)
+                    if n <= 4:
+                        counts["mux4"] = counts.get("mux4", 0) + 1
+                    elif n <= 8:
+                        counts["mux_tree_8"] = counts.get("mux_tree_8", 0) + 1
+                    else:
+                        counts["mux_tree_16"] = counts.get("mux_tree_16", 0) + 1
+                    for _, cb in stmt.cases:
+                        _scan(cb)
+                    _scan(stmt.default_body)
+                elif isinstance(stmt, ForGenNode):
+                    _scan(stmt.body)
+                elif isinstance(stmt, GenIfNode):
+                    _scan(stmt.then_body)
+                    _scan(stmt.else_body)
+                elif isinstance(stmt, SubmoduleInst):
+                    for pname in stmt.port_map:
+                        if "priority" in pname.lower():
+                            counts["priority_enc"] = counts.get("priority_enc", 0) + 1
+
+        for body in self.module._comb_blocks:
+            _scan(body)
+        for _, _, _, _, body in self.module._seq_blocks:
+            _scan(body)
+        for stmt in self.module._top_level:
+            _scan([stmt])
+
+        # Count registers as "counter" constructs
+        reg_count = len(self.module._regs)
+        if reg_count > 0:
+            counts["counter"] = counts.get("counter", 0) + reg_count
+
+        return counts
+
+    def _extract_bit_widths(self) -> Dict[str, int]:
+        """Extract representative bit widths for RTL constructs."""
+        widths: Dict[str, int] = {}
+        # Use average width of all signals as a rough estimate
+        all_widths = [s.width for s in self.module._inputs.values()]
+        all_widths += [s.width for s in self.module._outputs.values()]
+        all_widths += [s.width for s in self.module._wires.values()]
+        all_widths += [s.width for s in self.module._regs.values()]
+        if all_widths:
+            avg_w = sum(all_widths) // len(all_widths)
+            max_w = max(all_widths)
+            widths["add"] = max_w
+            widths["mul"] = max_w
+            widths["mux2"] = max_w
+            widths["mux4"] = max_w
+        return widths
+
+    def _estimate_critical_path_constructs(self) -> List[str]:
+        """Estimate the RTL constructs in the critical path.
+
+        Uses the _critical_path_depth analysis to identify the longest
+        signal chain and maps it to RTL constructs.
+        """
+        depths = self._critical_path_depth()
+        if not depths:
+            return ["add"]  # default: single adder
+
+        # Find the deepest path
+        deepest_sig = max(depths, key=depths.get)
+        depth = depths[deepest_sig]
+
+        # Map depth to estimated construct chain
+        constructs: List[str] = []
+        remaining = depth
+        # Simplified: assume worst-case chain of arithmetic + logic
+        if remaining > 10:
+            constructs.append("mul")
+            remaining -= 12
+        if remaining > 6:
+            constructs.append("add")
+            remaining -= 4
+        if remaining > 4:
+            constructs.append("mux4")
+            remaining -= 2
+        if remaining > 2:
+            constructs.append("mux2")
+            remaining -= 1
+        if remaining > 0:
+            constructs.append("and")
+
+        return constructs if constructs else ["and"]
+
+    def _classify_expr(self, expr: Any, counts: Dict[str, int]):
+        """Classify an expression into RTL construct types."""
+        from rtlgen.core import BinOp, UnaryOp, Mux, Slice
+
+        if isinstance(expr, BinOp):
+            op_map = {
+                "+": "add", "-": "sub",
+                "*": "mul", "/": "div", "%": "div",
+                "&": "and", "|": "or", "^": "xor",
+                "<<": "shift_left", ">>": "shift_right",
+                "==": "eq", "!=": "ne",
+                "<": "lt", "<=": "lte",
+                ">": "gt", ">=": "gte",
+            }
+            construct = op_map.get(expr.op, "and")
+            counts[construct] = counts.get(construct, 0) + 1
+            self._classify_expr(expr.lhs, counts)
+            self._classify_expr(expr.rhs, counts)
+        elif isinstance(expr, UnaryOp):
+            if expr.op == "~":
+                counts["not"] = counts.get("not", 0) + 1
+        elif isinstance(expr, Mux):
+            counts["mux2"] = counts.get("mux2", 0) + 1
+            self._classify_expr(expr.true_expr, counts)
+            self._classify_expr(expr.false_expr, counts)
+        elif isinstance(expr, Slice):
+            self._classify_expr(expr.operand, counts)
+
     @staticmethod
     def _expr_to_str(expr: Any) -> str:
         if isinstance(expr, Const):
@@ -655,6 +930,20 @@ class PPAAnalyzer:
         if isinstance(expr, Ref):
             return expr.signal.name
         return "?"
+
+    def _assign_target_name(self, stmt: Assign) -> str:
+        """Return a string key for an Assign target (handles Signal, Slice, etc.)."""
+        target = stmt.target
+        if hasattr(target, 'name'):
+            return target.name
+        if isinstance(target, Slice):
+            operand = target.operand
+            if hasattr(operand, 'name'):
+                return f"{operand.name}[{target.hi}:{target.lo}]"
+            if isinstance(operand, Ref):
+                return f"{operand.signal.name}[{target.hi}:{target.lo}]"
+            return self._expr_to_str(operand)
+        return self._expr_to_str(target)
 
     def _collect_ref_names(self, expr: Any) -> Set[str]:
         """从表达式中提取所有 Ref 信号名。"""
@@ -683,3 +972,109 @@ class PPAAnalyzer:
         elif isinstance(expr, ArrayRead):
             names |= self._collect_ref_names(expr.index)
         return names
+
+
+# =====================================================================
+# PPA-aware component helpers
+# =====================================================================
+
+class PPAAwareComponent:
+    """PPA 感知组件 Mixin — 为硬件模块提供静态 PPA 估算属性。
+
+    子类应实现 ``_ppa_key()`` 返回数据库查询键。
+    """
+
+    PPA_DATABASE: Dict[str, Dict[str, int]] = {
+        "FixedPriorityArbiter_4": {"gates": 12, "depth": 2, "ff": 0},
+        "RoundRobinArbiter_4": {"gates": 30, "depth": 4, "ff": 4},
+        "SyncFIFO_ptr_4x32": {"gates": 150, "depth": 3, "ff": 134},
+        "SyncFIFO_ctr_4x32": {"gates": 180, "depth": 4, "ff": 138},
+        "SpillRegister_256": {"gates": 520, "depth": 0, "ff": 514},
+        "ValidPipe_256": {"gates": 260, "depth": 2, "ff": 258},
+    }
+
+    def _ppa_key(self) -> str:
+        """返回 PPA 数据库查询键。子类应覆盖此方法。"""
+        return self.__class__.__name__
+
+    @property
+    def estimated_gates(self) -> int:
+        return self.PPA_DATABASE.get(self._ppa_key(), {}).get("gates", 0)
+
+    @property
+    def estimated_depth(self) -> int:
+        return self.PPA_DATABASE.get(self._ppa_key(), {}).get("depth", 0)
+
+    @property
+    def estimated_ff(self) -> int:
+        return self.PPA_DATABASE.get(self._ppa_key(), {}).get("ff", 0)
+
+    def satisfies(self, budget: Dict[str, int]) -> bool:
+        if "max_gates" in budget and self.estimated_gates > budget["max_gates"]:
+            return False
+        if "max_depth" in budget and self.estimated_depth > budget["max_depth"]:
+            return False
+        if "max_ff" in budget and self.estimated_ff > budget["max_ff"]:
+            return False
+        return True
+
+    def report(self) -> str:
+        return (f"{self._ppa_key()}: gates={self.estimated_gates}, "
+                f"depth={self.estimated_depth}, ff={self.estimated_ff}")
+
+
+class OptimizationAdvisor:
+    """为 Agent 提供优化建议的静态顾问。"""
+
+    ADVICE = {
+        "arbiter_4port": {
+            "area": "Use FixedPriorityArbiter (12 gates) instead of RoundRobin (30 gates)",
+            "latency": "Both are 1-cycle combinational",
+            "power": "FixedPriority has lower toggle rate (fewer gates switching)",
+        },
+        "fifo_depth_4": {
+            "area": "Pointer-based (6 FF) saves 1 FF vs counter-based (7 FF)",
+            "latency": "Both 1-cycle read",
+            "power": "Pointer-based has fewer toggles (no counter increment)",
+        },
+        "pipeline_cut": {
+            "area": "ValidPipe (256 FF) is smaller than SpillRegister (514 FF)",
+            "latency": "ValidPipe has 2-level comb path, SpillRegister has 0",
+            "power": "ValidPipe has lower power (fewer FF)",
+            "timing": "SpillRegister completely cuts comb path — use for critical paths",
+        },
+    }
+
+    @classmethod
+    def advise(cls, component_type: str, intent: str = "balanced") -> str:
+        key = component_type
+        if key in cls.ADVICE:
+            return cls.ADVICE[key].get(intent, cls.ADVICE[key].get("balanced", ""))
+        return "No specific advice available"
+
+    @classmethod
+    def suggest_for_module(cls, module: Module) -> List[str]:
+        """为给定模块生成一系列优化建议。"""
+        from rtlgen.ppa import PPAAnalyzer
+        analyzer = PPAAnalyzer(module)
+        static = analyzer.analyze_static()
+        return analyzer.suggest_optimizations(static)
+
+
+class DesignRuleChecker:
+    """DSL 层设计规则检查器 — 在生成 Verilog 之前发现设计问题。"""
+
+    RULES = {
+        "unregistered_output": "所有数据输出应该被寄存器驱动",
+        "ready_combinational": "ready 信号应该是组合逻辑",
+        "valid_registered": "valid 信号应该在数据之前注册",
+        "no_comb_loop": "组合逻辑中不允许自引用（除了特定模式）",
+        "credit_no_starvation": "credit counter 不应下溢",
+    }
+
+    @classmethod
+    def check(cls, module: Module) -> List[str]:
+        """检查模块的设计规则，返回违例描述列表。"""
+        violations: List[str] = []
+        violations.extend(module.lint())
+        return violations

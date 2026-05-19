@@ -39,11 +39,14 @@ This makes RTLCraft a **living tool chain** — capable of both green-field desi
 
 | Module | Capability | Status |
 |--------|-----------|--------|
-| `core` + `logic` | Python DSL → AST (signals, modules, logic control, state machines) | ✅ Mature |
-| `codegen` | AST → Verilog-2001 / SystemVerilog (with submodule dedup) | ✅ Mature |
-| `lint` | Post-generation lint + auto-fix (7 rules) | ✅ Mature |
-| `sim` | Python AST interpreter (4-state logic, multi-clock, VCD export) | ✅ Mature |
-| `ppa` | AST-based logic depth / gate count / fanout / dead signal analysis | ✅ Available |
+| `core` + `logic` | Python DSL → AST (signals, modules, logic control, state machines, type system: signed/unsigned, width inference, intent constraints, source tracking) | ✅ Mature |
+| `codegen` | AST → Verilog-2001 / SystemVerilog (with submodule dedup, EmitProfile, source map) | ✅ Mature |
+| `lint` | Post-generation lint + auto-fix (14 Verilog-level rules + 8 AST-level rules incl. width_truncation, signed_mix) | ✅ Mature |
+| `sim` | Python AST interpreter (4-state logic, multi-clock, VCD export, breakpoint debugging) | ✅ Mature |
+| `sim_jit` | Pure-Python JIT accelerator (50–500×), transparent fallback to interpreter | ✅ Available |
+| `ppa` | AST-based logic depth / gate count / fanout / dead signal analysis, intent constraint checking | ✅ Available |
+| `smt` | SMT-based combinational equivalence checking (z3) | ✅ Available |
+| `verification` | BehavioralModelGenerator, DesignRuleChecker, ProtocolDescriptor | ✅ Available |
 | `blifgen` + `synth` | ABC logic synthesis integration (BLIF → optimized netlist) | ✅ Available |
 | `uvmgen` | SV UVM testbench auto-generation (interface / agent / env / test) | ✅ Available |
 | `pyuvm` + `pyuvm_sim` | Native Python UVM framework + simulator driver | ✅ Available |
@@ -52,7 +55,7 @@ This makes RTLCraft a **living tool chain** — capable of both green-field desi
 | `uvmvip` | APB / AXI4-Lite / AXI4 VIP generation | ✅ Available |
 | `regmodel` | UVM RAL register model generation | ✅ Available |
 | `pipeline` | Pipeline engine (auto handshake + back-pressure) | ✅ Available |
-| `lib` | FSM / FIFO / Arbiter / BarrelShifter / LFSR / CRC / Divider | ✅ Available |
+| `lib` | FSM / SyncFIFO / AsyncFIFO / Arbiter (FixedPriority + RoundRobin) / Decoder / PriorityEncoder / BarrelShifter / LFSR / CRC / Divider / Counter / EdgeDetector / StreamFIFO / FlatMemory / SpillRegister / RegSlice / CreditFlowControl / ClockGateCell / DataflowPipeline | ✅ Available |
 | `protocols` | AXI4 / AXI4-Lite / AXI4-Stream / APB / AHB-Lite / Wishbone | ✅ Available |
 | `ram` | Single-port / simple dual-port RAM wrappers | ✅ Available |
 | `cosim` | Python ↔ iverilog co-simulation | ✅ Available |
@@ -60,6 +63,20 @@ This makes RTLCraft a **living tool chain** — capable of both green-field desi
 | `netlist` | Gate-level netlist parsing | ✅ Available |
 | `liberty` | Liberty standard cell library parsing & generation | ✅ Available |
 | `lef` | LEF physical library parsing & generation | ✅ Available |
+| `passes` | PassManager framework (LintPass, ConstantFoldPass, DeadCodeElimPass) | ✅ Available |
+| `registry` | Component registry with metadata (tags, area, latency, search) | ✅ Available |
+| `behaviors` | TemplateRegistry for reusable behavior templates | ✅ Available |
+| `params` | XiangShan-inspired parameter presets, fluent PEParams builder | ✅ Available |
+| `arch_def` | Universal PE model (FuConfig / ExuConfig / Param / PEParams / Array / RegPool / PortGroup), works for CPU, GPGPU, NPU, protocol controllers | ✅ Available |
+| `arch_planner` | Architecture Planner (SpecIR → ArchitectureIR, 4 categories) | ✅ Available |
+| `dsl_gen` | DSL Skeleton Generator (ArchitectureIR → Module, 4 categories) | ✅ Available |
+| `arch_sim` | Architecture-level simulator with back-pressure, IPC tracking, hazard detection | ✅ Available |
+| `arch_skel` | PE-type-specific step guides, auto Array vs Reg selection | ✅ Available |
+| `ppa_optimizer` | PPA Score + 6 optimization strategies (pipeline, sharing, bitwidth, operator, mux, FSM) | ✅ Available |
+| `verif_gen` | Verification Generator (reference model, directed/random tests, coverage, protocol checks) | ✅ Available |
+| `decomposition` | Gem5-style hierarchy decomposition, pre-PPA violation detection | ✅ Available |
+| `spec_ir` | Spec IR / Architecture IR / OptimizableOp dataclasses | ✅ Available |
+| `spec_extractor` | Spec Completer + SpecExtractor (YAML, templates, natural language) | ✅ Available |
 
 ---
 
@@ -123,6 +140,18 @@ assert sim.peek("result") == 0x46
 - X/Z four-state logic support
 - Breakpoint debugging (`add_breakpoint` / `run_until_break`)
 
+#### 2.1 JIT Simulation Acceleration (`sim_jit`)
+
+```python
+from rtlgen.sim_jit import JITSimulator
+
+# 50–500× faster than AST interpreter, transparent fallback
+sim = JITSimulator(dut)
+sim.reset()
+sim.poke("a", 0x12)
+sim.step(1000)  # bulk cycle advance
+```
+
 ### 3. UVM / Testbench Generation
 
 #### 3.1 SystemVerilog UVM (`uvmgen`)
@@ -172,6 +201,18 @@ print(ppa.toggle_rates())           # toggle rate estimation
 
 All analysis is based on AST structure, completing in **seconds**, suitable for rapid architectural iteration in early design stages.
 
+PPA-aware components enable automated optimization:
+```python
+from rtlgen.ppa import PPAAwareComponent, OptimizationAdvisor
+
+class MyAccelerator(PPAAwareComponent):
+    def __init__(self):
+        super().__init__("MyAccelerator")
+        self.advisor = OptimizationAdvisor(self)
+        # Advisor suggests implementation strategies based on PPA targets
+        strategy = self.advisor.recommend("fifo", target="area")
+```
+
 ### 5. Logic Synthesis
 
 RTLCraft integrates **ABC** (Berkeley Logic Synthesis and Verification Group):
@@ -206,18 +247,11 @@ Supports `Bundle.flip()` for direction reversal and `Bundle.connect()` for autom
 ```python
 from rtlgen import FSM, SyncFIFO, AsyncFIFO, RoundRobinArbiter
 from rtlgen import Decoder, PriorityEncoder, BarrelShifter, LFSR, CRC, Divider
+from rtlgen import Counter, EdgeDetector, FixedPriorityArbiter, StreamFIFO
+from rtlgen import FlatMemory, SpillRegister, RegSlice
+from rtlgen import CreditFlowControl, ClockGateCell, DataflowPipeline
 from rtlgen import SinglePortRAM, SimpleDualPortRAM
 ```
-
-> **Update (2026-05-09)**: `RoundRobinArbiter` has been fully implemented with mask + priority encoding logic, supporting fair round-robin scheduling for up to N requests. It includes 8 comprehensive test cases with **100% line and branch coverage** (exhaustively verified over 2,048 combinatorial states). Generated Verilog is available at `generated_round_robin_arbiter.v`.
->
-> ```python
-> arb = RoundRobinArbiter(req_count=8)
-> arb.clk = clk
-> arb.rst = rst
-> arb.reqs = reqs      # 8-bit request vector
-> arb.grants = grants  # one-hot grant output
-> ```
 
 ### 7. Pipeline Engine
 
@@ -259,32 +293,281 @@ importer.emit_repo("/output", package_name="imported")
 
 Built-in iverilog macro expansion + SV syntax repair (`for (integer ...)`, `i++`, `'0`, etc.).
 
+### 9. SMT Equivalence Checking
+
+Verify combinational equivalence between two module implementations using z3:
+
+```python
+from rtlgen.smt import check_combinational_equivalence
+from rtlgen.lib import FixedPriorityArbiter
+
+# Compare a hand-optimized arbiter against a naive reference
+opt = FixedPriorityArbiter(4)
+naive = NaiveArbiter(4)
+
+result = check_combinational_equivalence(opt, naive, outputs={"grant"})
+print(result)  # {'equivalent': True} or counterexample
+```
+
+Extracts per-output combinational drivers from `@comb` and `@seq` blocks, converts AST to z3 bit-vectors, and checks `ForAll(inputs, outputs_a == outputs_b)`. Supports `Mux`, `Concat`, `Switch`, and automatic width alignment.
+
+---
+
+## Architecture Framework
+
+RTLCraft includes a complete architecture modeling and planning framework for building complex processor-like systems (CPU, GPGPU, NPU, protocol controllers).
+
+### 10. Universal PE Model (`arch_def`)
+
+A domain-agnostic PE (Processing Element) model inspired by XiangShan and gem5:
+
+```python
+from rtlgen.arch_def import PEParams, FuConfig, ExuConfig, Array, RegPool, PortGroup
+
+params = PEParams()
+params.add_fu(FuConfig("alu", ops=["add", "sub", "and", "or"], latency=1))
+params.add_fu(FuConfig("mul", ops=["mul"], latency=3))
+params.add_exu(ExuConfig("exu0", fus=["alu", "mul"], issue_width=2))
+
+# Auto Array (combinational) vs Reg (sequential) selection
+pool = RegPool("regfile", entries=32, width=64)
+array = Array("sram", entries=1024, width=128)
+```
+
+### 11. Architecture Planning & Skeleton Generation (`arch_planner` + `dsl_gen` + `arch_skel`)
+
+```python
+from rtlgen import SpecIR, ArchitecturePlanner, DSLGenerator
+
+spec = SpecIR.from_yaml("...")
+planner = ArchitecturePlanner(spec)
+arch = planner.plan()
+# → ArchitectureIR with auto-selected adder/multiplier/FSM based on PPA goals
+
+# Generate DSL skeleton from ArchitectureIR
+dut = DSLGenerator(spec, arch).generate()
+```
+
+`arch_skel` provides PE-type-specific step guides (in Chinese) for CPU, GPGPU, NPU, and protocol controller implementation.
+
+### 12. Architecture Simulation (`arch_sim`)
+
+Architecture-level simulator with back-pressure modeling and IPC tracking:
+
+```python
+from rtlgen.arch_sim import ArchSimulator
+
+sim = ArchSimulator(dut)
+sim.run(cycles=1000)
+print(f"IPC: {sim.ipc}")
+print(f"Stall cycles: {sim.stall_cycles}")
+```
+
+### 13. PPA Optimization Loop (`ppa_optimizer` + `decomposition`)
+
+```python
+from rtlgen import PPAOptimizer, PPAScore, PPAGoal
+from rtlgen.decomposition import DecompositionAnalyzer
+
+# Gem5-style hierarchy decomposition with pre-PPA violation detection
+analyzer = DecompositionAnalyzer(dut)
+violations = analyzer.check_ppa_constraints()
+
+# 6-level optimization strategies
+optimizer = PPAOptimizer(dut, spec)
+result = optimizer.optimize(max_iterations=10)
+```
+
+**7-level PPA optimization strategies:**
+
+| Strategy | Level | What It Does |
+|----------|-------|-------------|
+| PipelineInsertion | AST | Insert registers to break long paths |
+| ResourceSharing | AST | Share operators across mutually exclusive paths |
+| BitwidthReduction | RTL | Remove redundant width extensions |
+| OperatorSelection | AST | Swap adder/multiplier implementations |
+| MuxBalancing | RTL | Rebalance large mux trees |
+| FSMEncodingSelect | Arch | Select binary/one-hot/gray encoding |
+| SynthesisFeedback | Tech | ABC netlist area/delay feedback |
+
+For the full tutorial, see [Tutorial.md](Tutorial.md).
+
+---
+
+## Framework Enhancements
+
+### 14. Type System: Width Inference & Signed Types
+
+**Width Inference**: Binary operations automatically derive result widths matching Verilog semantics:
+
+```python
+a = Input(8, "a")
+b = Input(8, "b")
+result = a + b   # auto 9-bit (carry)
+product = a * b  # auto 16-bit
+eq = a == b      # auto 1-bit
+```
+
+**Signed/Unsigned Casting**: `signal.as_sint()` / `signal.as_uint()` for explicit signedness.
+
+**Lint Rules**: `width_truncation` warns on implicit truncation; `signed_mix` detects unsigned/signed mixing.
+
+### 15. Source Map (Python → Verilog Traceability)
+
+Every `Assign` captures its Python source location:
+
+```python
+emitter = VerilogEmitter(emit_source_map=True)
+verilog_text, source_map = emitter.emit_design_with_source_map(dut)
+# Generated: // rtlcraft: source=my_design.py:42
+```
+
+### 16. EmitProfile (Verilog Style Configuration)
+
+```python
+from rtlgen import EmitProfile, VerilogEmitter
+
+profile = EmitProfile(
+    style="sv", always_comb=True, always_ff=True,
+    explicit_nettype=True, reset_style="async_low",
+)
+sv = VerilogEmitter(profile=profile).emit(dut)
+```
+
+### 17. Intent Constraints (PPA-Aware Design)
+
+```python
+class MyDesign(Module):
+    def __init__(self):
+        super().__init__("MyDesign")
+        self.clk = Input(1, "clk")
+        @self.intent
+        def c(x):
+            x.latency_cycles = 3
+            x.clock_freq = 500e6
+
+from rtlgen.ppa import PPAAnalyzer
+results = PPAAnalyzer(dut).check_intent()
+```
+
+### 18. PassManager (Compilation Pipeline)
+
+```python
+from rtlgen import PassManager, LintPass, ConstantFoldPass, DeadCodeElimPass
+
+pm = PassManager()
+pm.add(LintPass())
+pm.add(ConstantFoldPass())
+pm.add(DeadCodeElimPass())
+results = pm.run(dut)
+```
+
+### 19. Component Registry
+
+```python
+from rtlgen import ComponentRegistry
+arbiters = ComponentRegistry.search(tags=["arbitration"])
+small = ComponentRegistry.search(max_area=100)
+```
+
+### 20. Spec-Driven RTL Generation (Spec2RTL)
+
+Closed-loop spec-to-RTL flow: **YAML/NL Spec → Spec IR → Architecture IR → DSL → RTL AST → Verification → PPA Optimization → Verilog**.
+
+```python
+from rtlgen import (
+    SpecIR, SpecCompleter, SpecExtractor,
+    ArchitecturePlanner, DSLGenerator,
+    PPAOptimizer, PPAScore, PPAGoal,
+    ReferenceModel, TestGenerator, VerificationRunner, CoverageTracker,
+)
+from rtlgen.synth import ABCSynthesizer
+
+# Step 1: Parse spec (YAML, template, or natural language)
+spec = SpecIR.from_yaml("""
+module:
+  name: MAC16
+  category: stream_pipeline
+function:
+  expr: y = a * b + c
+timing:
+  latency_max: 3
+  throughput: 1
+ppa:
+  priority: timing_first
+  max_logic_depth: 6
+  allow_pipeline: true
+""")
+
+# Step 2: Complete spec (auto-infer ports, fill defaults)
+completed = SpecCompleter.complete(spec)
+
+# Step 3: Plan architecture (rules-based, PPA-aware)
+planner = ArchitecturePlanner(completed)
+arch = planner.plan()
+# → pipelined_datapath, 3 stages, wallace mul + carry_lookahead adder
+
+# Step 4: Generate RTL skeleton
+# dut = DSLGenerator(completed, arch).generate()
+
+# Step 5: Verify functional correctness
+ref = ReferenceModel(completed)
+assert ref.evaluate(a=10, b=20, c=5) == 205
+
+tg = TestGenerator(completed)
+tests = tg.generate_directed()  # zero, max, boundary, powers of 2
+random_tests = tg.generate_random(count=100, seed=42)
+
+ct = CoverageTracker(completed)
+for t in random_tests[:20]:
+    ct.sample(t.inputs)
+
+# Step 6: PPA score + optimization loop
+goal = PPAGoal(max_logic_depth=completed.timing.latency_max)
+score = PPAScore.compute(ppa_report, goal)
+
+optimizer = PPAOptimizer(module, spec)
+result = optimizer.optimize(max_iterations=10)
+
+# Step 7: Synthesis feedback (ABC → structured JSON)
+synth = ABCSynthesizer()
+feedback = synth.parse_feedback(synth_result)
+# → {"area": N, "depth": D, "suggestion": "..."}
+```
+
+For the full tutorial, see [Tutorial.md](Tutorial.md).
+
 ---
 
 ## Skills Directory
 
-`skills/` is RTLCraft's **hardware design reference library**, collecting reusable domain-specific modules and tutorials:
+`skills/` is RTLCraft's **hardware design reference library**, collecting reusable domain-specific modules and tutorials derived from third-party open-source RTL:
 
 | Directory | Content | Status |
 |-----------|---------|--------|
-| `fundamentals/` | Standard library (FSM, FIFO, Arbiter), API tutorials | ✅ Available |
-| `arithmetic/` | Multipliers (KO-3 recursive tree), SHA3, FP8 ALU | ✅ Available |
-| `codec/` | 8b10b encoder/decoder (sequential/combinational) | ✅ Available |
-| `control/` | FSM matrix multiplication, traffic-light FSM | ✅ Available |
-| `cpu/boom/` | BOOM-style OoO RISC-V core (RV32I) | ✅ Available |
-| `cpu/npu/` | NPU (systolic array + tensor core + compiler) | ✅ Available |
-| `cryptography/` | ChaCha20 stream cipher | ✅ Available |
-| `synthesis/` | ABC synthesis integration tutorial | ✅ Available |
-| `verification/` | Debug tools, simulation tutorials | ✅ Available |
-| `gpgpu/` | GPGPU core (ALU array + warp scheduler + tensor core) | ✅ Available |
-| `memory-storage/` | SRAM / Cache / DMA (planned) | 📋 Reserved |
-| `image/` | ISP / image filtering / DCT (planned) | 📋 Reserved |
-| `video/` | Video codec / HDMI (planned) | 📋 Reserved |
-| `accelerators/` | Domain-specific accelerators (planned) | 📋 Reserved |
-| `physical-design/` | Floorplan / placement / routing / DFT (planned) | 📋 Reserved |
-| `npu/` | NPU top-level (planned) | 📋 Reserved |
+| `codec/ldpc/` | WiMax 802.16e LDPC decoder | ✅ Available |
+| `codec/video/` | xk265 HEVC decoder (Fudan VIPcore) | ✅ Available |
+| `cpu/` | T-Head C910 RISC-V core (Xuantie) | ✅ Available |
+| `dsp/` | DSP library (FIR, IIR, CIC, FFT butterfly) | ✅ Available |
+| `fft/` | R2²SDF FFT processor | ✅ Available |
+| `gpgpu/` | Ventus GPGPU (乘影) — ALU array, warp scheduler, tensor core | ✅ Available |
+| `image/isp/` | Infinite-ISP v1.1 image signal processor | ✅ Available |
+| `interfaces/axi/` | AXI4 full master/slave | ✅ Available |
+| `interfaces/axi_lite/` | AXI4-Lite slave RAM | ✅ Available |
+| `interfaces/axis/` | AXI-Stream | ✅ Available |
+| `interfaces/btle/` | Bluetooth Low Energy baseband | ✅ Available |
+| `interfaces/ethernet/` | Ethernet MAC + PCS/PMA | ✅ Available |
+| `interfaces/i2c/` | I2C master/slave | ✅ Available |
+| `interfaces/pcie/` | PCIe DMA + AXI bridge | ✅ Available |
+| `interfaces/spi/` | SPI master/slave | ✅ Available |
+| `interfaces/uart/` | AXI-Stream UART | ✅ Available |
+| `interfaces/wishbone/` | Wishbone bus | ✅ Available |
+| `mem/cam/` | Content-addressable memory | ✅ Available |
+| `mem/ddr3/` | DDR3 SDRAM controller | ✅ Available |
+| `noc/` | 2D mesh Network-on-Chip | ✅ Available |
+| `npu/` | Intel FPGA-NPU | ✅ Available |
 
-Each skill directory contains a `SKILL.md`, Python source files, and design documentation.
+Each skill directory contains a `SKILL.md`, `README.md`, Python source files, and design documentation. See [skills/README.md](skills/README.md) for the full index with attribution and licensing.
 
 ---
 
@@ -292,17 +575,34 @@ Each skill directory contains a `SKILL.md`, Python source files, and design docu
 
 ```
 RTLCraft/
-├── rtlgen/                   # Core framework
-│   ├── core.py               # Signal / Module / Parameter / AST
+├── rtlgen/                   # Core framework (~33K lines)
+│   ├── core.py               # Signal / Module / Parameter / AST / Intent / SourceLoc
 │   ├── logic.py              # If / Else / Switch / ForGen / StateTransition
-│   ├── codegen.py            # VerilogEmitter
-│   ├── lint.py               # VerilogLinter (7 rules + auto-fix)
+│   ├── codegen.py            # VerilogEmitter / EmitProfile / Source Map
+│   ├── lint.py               # VerilogLinter (14 Verilog + 8 AST rules + auto-fix)
 │   ├── sim.py                # Simulator (AST interpreter, 4-state logic)
+│   ├── sim_jit.py            # JIT accelerator (50–500×)
 │   ├── cosim.py              # Python ↔ iverilog co-simulation
 │   ├── verilog_import.py     # Verilog → Python importer (optional)
-│   ├── ppa.py                # PPAAnalyzer
+│   ├── ppa.py                # PPAAnalyzer + Intent constraint checking
+│   ├── verification.py       # BehavioralModelGenerator + DesignRuleChecker + ProtocolDescriptor
+│   ├── smt.py                # SMT combinational equivalence checker (z3)
 │   ├── blifgen.py            # BLIF generation (bit-level expansion)
 │   ├── synth.py              # ABC integration
+│   ├── passes.py             # PassManager / LintPass / ConstantFoldPass / DeadCodeElimPass
+│   ├── registry.py           # ComponentRegistry / ComponentMeta (21 components)
+│   ├── behaviors.py          # TemplateRegistry for reusable behavior templates
+│   ├── params.py             # XiangShan-inspired parameter presets
+│   ├── spec_ir.py            # SpecIR / ArchitectureIR / OptimizableOp dataclasses
+│   ├── spec_extractor.py     # SpecCompleter + SpecExtractor (YAML, templates, NL)
+│   ├── arch_def.py           # Universal PE model (FuConfig / ExuConfig / PEParams)
+│   ├── arch_planner.py       # Architecture Planner (4 categories)
+│   ├── dsl_gen.py            # DSL Skeleton Generator (4 categories)
+│   ├── arch_sim.py           # Architecture-level simulator (IPC, back-pressure)
+│   ├── arch_skel.py          # PE-type-specific step guides
+│   ├── ppa_optimizer.py      # PPA Score + 6 optimization strategies
+│   ├── verif_gen.py          # Verification Generator (ref model, tests, coverage)
+│   ├── decomposition.py      # Gem5-style hierarchy decomposition
 │   ├── netlist.py            # Gate-level netlist
 │   ├── liberty.py            # Liberty standard cell library
 │   ├── lef.py                # LEF physical library
@@ -319,18 +619,11 @@ RTLCraft/
 │   ├── regmodel.py           # UVM RAL register model
 │   ├── debug.py              # Debug probe utilities
 │   └── dpi_runtime.py        # DPI-C runtime
-├── skills/                   # Hardware design reference library
-│   ├── fundamentals/
-│   ├── arithmetic/
-│   ├── codec/
-│   ├── control/
-│   ├── cpu/
-│   ├── cryptography/
-│   ├── gpgpu/
-│   └── ...
-├── pyRTL.md                  # Complete API specification
-├── README_CN.md              # Chinese version
+├── skills/                   # Hardware design reference library (21 skills)
 ├── README.md                 # This file (English)
+├── README_CN.md              # Chinese version
+├── Tutorial.md               # Spec-to-RTL tutorial with skills details
+├── Tutorial_CN.md            # 中文版 Spec2RTL 教程
 └── LICENSE                   # License
 ```
 
@@ -354,8 +647,8 @@ python api_demo.py
 python lib_demo.py
 python sim_counter_demo.py
 
-# 5. Run skill examples
-cd ../../arithmetic/multipliers
+# 4. Run skill examples
+cd skills/arithmetic/multipliers
 python -c "
 from rtlgen import VerilogEmitter
 from skills.arithmetic.multipliers.montgomery_mult_384 import MontgomeryMult384
@@ -374,6 +667,7 @@ print(VerilogEmitter().emit_design(top))
 | `numpy` | Simulation acceleration | ⚠️ Optional |
 | `iverilog` | Co-simulation | ⚠️ Optional |
 | `abc` | Logic synthesis | ⚠️ Optional |
+| `z3-solver` | SMT equivalence checking | ⚠️ Optional |
 
 ---
 
@@ -388,6 +682,39 @@ RTLCraft supports end-to-end automation with AI coding assistants (Claude Code /
 
 For the full tutorial, see [RTLGEN.md](RTLGEN.md).
 
+---
+
+## Third-Party Attribution
+
+The `skills/` directory contains Python DSL modules that are re-implementations inspired by third-party open-source Verilog reference designs. **The copyright of the original reference RTL designs belongs to their respective original authors.** When using any skill, you must comply with the license terms of the original project.
+
+> **Note**: The original Verilog reference designs are **not** included in this repository. The table below provides attribution and source links so you can independently review the original licenses.
+
+### Verified Sources
+
+| Skill Domain | Original Author / Organization | Source Link | License |
+|-------------|-------------------------------|-------------|---------|
+| `codec/ldpc` | crboth | <https://github.com/crboth/LDPC_Decoder> | Not specified |
+| `codec/video` | VIPcore Group, Fudan University | <https://github.com/openasic-org/xk265> | Open source (see repo) |
+| `cpu` (C910) | T-Head Semiconductor (Alibaba Group) | <https://github.com/T-head-Semi/openc910> | Apache-2.0 |
+| `cpu` (XiangShan) | OpenXiangShan | <https://github.com/OpenXiangShan/XiangShan> | Mulan PSL v2 |
+| `dsp` | Alex Forencich | <https://github.com/alexforencich/verilog-dsp> | MIT |
+| `fft` | Nanamaru Namake | <https://github.com/nanamake/r22sdf> | MIT |
+| `gpgpu` | THU-DSP-LAB / C*Core Technology (Ventus) | <https://github.com/THU-DSP-LAB/ventus-gpgpu-verilog> | Mulan PSL v2 |
+| `image/isp` | 10xEngineers (Infinite-ISP) | <https://github.com/10x-Engineers/Infinite-ISP> | Apache-2.0 |
+| `mem/cam` | Alex Forencich | <https://github.com/alexforencich/verilog-cam> | MIT |
+| `mem/ddr3` | ultraembedded | <https://github.com/ultraembedded/core_ddr3_controller> | Apache-2.0 |
+| `noc` | bakhshalipour | <https://github.com/bakhshalipour/NoC-Verilog> | Not specified |
+| `npu` | Intel Corporation | <https://github.com/intel/fpga-npu> | BSD-3-Clause |
+| `interfaces/axi` | Alex Forencich | <https://github.com/alexforencich/verilog-axi> | MIT |
+| `interfaces/axis` | Alex Forencich | <https://github.com/alexforencich/verilog-axis> | MIT |
+| `interfaces/btle` | Xianjun Jiao | <https://github.com/JiaoXianjun/BTLE> | Apache-2.0 |
+| `interfaces/ethernet` | Alex Forencich | <https://github.com/alexforencich/verilog-ethernet> | MIT |
+| `interfaces/i2c` | Alex Forencich | <https://github.com/alexforencich/verilog-i2c> | MIT |
+| `interfaces/pcie` | Alex Forencich | <https://github.com/alexforencich/verilog-pcie> | MIT |
+| `interfaces/spi` | Dr. med. Jan Schiefer | <https://github.com/janschiefer/verilog_spi> | LGPL-2.1 |
+| `interfaces/uart` | Alex Forencich | <https://github.com/alexforencich/verilog-uart> | MIT |
+| `interfaces/wishbone` | Alex Forencich | <https://github.com/alexforencich/verilog-wishbone> | MIT |
 
 ---
 
@@ -396,11 +723,15 @@ For the full tutorial, see [RTLGEN.md](RTLGEN.md).
 This project uses a custom MIT License. Personal use and research are permitted. **Commercial use requires prior authorization.**
 For commercial licensing, please contact the author and Fudan University (State Key Laboratory of Integrated Chips and Systems): efouth@gmail.com
 
+**Note on Third-Party IP:** The license above applies only to the RTLCraft framework code itself (the Python DSL, AST, simulators, and generators). It does **not** cover the Python DSL modules in `skills/` that are inspired by third-party reference designs, nor the original Verilog reference designs themselves. Users must independently review and comply with the license terms of each original project before using, modifying, or redistributing those designs. See the attribution table above and [skills/README.md](skills/README.md) for details.
+
 See [LICENSE](LICENSE) for details.
 
 ---
 
 ## Related Documentation
 
-- [skills/skills.md](skills/skills.md) — Skills directory overview
+- [skills/README.md](skills/README.md) — Skills directory overview with full attribution
 - [README_CN.md](README_CN.md) — Chinese version of this document
+- [Tutorial.md](Tutorial.md) — Spec-to-RTL tutorial with skills details
+- [Tutorial_CN.md](Tutorial_CN.md) — 中文版 Spec2RTL 教程

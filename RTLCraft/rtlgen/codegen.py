@@ -5,6 +5,7 @@ rtlgen.codegen — Verilog 代码生成后端
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from rtlgen.core import (
@@ -28,26 +29,51 @@ from rtlgen.core import (
     MemWrite,
     Memory,
     Module,
+    ModuleDoc,
     Mux,
     Output,
     PartSelect,
     Ref,
     Reg,
     Signal,
+    SourceLoc,
+    Wire,
     Slice,
     SubmoduleInst,
+    WhenNode,
     SwitchNode,
     UnaryOp,
 )
 
 
+@dataclass
+class EmitProfile:
+    """Verilog 发射配置档。"""
+    style: str = "simple"           # "simple" | "lowrisc" | "synopsys" | "sv"
+    always_comb: bool = False       # 使用 always_comb 而非 always @(*)
+    always_ff: bool = False         # 使用 always_ff 而非 always
+    explicit_nettype: bool = False  # 在文件头添加 `default_nettype none
+    one_module_per_file: bool = False
+    reset_style: str = "async_low"  # "async_low" | "async_high" | "sync"
+    language: str = "verilog2001"   # "verilog2001" | "systemverilog"
+
+
 class VerilogEmitter:
     """Verilog 代码发射器。"""
 
-    def __init__(self, indent: str = "    ", use_sv_always: bool = False):
+    def __init__(self, indent: str = "    ", use_sv_always: bool = False, emit_source_map: bool = False, profile: Optional[EmitProfile] = None, disable_cse: bool = False):
         self.indent = indent
         self.use_sv_always = use_sv_always
+        self.emit_source_map = emit_source_map
+        self.profile = profile
+        self.disable_cse = disable_cse
         self.lines: List[str] = []
+        self._cse_counter: int = 0  # global CSE wire counter across all always blocks
+
+        # Apply profile overrides
+        if profile is not None:
+            if profile.always_comb:
+                self.use_sv_always = True
 
     # -----------------------------------------------------------------
     # Public API
@@ -82,6 +108,8 @@ class VerilogEmitter:
                     dfs(stmt.module)
                 elif isinstance(stmt, IfNode):
                     _dfs_stmts(stmt.then_body)
+                    for _, body in stmt.elif_bodies:
+                        _dfs_stmts(body)
                     _dfs_stmts(stmt.else_body)
                 elif isinstance(stmt, SwitchNode):
                     for _, body in stmt.cases:
@@ -91,7 +119,12 @@ class VerilogEmitter:
                     _dfs_stmts(stmt.body)
                 elif isinstance(stmt, GenIfNode):
                     _dfs_stmts(stmt.then_body)
+                    for _, body in stmt.elif_bodies:
+                        _dfs_stmts(body)
                     _dfs_stmts(stmt.else_body)
+                elif isinstance(stmt, WhenNode):
+                    for _, body in stmt.branches:
+                        _dfs_stmts(body)
 
         def dfs(mod: Module):
             type_name = getattr(mod, '_type_name', mod.name)
@@ -162,10 +195,115 @@ class VerilogEmitter:
             if hasattr(self, '_module_id_remap'):
                 del self._module_id_remap
 
+    def emit_design_with_source_map(self, top_module: Module) -> Tuple[str, dict]:
+        """生成整个设计的 Verilog 代码和源码映射表。
+
+        返回 ``(verilog_text, source_map)``，其中 source_map 将
+        Verilog 行号映射回 Python 源文件位置。
+        """
+        old_source_map = self.emit_source_map
+        self.emit_source_map = True
+        try:
+            verilog_text = self.emit_design(top_module)
+            source_map: dict = {}
+            for i, line in enumerate(verilog_text.split("\n"), 1):
+                stripped = line.strip()
+                if stripped.startswith("// rtlcraft: source="):
+                    # 记录源码位置供后续查找
+                    src_info = stripped[len("// rtlcraft: source="):]
+                    source_map[i] = src_info
+            return verilog_text, source_map
+        finally:
+            self.emit_source_map = old_source_map
+
+    # -----------------------------------------------------------------
+    # Module header emission (from ModuleDoc)
+    # -----------------------------------------------------------------
+    def _emit_module_header(self, module: Module):
+        """Emit a rich file header with module documentation.
+
+        Generates a structured Verilog comment block containing:
+        - File info (module name, source, author, version)
+        - Description of functionality
+        - Port information table
+        - Timing/protocol notes
+        - Per-always-block descriptions (if provided in ModuleDoc)
+        """
+        doc = getattr(module, '_module_doc', None)
+        if doc is None:
+            # Fallback: emit minimal header with module name
+            self.lines.append(f"// ==========================================================")
+            self.lines.append(f"// Module: {getattr(module, '_type_name', module.name)}")
+            self.lines.append(f"// ==========================================================")
+            self.lines.append("")
+            return
+
+        mod_name = getattr(module, '_type_name', module.name)
+        sep = "// " + "=" * 56
+
+        self.lines.append(sep)
+        self.lines.append(f"// Module       : {mod_name}")
+        if doc.source:
+            self.lines.append(f"// Source        : {doc.source}")
+        if doc.author:
+            self.lines.append(f"// Author        : {doc.author}")
+        if doc.version:
+            self.lines.append(f"// Version       : {doc.version}")
+        self.lines.append(f"// Description   : {doc.description}")
+        self.lines.append(sep)
+
+        # Port information table
+        self._emit_port_table(module)
+
+        # Timing/protocol notes
+        if doc.timing:
+            self.lines.append("//")
+            self.lines.append("// Timing / Protocol:")
+            self.lines.append(f"//   {doc.timing}")
+            self.lines.append("//")
+
+        # Additional port description
+        if doc.port_description:
+            self.lines.append("//")
+            for line in doc.port_description.splitlines():
+                self.lines.append(f"//   {line}")
+            self.lines.append("//")
+
+        self.lines.append("")
+
+    def _emit_port_table(self, module: Module):
+        """Emit a formatted table of input and output ports."""
+        inputs = list(module._inputs.values())
+        outputs = list(module._outputs.values())
+
+        if not inputs and not outputs:
+            return
+
+        self.lines.append("//")
+        self.lines.append("// Ports:")
+        self.lines.append("//   Direction | Width | Name")
+        self.lines.append("//   " + "-" * 36)
+
+        for sig in inputs:
+            w = str(sig.width) if sig.width > 1 else "1"
+            self.lines.append(f"//   {'input':<10}| {w:>5} | {sig.name}")
+        for sig in outputs:
+            w = str(sig.width) if sig.width > 1 else "1"
+            self.lines.append(f"//   {'output':<10}| {w:>5} | {sig.name}")
+        self.lines.append("//")
+
     # -----------------------------------------------------------------
     # Module emission
     # -----------------------------------------------------------------
     def _emit_module(self, module: Module):
+        # `default_nettype none` — 防止隐式 wire 推断
+        if self.profile is not None and self.profile.explicit_nettype:
+            self.lines.append("`default_nettype none")
+            self.lines.append("")
+
+        # ---- File header from ModuleDoc (agent-injected documentation) ----
+        self._emit_module_header(module)
+
         # 模块级注释与建议
         if module._module_comments or module._module_suggestions:
             for line in module._module_comments:
@@ -224,15 +362,39 @@ class VerilogEmitter:
             self._emit_implicit_submodule(inst_name, submod, module)
 
         # 组合逻辑块
+        doc = getattr(module, '_module_doc', None)
+        comb_docs = list(doc.always_descriptions) if doc else []
+        comb_idx = 0
         for body in module._comb_blocks:
+            doc_comment = ""
+            if comb_idx < len(comb_docs) and comb_docs[comb_idx][0] == "Comb":
+                doc_comment = comb_docs[comb_idx][1]
+                comb_idx += 1
+            if not doc_comment:
+                # Auto-generate comment from assigned targets
+                doc_comment = self._auto_always_comment(body, "Comb")
             if self._is_simple_comb_block(body):
-                self._emit_simple_comb(body)
+                self._emit_simple_comb(body, doc_comment=doc_comment)
             else:
-                self._emit_always_comb(body)
+                self._emit_always_comb(body, doc_comment=doc_comment)
 
         # 时序逻辑块
+        seq_docs = list(doc.always_descriptions) if doc else []
+        seq_idx = 0
+        # Skip already-used Comb entries
+        for _ in seq_docs[:]:
+            if _[0] == "Comb":
+                seq_idx += 1
+            else:
+                break
         for clk, rst, reset_async, reset_active_low, body in module._seq_blocks:
-            self._emit_always_seq(clk, rst, reset_async, reset_active_low, body)
+            doc_comment = ""
+            if seq_idx < len(seq_docs) and seq_docs[seq_idx][0] in ("Seq", "Reset"):
+                doc_comment = seq_docs[seq_idx][1]
+                seq_idx += 1
+            if not doc_comment:
+                doc_comment = self._auto_always_comment(body, "Seq")
+            self._emit_always_seq(clk, rst, reset_async, reset_active_low, body, doc_comment=doc_comment)
 
         self.lines.append("endmodule")
 
@@ -254,8 +416,130 @@ class VerilogEmitter:
                 self.lines.append(f"    initial begin")
                 self.lines.append(f"        $readmemh(\"{mem.init_file}\", {mem.name});")
                 self.lines.append(f"    end")
+            elif mem.init_data:
+                self.lines.append(f"    initial begin")
+                for idx, val in enumerate(mem.init_data):
+                    self.lines.append(f"        {mem.name}[{idx}] = {mem.width}'d{val};")
+                self.lines.append(f"    end")
+            elif mem.init_zero:
+                self.lines.append(f"    initial begin")
+                self.lines.append(f"        integer __i;")
+                self.lines.append(f"        for (__i = 0; __i < {mem.depth}; __i = __i + 1) begin")
+                self.lines.append(f"            {mem.name}[__i] = {mem.width}'d0;")
+                self.lines.append(f"        end")
+                self.lines.append(f"    end")
         if module._memories:
             self.lines.append("")
+
+    def _collect_undeclared_signals(self, module: Module) -> List[Signal]:
+        declared = set()
+        for sig in list(module._inputs.values()) + list(module._outputs.values()) + list(module._wires.values()) + list(module._regs.values()):
+            declared.add(sig.name)
+        for arr in module._arrays.values():
+            declared.add(arr.name)
+        for _, sub in module._submodules:
+            for sig in list(sub._outputs.values()):
+                declared.add(sig.name)
+        # Exclude Parameter and LocalParam references from undeclared signals
+        for p in module._params.values():
+            declared.add(p.name)
+        
+        refs = set()
+        def _scan_expr(expr):
+            if expr is None:
+                return
+            if isinstance(expr, Ref):
+                refs.add(expr.signal)
+            elif isinstance(expr, BinOp):
+                _scan_expr(expr.lhs)
+                _scan_expr(expr.rhs)
+            elif isinstance(expr, Mux):
+                _scan_expr(expr.cond)
+                _scan_expr(expr.true_expr)
+                _scan_expr(expr.false_expr)
+            elif isinstance(expr, UnaryOp):
+                _scan_expr(expr.operand)
+            elif isinstance(expr, Slice):
+                _scan_expr(expr.operand)
+            elif isinstance(expr, BitSelect):
+                _scan_expr(expr.operand)
+                _scan_expr(expr.index)
+            elif isinstance(expr, PartSelect):
+                _scan_expr(expr.operand)
+                _scan_expr(expr.offset)
+            elif isinstance(expr, Concat):
+                for op in expr.operands:
+                    _scan_expr(op)
+            elif isinstance(expr, (MemRead, ArrayRead)):
+                _scan_expr(expr.addr if hasattr(expr, 'addr') else expr.index)
+            elif isinstance(expr, (Const, GenVar, int)):
+                pass
+        
+        def _scan_stmt(stmt):
+            if isinstance(stmt, Assign):
+                if isinstance(stmt.target, Signal):
+                    refs.add(stmt.target)
+                _scan_expr(stmt.value)
+            elif isinstance(stmt, IndexedAssign):
+                _scan_expr(stmt.index)
+                _scan_expr(stmt.value)
+            elif isinstance(stmt, IfNode):
+                _scan_expr(stmt.cond)
+                for s in stmt.then_body:
+                    _scan_stmt(s)
+                for cond, body in stmt.elif_bodies:
+                    _scan_expr(cond)
+                    for s in body:
+                        _scan_stmt(s)
+                for s in stmt.else_body:
+                    _scan_stmt(s)
+            elif isinstance(stmt, WhenNode):
+                for cond, body in stmt.branches:
+                    if cond is not None:
+                        _scan_expr(cond)
+                    for s in body:
+                        _scan_stmt(s)
+            elif isinstance(stmt, SwitchNode):
+                _scan_expr(stmt.expr)
+                for _, body in stmt.cases:
+                    for s in body:
+                        _scan_stmt(s)
+                for s in stmt.default_body:
+                    _scan_stmt(s)
+            elif isinstance(stmt, (ArrayWrite, MemWrite)):
+                _scan_expr(stmt.index if hasattr(stmt, 'index') else stmt.addr)
+                _scan_expr(stmt.value)
+            elif isinstance(stmt, SubmoduleInst):
+                for expr in stmt.port_map.values():
+                    _scan_expr(_to_expr(expr))
+            elif isinstance(stmt, ForGenNode):
+                for s in stmt.body:
+                    _scan_stmt(s)
+            elif isinstance(stmt, GenIfNode):
+                for s in stmt.then_body:
+                    _scan_stmt(s)
+                for s in stmt.else_body:
+                    _scan_stmt(s)
+            elif isinstance(stmt, Comment):
+                pass
+        
+        for stmt in module._top_level:
+            _scan_stmt(stmt)
+        for body in module._comb_blocks:
+            for stmt in body:
+                _scan_stmt(stmt)
+        for clk, rst, reset_async, reset_active_low, body in module._seq_blocks:
+            for stmt in body:
+                _scan_stmt(stmt)
+        
+        undeclared = []
+        seen = set()
+        for sig in refs:
+            if sig.name not in declared and getattr(sig, '_array_parent', None) is None and sig.name not in seen:
+                seen.add(sig.name)
+                undeclared.append(sig)
+        undeclared.sort(key=lambda s: s.name)
+        return undeclared
 
     def _emit_internal_decls(self, module: Module):
         # localparam 声明
@@ -265,13 +549,20 @@ class VerilogEmitter:
         if localparams:
             self.lines.append("")
 
+        # 隐式声明
+        undeclared = self._collect_undeclared_signals(module)
+        for sig in undeclared:
+            self.lines.append(self._sig_decl("logic", sig))
+        if undeclared:
+            self.lines.append("")
+
         # internal signals (use logic so they can be driven in both assign and always)
-        for sig in module._wires.values():
+        for sig in set(module._wires.values()):
             # Skip signals that belong to an Array (declared as 2D array below)
             if getattr(sig, '_array_parent', None) is None:
                 self.lines.append(self._sig_decl("logic", sig))
         # regs
-        for sig in module._regs.values():
+        for sig in set(module._regs.values()):
             if getattr(sig, '_array_parent', None) is None:
                 self.lines.append(self._sig_decl("reg", sig))
         # arrays
@@ -286,23 +577,50 @@ class VerilogEmitter:
             for sig in sub._outputs.values():
                 if sig.name not in module._wires and sig.name not in module._regs:
                     pass  # implicit signals handled elsewhere or expected to exist
-        if module._wires or module._regs or module._arrays:
+        if module._wires or module._regs or module._arrays or undeclared:
             self.lines.append("")
 
     def _sig_decl(self, vtype: str, sig: Signal) -> str:
+        init_part = ""
+        if isinstance(sig, Reg) and getattr(sig, 'init_value', None) is not None:
+            init_part = f" = {self._emit_const_literal(sig.init_value, sig.width)}"
         if sig.width == 1:
-            return f"    {vtype} {sig.name};"
-        return f"    {vtype} [{sig.width - 1}:0] {sig.name};"
+            return f"    {vtype} {sig.name}{init_part};"
+        return f"    {vtype} [{sig.width - 1}:0] {sig.name}{init_part};"
 
     # -----------------------------------------------------------------
     # Statements
     # -----------------------------------------------------------------
+    def _emit_const_literal(self, val: int, width: int) -> str:
+        """Emit a constant literal, handling negative values as unsigned."""
+        if val < 0:
+            val = val & ((1 << width) - 1)
+            return f"{width}'h{val:x}"
+        return f"{width}'d{val}"
+
+    def _emit_assign_rhs(self, expr: Expr, target) -> str:
+        if isinstance(target, Signal) and isinstance(expr, Const):
+            if expr.width < target.width:
+                return self._emit_const_literal(int(expr.value), target.width)
+        return self._emit_expr(expr)
+
+    def _emit_source_loc(self, stmt: Any, indent_level: int):
+        """如果语句带有源码位置且启用了 source map，则发射注释。"""
+        if not self.emit_source_map:
+            return
+        loc = getattr(stmt, "source_location", None)
+        if loc is not None:
+            prefix = self.indent * indent_level
+            fname = loc.file.split("/")[-1] if loc.file else "?"
+            self.lines.append(f"{prefix}// rtlcraft: source={fname}:{loc.line}")
+
     def _emit_toplevel_stmt(self, stmt: Any):
         if isinstance(stmt, Assign):
+            self._emit_source_loc(stmt, 1)
             if isinstance(stmt.target, Signal) and self._is_mux_chain(stmt.value):
                 self._emit_mux_chain_as_case(stmt.target.name, stmt.value, 1, "assign")
                 return
-            rhs = self._emit_expr(stmt.value)
+            rhs = self._emit_assign_rhs(stmt.value, stmt.target)
             lhs = self._emit_lhs(stmt.target)
             self.lines.append(f"    assign {lhs} = {rhs};")
         elif isinstance(stmt, IndexedAssign):
@@ -330,6 +648,9 @@ class VerilogEmitter:
             # 顶层 memory write 不常见，按 assign 处理
             rhs = self._emit_expr(stmt.value)
             self.lines.append(f"    assign {stmt.mem_name}[{self._emit_expr(stmt.addr)}] = {rhs};")
+        elif isinstance(stmt, WhenNode):
+            # 顶层 When/Otherwise，按 always @(*) 处理
+            self._emit_always_comb([stmt])
         elif isinstance(stmt, Comment):
             self._emit_comment(stmt, indent_level=1)
         else:
@@ -337,9 +658,10 @@ class VerilogEmitter:
 
     def _emit_stmt(self, stmt: Any, indent_level: int, mode: str):
         """mode: 'assign' | 'comb' | 'seq'"""
+        self._emit_source_loc(stmt, indent_level)
         prefix = self.indent * indent_level
         if isinstance(stmt, Assign):
-            rhs = self._emit_expr(stmt.value)
+            rhs = self._emit_assign_rhs(stmt.value, stmt.target)
             lhs = self._emit_lhs(stmt.target)
             if mode == "assign":
                 self.lines.append(f"{prefix}assign {lhs} = {rhs};")
@@ -351,21 +673,13 @@ class VerilogEmitter:
             self.lines.append(f"{prefix}if ({self._emit_expr(stmt.cond)}) begin")
             for s in stmt.then_body:
                 self._emit_stmt(s, indent_level + 1, mode)
-            if stmt.else_body:
-                self.lines.append(f"{prefix}end else begin")
-                for s in stmt.else_body:
-                    self._emit_stmt(s, indent_level + 1, mode)
-                self.lines.append(f"{prefix}end")
-            elif mode == "comb":
-                # latch guard: always @(*) must have complete assignments
-                self.lines.append(f"{prefix}end else begin")
-                self.lines.append(f"{prefix}end")
-            else:
-                self.lines.append(f"{prefix}end")
+            self._emit_else_chain(stmt, indent_level, mode)
+        elif isinstance(stmt, WhenNode):
+            self._emit_when(stmt, indent_level, mode)
         elif isinstance(stmt, SwitchNode):
             self.lines.append(f"{prefix}case ({self._emit_expr(stmt.expr)})")
             for val, body in stmt.cases:
-                self.lines.append(f"{prefix}{self.indent}{self._emit_expr(val)}: begin")
+                self.lines.append(f"{prefix}{self.indent}{self._emit_case_label(val, stmt.expr.width)}: begin")
                 for s in body:
                     self._emit_stmt(s, indent_level + 2, mode)
                 self.lines.append(f"{prefix}{self.indent}end")
@@ -373,10 +687,6 @@ class VerilogEmitter:
                 self.lines.append(f"{prefix}{self.indent}default: begin")
                 for s in stmt.default_body:
                     self._emit_stmt(s, indent_level + 2, mode)
-                self.lines.append(f"{prefix}{self.indent}end")
-            elif mode == "comb":
-                # latch guard
-                self.lines.append(f"{prefix}{self.indent}default: begin")
                 self.lines.append(f"{prefix}{self.indent}end")
             self.lines.append(f"{prefix}endcase")
         elif isinstance(stmt, ForGenNode):
@@ -411,6 +721,30 @@ class VerilogEmitter:
         else:
             raise TypeError(f"Unknown statement: {type(stmt)}")
 
+    def _collect_assigned_targets(self, body: List[Any]) -> set:
+        targets = set()
+        for stmt in body:
+            if isinstance(stmt, Assign):
+                if isinstance(stmt.target, Signal):
+                    targets.add(stmt.target)
+            elif isinstance(stmt, IfNode):
+                targets.update(self._collect_assigned_targets(stmt.then_body))
+                for _, body in stmt.elif_bodies:
+                    targets.update(self._collect_assigned_targets(body))
+                targets.update(self._collect_assigned_targets(stmt.else_body))
+            elif isinstance(stmt, WhenNode):
+                for _, body in stmt.branches:
+                    targets.update(self._collect_assigned_targets(body))
+            elif isinstance(stmt, SwitchNode):
+                for _, case_body in stmt.cases:
+                    targets.update(self._collect_assigned_targets(case_body))
+                targets.update(self._collect_assigned_targets(stmt.default_body))
+            elif isinstance(stmt, (ForGenNode, GenIfNode)):
+                targets.update(self._collect_assigned_targets(stmt.body))
+                if hasattr(stmt, 'else_body'):
+                    targets.update(self._collect_assigned_targets(stmt.else_body))
+        return targets
+
     def _is_simple_comb_block(self, body: List[Any]) -> bool:
         """判断 comb block 是否仅由 assign / indexed assign / array write / comment 组成。"""
         for stmt in body:
@@ -418,23 +752,49 @@ class VerilogEmitter:
                 return False
         return True
 
-    def _emit_simple_comb(self, body: List[Any]):
-        """将简单 comb block 输出为 assign 语句（避免 iverilog 中 always @(*) time-0 X 问题）。
+    def _emit_cse_decls(self, cse_wires: List[Signal]):
+        for w in cse_wires:
+            if w.width == 1:
+                self.lines.append(f"    logic {w.name};")
+            else:
+                self.lines.append(f"    logic [{w.width - 1}:0] {w.name};")
+        if cse_wires:
+            self.lines.append("")
 
-        如果 block 中包含级联 Mux（查表模式），则统一输出为 always @(*) case，以提高可读性。
+    def _emit_simple_comb(self, body: List[Any], doc_comment: str = ""):
+        """Emit simple comb block as assign statements.
+
+        If doc_comment is provided, emit a key comment before the block.
         """
+        if doc_comment:
+            self.lines.append(f"    // Comb: {doc_comment}")
         has_mux_chain = any(
             isinstance(stmt, Assign) and isinstance(stmt.target, Signal) and self._is_mux_chain(stmt.value) for stmt in body
         )
         if has_mux_chain:
-            self.lines.append("    always @(*) begin")
+            if not self.disable_cse:
+                body = self._cse_pass(body)
+            cse_wires = []
+            cse_assigns = []
+            rest = []
             for stmt in body:
+                if isinstance(stmt, Assign) and isinstance(stmt.target, Wire) and stmt.target.name.startswith("_cse_"):
+                    cse_wires.append(stmt.target)
+                    cse_assigns.append(stmt)
+                else:
+                    rest.append(stmt)
+            self._emit_cse_decls(cse_wires)
+            self.lines.append("    always @(*) begin")
+            for stmt in cse_assigns:
+                lhs = self._emit_lhs(stmt.target)
+                self.lines.append(f"        {lhs} = {self._emit_expr(stmt.value)};")
+            for stmt in rest:
                 if isinstance(stmt, Assign):
                     if isinstance(stmt.target, Signal) and self._is_mux_chain(stmt.value):
                         self._emit_mux_chain_as_case(stmt.target.name, stmt.value, 2, "comb")
                     else:
                         lhs = self._emit_lhs(stmt.target)
-                        self.lines.append(f"        {lhs} = {self._emit_expr(stmt.value)};")
+                        self.lines.append(f"        {lhs} = {self._emit_assign_rhs(stmt.value, stmt.target)};")
                 elif isinstance(stmt, IndexedAssign):
                     self.lines.append(
                         f"        {stmt.target_signal.name}[{self._emit_expr(stmt.index)}] = {self._emit_expr(stmt.value)};"
@@ -449,9 +809,25 @@ class VerilogEmitter:
             self.lines.append("")
             return
 
+        if not self.disable_cse:
+            body = self._cse_pass(body)
+        cse_wires = []
+        cse_assigns = []
+        rest = []
         for stmt in body:
+            if isinstance(stmt, Assign) and isinstance(stmt.target, Wire) and stmt.target.name.startswith("_cse_"):
+                cse_wires.append(stmt.target)
+                cse_assigns.append(stmt)
+            else:
+                rest.append(stmt)
+        self._emit_cse_decls(cse_wires)
+        for stmt in cse_assigns:
+            lhs = self._emit_lhs(stmt.target)
+            rhs = self._emit_expr(stmt.value)
+            self.lines.append(f"    assign {lhs} = {rhs};")
+        for stmt in rest:
             if isinstance(stmt, Assign):
-                rhs = self._emit_expr(stmt.value)
+                rhs = self._emit_assign_rhs(stmt.value, stmt.target)
                 lhs = self._emit_lhs(stmt.target)
                 self.lines.append(f"    assign {lhs} = {rhs};")
             elif isinstance(stmt, IndexedAssign):
@@ -469,23 +845,291 @@ class VerilogEmitter:
         if body:
             self.lines.append("")
 
-    def _emit_always_comb(self, body: List[Any]):
-        keyword = "always_comb" if self.use_sv_always else "always @(*)"
-        self.lines.append(f"    {keyword} begin")
+    def _expr_signature(self, expr: Any) -> tuple:
+        if isinstance(expr, Const):
+            return ("const", int(expr.value), expr.width)
+        if isinstance(expr, Ref):
+            return ("ref", expr.signal.name)
+        if isinstance(expr, BinOp):
+            return ("binop", expr.op, self._expr_signature(expr.lhs), self._expr_signature(expr.rhs), expr.width)
+        if isinstance(expr, UnaryOp):
+            return ("unary", expr.op, self._expr_signature(expr.operand), expr.width)
+        if isinstance(expr, Mux):
+            return ("mux", self._expr_signature(expr.cond), self._expr_signature(expr.true_expr), self._expr_signature(expr.false_expr), expr.width)
+        if isinstance(expr, Concat):
+            return ("concat", tuple(self._expr_signature(op) for op in expr.operands), expr.width)
+        if isinstance(expr, Slice):
+            return ("slice", self._expr_signature(expr.operand), expr.hi, expr.lo, expr.width)
+        if isinstance(expr, PartSelect):
+            return ("partsel", self._expr_signature(expr.operand), self._expr_signature(expr.offset), expr.width)
+        if isinstance(expr, BitSelect):
+            return ("bitsel", self._expr_signature(expr.operand), self._expr_signature(expr.index), expr.width)
+        return ("unknown", type(expr).__name__, id(expr))
+
+    def _cse_pass(self, body: List[Any]) -> List[Any]:
+        subexprs = {}
+
+        def collect_expr(expr):
+            if expr is None or isinstance(expr, (int, GenVar)):
+                return
+            sig = self._expr_signature(expr)
+            if sig in subexprs:
+                subexprs[sig][1] += 1
+            else:
+                subexprs[sig] = [expr, 1]
+            if isinstance(expr, BinOp):
+                collect_expr(expr.lhs)
+                collect_expr(expr.rhs)
+            elif isinstance(expr, Mux):
+                collect_expr(expr.cond)
+                collect_expr(expr.true_expr)
+                collect_expr(expr.false_expr)
+            elif isinstance(expr, UnaryOp):
+                collect_expr(expr.operand)
+            elif isinstance(expr, (Slice, PartSelect, BitSelect)):
+                collect_expr(expr.operand)
+                if hasattr(expr, 'index'):
+                    collect_expr(expr.index)
+                if hasattr(expr, 'offset'):
+                    collect_expr(expr.offset)
+            elif isinstance(expr, Concat):
+                for op in expr.operands:
+                    collect_expr(op)
+
+        def collect_stmt(stmt):
+            if isinstance(stmt, Assign):
+                collect_expr(stmt.value)
+            elif isinstance(stmt, IndexedAssign):
+                collect_expr(stmt.index)
+                collect_expr(stmt.value)
+            elif isinstance(stmt, IfNode):
+                collect_expr(stmt.cond)
+                for s in stmt.then_body:
+                    collect_stmt(s)
+                for cond, body in stmt.elif_bodies:
+                    collect_expr(cond)
+                    for s in body:
+                        collect_stmt(s)
+                for s in stmt.else_body:
+                    collect_stmt(s)
+            elif isinstance(stmt, WhenNode):
+                for cond, body in stmt.branches:
+                    if cond is not None:
+                        collect_expr(cond)
+                    for s in body:
+                        collect_stmt(s)
+            elif isinstance(stmt, SwitchNode):
+                collect_expr(stmt.expr)
+                for _, case_body in stmt.cases:
+                    for s in case_body:
+                        collect_stmt(s)
+                for s in stmt.default_body:
+                    collect_stmt(s)
+            elif isinstance(stmt, (ArrayWrite, MemWrite)):
+                collect_expr(stmt.index if hasattr(stmt, 'index') else stmt.addr)
+                collect_expr(stmt.value)
+
         for stmt in body:
+            collect_stmt(stmt)
+
+        # 找出重复的非平凡子表达式
+        duplicates = {}
+        for sig, (expr, count) in subexprs.items():
+            if count > 1 and isinstance(expr, (BinOp, UnaryOp, Mux, Concat)):
+                duplicates[sig] = expr
+
+        if not duplicates:
+            return body
+
+        replacements = {}
+        new_stmts = []
+        for sig, expr in duplicates.items():
+            wire_name = f"_cse_{self._cse_counter}"
+            self._cse_counter += 1
+            wire = Wire(expr.width, wire_name)
+            new_stmts.append(Assign(wire, expr, blocking=True))
+            replacements[sig] = wire
+
+        def replace_expr(expr):
+            sig = self._expr_signature(expr)
+            if sig in replacements:
+                return Ref(replacements[sig])
+            if isinstance(expr, BinOp):
+                return BinOp(expr.op, replace_expr(expr.lhs), replace_expr(expr.rhs), expr.width)
+            if isinstance(expr, UnaryOp):
+                return UnaryOp(expr.op, replace_expr(expr.operand), expr.width)
+            if isinstance(expr, Mux):
+                return Mux(replace_expr(expr.cond), replace_expr(expr.true_expr), replace_expr(expr.false_expr), expr.width)
+            if isinstance(expr, Concat):
+                return Concat([replace_expr(op) for op in expr.operands], expr.width)
+            if isinstance(expr, Slice):
+                return Slice(replace_expr(expr.operand), expr.hi, expr.lo)
+            if isinstance(expr, PartSelect):
+                return PartSelect(replace_expr(expr.operand), replace_expr(expr.offset), expr.width)
+            if isinstance(expr, BitSelect):
+                return BitSelect(replace_expr(expr.operand), replace_expr(expr.index))
+            return expr
+
+        def replace_stmt(stmt):
+            if isinstance(stmt, Assign):
+                return Assign(stmt.target, replace_expr(stmt.value), stmt.blocking)
+            if isinstance(stmt, IndexedAssign):
+                return IndexedAssign(stmt.target_signal, replace_expr(stmt.index), replace_expr(stmt.value), stmt.blocking)
+            if isinstance(stmt, IfNode):
+                new_if = IfNode(replace_expr(stmt.cond))
+                new_if.then_body = [replace_stmt(s) for s in stmt.then_body]
+                new_if.elif_bodies = [(replace_expr(c), [replace_stmt(s) for s in b]) for c, b in stmt.elif_bodies]
+                new_if.else_body = [replace_stmt(s) for s in stmt.else_body]
+                return new_if
+            if isinstance(stmt, SwitchNode):
+                new_sw = SwitchNode(replace_expr(stmt.expr))
+                new_sw.cases = [(replace_expr(val), [replace_stmt(s) for s in case_body]) for val, case_body in stmt.cases]
+                new_sw.default_body = [replace_stmt(s) for s in stmt.default_body]
+                return new_sw
+            if isinstance(stmt, (ArrayWrite, MemWrite)):
+                # 简化：不深入处理
+                pass
+            return stmt
+
+        result = list(new_stmts)
+        for stmt in body:
+            result.append(replace_stmt(stmt))
+        return result
+
+    def _auto_always_comment(self, body: List[Any], block_type: str) -> str:
+        """Auto-generate a comment for an always block by analyzing assigned targets."""
+        targets: set = set()
+        def _gather(stmts):
+            for s in stmts:
+                if isinstance(s, Assign) and isinstance(s.target, Signal):
+                    targets.add(s.target.name)
+                elif isinstance(s, IfNode):
+                    _gather(s.then_body)
+                    for _, b in s.elif_bodies:
+                        _gather(b)
+                    _gather(s.else_body)
+                elif isinstance(s, SwitchNode):
+                    for _, b in s.cases:
+                        _gather(b)
+                    _gather(s.default_body)
+        _gather(body)
+        if not targets:
+            return ""
+        sorted_targets = sorted(targets)
+        if len(sorted_targets) <= 3:
+            target_str = ", ".join(sorted_targets)
+        else:
+            target_str = ", ".join(sorted_targets[:3]) + f" (+{len(sorted_targets) - 3})"
+        return f"{block_type}: {target_str}"
+
+    def _emit_always_comb(self, body: List[Any], doc_comment: str = ""):
+        """Emit a combinational logic block.
+
+        If doc_comment is provided, emit a key comment before the block
+        explaining what it does.
+        """
+        keyword = "always_comb" if self.use_sv_always else "always @(*)"
+        if not self.disable_cse:
+            body = self._cse_pass(body)
+
+        cse_wires = []
+        cse_assigns = []
+        rest = []
+        for stmt in body:
+            if isinstance(stmt, Assign) and isinstance(stmt.target, Wire) and stmt.target.name.startswith("_cse_"):
+                cse_wires.append(stmt.target)
+                cse_assigns.append(stmt)
+            else:
+                rest.append(stmt)
+
+        for w in cse_wires:
+            if w.width == 1:
+                self.lines.append(f"    logic {w.name};")
+            else:
+                self.lines.append(f"    logic [{w.width - 1}:0] {w.name};")
+        if cse_wires:
+            self.lines.append("")
+
+        if doc_comment:
+            self.lines.append(f"    // Comb: {doc_comment}")
+        self.lines.append(f"    {keyword} begin")
+        for stmt in cse_assigns:
+            self._emit_stmt(stmt, 2, "comb")
+        for stmt in rest:
             self._emit_stmt(stmt, 2, "comb")
         self.lines.append("    end")
         self.lines.append("")
 
-    def _emit_always_seq(self, clk: Signal, rst: Optional[Signal], reset_async: bool, reset_active_low: bool, body: List[Any]):
-        if rst is not None and reset_async:
-            if reset_active_low:
-                sens = f"posedge {clk.name} or negedge {rst.name}"
+    def _emit_else_chain(self, stmt: IfNode, indent_level: int, mode: str):
+        prefix = self.indent * indent_level
+        for cond, body in stmt.elif_bodies:
+            self.lines.append(f"{prefix}end else if ({self._emit_expr(cond)}) begin")
+            for s in body:
+                self._emit_stmt(s, indent_level + 1, mode)
+        if stmt.else_body:
+            # Flatten else { if (...) } → else if (...)
+            if len(stmt.else_body) == 1 and isinstance(stmt.else_body[0], IfNode):
+                inner = stmt.else_body[0]
+                self.lines.append(f"{prefix}end else if ({self._emit_expr(inner.cond)}) begin")
+                for s in inner.then_body:
+                    self._emit_stmt(s, indent_level + 1, mode)
+                self._emit_else_chain(inner, indent_level, mode)
             else:
-                sens = f"posedge {clk.name} or posedge {rst.name}"
+                self.lines.append(f"{prefix}end else begin")
+                for s in stmt.else_body:
+                    self._emit_stmt(s, indent_level + 1, mode)
+                self.lines.append(f"{prefix}end")
         else:
+            self.lines.append(f"{prefix}end")
+
+    def _emit_when(self, stmt: Any, indent_level: int, mode: str):
+        """Emit WhenNode as a series of if/else if/else blocks."""
+        prefix = self.indent * indent_level
+        first = True
+        for cond, body in stmt.branches:
+            if cond is None:
+                # otherwise branch
+                self.lines.append(f"{prefix}end else begin")
+            elif first:
+                self.lines.append(f"{prefix}if ({self._emit_expr(cond)}) begin")
+                first = False
+            else:
+                self.lines.append(f"{prefix}end else if ({self._emit_expr(cond)}) begin")
+            for s in body:
+                self._emit_stmt(s, indent_level + 1, mode)
+        self.lines.append(f"{prefix}end")
+
+    def _emit_always_seq(self, clk: Signal, rst: Optional[Signal], reset_async: bool, reset_active_low: bool, body: List[Any], doc_comment: str = ""):
+        """Emit a sequential logic block.
+
+        If doc_comment is provided, emit a key comment before the block
+        explaining what it does.
+        """
+        # Profile override for reset style
+        reset_style = self.profile.reset_style if self.profile else None
+        if reset_style == "sync":
+            # Synchronous reset: omit reset from sensitivity list
             sens = f"posedge {clk.name}"
-        keyword = "always_ff" if self.use_sv_always else "always"
+        elif reset_style == "async_high":
+            sens = f"posedge {clk.name} or posedge {rst.name}" if rst is not None else f"posedge {clk.name}"
+        elif reset_style == "async_low":
+            sens = f"posedge {clk.name} or negedge {rst.name}" if rst is not None else f"posedge {clk.name}"
+        else:
+            # Fallback to decorator-provided settings
+            if rst is not None and reset_async:
+                if reset_active_low:
+                    sens = f"posedge {clk.name} or negedge {rst.name}"
+                else:
+                    sens = f"posedge {clk.name} or posedge {rst.name}"
+            else:
+                sens = f"posedge {clk.name}"
+
+        # Profile override for always_ff
+        use_always_ff = self.use_sv_always or (self.profile is not None and self.profile.always_ff)
+        keyword = "always_ff" if use_always_ff else "always"
+
+        if doc_comment:
+            self.lines.append(f"    // Seq: {doc_comment}")
         self.lines.append(f"    {keyword} @({sens}) begin")
         for stmt in body:
             self._emit_stmt(stmt, 2, "seq")
@@ -494,20 +1138,29 @@ class VerilogEmitter:
 
     def _emit_for_gen(self, stmt: Any, indent_level: int, mode: str):
         prefix = self.indent * indent_level
+        step = getattr(stmt, 'step', 1)
+        if step > 0:
+            cond_op = "<"
+            step_expr = f"{stmt.var_name} + {step}"
+        elif step < 0:
+            cond_op = ">"
+            step_expr = f"{stmt.var_name} - {-step}"
+        else:
+            raise ValueError("ForGen step cannot be zero")
         if mode == "assign":
             # 模块顶层：使用 genvar + generate for
             self.lines.append(f"{prefix}genvar {stmt.var_name};")
             self.lines.append(
                 f"{prefix}for ({stmt.var_name} = {stmt.start}; "
-                f"{stmt.var_name} < {stmt.end}; "
-                f"{stmt.var_name} = {stmt.var_name} + 1) begin : genblk"
+                f"{stmt.var_name} {cond_op} {stmt.end}; "
+                f"{stmt.var_name} = {step_expr}) begin : genblk"
             )
         else:
             # always 块内：使用 integer for
             self.lines.append(
                 f"{prefix}for (integer {stmt.var_name} = {stmt.start}; "
-                f"{stmt.var_name} < {stmt.end}; "
-                f"{stmt.var_name} = {stmt.var_name} + 1) begin"
+                f"{stmt.var_name} {cond_op} {stmt.end}; "
+                f"{stmt.var_name} = {step_expr}) begin"
             )
         for s in stmt.body:
             self._emit_stmt(s, indent_level + 1, mode)
@@ -518,6 +1171,10 @@ class VerilogEmitter:
         self.lines.append(f"{prefix}if ({self._emit_expr(stmt.cond)}) begin : genif")
         for s in stmt.then_body:
             self._emit_stmt(s, indent_level + 1, "assign")
+        for cond, body in stmt.elif_bodies:
+            self.lines.append(f"{prefix}end else if ({self._emit_expr(cond)}) begin : genelif")
+            for s in body:
+                self._emit_stmt(s, indent_level + 1, "assign")
         if stmt.else_body:
             self.lines.append(f"{prefix}end else begin : genelse")
             for s in stmt.else_body:
@@ -607,8 +1264,15 @@ class VerilogEmitter:
         elif isinstance(stmt, IfNode):
             for s in stmt.then_body:
                 self._scan_stmt_for_reg_outputs(s, mode, reg_outputs)
+            for _, body in stmt.elif_bodies:
+                for s in body:
+                    self._scan_stmt_for_reg_outputs(s, mode, reg_outputs)
             for s in stmt.else_body:
                 self._scan_stmt_for_reg_outputs(s, mode, reg_outputs)
+        elif isinstance(stmt, WhenNode):
+            for _, body in stmt.branches:
+                for s in body:
+                    self._scan_stmt_for_reg_outputs(s, mode, reg_outputs)
         elif isinstance(stmt, SwitchNode):
             for _, body in stmt.cases:
                 for s in body:
@@ -680,13 +1344,14 @@ class VerilogEmitter:
     def _emit_lhs(self, target) -> str:
         if isinstance(target, Signal):
             return target.name
-        return self._emit_expr(target)
+        return self._emit_expr(target, for_lhs=True)
 
     def _emit_mux_chain_as_case(self, target_name: str, expr: Expr, indent_level: int, mode: str):
         """将级联 Mux 输出为 case 语句（可选 always @(*) 包装）。"""
         prefix = self.indent * indent_level
         inner = self.indent * (indent_level + 1)
         sel_expr, cases, default_expr = self._extract_mux_chain(expr)
+        selector_width = sel_expr.width
         op = "=" if mode in ("assign", "comb") else "<="
         wrap_always = mode in ("assign",)
         if wrap_always:
@@ -698,7 +1363,8 @@ class VerilogEmitter:
         item_prefix = self.indent * (case_indent + 1)
         self.lines.append(f"{case_prefix}case ({self._emit_expr(sel_expr)})")
         for const_val, true_expr in cases:
-            self.lines.append(f"{item_prefix}{const_val}: {target_name} {op} {self._emit_expr(true_expr)};")
+            width = max(const_val.bit_length(), 1, selector_width)
+            self.lines.append(f"{item_prefix}{width}'d{const_val}: {target_name} {op} {self._emit_expr(true_expr)};")
         self.lines.append(f"{item_prefix}default: {target_name} {op} {self._emit_expr(default_expr)};")
         self.lines.append(f"{case_prefix}endcase")
         if wrap_always:
@@ -712,39 +1378,95 @@ class VerilogEmitter:
             return str(int(v.value))
         return self._emit_expr(_to_expr(v))
 
-    def _emit_expr(self, expr: Expr) -> str:
+    def _precedence(self, op: str) -> int:
+        precedence_map = {
+            '!': 10, '~': 10,
+            '*': 9, '/': 9, '%': 9,
+            '+': 8, '-': 8,
+            '<<': 7, '>>': 7,
+            '<': 6, '<=': 6, '>': 6, '>=': 6,
+            '==': 5, '!=': 5, '===': 5, '!==': 5,
+            '&': 4,
+            '^': 3, '~^': 3,
+            '|': 2,
+            '&&': 3,
+            '||': 2,
+            '?': 1,
+        }
+        return precedence_map.get(op, 0)
+
+    def _is_signed(self, expr: Expr) -> bool:
+        """判断表达式是否引用了有符号信号。"""
+        if isinstance(expr, Ref):
+            return getattr(expr.signal, "signed", False)
+        if isinstance(expr, Signal):
+            return getattr(expr, "signed", False)
+        if isinstance(expr, BinOp):
+            return self._is_signed(expr.lhs) or self._is_signed(expr.rhs)
+        return False
+
+    def _emit_expr(self, expr: Expr, parent_op: Optional[str] = None, for_lhs: bool = False) -> str:
         if isinstance(expr, int):
             width = max(expr.bit_length(), 1)
             return f"{width}'d{expr}"
         if isinstance(expr, Const):
             val = int(expr.value)
-            return f"{expr.width}'d{val}"
+            return self._emit_const_literal(val, expr.width)
         if isinstance(expr, Ref):
+            if getattr(expr.signal, "signed", False) and not for_lhs:
+                return f"$signed({expr.signal.name})"
             return expr.signal.name
         if isinstance(expr, BinOp):
-            return f"({self._emit_expr(expr.lhs)} {expr.op} {self._emit_expr(expr.rhs)})"
+            op_str = expr.op
+            # Arithmetic right shift: emit Verilog >>> operator
+            if op_str == '>>>':
+                lhs_str = self._emit_expr(expr.lhs, expr.op, for_lhs)
+                rhs_str = self._emit_expr(expr.rhs, expr.op, for_lhs)
+                s = f"{lhs_str} >>> {rhs_str}"
+                if parent_op is not None and self._precedence(expr.op) < self._precedence(parent_op):
+                    return f"({s})"
+                return s
+            s = f"{self._emit_expr(expr.lhs, expr.op, for_lhs)} {expr.op} {self._emit_expr(expr.rhs, expr.op, for_lhs)}"
+            if parent_op is not None and self._precedence(expr.op) < self._precedence(parent_op):
+                return f"({s})"
+            return s
         if isinstance(expr, UnaryOp):
-            return f"({expr.op}{self._emit_expr(expr.operand)})"
+            s = f"{expr.op}{self._emit_expr(expr.operand, expr.op, for_lhs)}"
+            if parent_op is not None and self._precedence(expr.op) < self._precedence(parent_op):
+                return f"({s})"
+            return s
         if isinstance(expr, Slice):
             if expr.hi == expr.lo:
-                return f"{self._emit_expr(expr.operand)}[{expr.hi}]"
-            return f"{self._emit_expr(expr.operand)}[{expr.hi}:{expr.lo}]"
+                return f"{self._emit_expr(expr.operand, parent_op, for_lhs)}[{expr.hi}]"
+            return f"{self._emit_expr(expr.operand, parent_op, for_lhs)}[{expr.hi}:{expr.lo}]"
         if isinstance(expr, PartSelect):
-            return f"{self._emit_expr(expr.operand)}[{self._emit_expr(expr.offset)} +: {expr.width}]"
+            return f"{self._emit_expr(expr.operand, parent_op, for_lhs)}[{self._emit_expr(expr.offset, parent_op, for_lhs)} +: {expr.width}]"
         if isinstance(expr, Concat):
-            parts = ", ".join(self._emit_expr(op) for op in expr.operands)
+            parts = ", ".join(self._emit_expr(op, parent_op, for_lhs) for op in expr.operands)
             return f"{{{parts}}}"
         if isinstance(expr, Mux):
-            return f"({self._emit_expr(expr.cond)} ? {self._emit_expr(expr.true_expr)} : {self._emit_expr(expr.false_expr)})"
+            s = f"{self._emit_expr(expr.cond, '?')} ? {self._emit_expr(expr.true_expr, '?')} : {self._emit_expr(expr.false_expr, '?')}"
+            if parent_op is not None and self._precedence('?') < self._precedence(parent_op):
+                return f"({s})"
+            return s
         if isinstance(expr, MemRead):
-            return f"{expr.mem_name}[{self._emit_expr(expr.addr)}]"
+            return f"{expr.mem_name}[{self._emit_expr(expr.addr, parent_op)}]"
         if isinstance(expr, ArrayRead):
-            return f"{expr.array_name}[{self._emit_expr(expr.index)}]"
+            return f"{expr.array_name}[{self._emit_expr(expr.index, parent_op)}]"
         if isinstance(expr, BitSelect):
-            return f"{self._emit_expr(expr.operand)}[{self._emit_expr(expr.index)}]"
+            return f"{self._emit_expr(expr.operand, parent_op)}[{self._emit_expr(expr.index, parent_op)}]"
         if isinstance(expr, GenVar):
             return expr.name
         raise TypeError(f"Unknown expression: {type(expr)}")
+
+    def _emit_case_label(self, expr: Expr, selector_width: int) -> str:
+        if isinstance(expr, Const):
+            width = max(expr.width, selector_width)
+            return self._emit_const_literal(int(expr.value), width)
+        if isinstance(expr, int):
+            width = max(expr.bit_length(), 1, selector_width)
+            return self._emit_const_literal(expr, width)
+        return self._emit_expr(expr)
 
 
 def _to_expr(val: Any) -> Expr:
@@ -761,3 +1483,295 @@ def _to_expr(val: Any) -> Expr:
     if isinstance(val, Expr):
         return val
     raise TypeError(f"Cannot convert {type(val)} to expression")
+
+
+# =====================================================================
+# Documentation Injection — Mandatory Verilog Comment Injection
+# =====================================================================
+
+@dataclass
+class ModuleDocTemplate:
+    """Structured template for agent-driven Verilog documentation injection.
+
+    Each field has a **prompt** that guides the agent on what to fill in.
+    The agent should call ``fill_doc_template(template, module)`` to
+    convert the filled template into a ``ModuleDoc`` attached to the module.
+
+    **File-level template fields:**
+    - ``source``: Where the DSL came from (e.g., "C910IFU — Phase 3, Step 1")
+    - ``description``: What the module does in 1-2 sentences
+    - ``author``: Who/agent created it
+    - ``version``: Version string (e.g., "1.0", "0.3-beta")
+    - ``timing``: Key timing or protocol description (clocks, latencies, handshakes)
+    - ``port_description``: Additional notes about ports or interface behavior
+
+    **Per-always-block template entries:**
+    Each entry is a dict with:
+    - ``block_type``: "Comb" (combinational), "Seq" (sequential), "Reset" (reset handling), "Generate" (generate block)
+    - ``targets``: List of signals this block drives
+    - ``description``: What this block does in plain language
+    - ``timing_notes``: Optional timing notes (e.g., "2-cycle latency", "registered output")
+    """
+    source: str = ""
+    description: str = ""
+    author: str = "rtlgen agent"
+    version: str = "1.0"
+    timing: str = ""
+    port_description: str = ""
+    always_descriptions: List[Dict[str, str]] = field(default_factory=list)
+
+    def validate(self) -> List[str]:
+        """Return a list of validation warnings (empty if all fields are filled)."""
+        warnings = []
+        if not self.source:
+            warnings.append("source: specify where this DSL was generated from")
+        if not self.description:
+            warnings.append("description: describe what this module does")
+        if not self.timing:
+            warnings.append("timing: describe key timing or protocol behavior")
+        for i, entry in enumerate(self.always_descriptions):
+            if "description" not in entry or not entry["description"]:
+                warnings.append(f"always_descriptions[{i}]: each block needs a description")
+            if "block_type" not in entry or entry["block_type"] not in ("Comb", "Seq", "Reset", "Generate"):
+                warnings.append(f"always_descriptions[{i}]: block_type must be Comb/Seq/Reset/Generate")
+        return warnings
+
+    def fill_always(self, block_type: str, description: str, timing_notes: str = "",
+                    targets: List[str] = None) -> None:
+        """Add an always block entry.
+
+        Args:
+            block_type: "Comb" | "Seq" | "Reset" | "Generate"
+            description: What this block does in plain language
+            timing_notes: Optional timing notes
+            targets: List of signals this block drives
+        """
+        entry: Dict[str, Any] = {"block_type": block_type, "description": description}
+        if timing_notes:
+            entry["timing_notes"] = timing_notes
+        if targets:
+            entry["targets"] = targets
+        self.always_descriptions.append(entry)
+
+
+def fill_doc_template(template: ModuleDocTemplate, module: Module) -> Module:
+    """Convert a filled ModuleDocTemplate into a ModuleDoc attached to the module.
+
+    This is the recommended way for agents to inject documentation.
+
+    Example:
+        tpl = ModuleDocTemplate(
+            source="C910IFU — Phase 3, Step 1",
+            description="Superscalar instruction fetch unit with BTB/BHT/RAS "
+                        "branch prediction and 8-wide fetch bandwidth.",
+            timing="Multi-cycle pipeline: PCGEN -> BPU lookup -> ICache fetch -> "
+                   "output bundle. Flush propagates in 1 cycle.",
+        )
+        tpl.fill_always("Comb", "PC next selection: redirect target vs PC+increment")
+        tpl.fill_always("Comb", "BTB tag match and target lookup")
+        tpl.fill_always("Seq", "PC register update with async reset to boot vector")
+        fill_doc_template(tpl, ifu_module)
+    """
+    warnings = template.validate()
+    if warnings:
+        # Warn but still inject — the agent should fix warnings in development
+        import warnings as _warnings
+        for w in warnings:
+            _warnings.warn(f"ModuleDocTemplate validation: {w}", stacklevel=2)
+
+    always_tuples: List[Tuple[str, str]] = []
+    for entry in template.always_descriptions:
+        desc = entry.get("description", "")
+        timing = entry.get("timing_notes", "")
+        if timing:
+            desc = f"{desc} ({timing})"
+        always_tuples.append((entry["block_type"], desc))
+
+    return inject_doc_comments(
+        module,
+        source=template.source,
+        description=template.description,
+        author=template.author,
+        version=template.version,
+        timing=template.timing,
+        port_description=template.port_description,
+        always_descriptions=always_tuples,
+    )
+
+
+def inject_doc_comments(
+    module: Module,
+    *,
+    source: str = "",
+    description: str = "",
+    author: str = "rtlgen agent",
+    version: str = "1.0",
+    timing: str = "",
+    port_description: str = "",
+    always_descriptions: Optional[List[Tuple[str, str]]] = None,
+    force: bool = True,
+) -> Module:
+    """Inject structured documentation into a Module for Verilog comment generation.
+
+    This function **must** be called by the agent before emitting any module to
+    Verilog. It attaches a ``ModuleDoc`` to the module, which the ``VerilogEmitter``
+    uses to generate:
+
+    - File header (module name, source, author, version, description)
+    - Port information table
+    - Timing / protocol notes
+    - Per-always-block key comments (// Comb: ... / // Seq: ...)
+
+    Args:
+        module: The DSL Module to annotate.
+        source: Where this DSL was generated from (e.g., "C910IFU Phase 3, Step 1").
+        description: What this module does in plain language.
+        author: Who/agent created it.
+        version: Version string.
+        timing: Key timing or protocol description.
+        port_description: Additional port notes.
+        always_descriptions: List of (block_type, description) tuples.
+            block_type is one of: "Comb", "Seq", "Reset", "Generate".
+        force: If True, overwrite existing _module_doc. If False, only set if missing.
+
+    Returns:
+        The same module (for chaining).
+
+    Example:
+        inject_doc_comments(
+            ifu_module,
+            source="C910IFU — Phase 3, Step 1 (Agent implementation)",
+            description="Superscalar instruction fetch unit with BTB/BHT/RAS "
+                        "branch prediction and 8-wide fetch bandwidth.",
+            timing="Multi-cycle pipeline: PCGEN -> BPU lookup -> ICache fetch -> "
+                   "output bundle. Flush propagates in 1 cycle.",
+            always_descriptions=[
+                ("Comb", "PC next selection: redirect target vs PC+increment"),
+                ("Comb", "BTB tag match and target lookup"),
+                ("Seq", "PC register update with async reset to boot vector"),
+                ("Seq", "BHT counter update on branch feedback"),
+            ],
+        )
+    """
+    if not force and module._module_doc is not None:
+        return module
+
+    if always_descriptions is None:
+        always_descriptions = _auto_detect_always_descriptions(module)
+
+    module._module_doc = ModuleDoc(
+        source=source,
+        description=description,
+        author=author,
+        version=version,
+        timing=timing,
+        port_description=port_description,
+        always_descriptions=always_descriptions,
+    )
+    return module
+
+
+def inject_doc_all_modules(top_module: Module, *, source: str = "",
+                           description: str = "", **kwargs) -> Module:
+    """Inject documentation into top_module and all its submodules.
+
+    Traverses the module hierarchy and calls inject_doc_comments on each module.
+    For submodules, auto-generates source/description from module name and type.
+
+    Returns the top_module (for chaining).
+    """
+    visited = set()
+
+    def _dfs(mod: Module, parent_path: str):
+        if id(mod) in visited:
+            return
+        visited.add(id(mod))
+        path = f"{parent_path}.{mod.name}" if parent_path else mod.name
+        mod_source = f"{source} ({path})" if source else f"{path} DSL"
+        mod_desc = description or f"{getattr(mod, '_type_name', mod.name)} module"
+
+        # Only inject if module has no doc yet
+        if mod._module_doc is None:
+            inject_doc_comments(
+                mod,
+                source=mod_source,
+                description=mod_desc,
+                **kwargs,
+            )
+
+        # Recurse into submodules
+        for inst_name, submod in mod._submodules:
+            _dfs(submod, path)
+
+        # Recurse into comb/seq block submodules
+        def _scan_stmts(stmts):
+            for stmt in stmts:
+                if isinstance(stmt, SubmoduleInst):
+                    _dfs(stmt.module, path)
+
+        for body in mod._comb_blocks:
+            _scan_stmts(body)
+        for _, _, _, _, body in mod._seq_blocks:
+            _scan_stmts(body)
+        _scan_stmts(mod._top_level)
+
+    _dfs(top_module, "")
+    return top_module
+
+
+def _auto_detect_always_descriptions(module: Module) -> List[Tuple[str, str]]:
+    """Auto-detect always block descriptions by analyzing module structure.
+
+    This is a fallback when the agent does not provide explicit always_descriptions.
+    It examines assigned targets and generates descriptive comments.
+    """
+    docs: List[Tuple[str, str]] = []
+
+    for body in module._comb_blocks:
+        targets: set = set()
+        for stmt in body:
+            if isinstance(stmt, Assign) and isinstance(stmt.target, Signal):
+                targets.add(stmt.target.name)
+            elif isinstance(stmt, IfNode):
+                _collect_target_names(stmt.then_body, targets)
+                _collect_target_names(stmt.else_body, targets)
+                for _, b in stmt.elif_bodies:
+                    _collect_target_names(b, targets)
+            elif isinstance(stmt, SwitchNode):
+                for _, b in stmt.cases:
+                    _collect_target_names(b, targets)
+                _collect_target_names(stmt.default_body, targets)
+        desc = ", ".join(sorted(targets)[:5])
+        if len(targets) > 5:
+            desc += f" (+{len(targets) - 5})"
+        docs.append(("Comb", desc))
+
+    for _, rst, reset_async, reset_active_low, body in module._seq_blocks:
+        targets: set = set()
+        _collect_target_names(body, targets)
+        if rst is not None:
+            rst_type = "async low" if reset_active_low else "async high"
+            desc = f"{', '.join(sorted(targets)[:4])} (reset: {rst_type})"
+        else:
+            desc = ", ".join(sorted(targets)[:5])
+        if len(targets) > 5:
+            desc += f" (+{len(targets) - 5})"
+        docs.append(("Seq", desc))
+
+    return docs
+
+
+def _collect_target_names(stmts: list, targets: set):
+    """Helper: collect signal names from assignment targets in a statement list."""
+    for s in stmts:
+        if isinstance(s, Assign) and isinstance(s.target, Signal):
+            targets.add(s.target.name)
+        elif isinstance(s, IfNode):
+            _collect_target_names(s.then_body, targets)
+            _collect_target_names(s.else_body, targets)
+            for _, b in s.elif_bodies:
+                _collect_target_names(b, targets)
+        elif isinstance(s, SwitchNode):
+            for _, b in s.cases:
+                _collect_target_names(b, targets)
+            _collect_target_names(s.default_body, targets)

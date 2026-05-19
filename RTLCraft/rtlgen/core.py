@@ -5,9 +5,59 @@ rtlgen.core — 基础信号、AST 与模块容器
 """
 from __future__ import annotations
 
+import inspect
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+
+# ---------------------------------------------------------------------
+# Module Documentation — Structured metadata for Verilog comment injection
+# ---------------------------------------------------------------------
+
+@dataclass
+class ModuleDoc:
+    """Structured documentation metadata for a Module.
+
+    When attached to a Module, the VerilogEmitter uses this to generate
+    a rich file header with: file info, purpose, port table, timing diagram,
+    and per-always-block descriptions.
+
+    Usage:
+        mod._module_doc = ModuleDoc(
+            source="C910IFU DSL (Phase 3, Step 1)",
+            description="Superscalar instruction fetch unit with branch prediction",
+            timing="On each cycle: pc_next selected → BTB lookup → ICache fetch → output",
+            always_descriptions=[
+                ("Comb", "PC next logic: increment or redirect target"),
+                ("Seq", "PC register update, async reset to boot vector"),
+            ],
+        )
+    """
+    source: str = ""                          # Where this DSL was generated from
+    description: str = ""                      # What this module does
+    author: str = ""                           # Who/agent created it
+    version: str = ""                          # Version string
+    timing: str = ""                           # Key timing/protocol description
+    port_description: str = ""                 # Additional port notes
+    always_descriptions: List[Tuple[str, str]] = field(default_factory=list)
+    """List of (block_type, description) tuples.
+    block_type: "Comb" | "Seq" | "Reset" | "Generate"
+    description: what this block does in plain language.
+    """
+
+
+@dataclass
+class IntentContext:
+    """Design intent metadata injected by the agent.
+
+    Helps the emitter produce more meaningful comments by understanding
+    what each block is supposed to achieve.
+    """
+    purpose: str = ""          # High-level purpose (e.g., "instruction fetch pipeline")
+    key_signals: List[str] = field(default_factory=list)
+    timing_notes: List[str] = field(default_factory=list)
+    constraints: List[str] = field(default_factory=list)
+
 
 # ---------------------------------------------------------------------
 # AST Nodes
@@ -16,6 +66,13 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 class Expr:
     def __init__(self, width: int = 1):
         self.width = width
+
+
+@dataclass
+class SourceLoc:
+    """Python 源代码位置，用于 AST 节点的溯源映射。"""
+    file: str
+    line: int
 
 
 class Const(Expr):
@@ -94,6 +151,7 @@ class Assign:
         self.target = target
         self.value = value
         self.blocking = blocking
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class IfNode:
@@ -101,6 +159,8 @@ class IfNode:
         self.cond = cond
         self.then_body: List[Any] = []
         self.else_body: List[Any] = []
+        # elif support: list of (cond_expr, body) pairs
+        self.elif_bodies: List[Tuple[Expr, List[Any]]] = []
 
 
 class GenIfNode:
@@ -108,6 +168,7 @@ class GenIfNode:
         self.cond = cond
         self.then_body: List[Any] = []
         self.else_body: List[Any] = []
+        self.elif_bodies: List[Tuple[Expr, List[Any]]] = []
 
 
 class SwitchNode:
@@ -115,6 +176,18 @@ class SwitchNode:
         self.expr = expr
         self.cases: List[Tuple[Expr, List[Any]]] = []
         self.default_body: List[Any] = []
+
+
+class WhenNode:
+    """SpinalHDL-style when/otherwise conditional assignment collector.
+    
+    Unlike IfNode which emits nested if/else, WhenNode collects
+    conditional assignments and emits them as a single priority
+    mux chain or if/elif/else block.
+    """
+    def __init__(self):
+        self.branches: List[Tuple[Optional[Expr], List[Any]]] = []
+        # Each branch is (condition, body). condition=None means 'otherwise'.
 
 
 class SubmoduleInst:
@@ -239,6 +312,21 @@ class ArrayProxy:
     def __rmod__(self, other):
         return _make_binop("%", other, self)
 
+    def __floordiv__(self, other):
+        return _make_binop("/", self, other)
+
+    def __rfloordiv__(self, other):
+        return _make_binop("/", other, self)
+
+    def __truediv__(self, other):
+        return _make_binop("/", self, other)
+
+    def __rtruediv__(self, other):
+        return _make_binop("/", other, self)
+
+    def __neg__(self):
+        return _make_unop("-", self)
+
     def __invert__(self):
         return _make_unop("~", self)
 
@@ -332,11 +420,13 @@ class Comment:
 class Memory:
     """硬件存储器（生成 Verilog reg [width-1:0] name [0:depth-1]）。"""
 
-    def __init__(self, width: int, depth: int, name: str = "", init_file: Optional[str] = None):
+    def __init__(self, width: int, depth: int, name: str = "", init_file: Optional[str] = None, init_zero: bool = False, init_data: Optional[list] = None):
         self.width = width
         self.depth = depth
         self.name = name
         self.init_file = init_file
+        self.init_zero = init_zero
+        self.init_data = init_data
         self.addr_width = max(depth.bit_length(), 1)
 
     def __getitem__(self, addr: Any):
@@ -360,10 +450,11 @@ class Memory:
 
 
 class ForGenNode:
-    def __init__(self, var_name: str, start: int, end: int):
+    def __init__(self, var_name: str, start: int, end: int, step: int = 1):
         self.var_name = var_name
         self.start = start
         self.end = end
+        self.step = step
         self.body: List[Any] = []
 
 
@@ -520,13 +611,13 @@ def _expr_equal(a: Expr, b: Expr) -> bool:
     if isinstance(a, BitSelect):
         return _expr_equal(a.operand, b.operand) and _expr_equal(a.index, b.index)
     if isinstance(a, Concat):
-        return len(a.parts) == len(b.parts) and all(_expr_equal(x, y) for x, y in zip(a.parts, b.parts))
+        return len(a.operands) == len(b.operands) and all(_expr_equal(x, y) for x, y in zip(a.operands, b.operands))
     if isinstance(a, Mux):
         return _expr_equal(a.cond, b.cond) and _expr_equal(a.true_expr, b.true_expr) and _expr_equal(a.false_expr, b.false_expr)
     if isinstance(a, MemRead):
-        return a.mem is b.mem and _expr_equal(a.addr, b.addr)
+        return a.mem_name == b.mem_name and _expr_equal(a.addr, b.addr)
     if isinstance(a, ArrayRead):
-        return a.array is b.array and _expr_equal(a.addr, b.addr)
+        return a.array_name == b.array_name and _expr_equal(a.index, b.index)
     if isinstance(a, GenVar):
         return a.name == b.name
     return False
@@ -543,6 +634,13 @@ def _derive_partselect_width(hi_expr: Expr, lo_expr: Expr) -> Optional[int]:
             return hi_expr.rhs.value + 1
         if _expr_equal(hi_expr.rhs, lo_expr) and isinstance(hi_expr.lhs, Const):
             return hi_expr.lhs.value + 1
+    # 情况 3: hi = base + n, lo = base + m (common base, different constants)
+    if (isinstance(hi_expr, BinOp) and hi_expr.op == '+' and isinstance(hi_expr.rhs, Const)
+            and isinstance(lo_expr, BinOp) and lo_expr.op == '+' and isinstance(lo_expr.rhs, Const)):
+        if _expr_equal(hi_expr.lhs, lo_expr.lhs):
+            return hi_expr.rhs.value - lo_expr.rhs.value + 1
+        if _expr_equal(hi_expr.rhs, lo_expr.lhs) and _expr_equal(hi_expr.lhs, lo_expr.rhs):
+            return hi_expr.lhs.value - lo_expr.lhs.value + 1
     return None
 
 
@@ -553,10 +651,11 @@ def _derive_partselect_width(hi_expr: Expr, lo_expr: Expr) -> Optional[int]:
 class Signal:
     """硬件信号基类，支持位宽推导与运算符重载。"""
 
-    def __init__(self, width: int = 1, name: str = "", signed: bool = False):
+    def __init__(self, width: int = 1, name: str = "", signed: bool = False, init_value: Optional[int] = None):
         self.width = width
         self.name = name
         self.signed = signed
+        self.init_value = init_value
         self._expr = Ref(self)
         self._driven_by: Optional[str] = None  # "comb" | "seq"
         self._parent_module: Optional["Module"] = None  # owning module
@@ -703,6 +802,21 @@ class Signal:
     def __rmod__(self, other):
         return _make_binop("%", other, self)
 
+    def __floordiv__(self, other):
+        return _make_binop("/", self, other)
+
+    def __rfloordiv__(self, other):
+        return _make_binop("/", other, self)
+
+    def __truediv__(self, other):
+        return _make_binop("/", self, other)
+
+    def __rtruediv__(self, other):
+        return _make_binop("/", other, self)
+
+    def __neg__(self):
+        return _make_unop("-", self)
+
     def __invert__(self):
         return _make_unop("~", self)
 
@@ -750,6 +864,20 @@ class Signal:
     def __rrshift__(self, other):
         return _make_binop(">>", other, self, width=_to_expr(other).width)
 
+    def as_sint(self) -> "Signal":
+        """返回此信号的有符号版本（用于算术运算中的符号扩展）。"""
+        s = Signal(self.width, self.name)
+        s.signed = True
+        s._expr = self._expr
+        return s
+
+    def as_uint(self) -> "Signal":
+        """返回此信号的无符号版本（显式消除有符号语义）。"""
+        s = Signal(self.width, self.name)
+        s.signed = False
+        s._expr = self._expr
+        return s
+
     def __repr__(self):
         return f"{self.__class__.__name__}({self.width})<{self.name or 'anonymous'}>"
 
@@ -770,7 +898,7 @@ class Wire(Signal):
 
 
 class Reg(Signal):
-    """时序逻辑寄存器。"""
+    """时序逻辑寄存器。支持 init_value 以生成 Verilog 初始值声明。"""
     pass
 
 
@@ -855,10 +983,10 @@ class Parameter:
         return _param_binop("*", other, self)
 
     def __eq__(self, other):
-        return _param_binop("==", self, other)
+        return _param_binop("==", self, other, width=1)
 
     def __ne__(self, other):
-        return _param_binop("!=", self, other)
+        return _param_binop("!=", self, other, width=1)
 
     def __lt__(self, other):
         return _param_binop("<", self, other)
@@ -879,6 +1007,76 @@ class Parameter:
 class LocalParam(Parameter):
     """硬件局部参数，用于生成 localparam WIDTH = 8;"""
     pass
+
+
+# ---------------------------------------------------------------------
+# Intent
+# ---------------------------------------------------------------------
+
+class IntentContext:
+    """设计约束目标上下文，用于声明 PPA 期望。"""
+
+    def __init__(self):
+        self.latency_cycles: Optional[int] = None
+        self.throughput: Optional[str] = None       # "1" (每周期一个) | "N" | "variable"
+        self.clock_freq: Optional[float] = None     # Hz
+        self.area_budget: Optional[int] = None      # estimated gate count budget
+        self.power_budget: Optional[float] = None   # mW (optional)
+
+
+# ---------------------------------------------------------------------
+# Context Managers for comb / seq
+# ---------------------------------------------------------------------
+
+class _CombContext:
+    """Context manager for combinational logic: ``with self.comb:`` or ``@self.comb``."""
+
+    def __init__(self, module: "Module"):
+        self._module = module
+
+    def __enter__(self):
+        body: List[Any] = []
+        self._module._comb_blocks.append(body)
+        Context.push(Context(module=self._module, stmt_container=body))
+        return self
+
+    def __exit__(self, *args):
+        Context.pop()
+
+    def __call__(self, func: Callable) -> Callable:
+        """Decorator compatibility: @self.comb still works."""
+        with self:
+            func()
+        return func
+
+
+class _SeqContext:
+    """Context manager for sequential logic: ``with self.seq(clk, rst):`` or ``@self.seq(clk, rst)``."""
+
+    def __init__(self, module: "Module", clock: Signal, reset: Optional[Signal] = None,
+                 reset_async: bool = False, reset_active_low: bool = False):
+        self._module = module
+        self._clock = clock
+        self._reset = reset
+        self._reset_async = reset_async
+        self._reset_active_low = reset_active_low
+        self._body: List[Any] = []
+
+    def __enter__(self):
+        self._module._seq_blocks.append(
+            (self._clock, self._reset, self._reset_async, self._reset_active_low, self._body)
+        )
+        Context.push(Context(module=self._module, stmt_container=self._body))
+        return self
+
+    def __exit__(self, *args):
+        Context.pop()
+
+    def __call__(self, func: Callable) -> Callable:
+        """Decorator compatibility: @self.seq(clk, rst) still works."""
+        with self:
+            func()
+        return func
 
 
 # ---------------------------------------------------------------------
@@ -912,6 +1110,21 @@ class Context:
     @classmethod
     def pop(cls):
         cls._local.stack.pop()
+
+    @classmethod
+    def _capture_location(cls) -> Optional[SourceLoc]:
+        """捕获调用者的 Python 源代码位置（跳过内部框架帧）。"""
+        try:
+            frame = inspect.currentframe()
+            # Walk up until we find a frame NOT from core.py
+            while frame is not None:
+                fname = frame.f_code.co_filename
+                if 'rtlgen/core.py' not in fname and 'rtlgen\\core.py' not in fname:
+                    return SourceLoc(file=frame.f_code.co_filename, line=frame.f_lineno)
+                frame = frame.f_back
+        except Exception:
+            pass
+        return None
 
 
 # ---------------------------------------------------------------------
@@ -993,7 +1206,9 @@ class Module(metaclass=ModuleMeta):
         self._module_comments: List[str] = []
         self._module_assertions: List[Tuple[str, str]] = []
         self._module_suggestions: List[str] = []
+        self._module_doc: Optional[ModuleDoc] = None
         self._parent: Optional["Module"] = None
+        self._design_intent: Optional[IntentContext] = None
 
     def add_comment(self, text: str):
         """向模块添加顶层注释，生成 Verilog 时会被放在模块头部。"""
@@ -1071,6 +1286,8 @@ class Module(metaclass=ModuleMeta):
                         target_dict.setdefault(id(ts), []).append(stmt)
                 elif isinstance(stmt, IfNode):
                     _collect_stmt_assigns(stmt.then_body, target_dict)
+                    for _, body in stmt.elif_bodies:
+                        _collect_stmt_assigns(body, target_dict)
                     _collect_stmt_assigns(stmt.else_body, target_dict)
                 elif isinstance(stmt, SwitchNode):
                     for _, body in stmt.cases:
@@ -1241,7 +1458,443 @@ class Module(metaclass=ModuleMeta):
         if _rule_on("valid_ready_protocol") and (self._comb_blocks or self._seq_blocks):
             self._lint_valid_ready(violations, seq_driven, comb_driven)
 
+        # ================================================================
+        # Rule: narrow_const — 窄常量用于宽上下文
+        # ================================================================
+        if _rule_on("narrow_const"):
+            self._lint_narrow_const(violations)
+
+        # ================================================================
+        # Rule: redundant_assignment — 同一信号在同一块中被多次赋值（后写覆盖前写）
+        # ================================================================
+        if _rule_on("redundant_assignment"):
+            self._lint_redundant_assignment(violations)
+
+        # ================================================================
+        # Rule: missing_case_default — Switch 缺少 default 分支
+        # ================================================================
+        if _rule_on("missing_case_default"):
+            self._lint_missing_case_default(violations)
+
+        # ================================================================
+        # Rule: missing_default_assignment — comb 块缺少默认赋值（latch 风险）
+        # ================================================================
+        if _rule_on("missing_default_assignment"):
+            self._lint_missing_default_assignment(violations)
+
+        # ================================================================
+        # Rule: narrow_const_comparison — 1 位信号与 1'd1 比较
+        # ================================================================
+        if _rule_on("narrow_const_comparison"):
+            self._lint_narrow_const_comparison(violations)
+
+        # ================================================================
+        # Rule: width_truncation — 表达式位宽大于目标信号位宽（隐式截断）
+        # ================================================================
+        if _rule_on("width_truncation"):
+            self._lint_width_truncation(violations)
+
+        # ================================================================
+        # Rule: signed_mix — 有符号与无符号信号混合运算
+        # ================================================================
+        if _rule_on("signed_mix"):
+            self._lint_signed_mix(violations)
+
         return violations
+
+    def _lint_narrow_const(self, violations: List[str]):
+        """检查 Const 节点的位宽是否与其使用上下文匹配。
+
+        规则：当 Const 作为赋值目标时，如果 Const.width < target.width，
+        说明常量位宽不一致，可能在 Verilog 中产生 1'd0 写入 32 位寄存器。
+        """
+        def _collect_narrow_consts(stmts, context_widths: Dict):
+            for stmt in stmts:
+                if isinstance(stmt, Assign):
+                    target = None
+                    if isinstance(stmt.target, Signal):
+                        target = stmt.target
+                        tw = target.width
+                    elif isinstance(stmt.target, Ref):
+                        target = stmt.target.signal
+                        tw = target.width
+                    elif isinstance(stmt.target, (Slice, BitSelect)):
+                        t = stmt.target
+                        while isinstance(t, (Slice, BitSelect)) and hasattr(t, "operand"):
+                            t = t.operand
+                        if isinstance(t, Ref):
+                            target = t.signal
+                            tw = t.signal.width
+                        else:
+                            continue
+                    else:
+                        continue
+                    # 检查 Const 在 value 中是否有窄常量
+                    self._check_narrow_in_expr(stmt.value, tw, violations, target.name if target else "?")
+                elif isinstance(stmt, IfNode):
+                    _collect_narrow_consts(stmt.then_body, context_widths)
+                    for _, body in stmt.elif_bodies:
+                        _collect_narrow_consts(body, context_widths)
+                    _collect_narrow_consts(stmt.else_body, context_widths)
+                elif isinstance(stmt, SwitchNode):
+                    for _, body in stmt.cases:
+                        _collect_narrow_consts(body, context_widths)
+                    _collect_narrow_consts(stmt.default_body, context_widths)
+
+        for body in self._comb_blocks:
+            _collect_narrow_consts(body, {})
+        for _, _, _, _, body in self._seq_blocks:
+            _collect_narrow_consts(body, {})
+
+    def _check_narrow_in_expr(self, expr: Expr, target_width: int, violations: List[str], target_name: str, depth: int = 0):
+        """递归检查表达式中是否有位宽远小于上下文的 Const。"""
+        if expr is None:
+            return
+        if isinstance(expr, Const):
+            if expr.width == 1 and target_width > 4 and expr.value == 0:
+                # Only flag if this Const is a direct assignment value (depth 0)
+                if depth == 0:
+                    violations.append(
+                        f"[NarrowConst] Constant {expr.width}'d{expr.value} assigned to "
+                        f"{target_width}-bit signal '{target_name}'. "
+                        f"Consider using {target_width}'d{expr.value} for consistency."
+                    )
+            return
+        if isinstance(expr, Mux):
+            self._check_narrow_in_expr(expr.true_expr, target_width, violations, target_name, depth + 1)
+            self._check_narrow_in_expr(expr.false_expr, target_width, violations, target_name, depth + 1)
+            self._check_narrow_in_expr(expr.cond, target_width, violations, target_name, depth + 1)
+        if isinstance(expr, BinOp):
+            self._check_narrow_in_expr(expr.lhs, target_width, violations, target_name, depth + 1)
+            self._check_narrow_in_expr(expr.rhs, target_width, violations, target_name, depth + 1)
+        if isinstance(expr, UnaryOp):
+            self._check_narrow_in_expr(expr.operand, target_width, violations, target_name, depth + 1)
+        if isinstance(expr, Concat):
+            for op in expr.operands:
+                self._check_narrow_in_expr(op, target_width, violations, target_name, depth + 1)
+
+    def _lint_redundant_assignment(self, violations: List[str]):
+        """检查同一 comb 块中是否有顶层顺序赋值覆盖控制流内的赋值。
+
+        典型场景：Switch 之后紧跟 If 写同一信号，导致 Switch 的结果被覆盖。
+        Switch/if/else 分支内部对同一信号的多次赋值不算冗余（正常多路径赋值）。
+        """
+        def _extract_target_name(stmt) -> str | None:
+            if isinstance(stmt, Assign):
+                if isinstance(stmt.target, Signal):
+                    return stmt.target.name
+                elif isinstance(stmt.target, Ref):
+                    return stmt.target.signal.name
+            return None
+
+        def _collect_assigned_sigs_in_stmt(stmt, acc: Set[str]):
+            """递归收集语句内部被赋值的所有信号名。"""
+            if isinstance(stmt, Assign):
+                name = _extract_target_name(stmt)
+                if name:
+                    acc.add(name)
+            elif isinstance(stmt, IfNode):
+                for s in stmt.then_body:
+                    _collect_assigned_sigs_in_stmt(s, acc)
+                for _, body in stmt.elif_bodies:
+                    for s in body:
+                        _collect_assigned_sigs_in_stmt(s, acc)
+                for s in stmt.else_body:
+                    _collect_assigned_sigs_in_stmt(s, acc)
+            elif isinstance(stmt, SwitchNode):
+                for _, case_body in stmt.cases:
+                    for s in case_body:
+                        _collect_assigned_sigs_in_stmt(s, acc)
+                for s in stmt.default_body:
+                    _collect_assigned_sigs_in_stmt(s, acc)
+
+        for i, body in enumerate(self._comb_blocks):
+            # 场景: SwitchNode 之后紧跟 IfNode 写同一信号
+            # 例如：Switch 所有 case 写 out，之后 if(en) out = 0xFF 覆盖
+            # 注意：多个 IfNode 串行（如 BarrelShifter）不算冗余，
+            # 只有 Switch（有 default，覆盖所有路径）之后的 If 才算覆盖。
+            switch_sigs: Set[str] = set()
+            for j, stmt in enumerate(body):
+                if isinstance(stmt, SwitchNode):
+                    _collect_assigned_sigs_in_stmt(stmt, switch_sigs)
+                elif isinstance(stmt, IfNode) and switch_sigs:
+                    if_sigs: Set[str] = set()
+                    _collect_assigned_sigs_in_stmt(stmt, if_sigs)
+                    overlap = switch_sigs & if_sigs
+                    for sig_name in sorted(overlap):
+                        violations.append(
+                            f"[RedundantAssign] Signal '{sig_name}' is assigned in a Switch "
+                            f"block in @comb #{i}, then overridden by a following If block. "
+                            f"The Switch result is dead code. Wrap into if/else chain."
+                        )
+
+            # 场景 2: 多个顶层赋值在控制流之前（dead code）
+            pre_cf_counts: Dict[str, int] = {}
+            for stmt in body:
+                if isinstance(stmt, (IfNode, SwitchNode)):
+                    break
+                name = _extract_target_name(stmt)
+                if name:
+                    pre_cf_counts[name] = pre_cf_counts.get(name, 0) + 1
+
+            for sig_name, count in pre_cf_counts.items():
+                if count > 1:
+                    violations.append(
+                        f"[RedundantAssign] Signal '{sig_name}' is assigned {count} times "
+                        f"before control flow in @comb #{i}. Later assignments override earlier ones."
+                    )
+        # Note: seq blocks intentionally assign same signal from different branches (reset/normal)
+        # so we only check comb blocks where sequential assignments indicate dead code.
+
+    def _lint_missing_case_default(self, violations: List[str]):
+        """检查所有 SwitchNode 是否有 default 分支。
+
+        缺少 default 的 case 在组合逻辑中可能推断出 latch。
+        """
+        def _scan_switches(stmts):
+            for stmt in stmts:
+                if isinstance(stmt, SwitchNode):
+                    if not stmt.default_body:
+                        violations.append(
+                            f"[MissingCaseDefault] Switch on '{self._expr_name(stmt.expr)}' has no "
+                            f"default branch. Add a default to prevent latch inference in comb logic."
+                        )
+                elif isinstance(stmt, IfNode):
+                    _scan_switches(stmt.then_body)
+                    for _, body in stmt.elif_bodies:
+                        _scan_switches(body)
+                    _scan_switches(stmt.else_body)
+
+        for body in self._comb_blocks:
+            _scan_switches(body)
+
+    def _expr_name(self, expr) -> str:
+        if isinstance(expr, Ref):
+            return expr.signal.name
+        if isinstance(expr, Const):
+            return str(expr.value)
+        return "?"
+
+    def _lint_missing_default_assignment(self, violations: List[str]):
+        """检查 comb 块中是否有信号在 if/switch 中被赋值但没有默认值。
+
+        专业 RTL 模式：always @(*) 块顶部应有所有被条件赋值的信号的默认赋值。
+        """
+        def _check_comb_block(body):
+            # 收集所有在条件分支中被赋值的信号
+            conditional_sigs: Set[str] = set()
+            # 收集所有在块顶部的默认赋值（在任何 if/switch 之前）
+            default_sigs: Set[str] = set()
+
+            seen_control_flow = False
+            for stmt in body:
+                if isinstance(stmt, Assign) and not seen_control_flow:
+                    name = None
+                    if isinstance(stmt.target, Signal):
+                        name = stmt.target.name
+                    elif isinstance(stmt.target, Ref):
+                        name = stmt.target.signal.name
+                    if name:
+                        default_sigs.add(name)
+                elif isinstance(stmt, (IfNode, SwitchNode)):
+                    seen_control_flow = True
+                    self._collect_assigned_sigs(stmt, conditional_sigs)
+
+            missing = conditional_sigs - default_sigs
+            for sig in sorted(missing):
+                violations.append(
+                    f"[MissingDefaultAssign] Signal '{sig}' is conditionally assigned in comb block "
+                    f"but has no default assignment at block top. Add '{sig} = {sig};' to prevent latch."
+                )
+
+        for i, body in enumerate(self._comb_blocks):
+            _check_comb_block(body)
+
+    def _collect_assigned_sigs(self, stmt, sigs: Set[str]):
+        if isinstance(stmt, Assign):
+            name = None
+            if isinstance(stmt.target, Signal):
+                name = stmt.target.name
+            elif isinstance(stmt.target, Ref):
+                name = stmt.target.signal.name
+            if name:
+                sigs.add(name)
+        elif isinstance(stmt, IfNode):
+            for s in stmt.then_body:
+                self._collect_assigned_sigs(s, sigs)
+            for _, body in stmt.elif_bodies:
+                for s in body:
+                    self._collect_assigned_sigs(s, sigs)
+            for s in stmt.else_body:
+                self._collect_assigned_sigs(s, sigs)
+        elif isinstance(stmt, SwitchNode):
+            for _, b in stmt.cases:
+                for s in b:
+                    self._collect_assigned_sigs(s, sigs)
+            for s in stmt.default_body:
+                self._collect_assigned_sigs(s, sigs)
+
+    def _lint_narrow_const_comparison(self, violations: List[str]):
+        """检查 1 位信号是否与 1'd1 做 == 比较（冗余）。
+
+        例如：shift_amount[0] == 1'd1 — 1 位信号本身已经是布尔值，
+        直接写 shift_amount[0] 即可。
+        """
+        def _scan_expr(expr, context=""):
+            if isinstance(expr, BinOp) and expr.op == "==" and expr.width == 1:
+                is_one = (isinstance(expr.lhs, Const) and expr.lhs.value == 1 and expr.lhs.width == 1) or \
+                         (isinstance(expr.rhs, Const) and expr.rhs.value == 1 and expr.rhs.width == 1)
+                is_zero = (isinstance(expr.lhs, Const) and expr.lhs.value == 0 and expr.lhs.width == 1) or \
+                          (isinstance(expr.rhs, Const) and expr.rhs.value == 0 and expr.rhs.width == 1)
+                if is_one or is_zero:
+                    other = expr.rhs if isinstance(expr.lhs, Const) else expr.lhs
+                    if isinstance(other, (Slice, BitSelect)) and other.width == 1:
+                        operand_name = self._expr_name(other.operand) if isinstance(other.operand, Ref) else "?"
+                        idx = other.hi if isinstance(other, Slice) else (other.index if isinstance(other.index, Const) else "?")
+                        violations.append(
+                            f"[NarrowConstComparison] Redundant comparison "
+                            f"'{operand_name}[{idx}] == 1'd1'. Use '{operand_name}[{idx}]' directly."
+                        )
+            if isinstance(expr, BinOp):
+                _scan_expr(expr.lhs, context)
+                _scan_expr(expr.rhs, context)
+            if isinstance(expr, Mux):
+                _scan_expr(expr.cond, context)
+            if isinstance(expr, UnaryOp):
+                _scan_expr(expr.operand, context)
+
+        def _scan_stmt(stmt):
+            if isinstance(stmt, Assign):
+                _scan_expr(stmt.value)
+            elif isinstance(stmt, IfNode):
+                _scan_expr(stmt.cond)
+                for s in stmt.then_body:
+                    _scan_stmt(s)
+                for cond, body in stmt.elif_bodies:
+                    _scan_expr(cond)
+                    for s in body:
+                        _scan_stmt(s)
+                for s in stmt.else_body:
+                    _scan_stmt(s)
+            elif isinstance(stmt, SwitchNode):
+                _scan_expr(stmt.expr)
+                for _, body in stmt.cases:
+                    for s in body:
+                        _scan_stmt(s)
+
+        for body in self._comb_blocks:
+            for stmt in body:
+                _scan_stmt(stmt)
+        for _, _, _, _, body in self._seq_blocks:
+            for stmt in body:
+                _scan_stmt(stmt)
+
+    def _lint_width_truncation(self, violations: List[str]):
+        """检查赋值目标位宽是否小于表达式推导位宽（隐式截断风险）。"""
+        def _check_expr(expr, target_width: int, sig_name: str, depth: int = 0):
+            if expr is None:
+                return
+            if isinstance(expr, BinOp):
+                inferred = _infer_width(expr.op, expr.lhs, expr.rhs)
+                if depth == 0 and inferred > target_width:
+                    violations.append(
+                        f"[WidthTruncation] Expression '{expr.op}' ({expr.lhs.width}b {expr.op} {expr.rhs.width}b = {inferred}b) "
+                        f"assigned to {target_width}-bit signal '{sig_name}'. "
+                        f"Upper {inferred - target_width} bit(s) will be truncated. Use .trunc() or extend target if intended."
+                    )
+                _check_expr(expr.lhs, target_width, sig_name, depth + 1)
+                _check_expr(expr.rhs, target_width, sig_name, depth + 1)
+            elif isinstance(expr, Mux):
+                _check_expr(expr.true_expr, target_width, sig_name, depth + 1)
+                _check_expr(expr.false_expr, target_width, sig_name, depth + 1)
+            elif isinstance(expr, Concat):
+                for op in expr.operands:
+                    _check_expr(op, target_width, sig_name, depth + 1)
+            elif isinstance(expr, UnaryOp):
+                _check_expr(expr.operand, target_width, sig_name, depth + 1)
+
+        def _scan_stmt(stmt):
+            if isinstance(stmt, Assign):
+                target = None
+                tw = 0
+                if isinstance(stmt.target, Signal):
+                    target = stmt.target
+                    tw = target.width
+                elif isinstance(stmt.target, Ref):
+                    target = stmt.target.signal
+                    tw = target.width
+                if target and tw > 0:
+                    _check_expr(stmt.value, tw, target.name)
+            elif isinstance(stmt, IfNode):
+                for s in stmt.then_body:
+                    _scan_stmt(s)
+                for _, body in stmt.elif_bodies:
+                    for s in body:
+                        _scan_stmt(s)
+                for s in stmt.else_body:
+                    _scan_stmt(s)
+            elif isinstance(stmt, SwitchNode):
+                for _, body in stmt.cases:
+                    for s in body:
+                        _scan_stmt(s)
+                for s in stmt.default_body:
+                    _scan_stmt(s)
+
+        for body in self._comb_blocks:
+            for stmt in body:
+                _scan_stmt(stmt)
+        for _, _, _, _, body in self._seq_blocks:
+            for stmt in body:
+                _scan_stmt(stmt)
+
+    def _lint_signed_mix(self, violations: List[str]):
+        """检查有符号信号与无符号信号直接混合运算（未显式 cast）。"""
+        def _check_mixed(lhs: Expr, rhs: Expr, sig_name: str):
+            l_sig = None
+            r_sig = None
+            if isinstance(lhs, Ref):
+                l_sig = lhs.signal
+            elif isinstance(lhs, Signal):
+                l_sig = lhs
+            if isinstance(rhs, Ref):
+                r_sig = rhs.signal
+            elif isinstance(rhs, Signal):
+                r_sig = rhs
+            if l_sig and r_sig and getattr(l_sig, "signed", False) != getattr(r_sig, "signed", False):
+                violations.append(
+                    f"[SignedMix] Signed signal '{l_sig.name}' and unsigned signal '{r_sig.name}' "
+                    f"used in the same expression assigned to '{sig_name}'. "
+                    f"Use .as_sint() or .as_uint() to clarify intent."
+                )
+
+        def _scan_stmt(stmt):
+            if isinstance(stmt, Assign):
+                target_name = ""
+                if isinstance(stmt.target, Signal):
+                    target_name = stmt.target.name
+                if isinstance(stmt.value, BinOp):
+                    _check_mixed(stmt.value.lhs, stmt.value.rhs, target_name)
+            elif isinstance(stmt, IfNode):
+                for s in stmt.then_body:
+                    _scan_stmt(s)
+                for _, body in stmt.elif_bodies:
+                    for s in body:
+                        _scan_stmt(s)
+                for s in stmt.else_body:
+                    _scan_stmt(s)
+            elif isinstance(stmt, SwitchNode):
+                for _, body in stmt.cases:
+                    for s in body:
+                        _scan_stmt(s)
+                for s in stmt.default_body:
+                    _scan_stmt(s)
+
+        for body in self._comb_blocks:
+            for stmt in body:
+                _scan_stmt(stmt)
+        for _, _, _, _, body in self._seq_blocks:
+            for stmt in body:
+                _scan_stmt(stmt)
 
     def _lint_valid_ready(self, violations: List[str], seq_driven: Set[int], comb_driven: Set[int]):
         """检查 valid/ready 握手协议的正确性。
@@ -1402,7 +2055,7 @@ class Module(metaclass=ModuleMeta):
         elif isinstance(value, Memory):
             value.name = value.name or key
             object.__setattr__(self, key, value)
-            self._memories[key] = value
+            self._memories[value.name] = value
         elif isinstance(value, Vector):
             value.name = value.name or key
             object.__setattr__(self, key, value)
@@ -1434,52 +2087,54 @@ class Module(metaclass=ModuleMeta):
         else:
             object.__setattr__(self, key, value)
 
-    # ---- decorators ---------------------------------------------------
-    def comb(self, func: Callable) -> Callable:
-        """组合逻辑块装饰器。
+    # ---- comb / seq blocks --------------------------------------------
+    @property
+    def comb(self) -> _CombContext:
+        """Combinational logic context manager.
 
-        示例:
+        Usage:
+            with self.comb:
+                self.y <<= self.a + self.b
+
+        Or as decorator (backward compatible):
             @self.comb
             def my_logic():
-                sum_wire <<= a + b
+                self.y <<= self.a + self.b
         """
-        body: List[Any] = []
-        self._comb_blocks.append(body)
+        return _CombContext(self)
 
-        def wrapper(*args, **kwargs):
-            Context.push(Context(module=self, stmt_container=body))
-            try:
-                func(*args, **kwargs)
-            finally:
-                Context.pop()
+    def seq(self, clock: Signal, reset: Optional[Signal] = None,
+            reset_async: bool = False, reset_active_low: bool = False) -> _SeqContext:
+        """Sequential logic context manager.
 
-        wrapper()
-        return wrapper
+        Usage:
+            with self.seq(clk, rst, reset_async=True, reset_active_low=True):
+                with If(rst == 0):
+                    self.count <<= 0
+                with Else():
+                    self.count <<= self.count + 1
 
-    def seq(self, clock: Signal, reset: Optional[Signal] = None, reset_async: bool = False, reset_active_low: bool = False):
-        """时序逻辑块装饰器。
+        Or as decorator (backward compatible):
+            @self.seq(clk, rst, reset_async=True)
+            def my_seq():
+                self.count <<= self.count + 1
+        """
+        return _SeqContext(self, clock, reset, reset_async, reset_active_low)
+
+
+    def intent(self, func: Callable) -> Callable:
+        """声明设计约束目标的装饰器。
 
         示例:
-            @self.seq(clk, rst)
-            def my_seq():
-                counter <= counter + 1
+            @self.intent
+            def constraints(c):
+                c.latency_cycles = 3
+                c.clock_freq = 500e6
         """
-
-        def decorator(func: Callable) -> Callable:
-            body: List[Any] = []
-            self._seq_blocks.append((clock, reset, reset_async, reset_active_low, body))
-
-            def wrapper(*args, **kwargs):
-                Context.push(Context(module=self, stmt_container=body))
-                try:
-                    func(*args, **kwargs)
-                finally:
-                    Context.pop()
-
-            wrapper()
-            return wrapper
-
-        return decorator
+        intent = IntentContext()
+        func(intent)
+        self._design_intent = intent
+        return func
 
     def instantiate(
         self,
@@ -1567,13 +2222,234 @@ class Module(metaclass=ModuleMeta):
 
 
 # ---------------------------------------------------------------------
+# Behavioral / Black-box Modules
+# ---------------------------------------------------------------------
+
+class BehavioralModule(Module):
+    """行为级子模块：用 Python callable 实现功能，可参与系统级仿真。
+
+    在架构探索阶段，子模块可以用行为级模型代替 RTL 实现，
+    从而在系统级别验证拆分的合理性。
+
+    示例:
+        def mac(a, b, c):
+            return {'y': a * b + c}
+
+        mac_mod = BehavioralModule(
+            name='mac',
+            inputs=[('a', 8), ('b', 8), ('c', 16)],
+            outputs=[('y', 16)],
+            func=mac,
+        )
+        # 然后作为子模块实例化到顶层模块中
+    """
+
+    def __init__(
+        self,
+        name: str,
+        inputs: List[tuple],       # [(port_name, width), ...]
+        outputs: List[tuple],      # [(port_name, width), ...]
+        func,                       # Callable[[dict], dict]  inputs -> outputs
+    ):
+        super().__init__(name)
+        self._beh_func = func
+
+        for pname, pw in inputs:
+            setattr(self, pname, Input(pw, pname))
+            self._inputs[pname] = getattr(self, pname)
+        for pname, pw in outputs:
+            setattr(self, pname, Output(pw, pname))
+            self._outputs[pname] = getattr(self, pname)
+
+    def __repr__(self):
+        return f"BehavioralModule({self.name})"
+
+
+# ---------------------------------------------------------------------
+# Behavioral – RTL Correspondence
+# ---------------------------------------------------------------------
+
+@dataclass
+class ModelVersion:
+    """行为级模型或 RTL 设计的版本号，支持语义化版本。"""
+    major: int = 0
+    minor: int = 0
+    patch: int = 0
+
+    def __str__(self):
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+    def __eq__(self, other):
+        if not isinstance(other, ModelVersion):
+            return False
+        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
+
+    def __lt__(self, other):
+        if not isinstance(other, ModelVersion):
+            return NotImplemented
+        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
+
+    def __hash__(self):
+        return hash((self.major, self.minor, self.patch))
+
+
+@dataclass
+class BehavioralRTLPair:
+    """行为级模型与 RTL 设计的配对关系。
+
+    维护行为级模型（Python）与 RTL 实现之间的版本对应关系，
+    用于确认系统级拆分合理性并验证最终 RTL 满足行为级要求。
+
+    Attributes:
+        name:           配对名称（通常等于模块名）
+        behavioral:     行为级模块（BehavioralModule 或任何可调用模型）
+        rtl:            RTL 模块（Module 子类实例）
+        beh_version:    行为级模型版本
+        rtl_version:    RTL 实现版本（应与 beh_version 一致才认为"等价"）
+        spec_hash:      原始 spec 的哈希，用于追溯
+        verified:       是否已通过仿真验证（行为级 == RTL 输出）
+        notes:          人工备注，如已知差异、TODO 等
+    """
+    name: str
+    behavioral: Module
+    rtl: Module
+    beh_version: ModelVersion = field(default_factory=ModelVersion)
+    rtl_version: ModelVersion = field(default_factory=ModelVersion)
+    spec_hash: str = ""
+    verified: bool = False
+    notes: str = ""
+
+    def mark_verified(self):
+        """标记为已通过仿真验证。"""
+        self.verified = True
+
+    def is_consistent(self) -> bool:
+        """检查行为级和 RTL 版本是否一致。"""
+        return self.beh_version == self.rtl_version
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "beh_version": str(self.beh_version),
+            "rtl_version": str(self.rtl_version),
+            "consistent": self.is_consistent(),
+            "verified": self.verified,
+            "notes": self.notes,
+        }
+
+
+class ModelRegistry:
+    """全局行为级模型注册表。
+
+    管理所有模块的行为级模型和 RTL 实现的配对关系，
+    支持按名称查找、版本查询、一致性检查。
+
+    用法:
+        ModelRegistry.register_pair(pair)
+        pair = ModelRegistry.get("MAC16")
+        report = ModelRegistry.verification_report()
+    """
+
+    _pairs: Dict[str, BehavioralRTLPair] = {}
+
+    @classmethod
+    def register_pair(cls, pair: BehavioralRTLPair) -> None:
+        """注册一个行为级-RTL 配对。"""
+        cls._pairs[pair.name] = pair
+
+    @classmethod
+    def get(cls, name: str) -> Optional[BehavioralRTLPair]:
+        """按模块名获取配对。"""
+        return cls._pairs.get(name)
+
+    @classmethod
+    def list_pairs(cls) -> List[str]:
+        """列出所有已注册的配对名称。"""
+        return list(cls._pairs.keys())
+
+    @classmethod
+    def verification_report(cls) -> Dict[str, Any]:
+        """生成完整的验证报告。"""
+        total = len(cls._pairs)
+        verified = sum(1 for p in cls._pairs.values() if p.verified)
+        consistent = sum(1 for p in cls._pairs.values() if p.is_consistent())
+        return {
+            "total_pairs": total,
+            "verified": verified,
+            "consistent": consistent,
+            "unverified": [p.name for p in cls._pairs.values() if not p.verified],
+            "inconsistent": [p.name for p in cls._pairs.values() if not p.is_consistent()],
+            "pairs": {n: p.to_dict() for n, p in cls._pairs.items()},
+        }
+
+    @classmethod
+    def reset(cls) -> None:
+        """清空注册表（用于测试）。"""
+        cls._pairs.clear()
+
+
+class BlackBoxModule(Module):
+    """黑盒子模块：声明端口但不定义内部逻辑。
+
+    用于尚未实现的子模块，生成 Verilog 时为实例化语句。
+    仿真时输出 0，不报错。
+
+    示例:
+        bb = BlackBoxModule(
+            name='future_block',
+            inputs=[('din', 8)],
+            outputs=[('dout', 8)],
+        )
+    """
+
+    def __init__(
+        self,
+        name: str,
+        inputs: List[tuple],       # [(port_name, width), ...]
+        outputs: List[tuple],      # [(port_name, width), ...]
+    ):
+        super().__init__(name)
+        for pname, pw in inputs:
+            setattr(self, pname, Input(pw, pname))
+            self._inputs[pname] = getattr(self, pname)
+        for pname, pw in outputs:
+            setattr(self, pname, Output(pw, pname))
+            self._outputs[pname] = getattr(self, pname)
+
+    def __repr__(self):
+        return f"BlackBoxModule({self.name})"
+
+
+# ---------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------
+
+
+def _infer_width(op: str, lhs: Expr, rhs: Expr) -> int:
+    """根据操作符和操作数位宽自动推导结果位宽（Verilog 语义）。"""
+    if op in ('+', '-'):
+        return max(lhs.width, rhs.width) + 1
+    if op == '*':
+        return lhs.width + rhs.width
+    if op in ('&', '|', '^'):
+        return max(lhs.width, rhs.width)
+    if op == '<<':
+        return lhs.width + (rhs.value if isinstance(rhs, Const) else 0)
+    if op == '>>':
+        return lhs.width
+    if op == '>>>':
+        return lhs.width
+    if op in ('%', '/'):
+        return max(lhs.width, rhs.width)
+    if op in ('==', '!=', '<', '<=', '>', '>='):
+        return 1
+    return max(lhs.width, rhs.width)
+
 
 def _make_binop(op: str, lhs: Any, rhs: Any, width: Optional[int] = None) -> Signal:
     le = _to_expr(lhs)
     re = _to_expr(rhs)
-    w = width if width is not None else max(le.width, re.width)
+    w = width if width is not None else _infer_width(op, le, re)
     s = Signal(width=w)
     s._expr = BinOp(op, le, re, w)
     return s
@@ -1586,11 +2462,11 @@ def _make_unop(op: str, operand: Any) -> Signal:
     return s
 
 
-def _param_binop(op: str, lhs: Any, rhs: Any) -> Signal:
+def _param_binop(op: str, lhs: Any, rhs: Any, width: Optional[int] = None) -> Signal:
     """Parameter 参与算术运算时生成 Expr（行为类似 Signal）。"""
     le = _to_expr(lhs)
     re = _to_expr(rhs)
-    w = max(le.width, re.width) + 1
+    w = width if width is not None else max(le.width, re.width) + 1
     s = Signal(width=w)
     s._expr = BinOp(op, le, re, w)
     return s
@@ -1649,6 +2525,9 @@ def _subst_genvar_in_stmt(stmt: Any, var_name: str, value: int) -> Any:
         n = IfNode(_subst_genvar_in_expr(stmt.cond, var_name, value))
         n.then_body = [_subst_genvar_in_stmt(s, var_name, value) for s in stmt.then_body]
         n.else_body = [_subst_genvar_in_stmt(s, var_name, value) for s in stmt.else_body]
+        n.elif_bodies = [(_subst_genvar_in_expr(c, var_name, value),
+                          [_subst_genvar_in_stmt(s, var_name, value) for s in b])
+                         for c, b in stmt.elif_bodies]
         return n
     if isinstance(stmt, SwitchNode):
         n = SwitchNode(_subst_genvar_in_expr(stmt.expr, var_name, value))
@@ -1657,13 +2536,22 @@ def _subst_genvar_in_stmt(stmt: Any, var_name: str, value: int) -> Any:
         n.default_body = [_subst_genvar_in_stmt(s, var_name, value) for s in stmt.default_body]
         return n
     if isinstance(stmt, ForGenNode):
-        n = ForGenNode(stmt.var_name, stmt.start, stmt.end)
+        n = ForGenNode(stmt.var_name, stmt.start, stmt.end, stmt.step)
         n.body = [_subst_genvar_in_stmt(s, var_name, value) for s in stmt.body]
         return n
     if isinstance(stmt, GenIfNode):
         n = GenIfNode(_subst_genvar_in_expr(stmt.cond, var_name, value))
         n.then_body = [_subst_genvar_in_stmt(s, var_name, value) for s in stmt.then_body]
         n.else_body = [_subst_genvar_in_stmt(s, var_name, value) for s in stmt.else_body]
+        n.elif_bodies = [(_subst_genvar_in_expr(c, var_name, value),
+                          [_subst_genvar_in_stmt(s, var_name, value) for s in b])
+                         for c, b in stmt.elif_bodies]
+        return n
+    if isinstance(stmt, WhenNode):
+        n = WhenNode()
+        n.branches = [(_subst_genvar_in_expr(c, var_name, value) if c is not None else None,
+                       [_subst_genvar_in_stmt(s, var_name, value) for s in b])
+                      for c, b in stmt.branches]
         return n
     if isinstance(stmt, SubmoduleInst):
         new_port_map = {}
@@ -1771,6 +2659,9 @@ def flatten_module(module: "Module") -> "Module":
             n = IfNode(_rename_expr(stmt.cond, mapping, mem_rename, arr_rename))
             n.then_body = [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in stmt.then_body]
             n.else_body = [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in stmt.else_body]
+            n.elif_bodies = [(_rename_expr(c, mapping, mem_rename, arr_rename),
+                              [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in b])
+                             for c, b in stmt.elif_bodies]
             return n
         if isinstance(stmt, SwitchNode):
             n = SwitchNode(_rename_expr(stmt.expr, mapping, mem_rename, arr_rename))
@@ -1778,13 +2669,22 @@ def flatten_module(module: "Module") -> "Module":
             n.default_body = [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in stmt.default_body]
             return n
         if isinstance(stmt, ForGenNode):
-            n = ForGenNode(stmt.var_name, stmt.start, stmt.end)
+            n = ForGenNode(stmt.var_name, stmt.start, stmt.end, stmt.step)
             n.body = [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in stmt.body]
             return n
         if isinstance(stmt, GenIfNode):
             n = GenIfNode(_rename_expr(stmt.cond, mapping, mem_rename, arr_rename))
             n.then_body = [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in stmt.then_body]
             n.else_body = [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in stmt.else_body]
+            n.elif_bodies = [(_rename_expr(c, mapping, mem_rename, arr_rename),
+                              [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in b])
+                             for c, b in stmt.elif_bodies]
+            return n
+        if isinstance(stmt, WhenNode):
+            n = WhenNode()
+            n.branches = [(_rename_expr(c, mapping, mem_rename, arr_rename) if c is not None else None,
+                           [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in b])
+                          for c, b in stmt.branches]
             return n
         return stmt
 
@@ -1886,7 +2786,7 @@ def flatten_module(module: "Module") -> "Module":
                 extra_comb.extend(cb)
                 extra_seq.extend(sb)
             elif isinstance(stmt, ForGenNode):
-                for i in range(stmt.start, stmt.end):
+                for i in range(stmt.start, stmt.end, stmt.step):
                     unrolled = [_subst_genvar_in_stmt(s, stmt.var_name, i) for s in stmt.body]
                     t, b, c, s2 = _process_stmts(unrolled, f"{prefix}{stmt.var_name}{i}_", mode=mode)
                     top_stmts.extend(t)
@@ -1896,10 +2796,14 @@ def flatten_module(module: "Module") -> "Module":
             elif isinstance(stmt, IfNode):
                 n = IfNode(stmt.cond)
                 t1, b1, c1, s1 = _process_stmts(stmt.then_body, prefix, mode)
-                t2, b2, c2, s2 = _process_stmts(stmt.else_body, prefix, mode)
                 top_stmts.extend(t1)
-                top_stmts.extend(t2)
                 n.then_body = b1
+                for cond, body in stmt.elif_bodies:
+                    t_e, b_e, c_e, s_e = _process_stmts(body, prefix, mode)
+                    top_stmts.extend(t_e)
+                    n.elif_bodies.append((cond, b_e))
+                t2, b2, c2, s2 = _process_stmts(stmt.else_body, prefix, mode)
+                top_stmts.extend(t2)
                 n.else_body = b2
                 extra_comb.extend(c1)
                 extra_comb.extend(c2)
@@ -1928,14 +2832,20 @@ def flatten_module(module: "Module") -> "Module":
                 else:
                     n = IfNode(stmt.cond)
                     t1, b1, c1, s1 = _process_stmts(stmt.then_body, prefix, mode)
-                    t2, b2, c2, s2 = _process_stmts(stmt.else_body, prefix, mode)
                     top_stmts.extend(t1)
-                    top_stmts.extend(t2)
                     n.then_body = b1
-                    n.else_body = b2
                     extra_comb.extend(c1)
-                    extra_comb.extend(c2)
                     extra_seq.extend(s1)
+                    for cond, body in stmt.elif_bodies:
+                        t_e, b_e, c_e, s_e = _process_stmts(body, prefix, mode)
+                        top_stmts.extend(t_e)
+                        n.elif_bodies.append((cond, b_e))
+                        extra_comb.extend(c_e)
+                        extra_seq.extend(s_e)
+                    t2, b2, c2, s2 = _process_stmts(stmt.else_body, prefix, mode)
+                    top_stmts.extend(t2)
+                    n.else_body = b2
+                    extra_comb.extend(c2)
                     extra_seq.extend(s2)
                     new_body.append(n)
             else:

@@ -6,6 +6,7 @@ rtlgen.sim — Python AST 仿真后端
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from rtlgen.core import (
@@ -109,6 +110,7 @@ class Simulator:
         self.state: Dict[str, Union[int, SimValue]] = {}
         self.next_state: Dict[str, Union[int, SimValue]] = {}
         self.memories: Dict[str, List[Union[int, SimValue]]] = {}
+        self.pending_mem_writes: List[Tuple[str, int, Union[int, SimValue]]] = []
         self.trace: List[Dict[str, Union[int, float]]] = []
         self.trace_signals = trace_signals
         self.trace_max_size: Optional[int] = None  # ring buffer limit
@@ -140,6 +142,28 @@ class Simulator:
                 self.memories[name] = [SimValue(0, x_mask=(1 << mem.width) - 1, width=mem.width) for _ in range(mem.depth)]
             else:
                 self.memories[name] = [0] * mem.depth
+            # Load init_file if provided
+            if mem.init_file and os.path.exists(mem.init_file):
+                with open(mem.init_file, "r") as f:
+                    for addr, line in enumerate(f):
+                        if addr >= mem.depth:
+                            break
+                        line = line.strip()
+                        if not line:
+                            continue
+                        # Parse hex/bin/dec
+                        if line.startswith("0x") or line.startswith("0X"):
+                            val = int(line, 16)
+                        elif line.startswith("0b") or line.startswith("0B"):
+                            val = int(line, 2)
+                        elif all(c in "0123456789abcdefABCDEF" for c in line):
+                            val = int(line, 16)
+                        else:
+                            val = int(line, 10)
+                        if self.use_xz:
+                            self.memories[name][addr] = SimValue(val & ((1 << mem.width) - 1), width=mem.width)
+                        else:
+                            self.memories[name][addr] = val & ((1 << mem.width) - 1)
 
         for name, arr in self.module._arrays.items():
             if self.use_xz:
@@ -248,7 +272,18 @@ class Simulator:
                             clock_period_ns=self.clock_period_ns,
                             param_overrides=stmt.params,
                         )
+                        # If parent uses AST path, force child (and its descendants)
+                        # to also use AST to keep state consistent across _eval_comb.
+                        if self._jit is None:
+                            def _disable_jit(s):
+                                s._jit = None
+                                for _, c, _ in s._subsim_info:
+                                    _disable_jit(c)
+                            _disable_jit(child)
                         self._subsim_info.append((stmt.name, child, port_map))
+                        # 注册子模块output信号映射，供 _eval_expr 直接读取
+                        for out_name, out_sig in stmt.module._outputs.items():
+                            self._output_signal_map[id(out_sig)] = child
                 elif isinstance(stmt, (IfNode,)):
                     _collect_from_stmts(stmt.then_body)
                     _collect_from_stmts(stmt.else_body)
@@ -442,6 +477,14 @@ class Simulator:
                         clock_period_ns=self.clock_period_ns,
                         param_overrides=params,
                     )
+                    # If parent uses AST path, force child (and its descendants)
+                    # to also use AST to keep state consistent across _eval_comb.
+                    if self._jit is None:
+                        def _disable_jit(s):
+                            s._jit = None
+                            for _, c, _ in s._subsim_info:
+                                _disable_jit(c)
+                        _disable_jit(child)
                     self._subsim_info.append((inst_name, child, port_map))
                     # 注册子模块output信号映射，供 _eval_expr 直接读取
                     for out_name, out_sig in submod._outputs.items():
@@ -472,10 +515,15 @@ class Simulator:
         return self.state.get(name, 0 if not self.use_xz else SimValue(0, width=self._width_of(name)))
 
     def get_int(self, name) -> int:
-        """读取信号当前值并转为 int（X/Z 时返回 0）。"""
+        """读取信号当前值并转为 int（X/Z 时返回 0）。signed 信号自动符号扩展。"""
         name = self._hier_name(name)
         v = self.state.get(name, 0)
-        return int(v) if isinstance(v, SimValue) else v
+        v = int(v) if isinstance(v, SimValue) else v
+        width = self._width_of(name)
+        if self._is_signed(name):
+            if v & (1 << (width - 1)):
+                v = v - (1 << width)
+        return v
 
     def _width_of(self, name) -> int:
         if isinstance(name, Signal):
@@ -489,6 +537,18 @@ class Simulator:
             if w != 32:
                 return w
         return 32
+
+    def _is_signed(self, name) -> bool:
+        if isinstance(name, Signal):
+            return getattr(name, 'signed', False)
+        for d in (self.module._inputs, self.module._outputs, self.module._wires, self.module._regs):
+            if name in d:
+                return getattr(d[name], 'signed', False)
+        for _, child, _ in self._subsim_info:
+            s = child._is_signed(name)
+            if s:
+                return s
+        return False
 
     # -----------------------------------------------------------------
     # Time / Delay API
@@ -514,7 +574,12 @@ class Simulator:
     # -----------------------------------------------------------------
     def step(self, clk: Optional[str] = None, do_trace: bool = True):
         """推进一个时钟周期。子模块与父模块在同一 posedge 同步更新。"""
-        if self._jit is not None:
+        # If any sub-module is a BehavioralModel, force AST path
+        has_behavioral = any(
+            hasattr(child.module, '_beh_func') and child.module._beh_func is not None
+            for _, child, _ in self._subsim_info
+        )
+        if self._jit is not None and not has_behavioral:
             # Fast JIT path
             self._jit.step()
             self._sync_from_jit()
@@ -538,9 +603,15 @@ class Simulator:
             for k, v in list(child_sim.next_state.items()):
                 child_sim.state[k] = v
             child_sim.next_state.clear()
+            for mem_name, addr_i, val in child_sim.pending_mem_writes:
+                child_sim.memories[mem_name][addr_i] = val
+            child_sim.pending_mem_writes.clear()
         for k, v in list(self.next_state.items()):
             self.state[k] = v
         self.next_state.clear()
+        for mem_name, addr_i, val in self.pending_mem_writes:
+            self.memories[mem_name][addr_i] = val
+        self.pending_mem_writes.clear()
 
         # 4. 再次评估组合逻辑（寄存器输出可能驱动组合逻辑）
         self._eval_comb()
@@ -552,7 +623,8 @@ class Simulator:
     def reset(self, rst: str = "rst", cycles: int = 2):
         """执行复位序列（自动检测 active-high / active-low）。
         当 JIT 启用时，使用快速路径直接清零 state。"""
-        active_low = rst.endswith("_n") or rst.endswith("_N")
+        active_low = (rst.endswith("_n") or rst.endswith("_N") or
+                      rst.lower() in ("rstn", "resetn", "rst_b", "reset_b"))
         if self._jit is not None:
             # Fast path: directly zero all state, then apply reset value
             for i in range(len(self._jit.state)):
@@ -590,10 +662,68 @@ class Simulator:
         else:
             self.set(rst, 0)
 
-    def run(self, cycles: int):
-        """连续运行多个时钟周期。"""
-        for _ in range(cycles):
+    def run_golden_test(self, golden_tests: List[Dict[str, Any]],
+                        behavior_ref: Optional[Callable] = None,
+                        verbose: bool = False) -> "GoldenTestReport":
+        """Run golden comparison tests against behavior reference.
+
+        Args:
+            golden_tests: List of test dicts with "inputs" and optionally "expected_outputs"
+            behavior_ref: Reference function(inputs) -> outputs dict for comparison
+            verbose: Print per-test details
+
+        Returns:
+            GoldenTestReport with all_match(), pass/fail counts
+        """
+        from dataclasses import dataclass, field
+        @dataclass
+        class GoldenTestReport:
+            total: int = 0
+            passed: int = 0
+            failed: int = 0
+            failures: List[str] = field(default_factory=list)
+
+            def all_match(self) -> bool:
+                return self.failed == 0
+
+        report = GoldenTestReport()
+        for i, test in enumerate(golden_tests):
+            report.total += 1
+            # Apply inputs
+            for name, value in test.get("inputs", {}).items():
+                self.set(name, value)
+            # Run one cycle to propagate
             self.step()
+            # Check expected outputs
+            expected = test.get("expected_outputs", {})
+            ok = True
+            mismatches = []
+            for name, exp_val in expected.items():
+                actual = self.get_int(name) if isinstance(exp_val, int) else self.get(name)
+                if actual != exp_val:
+                    ok = False
+                    mismatches.append(f"  {name}: got {actual}, expected {exp_val}")
+            # If behavior_ref provided, compare against it
+            if behavior_ref is not None:
+                inputs = test.get("inputs", {})
+                ref_out = behavior_ref(inputs) or {}
+                for name, exp_val in ref_out.items():
+                    actual = self.get_int(name)
+                    if actual != exp_val:
+                        ok = False
+                        mismatches.append(f"  {name}: got {actual}, expected {exp_val} (ref)")
+            if ok:
+                report.passed += 1
+            else:
+                report.failed += 1
+                report.failures.append(f"Test {i}:\n" + "\n".join(mismatches))
+            if verbose:
+                status = "PASS" if ok else "FAIL"
+                print(f"  Test {i}: {status}")
+                if not ok:
+                    for m in mismatches:
+                        print(f"    {m}")
+        return report
 
     def peek(self, name):
         """读取信号当前值（get 的别名）。支持层级名如 'systolic.state' 或 Signal 对象。"""
@@ -723,11 +853,6 @@ class Simulator:
                     return c + 1
         return max_cycles
 
-    def run(self, cycles: int):
-        """连续运行多个时钟周期。"""
-        for _ in range(cycles):
-            self.step()
-
     # -----------------------------------------------------------------
     # Submodule sync helpers
     # -----------------------------------------------------------------
@@ -749,9 +874,14 @@ class Simulator:
                 self._write_parent_expr(expr, val)
                 # 额外：设置同名键供_eval_expr查找
                 # 避免对 BitSelect/PartSelect 覆盖父模块向量信号
+                # 同时避免覆盖父模块中与子模块端口同名的不同信号
                 from rtlgen.core import Ref
                 if isinstance(expr, Ref):
-                    self.state[port_name] = val
+                    parent_sig_name = expr.signal.name
+                    # Only set alias if parent signal name matches port name
+                    # (i.e., 1:1 connection without renaming)
+                    if parent_sig_name == port_name:
+                        self.state[port_name] = val
         # 额外：同步所有子模块Output到parent state（供parent comb评估复杂表达式时使用）
         # 但避免覆盖已在port_map中写回的向量信号
         mapped_outs = set(port_map.keys()) & set(child_sim.module._outputs.keys())
@@ -774,10 +904,20 @@ class Simulator:
             sig_id = id(expr.signal)
             if sig_id in self._output_signal_map:
                 child_sim = self._output_signal_map[sig_id]
-                return child_sim.get(expr.signal.name)
+                val = child_sim.get(expr.signal.name)
+                if expr.signal.signed:
+                    width = expr.signal.width
+                    if val & (1 << (width - 1)):
+                        val = val - (1 << width)
+                return val
             name = expr.signal.name
             if name in self.state:
-                return self.state[name]
+                val = self.state[name]
+                if expr.signal.signed:
+                    width = expr.signal.width
+                    if val & (1 << (width - 1)):
+                        val = val - (1 << width)
+                return val
             return self._get_param_value(name, expr.signal.width)
         if isinstance(expr, BinOp):
             l = self._eval_parent_expr(expr.lhs, loop_vars)
@@ -960,6 +1100,19 @@ class Simulator:
             state_before = {k: _to_int(v) for k, v in self.state.items()}
             for body in self.module._comb_blocks:
                 self._exec_stmts(body, mode="comb")
+            # BehavioralModule: call Python func with input values
+            if hasattr(self.module, '_beh_func') and self.module._beh_func is not None:
+                inputs = {name: _to_int(self.state.get(name, 0)) for name in self.module._inputs}
+                results = self.module._beh_func(inputs) or {}
+                for name, value in results.items():
+                    if name in self.state:
+                        masked = value & ((1 << self._width_of(name)) - 1)
+                        self.state[name] = masked
+                        if self._jit is not None:
+                            try:
+                                self._jit.set(name, masked)
+                            except Exception:
+                                pass
             for stmt in self.module._top_level:
                 if isinstance(stmt, Assign):
                     self._exec_assign(stmt, mode="comb")
@@ -970,7 +1123,7 @@ class Simulator:
                 elif isinstance(stmt, SwitchNode):
                     self._exec_switch(stmt, mode="comb")
                 elif isinstance(stmt, MemWrite):
-                    self._exec_mem_write(stmt)
+                    self._exec_mem_write(stmt, mode="comb")
                 elif isinstance(stmt, ForGenNode):
                     self._exec_for_gen(stmt, mode="comb")
                 elif isinstance(stmt, GenIfNode):
@@ -1004,7 +1157,7 @@ class Simulator:
             elif isinstance(stmt, SwitchNode):
                 self._exec_switch(stmt, mode, env)
             elif isinstance(stmt, MemWrite):
-                self._exec_mem_write(stmt, env)
+                self._exec_mem_write(stmt, env, mode)
             elif isinstance(stmt, ForGenNode):
                 self._exec_for_gen(stmt, mode, env)
             elif isinstance(stmt, GenIfNode):
@@ -1021,7 +1174,10 @@ class Simulator:
             val = _make_xz(val, width)
         else:
             val = int(val) & ((1 << width) - 1)
-        if mode == "seq" and not stmt.blocking:
+        # In sequential mode, all assignments should be non-blocking (next_state),
+        # regardless of the blocking flag. The DSL incorrectly sets blocking=True
+        # for Output signals even in seq blocks.
+        if mode == "seq":
             if isinstance(stmt.target, Signal):
                 self.next_state[stmt.target.name] = val
             else:
@@ -1142,7 +1298,7 @@ class Simulator:
         if not matched and stmt.default_body:
             self._exec_stmts(stmt.default_body, mode, loop_vars)
 
-    def _exec_mem_write(self, stmt: MemWrite, loop_vars: Optional[Dict[str, int]] = None):
+    def _exec_mem_write(self, stmt: MemWrite, loop_vars: Optional[Dict[str, int]] = None, mode: Optional[str] = None):
         addr = self._eval_expr(stmt.addr, loop_vars)
         val = self._eval_expr(stmt.value, loop_vars)
         mem = self.memories.get(stmt.mem_name)
@@ -1150,9 +1306,13 @@ class Simulator:
             addr_i = int(addr) if isinstance(addr, SimValue) else addr
             addr_i = addr_i % len(mem)
             if self.use_xz:
-                mem[addr_i] = _make_xz(val, self._width_of_mem(stmt.mem_name))
+                write_val = _make_xz(val, self._width_of_mem(stmt.mem_name))
             else:
-                mem[addr_i] = int(val)
+                write_val = int(val)
+            if mode == "seq":
+                self.pending_mem_writes.append((stmt.mem_name, addr_i, write_val))
+            else:
+                mem[addr_i] = write_val
 
     def _width_of_mem(self, name: str) -> int:
         mem = self.module._memories.get(name)
@@ -1193,10 +1353,22 @@ class Simulator:
             sig_id = id(expr.signal)
             if sig_id in self._output_signal_map:
                 child_sim = self._output_signal_map[sig_id]
-                return child_sim.get(expr.signal.name)
+                v = child_sim.get(expr.signal.name)
+                # Sign-extend if the signal is signed
+                if getattr(expr.signal, 'signed', False):
+                    w = expr.signal.width
+                    if v & (1 << (w - 1)):
+                        v = v - (1 << w)
+                return v
             name = expr.signal.name
             if name in self.state:
-                return self.state[name]
+                v = self.state[name]
+                # Sign-extend if the signal is signed
+                if getattr(expr.signal, 'signed', False):
+                    w = expr.signal.width
+                    if v & (1 << (w - 1)):
+                        v = v - (1 << w)
+                return v
             return self._get_param_value(name, expr.signal.width)
         if isinstance(expr, BinOp):
             l = self._eval_expr(expr.lhs, loop_vars)
@@ -1324,6 +1496,8 @@ class Simulator:
                 v = (lv.v << rv.v) & ((1 << result_width) - 1)
             elif op == ">>":
                 v = lv.v >> rv.v
+            elif op == ">>>":
+                v = lv.v >> rv.v
             elif op == "%":
                 v = (lv.v % rv.v) & ((1 << result_width) - 1) if rv.v != 0 else 0
             else:
@@ -1357,8 +1531,10 @@ class Simulator:
             if op == ">=":
                 return 1 if l_i >= r_i else 0
             if op == "<<":
-                return l_i << r_i
+                return (l_i << r_i) & ((1 << width) - 1)
             if op == ">>":
+                return l_i >> r_i
+            if op == ">>>":
                 return l_i >> r_i
             if op == "%":
                 return l_i % r_i if r_i != 0 else 0

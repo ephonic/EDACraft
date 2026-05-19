@@ -9,7 +9,7 @@ Flow:
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -25,6 +25,9 @@ class SynthResult:
     stdout: str
     stderr: str
     mapped_verilog: Optional[str] = None
+    wns: float = 0.0
+    tns: float = 0.0
+    critical_path: List[str] = field(default_factory=list)
 
 
 class WireLoadModel:
@@ -90,6 +93,7 @@ class ABCSynthesizer:
             if dnsize:
                 lines.append("dnsize")
             lines.append("topo")
+            lines.append("stime")
             lines.append("print_stats")
         if output_aig:
             lines.append(f'write_aiger -z "{output_aig}"')
@@ -180,6 +184,8 @@ echo "Synthesis completed: {kwargs.get('output_verilog', 'mapped.v')}"
         )
 
         area, delay, gates, depth = 0.0, 0.0, 0, 0
+        wns, tns = 0.0, 0.0
+        critical_path: List[str] = []
         mapped_verilog = None
 
         if os.path.exists(output_verilog):
@@ -187,7 +193,9 @@ echo "Synthesis completed: {kwargs.get('output_verilog', 'mapped.v')}"
                 mapped_verilog = f.read()
 
         import re
+        in_stime_path = False
         for line in proc.stdout.splitlines():
+            # Parse print_stats line
             if "area" in line and "delay" in line and "nd =" in line:
                 m = re.search(r"area\s*=\s*([\d.]+)", line)
                 if m:
@@ -214,6 +222,45 @@ echo "Synthesis completed: {kwargs.get('output_verilog', 'mapped.v')}"
                     except ValueError:
                         pass
 
+            # Parse stime slack
+            m = re.search(r"slack\s*\(\s*VIOLATED\s*\)\s*(-?[\d.]+)", line, re.IGNORECASE)
+            if m:
+                try:
+                    slack = float(m.group(1))
+                    wns = min(wns, slack)  # most negative
+                except ValueError:
+                    pass
+                continue
+            m = re.search(r"slack\s*\(\s*MET\s*\)\s*([\d.]+)", line, re.IGNORECASE)
+            if m:
+                try:
+                    slack = float(m.group(1))
+                    if wns == 0.0:
+                        wns = slack
+                except ValueError:
+                    pass
+                continue
+
+            # Parse critical path from stime
+            if "Point" in line and "Incr" in line and "Path" in line:
+                in_stime_path = True
+                critical_path = []
+                continue
+            if in_stime_path:
+                if "data arrival time" in line or "slack" in line.lower():
+                    in_stime_path = False
+                    continue
+                # Extract node name from path point line
+                # Format: "  node_name (type)     0.12    3.45" or "  node_name          0.12    3.45"
+                m = re.search(r"^(\S+)(?:\s+\(|\s{2,})", line)
+                if m:
+                    node = m.group(1)
+                    if node and node not in ("Point", "---", "-"):
+                        critical_path.append(node)
+
+        # Estimate TNS from WNS (conservative: assume one critical path dominates)
+        tns = wns if wns < 0 else 0.0
+
         return SynthResult(
             area=area,
             delay=delay,
@@ -222,4 +269,113 @@ echo "Synthesis completed: {kwargs.get('output_verilog', 'mapped.v')}"
             stdout=proc.stdout,
             stderr=proc.stderr,
             mapped_verilog=mapped_verilog,
+            wns=wns,
+            tns=tns,
+            critical_path=critical_path,
         )
+
+    def parse_feedback(self, result: SynthResult) -> Dict[str, Any]:
+        """Parse synthesis output into structured feedback for optimizer.
+
+        Returns a dict with:
+            area, wns, tns, critical_path, gates, depth, suggestion
+        """
+        import re
+        wns, tns = 0.0, 0.0
+        critical_path: List[str] = []
+
+        in_stime_path = False
+        for line in result.stdout.splitlines():
+            m = re.search(r"slack\s*\(\s*VIOLATED\s*\)\s*(-?[\d.]+)", line, re.IGNORECASE)
+            if m:
+                try:
+                    slack = float(m.group(1))
+                    wns = min(wns, slack)
+                except ValueError:
+                    pass
+                continue
+            m = re.search(r"slack\s*\(\s*MET\s*\)\s*([\d.]+)", line, re.IGNORECASE)
+            if m:
+                try:
+                    slack = float(m.group(1))
+                    if wns == 0.0:
+                        wns = slack
+                except ValueError:
+                    pass
+                continue
+
+            if "Point" in line and "Incr" in line and "Path" in line:
+                in_stime_path = True
+                critical_path = []
+                continue
+            if in_stime_path:
+                if "data arrival time" in line or "slack" in line.lower():
+                    in_stime_path = False
+                    continue
+                m = re.search(r"^(\S+)(?:\s+\(|\s{2,})", line)
+                if m:
+                    node = m.group(1)
+                    if node and node not in ("Point", "---", "-"):
+                        critical_path.append(node)
+
+        tns = wns if wns < 0 else 0.0
+
+        feedback: Dict[str, Any] = {
+            "area": result.area,
+            "wns": wns,
+            "tns": tns,
+            "critical_path": critical_path,
+            "gates": result.gates,
+            "depth": result.depth,
+            "delay": result.delay,
+            "suggestion": "",
+        }
+
+        # Derive suggestions from the synthesis results
+        suggestions = []
+
+        # High area → suggest resource sharing
+        if result.area > 500:
+            suggestions.append(
+                f"Area is high ({result.area:.0f}). Consider resource sharing or area_first PPA priority."
+            )
+
+        # High depth → suggest pipelining
+        if result.depth > 10:
+            suggestions.append(
+                f"Logic depth is high ({result.depth}). Consider pipeline insertion or timing_first PPA priority."
+            )
+
+        # High delay → suggest faster operators
+        if result.delay > 5.0:
+            suggestions.append(
+                f"Delay is high ({result.delay:.2f}ns). Consider fast adder/multiplier implementations."
+            )
+
+        # Many gates relative to area → suggest operator simplification
+        if result.gates > 100 and result.area > 200:
+            suggestions.append(
+                f"Gate count is high ({result.gates}). Consider bitwidth reduction or simpler operators."
+            )
+
+        feedback["suggestion"] = " ".join(suggestions)
+        return feedback
+
+    def to_ppa_report(self, result: SynthResult) -> Dict[str, Any]:
+        """Convert SynthResult to a format compatible with PPAOptimizer goals."""
+        import re
+        register_count = 0
+        if result.mapped_verilog:
+            # Estimate register count from mapped Verilog netlist.
+            # Standard cell DFF instances typically contain "df" in their name.
+            dff_pattern = re.compile(r'^\s*\w*df\w*\s+\w+', re.IGNORECASE | re.MULTILINE)
+            register_count = len(dff_pattern.findall(result.mapped_verilog))
+
+        return {
+            "area": result.area,
+            "logic_depth": result.depth,
+            "cell_area": result.area,
+            "max_depth": result.depth,
+            "register_count": register_count,
+            "estimated_power": result.area * 0.001,  # rough estimate
+        }

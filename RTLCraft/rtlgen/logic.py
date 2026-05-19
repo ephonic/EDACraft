@@ -18,12 +18,14 @@ from rtlgen.core import (
     Const as _ConstExpr,
     Context,
     ForGenNode,
+    GenIfNode,
     GenVar,
     IfNode,
     Mux as _MuxExpr,
     Ref,
     Signal,
     SwitchNode,
+    WhenNode,
     _to_expr,
 )
 
@@ -76,15 +78,16 @@ class If:
 
 
 class Else:
-    """If 的 else 分支，必须紧跟在 with If(...) 之后使用。"""
+    """If / GenIf 的 else 分支，必须紧跟在 with If(...) 或 with GenIf(...) 之后使用。"""
 
     def __init__(self):
+        from rtlgen.core import GenIfNode
         ctx = Context.current()
         container = ctx.stmt_container if ctx else None
-        self.node: Optional[IfNode] = None
+        self.node = None
         if container is not None:
             for stmt in reversed(container):
-                if isinstance(stmt, IfNode):
+                if isinstance(stmt, (IfNode, GenIfNode)) and not stmt.else_body:
                     self.node = stmt
                     break
         # 如果当前 container 找不到，搜索 Context 栈中各 module 的 _top_level
@@ -94,7 +97,7 @@ class Else:
                 mod = c.module
                 if mod is not None:
                     for stmt in reversed(mod._top_level):
-                        if isinstance(stmt, IfNode):
+                        if isinstance(stmt, (IfNode, GenIfNode)) and not stmt.else_body:
                             self.node = stmt
                             break
                 if self.node is not None:
@@ -104,11 +107,11 @@ class Else:
             mod = _find_module_in_stack()
             if mod is not None:
                 for stmt in reversed(mod._top_level):
-                    if isinstance(stmt, IfNode):
+                    if isinstance(stmt, (IfNode, GenIfNode)) and not stmt.else_body:
                         self.node = stmt
                         break
         if self.node is None:
-            raise RuntimeError("Else must follow an If block in the same scope")
+            raise RuntimeError("Else must follow an If or GenIf block in the same scope")
 
     def __enter__(self):
         ctx = Context.current()
@@ -339,6 +342,17 @@ def Const(value: int, width: Optional[int] = None) -> Signal:
     return s
 
 
+def SRA(signal: Any, shift: Any) -> Signal:
+    """Signed Right Arithmetic: arithmetic right shift (Verilog >>>).
+
+    示例:
+        y = SRA(x, 3)   # Verilog: x >>> 3
+    """
+    from rtlgen.core import _make_binop
+    return _make_binop(">>>", signal, shift, width=_to_expr(signal).width)
+
+
+
 def Split(signal: Signal, chunk_width: int) -> List[Signal]:
     """将信号按 chunk_width 分段，返回从低位到高位的列表。
 
@@ -503,10 +517,14 @@ class ForGen:
     示例:
         with ForGen("i", 0, 4) as i:
             out[i] <<= in_[i]
+        
+        # Reverse iteration with step
+        with ForGen("i", 3, -1, step=-1) as i:
+            out[i] <<= in_[i]
     """
 
-    def __init__(self, var_name: str, start: int, end: int):
-        self.node = ForGenNode(var_name=var_name, start=start, end=end)
+    def __init__(self, var_name: str, start: int, end: int, step: int = 1):
+        self.node = ForGenNode(var_name=var_name, start=start, end=end, step=step)
         ctx = Context.current()
         if ctx and ctx.stmt_container is not None:
             ctx.stmt_container.append(self.node)
@@ -525,5 +543,238 @@ class ForGen:
         Context.push(Context(module=mod, stmt_container=self.node.body))
         return GenVar(self.node.var_name)
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        Context.pop()
+
+
+class Foreach:
+    """Iterate over a Vector or list of Signals, generating a ForGen block.
+    
+    示例:
+        vec = Vector(8, 4, "vec")
+        with Foreach(vec, "i") as (i, elem):
+            out[i] <<= elem + 1
+    
+        sigs = [a, b, c, d]
+        with Foreach(sigs, "i") as (i, elem):
+            result <<= result | (elem << i)
+    """
+    
+    def __init__(self, signals, var_name: str = "i"):
+        from rtlgen.core import Vector
+        if isinstance(signals, Vector):
+            self._signals = [signals[i] for i in range(len(signals))]
+        else:
+            self._signals = list(signals)
+        self._var_name = var_name
+        self.node = ForGenNode(var_name=var_name, start=0, end=len(self._signals), step=1)
+        ctx = Context.current()
+        if ctx and ctx.stmt_container is not None:
+            ctx.stmt_container.append(self.node)
+        elif ctx and ctx.module is not None:
+            ctx.module._top_level.append(self.node)
+        else:
+            mod = _find_module_in_stack()
+            if mod is not None:
+                mod._top_level.append(self.node)
+            else:
+                raise RuntimeError("Foreach used outside of any module or logic block")
+    
+    def __enter__(self):
+        ctx = Context.current()
+        mod = ctx.module if ctx else _find_module_in_stack()
+        Context.push(Context(module=mod, stmt_container=self.node.body))
+        return (GenVar(self._var_name), _ForeachElemProxy(self._signals, self._var_name))
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        Context.pop()
+
+
+class _ForeachElemProxy:
+    """Internal proxy that resolves to signals[var_name] in generated code."""
+    def __init__(self, signals, var_name):
+        self._signals = signals
+        self._var_name = var_name
+    
+    def __getitem__(self, key):
+        if key == self._var_name:
+            # Return a Select expression that picks the right signal based on genvar
+            from rtlgen.core import _make_binop
+            result = self._signals[0]
+            for i in range(1, len(self._signals)):
+                result = Mux(GenVar(self._var_name) == i, self._signals[i], result)
+            return result
+        raise KeyError(f"Only '{self._var_name}' is supported as index")
+
+
+class Elif:
+    """If-elif-else 链中的 elif 分支。
+    
+    示例:
+        with If(a == 0):
+            x <<= 1
+        with Elif(a == 1):
+            x <<= 2
+        with Elif(a == 2):
+            x <<= 3
+        with Else():
+            x <<= 0
+    """
+    
+    def __init__(self, condition: Any):
+        self.cond = _to_expr(condition)
+        ctx = Context.current()
+        container = ctx.stmt_container if ctx else None
+        self.target_node = None
+        
+        # Find the nearest IfNode/GenIfNode in the current container or ancestors
+        if container is not None:
+            for stmt in reversed(container):
+                if isinstance(stmt, (IfNode, GenIfNode)):
+                    self.target_node = stmt
+                    break
+        
+        if self.target_node is None:
+            stack = getattr(Context._local, "stack", [])
+            for c in reversed(stack):
+                mod = c.module
+                if mod is not None:
+                    for stmt in reversed(mod._top_level):
+                        if isinstance(stmt, (IfNode, GenIfNode)):
+                            self.target_node = stmt
+                            break
+                if self.target_node is not None:
+                    break
+        
+        if self.target_node is None:
+            mod = _find_module_in_stack()
+            if mod is not None:
+                for stmt in reversed(mod._top_level):
+                    if isinstance(stmt, (IfNode, GenIfNode)):
+                        self.target_node = stmt
+                        break
+        
+        if self.target_node is None:
+            raise RuntimeError("Elif must follow an If block in the same scope")
+    
+    def __enter__(self):
+        ctx = Context.current()
+        mod = ctx.module if ctx else _find_module_in_stack()
+        body = []
+        self.target_node.elif_bodies.append((self.cond, body))
+        Context.push(Context(module=mod, stmt_container=body))
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        Context.pop()
+
+
+class When:
+    """SpinalHDL-style when/otherwise 轻量条件赋值。
+    
+    与 If/Else 不同，When 收集所有分支并在 commit 时生成单一优先级 Mux 链。
+    适合多条信号在同一条件下的组合赋值。
+    
+    示例:
+        with When(a > b):
+            max_val <<= a
+            max_sel <<= 0
+        with When(a < b):
+            max_val <<= b
+            max_sel <<= 1
+        with Otherwise():
+            max_val <<= a
+            max_sel <<= 0
+    """
+    
+    def __init__(self, condition: Any):
+        ctx = Context.current()
+        container = ctx.stmt_container if ctx else None
+        self.node = None
+        self._current_branch = []
+        
+        # Only chain to the MOST RECENT WhenNode (last statement in container).
+        # This prevents unrelated When blocks in loops from being merged.
+        if container is not None and len(container) > 0:
+            if isinstance(container[-1], WhenNode):
+                self.node = container[-1]
+        
+        # Also check module top_level if no container
+        if self.node is None:
+            mod = _find_module_in_stack()
+            if mod is not None and len(mod._top_level) > 0:
+                if isinstance(mod._top_level[-1], WhenNode):
+                    self.node = mod._top_level[-1]
+        
+        if self.node is not None:
+            # Append to existing WhenNode
+            self.node.branches.append((_to_expr(condition), self._current_branch))
+        else:
+            # Create new WhenNode
+            self.node = WhenNode()
+            self.node.branches.append((_to_expr(condition), self._current_branch))
+            if ctx and ctx.stmt_container is not None:
+                ctx.stmt_container.append(self.node)
+            elif ctx and ctx.module is not None:
+                ctx.module._top_level.append(self.node)
+            else:
+                mod = _find_module_in_stack()
+                if mod is not None:
+                    mod._top_level.append(self.node)
+                else:
+                    raise RuntimeError("When used outside of any module or logic block")
+    
+    def __enter__(self):
+        ctx = Context.current()
+        mod = ctx.module if ctx else _find_module_in_stack()
+        Context.push(Context(module=mod, stmt_container=self._current_branch))
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        Context.pop()
+
+
+class Otherwise:
+    """When 的 otherwise 分支，必须紧跟在 with When(...) 之后使用。"""
+    
+    def __init__(self):
+        ctx = Context.current()
+        container = ctx.stmt_container if ctx else None
+        self.node = None
+        
+        if container is not None:
+            for stmt in reversed(container):
+                if isinstance(stmt, WhenNode):
+                    self.node = stmt
+                    break
+        
+        if self.node is None:
+            stack = getattr(Context._local, "stack", [])
+            for c in reversed(stack):
+                mod = c.module
+                if mod is not None:
+                    for stmt in reversed(mod._top_level):
+                        if isinstance(stmt, WhenNode):
+                            self.node = stmt
+                            break
+                if self.node is not None:
+                    break
+        
+        if self.node is None:
+            mod = _find_module_in_stack()
+            if mod is not None:
+                for stmt in reversed(mod._top_level):
+                    if isinstance(stmt, WhenNode):
+                        self.node = stmt
+                        break
+        
+        if self.node is None:
+            raise RuntimeError("Otherwise must follow a When block in the same scope")
+    
+    def __enter__(self):
+        ctx = Context.current()
+        mod = ctx.module if ctx else _find_module_in_stack()
+        body = []
+        self.node.branches.append((None, body))
+        Context.push(Context(module=mod, stmt_container=body))
+    
     def __exit__(self, exc_type, exc_val, exc_tb):
         Context.pop()

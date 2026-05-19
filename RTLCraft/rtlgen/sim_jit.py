@@ -10,6 +10,7 @@ use the standard Simulator AST interpreter.
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from rtlgen.core import (
@@ -118,7 +119,26 @@ class JITModule:
             idx = len(self.memories)
             self.mem_names.append(flat_name)
             self.mem_idx[flat_name] = idx
-            self.memories.append([0] * mem.depth)
+            init_vals = [0] * mem.depth
+            # Load init_file if provided (same logic as Simulator._init)
+            if mem.init_file and os.path.exists(mem.init_file):
+                with open(mem.init_file, "r") as f:
+                    for addr, line in enumerate(f):
+                        if addr >= mem.depth:
+                            break
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if line.startswith("0x") or line.startswith("0X"):
+                            val = int(line, 16)
+                        elif line.startswith("0b") or line.startswith("0B"):
+                            val = int(line, 2)
+                        elif all(c in "0123456789abcdefABCDEF" for c in line):
+                            val = int(line, 16)
+                        else:
+                            val = int(line, 10)
+                        init_vals[addr] = val & ((1 << mem.width) - 1)
+            self.memories.append(init_vals)
             self.mem_widths.append(mem.width)
             self.mem_masks.append((1 << mem.width) - 1)
 
@@ -140,6 +160,21 @@ class JITModule:
             for stmt in stmts:
                 if isinstance(stmt, SubmoduleInst):
                     self._collect_signals(stmt.module, prefix + stmt.name + "_")
+                    # Collect ad-hoc wires/expressions in port_map
+                    for expr in stmt.port_map.values():
+                        sig_obj = expr
+                        if hasattr(expr, 'signal') and not isinstance(expr, Signal):
+                            sig_obj = expr.signal
+                        if isinstance(sig_obj, Signal):
+                            flat_name = prefix + sig_obj.name
+                            if flat_name not in self.sig_idx:
+                                idx = len(self.sig_names)
+                                self.sig_names.append(flat_name)
+                                self.sig_widths.append(sig_obj.width)
+                                mask = (1 << sig_obj.width) - 1
+                                self.sig_masks.append(mask)
+                                self.sig_idx[flat_name] = idx
+                                self._sig_obj_to_idx[id(sig_obj)] = idx
                 elif isinstance(stmt, (IfNode, GenIfNode)):
                     _scan(stmt.then_body)
                     _scan(stmt.else_body)
@@ -188,6 +223,29 @@ class JITModule:
 
     def _compile_module(self, mod: Module, prefix: str):
         """Compile top-level, comb and seq statements of *mod*."""
+        # --- discover explicit SubmoduleInst names to avoid double-compilation ---
+        explicit_inst_names: set = set()
+        def _scan_for_explicit(stmts):
+            for stmt in stmts:
+                if type(stmt).__name__ == 'SubmoduleInst':
+                    explicit_inst_names.add(stmt.name)
+                elif type(stmt).__name__ in ('IfNode', 'GenIfNode'):
+                    _scan_for_explicit(stmt.then_body)
+                    _scan_for_explicit(stmt.else_body)
+                elif type(stmt).__name__ == 'SwitchNode':
+                    for _, body in stmt.cases:
+                        _scan_for_explicit(body)
+                    _scan_for_explicit(stmt.default_body)
+                elif type(stmt).__name__ == 'ForGenNode':
+                    for i in range(stmt.start, stmt.end):
+                        unrolled = [_subst_genvar_in_stmt(s, stmt.var_name, i) for s in stmt.body]
+                        _scan_for_explicit(unrolled)
+        _scan_for_explicit(mod._top_level)
+        for body in mod._comb_blocks:
+            _scan_for_explicit(body)
+        for _, _, _, _, body in mod._seq_blocks:
+            _scan_for_explicit(body)
+
         # top_level
         for stmt in mod._top_level:
             fn = self._compile_stmt(stmt, prefix, mode="comb")
@@ -208,8 +266,10 @@ class JITModule:
                 if fn:
                     self.seq_fns.append(fn)
 
-        # implicit port connections for submodules
+        # implicit port connections for submodules (skip if explicitly instantiated)
         for inst_name, submod in mod._submodules:
+            if inst_name in explicit_inst_names:
+                continue
             child_prefix = prefix + inst_name + "_"
             for pname in list(submod._inputs.keys()) + list(submod._outputs.keys()):
                 if hasattr(mod, pname):
@@ -231,14 +291,16 @@ class JITModule:
                             if fn:
                                 self.comb_fns.append(fn)
 
-        # recurse into implicit submodules
+        # recurse into implicit submodules (skip if explicitly instantiated)
         for inst_name, submod in mod._submodules:
+            if inst_name in explicit_inst_names:
+                continue
             self._compile_module(submod, prefix + inst_name + "_")
 
         # recurse into explicit SubmoduleInst inside statements
         def _recurse(stmts):
             for stmt in stmts:
-                if isinstance(stmt, SubmoduleInst):
+                if type(stmt).__name__ == 'SubmoduleInst':
                     child_prefix = prefix + stmt.name + "_"
                     self._compile_module(stmt.module, child_prefix)
                     # Generate port connections from port_map
@@ -259,14 +321,14 @@ class JITModule:
                             fn = self._compile_stmt(assign, prefix, mode="comb")
                             if fn:
                                 self.comb_fns.append(fn)
-                elif isinstance(stmt, (IfNode, GenIfNode)):
+                elif type(stmt).__name__ in ('IfNode', 'GenIfNode'):
                     _recurse(stmt.then_body)
                     _recurse(stmt.else_body)
-                elif isinstance(stmt, SwitchNode):
+                elif type(stmt).__name__ == 'SwitchNode':
                     for _, body in stmt.cases:
                         _recurse(body)
                     _recurse(stmt.default_body)
-                elif isinstance(stmt, ForGenNode):
+                elif type(stmt).__name__ == 'ForGenNode':
                     for i in range(stmt.start, stmt.end):
                         unrolled = [_subst_genvar_in_stmt(s, stmt.var_name, i) for s in stmt.body]
                         _recurse(unrolled)
@@ -287,7 +349,7 @@ class JITModule:
             return lambda: int(expr.value)
         if isinstance(expr, Signal):
             return self._compile_expr(expr._expr, prefix)
-        if isinstance(expr, Ref):
+        if hasattr(expr, 'signal') and not isinstance(expr, Signal):
             idx = self._get_sig_idx(expr.signal)
             return lambda: self.state[idx]
         if isinstance(expr, BinOp):
@@ -437,6 +499,9 @@ class JITModule:
     def _compile_assign(self, stmt: Assign, prefix: str, mode: str) -> Callable[[], None]:
         val_fn = self._compile_expr(stmt.value, prefix)
         target = stmt.target
+        # Resolve Ref-like to underlying Signal (duck-typing for cross-module compatibility)
+        if type(target).__name__ == 'Ref':
+            target = target.signal
         # In comb mode, all assignments are immediate (like AST interpreter).
         # In seq mode, blocking=False means non-blocking (next_state).
         write_state = (mode == "comb") or stmt.blocking
@@ -449,7 +514,7 @@ class JITModule:
             else:
                 return lambda: self.next_state.__setitem__(idx, val_fn() & mask)
 
-        if isinstance(target, Slice):
+        if type(target).__name__ == 'Slice':
             base_sig = target.operand.signal  # operand is Ref(Signal)
             base_idx = self._get_sig_idx(base_sig)
             lo = target.lo
@@ -457,22 +522,34 @@ class JITModule:
             val_mask = (1 << w) - 1
             base_mask = self.sig_masks[base_idx]
             inv_mask = (~(val_mask << lo)) & base_mask
-            def _rmw():
-                self.state[base_idx] = (self.state[base_idx] & inv_mask) | ((val_fn() & val_mask) << lo)
-            return _rmw
+            if write_state:
+                def _rmw():
+                    self.state[base_idx] = (self.state[base_idx] & inv_mask) | ((val_fn() & val_mask) << lo)
+                return _rmw
+            else:
+                def _rmw_next():
+                    self.next_state[base_idx] = (self.next_state[base_idx] & inv_mask) | ((val_fn() & val_mask) << lo)
+                return _rmw_next
 
-        if isinstance(target, PartSelect):
+        if type(target).__name__ == 'PartSelect':
             base_sig = target.operand.signal
             base_idx = self._get_sig_idx(base_sig)
             off_fn = self._compile_expr(target.offset, prefix)
             w = target.width
             val_mask = (1 << w) - 1
             base_mask = self.sig_masks[base_idx]
-            def _rmw():
-                lo = off_fn()
-                inv_mask = (~(val_mask << lo)) & base_mask
-                self.state[base_idx] = (self.state[base_idx] & inv_mask) | ((val_fn() & val_mask) << lo)
-            return _rmw
+            if write_state:
+                def _rmw():
+                    lo = off_fn()
+                    inv_mask = (~(val_mask << lo)) & base_mask
+                    self.state[base_idx] = (self.state[base_idx] & inv_mask) | ((val_fn() & val_mask) << lo)
+                return _rmw
+            else:
+                def _rmw_next():
+                    lo = off_fn()
+                    inv_mask = (~(val_mask << lo)) & base_mask
+                    self.next_state[base_idx] = (self.next_state[base_idx] & inv_mask) | ((val_fn() & val_mask) << lo)
+                return _rmw_next
 
         raise TypeError(f"JIT: unsupported assign target {type(target).__name__}")
 

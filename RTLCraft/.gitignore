@@ -16,3 +16,57 @@ __pycache__/
 
 # Temp
 tmp/
+
+# IDE
+.vscode/
+.claude/
+
+# Generated artifacts
+generated/
+generated_soc/
+*.v
+
+# Cache / runtime state
+.pytest_cache/
+.rtlcraft/
+
+# Unpublished directories
+ref_rtl/
+bp16/
+gem5/
+paper/
+slides/
+vscode-extension/
+tests/
+
+# Unpublished root-level files
+RTLGEN.md
+RTLGEN_CN.md
+RTLGEN_EXPRESSIVENESS.md
+pyRTL.md
+spec2DSL.md
+spec2dsl-plan.md
+spec2rtl_audit.md
+audit*.md
+review*.md
+plan.md
+new-plan.md
+skills_add.md
+design_*.py
+test_*.py
+debug_*.py
+gen_*.py
+fix_design.py
+verify_lut4_netlist.py
+adder4.py
+dsl_comment.md
+BP.zip
+BP/
+impl_ref/
+rtlcraft.aux
+rtlcraft.log
+rtlcraft.nav
+rtlcraft.out
+rtlcraft.snm
+rtlcraft.toc
+rtlcraft.vrb
