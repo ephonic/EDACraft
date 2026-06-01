@@ -1,0 +1,24 @@
+# ct_idu_is_sdiq_entry
+
+## Parameters
+- `SDIQ_WIDTH = 27`
+- `SDIQ_LOAD = 26`
+- `SDIQ_STADDR1_IN_STQ = 25`
+- `SDIQ_STADDR0_IN_STQ = 24`
+- `SDIQ_STDATA1_VLD = 23`
+- `SDIQ_UNALIGN = 22`
+- `SDIQ_SRCV0_LSU_MATCH = 21`
+- `SDIQ_SRCV0_DATA = 20`
+- `SDIQ_SRCV0_VREG = 20`
+- `SDIQ_SRCV0_WB = 13`
+- `SDIQ_SRCV0_RDY = 12`
+- `SDIQ_SRC0_LSU_MATCH = 11`
+- `SDIQ_SRC0_DATA = 10`
+- `SDIQ_SRC0_PREG = 10`
+- `SDIQ_SRC0_WB = 3`
+- `SDIQ_SRC0_RDY = 2`
+- `SDIQ_SRCV0_VLD = 1`
+- `SDIQ_SRC0_VLD = 0`
+
+## Logic Block Types
+- seq_async_reset

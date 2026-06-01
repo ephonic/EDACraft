@@ -1,0 +1,18 @@
+# cpu_imem_test_tb
+
+## Parameters
+- `WIDTH = 15`
+- `WIDTH = 14`
+- `WIDTH = 13`
+- `WIDTH = 12`
+- `LOCAL_DATA_ADDR_WIDTH = 16`
+- `LOCAL_TAG_ADDR_WIDTH = 16`
+- `LOCAL_DATA_DATA_WIDTH = 132`
+- `LOCAL_TAG_DATA_WIDTH = 61`
+- `LOCAL_DATA_DATA_WIDTH = 128`
+- `LOCAL_TAG_DATA_WIDTH = 59`
+- `LOCAL_DATA_WE_WIDTH = 1`
+- `LOCAL_TAG_WE_WIDTH = 3`
+
+## Logic Block Types
+- seq

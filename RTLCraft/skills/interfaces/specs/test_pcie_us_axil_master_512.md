@@ -1,0 +1,14 @@
+# test_pcie_us_axil_master_512
+
+## Parameters
+- `AXIS_PCIE_DATA_WIDTH = 512`
+- `AXIS_PCIE_KEEP_WIDTH = (AXIS_PCIE_DATA_WIDTH/32)`
+- `AXIS_PCIE_CQ_USER_WIDTH = 183`
+- `AXIS_PCIE_CC_USER_WIDTH = 81`
+- `AXI_DATA_WIDTH = 32`
+- `AXI_ADDR_WIDTH = 64`
+- `AXI_STRB_WIDTH = (AXI_DATA_WIDTH/8)`
+- `ENABLE_PARITY = 0`
+
+## Submodule Instances
+- `UUT`

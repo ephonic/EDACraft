@@ -1,0 +1,36 @@
+# sm2cluster_arb
+
+## Ports (33)
+- `input [1] clk`
+- `input [1] rst_n`
+- `output [`NUM_SM_IN_CLUSTER-1:0] mem_req_vec_in_ready_o`
+- `input [`NUM_SM_IN_CLUSTER-1:0] mem_req_vec_in_valid_i`
+- `input [`NUM_SM_IN_CLUSTER*3-1:0] mem_req_vec_in_a_opcode_i`
+- `input [`NUM_SM_IN_CLUSTER*3-1:0] mem_req_vec_in_a_param_i`
+- `input [`NUM_SM_IN_CLUSTER*`XLEN-1:0] mem_req_vec_in_a_addr_i`
+- `input [`NUM_SM_IN_CLUSTER*`DCACHE_BLOCKWORDS*`XLEN-1:0] mem_req_vec_in_a_data_i`
+- `input [`NUM_SM_IN_CLUSTER*`DCACHE_BLOCKWORDS*`BYTESOFWORD-1:0] mem_req_vec_in_a_mask_i`
+- `input [`NUM_SM_IN_CLUSTER*`D_SOURCE-1:0] mem_req_vec_in_a_source_i`
+- `input [1] mem_req_out_ready_i`
+- `output [1] mem_req_out_valid_o`
+- `output [`OP_BITS-1:0] mem_req_out_opcode_o`
+- `output [`SIZE_BITS-1:0] mem_req_out_size_o`
+- `output [`CLUSTER_SOURCE-1:0] mem_req_out_source_o`
+- `output [`ADDRESS_BITS-1:0] mem_req_out_address_o`
+- `output [`MASK_BITS-1:0] mem_req_out_mask_o`
+- `output [`DATA_BITS-1:0] mem_req_out_data_o`
+- `output [2:0] mem_req_out_param_o`
+- `output [1] mem_rsp_in_ready_o`
+- `input [1] mem_rsp_in_valid_i`
+- `input [`OP_BITS-1:0] mem_rsp_in_opcode_i`
+- `input [`SIZE_BITS-1:0] mem_rsp_in_size_i`
+- `input [`CLUSTER_SOURCE-1:0] mem_rsp_in_source_i`
+- `input [`DATA_BITS-1:0] mem_rsp_in_data_i`
+- `input [2:0] mem_rsp_in_param_i`
+- `input [`ADDRESS_BITS-1:0] mem_rsp_in_address_i`
+- `input [`NUM_SM_IN_CLUSTER-1:0] mem_rsp_vec_out_ready_i`
+- `output [`NUM_SM_IN_CLUSTER-1:0] mem_rsp_vec_out_valid_o`
+- `output [`NUM_SM_IN_CLUSTER*3-1:0] mem_rsp_vec_out_d_opcode_o`
+- `output [`NUM_SM_IN_CLUSTER*`WORDLENGTH-1:0] mem_rsp_vec_out_d_addr_o`
+- `output [`NUM_SM_IN_CLUSTER*`DCACHE_BLOCKWORDS*`WORDLENGTH-1:0] mem_rsp_vec_out_d_data_o`
+- `output [`NUM_SM_IN_CLUSTER*`D_SOURCE-1:0] mem_rsp_vec_out_d_source_o`

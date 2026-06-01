@@ -1,0 +1,71 @@
+# GPGPU_top
+
+## Ports (62)
+- `input [1] clk`
+- `input [1] rst_n`
+- `input [1] host_req_valid_i`
+- `output [1] host_req_ready_o`
+- `input [`WG_ID_WIDTH-1:0] host_req_wg_id_i`
+- `input [`WF_COUNT_WIDTH-1:0] host_req_num_wf_i`
+- `input [`WAVE_ITEM_WIDTH-1:0] host_req_wf_size_i`
+- `input [`MEM_ADDR_WIDTH-1:0] host_req_start_pc_i`
+- `input [`WG_SIZE_X_WIDTH*3-1:0] host_req_kernel_size_3d_i`
+- `input [`MEM_ADDR_WIDTH-1:0] host_req_pds_baseaddr_i`
+- `input [`MEM_ADDR_WIDTH-1:0] host_req_csr_knl_i`
+- `input [`VGPR_ID_WIDTH:0] host_req_vgpr_size_total_i`
+- `input [`SGPR_ID_WIDTH:0] host_req_sgpr_size_total_i`
+- `input [`LDS_ID_WIDTH:0] host_req_lds_size_total_i`
+- `input [`GDS_ID_WIDTH:0] host_req_gds_size_total_i`
+- `input [`VGPR_ID_WIDTH:0] host_req_vgpr_size_per_wf_i`
+- `input [`SGPR_ID_WIDTH:0] host_req_sgpr_size_per_wf_i`
+- `input [`MEM_ADDR_WIDTH-1:0] host_req_gds_baseaddr_i`
+- `output [1] host_rsp_valid_o`
+- `input [1] host_rsp_ready_i`
+- `output [`WG_ID_WIDTH-1:0] host_rsp_inflight_wg_buffer_host_wf_done_wg_id_o`
+- `input [1] icache_mem_rsp_valid_i`
+- `output [1] icache_mem_rsp_ready_o`
+- `input [`XLEN-1:0] icache_mem_rsp_addr_i`
+- `input [`DCACHE_BLOCKWORDS*`XLEN-1:0] icache_mem_rsp_data_i`
+- `input [`D_SOURCE-1:0] icache_mem_rsp_source_i`
+- `output [1] icache_mem_req_valid_o`
+- `input [1] icache_mem_req_ready_i`
+- `output [`XLEN-1:0] icache_mem_req_addr_o`
+- `output [`D_SOURCE-1:0] icache_mem_req_source_o`
+- `input [1] dcache_mem_rsp_valid_i`
+- `output [1] dcache_mem_rsp_ready_o`
+- `input [`WIDBITS-1:0] dcache_mem_rsp_instrid_i`
+- `input [`DCACHE_NLANES*`XLEN-1:0] dcache_mem_rsp_data_i`
+- `input [`DCACHE_NLANES-1:0] dcache_mem_rsp_activemask_i`
+- `output [1] dcache_mem_req_valid_o`
+- `input [1] dcache_mem_req_ready_i`
+- `output [`WIDBITS-1:0] dcache_mem_req_instrid_o`
+- `output [`DCACHE_SETIDXBITS-1:0] dcache_mem_req_setidx_o`
+- `output [`DCACHE_TAGBITS-1:0] dcache_mem_req_tag_o`
+- `output [`DCACHE_NLANES-1:0] dcache_mem_req_activemask_o`
+- `output [`DCACHE_NLANES*`DCACHE_BLOCKOFFSETBITS-1:0] dcache_mem_req_blockoffset_o`
+- `output [`DCACHE_NLANES*`BYTESOFWORD-1:0] dcache_mem_req_wordoffset1h_o`
+- `output [`DCACHE_NLANES*`XLEN-1:0] dcache_mem_req_data_o`
+- `output [2:0] dcache_mem_req_opcode_o`
+- `output [3:0] dcache_mem_req_param_o`
+- `output [`NUM_L2CACHE-1:0] out_a_valid_o`
+- `input [`NUM_L2CACHE-1:0] out_a_ready_i`
+- `output [`NUM_L2CACHE*`OP_BITS-1:0] out_a_opcode_o`
+- `output [`NUM_L2CACHE*`SIZE_BITS-1:0] out_a_size_o`
+- `output [`NUM_L2CACHE*`SOURCE_BITS-1:0] out_a_source_o`
+- `output [`NUM_L2CACHE*`ADDRESS_BITS-1:0] out_a_address_o`
+- `output [`NUM_L2CACHE*`MASK_BITS-1:0] out_a_mask_o`
+- `output [`NUM_L2CACHE*`DATA_BITS-1:0] out_a_data_o`
+- `output [`NUM_L2CACHE*3-1:0] out_a_param_o`
+- `input [`NUM_L2CACHE-1:0] out_d_valid_i`
+- `output [`NUM_L2CACHE-1:0] out_d_ready_o`
+- `input [`NUM_L2CACHE*`OP_BITS-1:0] out_d_opcode_i`
+- `input [`NUM_L2CACHE*`SIZE_BITS-1:0] out_d_size_i`
+- `input [`NUM_L2CACHE*`SOURCE_BITS-1:0] out_d_source_i`
+- `input [`NUM_L2CACHE*`DATA_BITS-1:0] out_d_data_i`
+- `input [`NUM_L2CACHE*3-1:0] out_d_param_i`
+
+## Submodule Instances
+- `Arb`
+
+## Logic Block Types
+- seq_async_reset

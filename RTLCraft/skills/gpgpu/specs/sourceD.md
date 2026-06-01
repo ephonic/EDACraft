@@ -1,0 +1,74 @@
+# sourceD
+
+## Parameters
+- `STAGE_1 = 3'b000`
+- `STAGE_2 = 3'b001`
+- `STAGE_3 = 3'b010`
+- `STAGE_4 = 3'b011`
+- `STAGE_5 = 3'b100`
+- `STAGE_6 = 3'b101`
+- `STAGE_7 = 3'b110`
+- `STAGE_8 = 3'b111`
+
+## Ports (58)
+- `input [1] clk`
+- `input [1] rst_n`
+- `input [1] req_from_mem_i`
+- `input [1] req_hit_i`
+- `input [`WAY_BITS-1:0] req_way_i`
+- `input [1] req_dirty_i`
+- `input [1] req_flush_i`
+- `input [1] req_last_flush_i`
+- `input [`SET_BITS-1:0] req_set_i`
+- `input [`OP_BITS-1:0] req_opcode_i`
+- `input [`SIZE_BITS-1:0] req_size_i`
+- `input [`SOURCE_BITS-1:0] req_source_i`
+- `input [`TAG_BITS-1:0] req_tag_i`
+- `input [`OFFSET_BITS-1:0] req_offset_i`
+- `input [`PUT_BITS-1:0] req_put_i`
+- `input [`DATA_BITS-1:0] req_data_i`
+- `input [`MASK_BITS-1:0] req_mask_i`
+- `input [2:0] req_param_i`
+- `input [1] req_valid_i`
+- `output [1] req_ready_o`
+- `output [`ADDRESS_BITS-1:0] d_address_o`
+- `output [`OP_BITS-1:0] d_opcode_o`
+- `output [`SIZE_BITS-1:0] d_size_o`
+- `output [`SOURCE_BITS-1:0] d_source_o`
+- `output [`DATA_BITS-1:0] d_data_o`
+- `output [2:0] d_param_o`
+- `output [1] d_valid_o`
+- `input [1] d_ready_i`
+- `output [`PUT_BITS-1:0] pb_pop_index_o`
+- `output [1] pb_pop_valid_o`
+- `input [`DATA_BITS-1:0] pb_beat_data_i`
+- `input [`MASK_BITS-1:0] pb_beat_mask_i`
+- `output [`WAY_BITS-1:0] bs_radr_way_o`
+- `output [`SET_BITS-1:0] bs_radr_set_o`
+- `output [`INNER_MASK_BITS-1:0] bs_radr_mask_o`
+- `output [1] bs_radr_valid_o`
+- `input [1] bs_radr_ready_i`
+- `input [`L2CACHE_BEATBYTES*8-1:0] bs_rdat_data_i`
+- `output [`WAY_BITS-1:0] bs_wadr_way_o`
+- `output [`SET_BITS-1:0] bs_wadr_set_o`
+- `output [`INNER_MASK_BITS-1:0] bs_wadr_mask_o`
+- `output [1] bs_wadr_valid_o`
+- `input [1] bs_wadr_ready_i`
+- `output [`L2CACHE_BEATBYTES*8-1:0] bs_wdat_data_o`
+- `output [`SET_BITS-1:0] a_set_o`
+- `output [`OP_BITS-1:0] a_opcode_o`
+- `output [`SIZE_BITS-1:0] a_size_o`
+- `output [`SOURCE_BITS-1:0] a_source_o`
+- `output [`TAG_BITS-1:0] a_tag_o`
+- `output [`OFFSET_BITS-1:0] a_offset_o`
+- `output [`PUT_BITS-1:0] a_put_o`
+- `output [`DATA_BITS-1:0] a_data_o`
+- `output [`MASK_BITS-1:0] a_mask_o`
+- `output [2:0] a_param_o`
+- `output [1] a_valid_o`
+- `input [1] a_ready_i`
+- `output [1] mshr_wait_o`
+- `output [1] finish_issue_o`
+
+## Logic Block Types
+- seq_async_reset

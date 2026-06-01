@@ -1,0 +1,65 @@
+[
+  {
+    "module": "CheckNode",
+    "file": "ref_rtl/LDPC_Decoder/verilog/VFiles/CheckNode.v",
+    "lines": 69,
+    "ports": 0,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "Comparator",
+    "file": "ref_rtl/LDPC_Decoder/verilog/VFiles/Comparator.v",
+    "lines": 19,
+    "ports": 0,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "LDPC",
+    "file": "ref_rtl/LDPC_Decoder/verilog/VFiles/LDPC.v",
+    "lines": 8383,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "QuantizedAdder",
+    "file": "ref_rtl/LDPC_Decoder/verilog/VFiles/QuantizedAdder.v",
+    "lines": 12,
+    "ports": 0,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "QuantizedSubber",
+    "file": "ref_rtl/LDPC_Decoder/verilog/VFiles/QuantizedSubber.v",
+    "lines": 12,
+    "ports": 0,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "TreeComparator",
+    "file": "ref_rtl/LDPC_Decoder/verilog/VFiles/TreeComparator.v",
+    "lines": 64,
+    "ports": 0,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "VarNode",
+    "file": "ref_rtl/LDPC_Decoder/verilog/VFiles/VarNode.v",
+    "lines": 56,
+    "ports": 0,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  }
+]

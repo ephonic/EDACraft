@@ -1,0 +1,65 @@
+# system_top
+
+## Ports (59)
+- `inout [14:0] ddr_addr`
+- `inout [ 2:0] ddr_ba`
+- `inout [1] ddr_cas_n`
+- `inout [1] ddr_ck_n`
+- `inout [1] ddr_ck_p`
+- `inout [1] ddr_cke`
+- `inout [1] ddr_cs_n`
+- `inout [ 3:0] ddr_dm`
+- `inout [31:0] ddr_dq`
+- `inout [ 3:0] ddr_dqs_n`
+- `inout [ 3:0] ddr_dqs_p`
+- `inout [1] ddr_odt`
+- `inout [1] ddr_ras_n`
+- `inout [1] ddr_reset_n`
+- `inout [1] ddr_we_n`
+- `inout [1] fixed_io_ddr_vrn`
+- `inout [1] fixed_io_ddr_vrp`
+- `inout [53:0] fixed_io_mio`
+- `inout [1] fixed_io_ps_clk`
+- `inout [1] fixed_io_ps_porb`
+- `inout [1] fixed_io_ps_srstb`
+- `inout [1] iic_scl`
+- `inout [1] iic_sda`
+- `inout [25:0] gpio_bd`
+- `input [1] rx_clk_in_p`
+- `input [1] rx_clk_in_n`
+- `input [1] rx_frame_in_p`
+- `input [1] rx_frame_in_n`
+- `input [ 5:0] rx_data_in_p`
+- `input [ 5:0] rx_data_in_n`
+- `output [1] tx_clk_out_p`
+- `output [1] tx_clk_out_n`
+- `output [1] tx_frame_out_p`
+- `output [1] tx_frame_out_n`
+- `output [ 5:0] tx_data_out_p`
+- `output [ 5:0] tx_data_out_n`
+- `output [1] enable`
+- `output [1] txnrx`
+- `inout [1] gpio_resetb`
+- `inout [1] gpio_sync`
+- `inout [1] gpio_en_agc`
+- `inout [ 3:0] gpio_ctl`
+- `input [ 7:0] gpio_status`
+- `output [1] spi_csn`
+- `output [1] spi_clk`
+- `output [1] spi_mosi`
+- `input [1] spi_miso`
+- `output [1] tx1_en`
+- `output [1] rx1_led`
+- `output [1] mdio1_mdc`
+- `inout [1] mdio1_io`
+- `output [7:0] phy_tx_dout`
+- `output [1] phy_tx_err`
+- `input [1] phy_tx_clk`
+- `output [1] phy_tx_en`
+- `output [1] phy_gtx_clk`
+- `output [1] phy_reset_n`
+- `input [7:0] phy_rx_din`
+- `input [1] phy_rx_dv`
+
+## Logic Block Types
+- seq

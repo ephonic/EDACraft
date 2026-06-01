@@ -1,0 +1,14 @@
+# auxiliary_daemon
+
+## Parameters
+- `RF_IQ_BIT_WIDTH = 64`
+- `RF_I_OR_Q_BIT_WIDTH = (RF_IQ_BIT_WIDTH/4)`
+- `IQ_BIT_WIDTH = 8`
+- `GFSK_DEMODULATION_BIT_WIDTH = 16`
+- `BRAM_DEPTH = 32768`
+- `BRAM_ADDR_WIDTH = $clog2(BRAM_DEPTH)`
+- `BRAM_DATA_WIDTH = (2*RF_I_OR_Q_BIT_WIDTH)`
+- `BRAM_ADDR_WIDTH_IN_BYTE = $clog2(BRAM_DEPTH*BRAM_DATA_WIDTH/8)`
+
+## Logic Block Types
+- seq

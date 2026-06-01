@@ -1,0 +1,79 @@
+# pcie_s10_if_tx
+
+## Parameters
+- `SEG_COUNT = 1`
+- `SEG_DATA_WIDTH = 256`
+- `TLP_DATA_WIDTH = SEG_COUNT*SEG_DATA_WIDTH`
+- `TLP_STRB_WIDTH = TLP_DATA_WIDTH/32`
+- `TLP_HDR_WIDTH = 128`
+- `TLP_SEG_COUNT = 1`
+- `TX_SEQ_NUM_WIDTH = 6`
+- `SEG_STRB_WIDTH = SEG_DATA_WIDTH/32`
+- `INT_TLP_SEG_COUNT = SEG_COUNT`
+- `INT_TLP_SEG_DATA_WIDTH = TLP_DATA_WIDTH / INT_TLP_SEG_COUNT`
+- `INT_TLP_SEG_STRB_WIDTH = TLP_STRB_WIDTH / INT_TLP_SEG_COUNT`
+- `SEG_SEL_WIDTH = $clog2(INT_TLP_SEG_COUNT)`
+- `PORTS = 4`
+- `CL_PORTS = $clog2(PORTS)`
+
+## Ports (57)
+- `input [1] clk`
+- `input [1] rst`
+- `output [SEG_COUNT*SEG_DATA_WIDTH-1:0] tx_st_data`
+- `output [SEG_COUNT-1:0] tx_st_sop`
+- `output [SEG_COUNT-1:0] tx_st_eop`
+- `output [SEG_COUNT-1:0] tx_st_valid`
+- `input [1] tx_st_ready`
+- `output [SEG_COUNT-1:0] tx_st_err`
+- `input [7:0] tx_ph_cdts`
+- `input [11:0] tx_pd_cdts`
+- `input [7:0] tx_nph_cdts`
+- `input [11:0] tx_npd_cdts`
+- `input [7:0] tx_cplh_cdts`
+- `input [11:0] tx_cpld_cdts`
+- `input [SEG_COUNT-1:0] tx_hdr_cdts_consumed`
+- `input [SEG_COUNT-1:0] tx_data_cdts_consumed`
+- `input [SEG_COUNT*2-1:0] tx_cdts_type`
+- `input [SEG_COUNT*1-1:0] tx_cdts_data_value`
+- `input [TLP_SEG_COUNT*TLP_HDR_WIDTH-1:0] tx_rd_req_tlp_hdr`
+- `input [TLP_SEG_COUNT*TX_SEQ_NUM_WIDTH-1:0] tx_rd_req_tlp_seq`
+- `input [TLP_SEG_COUNT-1:0] tx_rd_req_tlp_valid`
+- `input [TLP_SEG_COUNT-1:0] tx_rd_req_tlp_sop`
+- `input [TLP_SEG_COUNT-1:0] tx_rd_req_tlp_eop`
+- `output [1] tx_rd_req_tlp_ready`
+- `output [SEG_COUNT*TX_SEQ_NUM_WIDTH-1:0] m_axis_rd_req_tx_seq_num`
+- `output [SEG_COUNT-1:0] m_axis_rd_req_tx_seq_num_valid`
+- `input [TLP_DATA_WIDTH-1:0] tx_wr_req_tlp_data`
+- `input [TLP_STRB_WIDTH-1:0] tx_wr_req_tlp_strb`
+- `input [TLP_SEG_COUNT*TLP_HDR_WIDTH-1:0] tx_wr_req_tlp_hdr`
+- `input [TLP_SEG_COUNT*TX_SEQ_NUM_WIDTH-1:0] tx_wr_req_tlp_seq`
+- `input [TLP_SEG_COUNT-1:0] tx_wr_req_tlp_valid`
+- `input [TLP_SEG_COUNT-1:0] tx_wr_req_tlp_sop`
+- `input [TLP_SEG_COUNT-1:0] tx_wr_req_tlp_eop`
+- `output [1] tx_wr_req_tlp_ready`
+- `output [SEG_COUNT*TX_SEQ_NUM_WIDTH-1:0] m_axis_wr_req_tx_seq_num`
+- `output [SEG_COUNT-1:0] m_axis_wr_req_tx_seq_num_valid`
+- `input [TLP_DATA_WIDTH-1:0] tx_cpl_tlp_data`
+- `input [TLP_STRB_WIDTH-1:0] tx_cpl_tlp_strb`
+- `input [TLP_SEG_COUNT*TLP_HDR_WIDTH-1:0] tx_cpl_tlp_hdr`
+- `input [TLP_SEG_COUNT-1:0] tx_cpl_tlp_valid`
+- `input [TLP_SEG_COUNT-1:0] tx_cpl_tlp_sop`
+- `input [TLP_SEG_COUNT-1:0] tx_cpl_tlp_eop`
+- `output [1] tx_cpl_tlp_ready`
+- `input [31:0] tx_msi_wr_req_tlp_data`
+- `input [1] tx_msi_wr_req_tlp_strb`
+- `input [TLP_HDR_WIDTH-1:0] tx_msi_wr_req_tlp_hdr`
+- `input [1] tx_msi_wr_req_tlp_valid`
+- `input [1] tx_msi_wr_req_tlp_sop`
+- `input [1] tx_msi_wr_req_tlp_eop`
+- `output [1] tx_msi_wr_req_tlp_ready`
+- `output [7:0] tx_fc_ph_av`
+- `output [11:0] tx_fc_pd_av`
+- `output [7:0] tx_fc_nph_av`
+- `output [11:0] tx_fc_npd_av`
+- `output [7:0] tx_fc_cplh_av`
+- `output [11:0] tx_fc_cpld_av`
+- `input [2:0] max_payload_size`
+
+## Logic Block Types
+- seq

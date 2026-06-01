@@ -1,0 +1,31 @@
+# test_axis_ram_switch_1x4_256_64
+
+## Parameters
+- `FIFO_DEPTH = 512`
+- `SPEEDUP = 0`
+- `S_COUNT = 1`
+- `M_COUNT = 4`
+- `S_DATA_WIDTH = 256`
+- `S_KEEP_ENABLE = (S_DATA_WIDTH>8)`
+- `S_KEEP_WIDTH = (S_DATA_WIDTH/8)`
+- `M_DATA_WIDTH = 64`
+- `M_KEEP_ENABLE = (M_DATA_WIDTH>8)`
+- `M_KEEP_WIDTH = (M_DATA_WIDTH/8)`
+- `ID_ENABLE = 1`
+- `ID_WIDTH = 8`
+- `DEST_WIDTH = $clog2(M_COUNT+1)`
+- `USER_ENABLE = 1`
+- `USER_WIDTH = 1`
+- `USER_BAD_FRAME_VALUE = 1'b1`
+- `USER_BAD_FRAME_MASK = 1'b1`
+- `DROP_BAD_FRAME = 1`
+- `DROP_WHEN_FULL = 0`
+- `M_BASE = {3'd3`
+- `M_TOP = {3'd3`
+- `M_CONNECT = {M_COUNT{{S_COUNT{1'b1}}}}`
+- `ARB_TYPE_ROUND_ROBIN = 1`
+- `ARB_LSB_HIGH_PRIORITY = 1`
+- `RAM_PIPELINE = 2`
+
+## Submodule Instances
+- `UUT`

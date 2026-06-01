@@ -1,0 +1,53 @@
+# ddr3_axi
+
+## Parameters
+- `DDR_MHZ = 100`
+- `DDR_WRITE_LATENCY = 4`
+- `DDR_READ_LATENCY = 4`
+
+## Ports (45)
+- `input [1] clk_i`
+- `input [1] rst_i`
+- `input [1] inport_awvalid_i`
+- `input [ 31:0] inport_awaddr_i`
+- `input [  3:0] inport_awid_i`
+- `input [  7:0] inport_awlen_i`
+- `input [  1:0] inport_awburst_i`
+- `input [1] inport_wvalid_i`
+- `input [ 31:0] inport_wdata_i`
+- `input [  3:0] inport_wstrb_i`
+- `input [1] inport_wlast_i`
+- `input [1] inport_bready_i`
+- `input [1] inport_arvalid_i`
+- `input [ 31:0] inport_araddr_i`
+- `input [  3:0] inport_arid_i`
+- `input [  7:0] inport_arlen_i`
+- `input [  1:0] inport_arburst_i`
+- `input [1] inport_rready_i`
+- `input [ 31:0] dfi_rddata_i`
+- `input [1] dfi_rddata_valid_i`
+- `input [  1:0] dfi_rddata_dnv_i`
+- `output [1] inport_awready_o`
+- `output [1] inport_wready_o`
+- `output [1] inport_bvalid_o`
+- `output [  1:0] inport_bresp_o`
+- `output [  3:0] inport_bid_o`
+- `output [1] inport_arready_o`
+- `output [1] inport_rvalid_o`
+- `output [ 31:0] inport_rdata_o`
+- `output [  1:0] inport_rresp_o`
+- `output [  3:0] inport_rid_o`
+- `output [1] inport_rlast_o`
+- `output [ 14:0] dfi_address_o`
+- `output [  2:0] dfi_bank_o`
+- `output [1] dfi_cas_n_o`
+- `output [1] dfi_cke_o`
+- `output [1] dfi_cs_n_o`
+- `output [1] dfi_odt_o`
+- `output [1] dfi_ras_n_o`
+- `output [1] dfi_reset_n_o`
+- `output [1] dfi_we_n_o`
+- `output [ 31:0] dfi_wrdata_o`
+- `output [1] dfi_wrdata_en_o`
+- `output [  3:0] dfi_wrdata_mask_o`
+- `output [1] dfi_rddata_en_o`

@@ -1,0 +1,61 @@
+# btle_ll
+
+## Parameters
+- `C_S00_AXI_DATA_WIDTH = 32`
+- `C_S00_AXI_ADDR_WIDTH = 8`
+- `CLK_FREQUENCE = 100_000_000`
+- `BAUD_RATE = 115200`
+- `PARITY = "NONE"`
+- `FRAME_WD = 8`
+- `RF_IQ_BIT_WIDTH = 64`
+- `RF_I_OR_Q_BIT_WIDTH = (RF_IQ_BIT_WIDTH/4)`
+- `GAUSS_FILTER_BIT_WIDTH = 16`
+- `SIN_COS_ADDR_BIT_WIDTH = 11`
+- `IQ_BIT_WIDTH = 8`
+- `CRC_STATE_BIT_WIDTH = 24`
+- `CHANNEL_NUMBER_BIT_WIDTH = 6`
+- `GFSK_DEMODULATION_BIT_WIDTH = 16`
+- `LEN_UNIQUE_BIT_SEQUENCE = 32`
+- `NUM_BIT_PAYLOAD_LENGTH = 8`
+- `LEN_UNIQUE_BIT_SEQUENCE = 32`
+- `CHANNEL_NUMBER_BIT_WIDTH = 6`
+- `CRC_STATE_BIT_WIDTH = 24`
+- `C_S00_AXI_DATA_WIDTH = 32`
+- `NUM_BIT_PAYLOAD_LENGTH = 8`
+- `RD_DATA_AXI_REG_IDX = 40`
+- `NUM_OCTET_TOTAL_BITWIDTH = 7`
+- `C_S00_AXI_DATA_WIDTH = 32`
+- `COUNTER_WIDTH = 32`
+- `COUNTER_WIDTH = 32`
+- `C_S_AXI_DATA_WIDTH = 32`
+- `C_S_AXI_ADDR_WIDTH = 8`
+- `CLK_FREQUENCE = 50_000_000`
+- `BAUD_RATE = 9600`
+- `PARITY = "NONE"`
+- `FRAME_WD = 8`
+- `CLK_FREQUENCE = 50_000_000`
+- `BAUD_RATE = 9600`
+- `PARITY = "NONE"`
+- `FRAME_WD = 8`
+- `CLK_FREQUENCE = 50_000_000`
+- `BAUD_RATE = 9600`
+- `CLK_FREQUENCE = 50_000_000`
+- `BAUD_RATE = 9600`
+- `DATA_WIDTH = 8`
+
+## Ports (5)
+- `input [1] bb_clk`
+- `input [1] bb_rst`
+- `input [1] axi_aclk`
+- `input [1] axi_aresetn`
+- `input [1] wire`
+
+## FSM States
+- `OPT_MEM_ADDR_BITS` = 0
+- `IDLE` = 1
+- `IDLE` = 2
+
+## Logic Block Types
+- comb
+- seq
+- seq_async_reset

@@ -1,0 +1,30 @@
+# ct_l2c_icc
+
+## Parameters
+- `TAG_INDEX_LENTH = `L2C_TAG_INDEX_WIDTH`
+- `TAG_TAG_LENTH = `L2C_TAG_DATA_WIDTH`
+- `DATA_INDEX_LENTH = `L2C_DATA_INDEX_WIDTH`
+- `L2C_ADDRW = 33`
+- `DCA_WAY_3 = 24`
+- `DCA_WAY_0 = 21`
+- `DCA_INDEX_20 = 20`
+- `DCA_INDEX_7 = 7`
+- `DCA_INDEX_5 = 5`
+- `DCA_INDEX_4 = 4`
+- `DCA_INDEX_0 = 0`
+- `ICC_STATE_IDLE = 4'b0000`
+- `ICC_INV = 4'b0010`
+- `TAG_RD = 4'b0011`
+- `TAG_FLOP = 4'b0100`
+- `STATUS_UPDT = 4'b0101`
+- `DIRTY_CHECK = 4'b0110`
+- `WAIT_RDL = 4'b0111`
+- `DATA_RD = 4'b1000`
+- `DATA_FLOP = 4'b1010`
+- `DCA_RDY = 4'b1011`
+- `DCA_CMPLT = 4'b1100`
+- `DATA_CRRCT = 4'b1101`
+- `TAG_CRRCT = 4'b1110`
+
+## Logic Block Types
+- seq_async_reset

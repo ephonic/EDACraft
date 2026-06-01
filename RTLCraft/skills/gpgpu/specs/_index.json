@@ -1,0 +1,1847 @@
+[
+  {
+    "module": "Booth",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/vmul/booth.v",
+    "lines": 24,
+    "ports": 4,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "GPGPU_top",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/GPGPU_top.v",
+    "lines": 616,
+    "ports": 62,
+    "params": 0,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "Listbuffer",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/Listbuffer.v",
+    "lines": 148,
+    "ports": 18,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "Listbuffer_no_push_opc_put_source",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/Listbuffer_no_push_opc_put_source.v",
+    "lines": 124,
+    "ports": 12,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "MSHR",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/MSHR.v",
+    "lines": 346,
+    "ports": 82,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "Scheduler",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/Scheduler.v",
+    "lines": 1420,
+    "ports": 34,
+    "params": 2,
+    "fsm": 0,
+    "children": 5
+  },
+  {
+    "module": "SourceA",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/SourceA.v",
+    "lines": 51,
+    "ports": 19,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "Wallace_adder_18",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/vmul/wallace_adder_18.v",
+    "lines": 132,
+    "ports": 21,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "addrcalculate",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/addrcalculate.v",
+    "lines": 683,
+    "ports": 28,
+    "params": 2,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "allocator_neo",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/allocator_neo.v",
+    "lines": 432,
+    "ports": 31,
+    "params": 0,
+    "fsm": 1,
+    "children": 1
+  },
+  {
+    "module": "alu",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/valu/alu.v",
+    "lines": 158,
+    "ports": 5,
+    "params": 2,
+    "fsm": 28,
+    "children": 0
+  },
+  {
+    "module": "aluexe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/aluexe.v",
+    "lines": 133,
+    "ports": 23,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "array_multiplier",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/vmul/array_multiplier.v",
+    "lines": 225,
+    "ports": 22,
+    "params": 1,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "axi4_adapter",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/axi4_adapter/axi4_adapter.sv",
+    "lines": 576,
+    "ports": 10,
+    "params": 0,
+    "fsm": 28,
+    "children": 0
+  },
+  {
+    "module": "axi4_adapter_top",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/axi4_adapter/axi4_adapter_top.sv",
+    "lines": 372,
+    "ports": 10,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "axi4lite_2_cta",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/axi4lite_2_cta.v",
+    "lines": 285,
+    "ports": 40,
+    "params": 5,
+    "fsm": 3,
+    "children": 0
+  },
+  {
+    "module": "axi_cut",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/axi4_adapter/axi4_cut.sv",
+    "lines": 115,
+    "ports": 6,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "axi_ram",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/common/axi_ram.sv",
+    "lines": 405,
+    "ports": 0,
+    "params": 9,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "bankconflict_arb",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/shared_memory/bankconflict_arb.v",
+    "lines": 200,
+    "ports": 14,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "banked_store",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/banked_store.v",
+    "lines": 136,
+    "ports": 20,
+    "params": 0,
+    "fsm": 2,
+    "children": 2
+  },
+  {
+    "module": "bin2one",
+    "file": "ref_rtl/gpgpu/src/common_cell/bin2one.v",
+    "lines": 18,
+    "ports": 2,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "branch_back",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/branch_back.v",
+    "lines": 52,
+    "ports": 15,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "branch_join_stack",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/simt_stack/branch_join_stack.v",
+    "lines": 115,
+    "ports": 13,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "byte_extract",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/byte_extract.v",
+    "lines": 31,
+    "ports": 4,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "cam_allocator",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/cam_allocator.v",
+    "lines": 84,
+    "ports": 8,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "cam_allocator_neo",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/cam_allocator_neo.v",
+    "lines": 85,
+    "ports": 10,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "cluster_to_l2_arb",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cluster_to_l2_arb.v",
+    "lines": 123,
+    "ports": 34,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "clz",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/common_cells/clz.v",
+    "lines": 48,
+    "ports": 1,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "clz_49",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/common_cells/clz_49.v",
+    "lines": 78,
+    "ports": 2,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "collector_unit",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/operand_collector/collector_unit.v",
+    "lines": 835,
+    "ports": 51,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "control_mvp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/float_div_mvp/control_mvp.sv",
+    "lines": 3413,
+    "ports": 27,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "crossbar",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/operand_collector/crossbar.sv",
+    "lines": 550,
+    "ports": 0,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "csrexe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/csr/csrexe.v",
+    "lines": 222,
+    "ports": 36,
+    "params": 0,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "csrfile",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/csr/csrfile.v",
+    "lines": 507,
+    "ports": 29,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "cta2warp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/cta2warp.v",
+    "lines": 90,
+    "ports": 15,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "cta_interface",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta_interface.v",
+    "lines": 161,
+    "ports": 26,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "cta_scheduler",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/cta_scheduler.v",
+    "lines": 320,
+    "ports": 36,
+    "params": 0,
+    "fsm": 0,
+    "children": 5
+  },
+  {
+    "module": "cu_handler",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/cu_handler.v",
+    "lines": 383,
+    "ports": 14,
+    "params": 0,
+    "fsm": 7,
+    "children": 4
+  },
+  {
+    "module": "dcache_control",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/dcache_control.v",
+    "lines": 29,
+    "ports": 10,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "dcache_wshr",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/dcache_wshr.v",
+    "lines": 92,
+    "ports": 0,
+    "params": 2,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "decodeUnit",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/decodeUnit.v",
+    "lines": 968,
+    "ports": 101,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "directory_test",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/directory_test.v",
+    "lines": 516,
+    "ports": 41,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "dis_controller",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/dis_controller.v",
+    "lines": 221,
+    "ports": 20,
+    "params": 6,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "div_sqrt_top_mvp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/float_div_mvp/div_sqrt_top_mvp.sv",
+    "lines": 180,
+    "ports": 14,
+    "params": 0,
+    "fsm": 0,
+    "children": 3
+  },
+  {
+    "module": "dualportSRAM",
+    "file": "ref_rtl/gpgpu/src/common_cell/dualportSRAM.v",
+    "lines": 70,
+    "ports": 9,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fadd_pipe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/fadd_pipe.v",
+    "lines": 299,
+    "ports": 30,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fadd_pipe_no_ctrl",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu_no_ctrl/fadd_pipe_no_ctrl.v",
+    "lines": 249,
+    "ports": 20,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fadd_s1",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/fadd_s1.v",
+    "lines": 250,
+    "ports": 23,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fadd_s2",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/fadd_s2.v",
+    "lines": 216,
+    "ports": 15,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "far_path",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/common_cells/far_path.v",
+    "lines": 99,
+    "ports": 10,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fcmp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/fcmp.v",
+    "lines": 247,
+    "ports": 21,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "fcmp_core",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/fcmp_core.v",
+    "lines": 75,
+    "ports": 7,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fcmp_no_ctrl",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu_no_ctrl/fcmp_no_ctrl.v",
+    "lines": 180,
+    "ports": 11,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "fifo",
+    "file": "ref_rtl/gpgpu/src/common_cell/fifo.v",
+    "lines": 88,
+    "ports": 8,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fifo_with_count",
+    "file": "ref_rtl/gpgpu/src/common_cell/fifo_with_count.v",
+    "lines": 80,
+    "ports": 9,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fifo_with_flush",
+    "file": "ref_rtl/gpgpu/src/common_cell/fifo_with_flush.v",
+    "lines": 98,
+    "ports": 9,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "find_first",
+    "file": "ref_rtl/gpgpu/src/common_cell/find_first.v",
+    "lines": 29,
+    "ports": 3,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fixed_pri_arb",
+    "file": "ref_rtl/gpgpu/src/common_cell/fixed_pri_arb.v",
+    "lines": 20,
+    "ports": 2,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fma",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/fma.v",
+    "lines": 571,
+    "ports": 23,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fma_no_ctrl",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu_no_ctrl/fma_no_ctrl.v",
+    "lines": 382,
+    "ports": 13,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fmul_pipe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/fmul_pipe.v",
+    "lines": 442,
+    "ports": 32,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fmul_pipe_no_ctrl",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu_no_ctrl/fmul_pipe_no_ctrl.v",
+    "lines": 375,
+    "ports": 22,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fmul_s1",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/fmul_s1.v",
+    "lines": 155,
+    "ports": 14,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fmul_s2",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/fmul_s2.v",
+    "lines": 52,
+    "ports": 24,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fmul_s3",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/fmul_s3.v",
+    "lines": 173,
+    "ports": 21,
+    "params": 6,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fp_to_int",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/fp_to_int.v",
+    "lines": 217,
+    "ports": 21,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "fp_to_int_core",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/fp_to_int_core.v",
+    "lines": 176,
+    "ports": 5,
+    "params": 2,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "fp_to_int_no_ctrl",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu_no_ctrl/fp_to_int_no_ctrl.v",
+    "lines": 151,
+    "ports": 11,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "fpmv",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/fpmv.v",
+    "lines": 241,
+    "ports": 21,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fpmv_no_ctrl",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu_no_ctrl/fpmv_no_ctrl.v",
+    "lines": 174,
+    "ports": 11,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "fpuexe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpuexe.v",
+    "lines": 211,
+    "ports": 28,
+    "params": 2,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "full_adder",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/vmul/full_adder.v",
+    "lines": 28,
+    "ports": 5,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "gen_clk",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/testbench/gen_clk.v",
+    "lines": 20,
+    "ports": 1,
+    "params": 0,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "gen_clk",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/common/gen_clk.v",
+    "lines": 20,
+    "ports": 1,
+    "params": 0,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "gen_data_map_per_byte",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/gen_data_map_per_byte.v",
+    "lines": 56,
+    "ports": 3,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "gen_data_map_same_word",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/gen_data_map_same_word.v",
+    "lines": 70,
+    "ports": 8,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "gen_imm",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/operand_collector/gen_imm.v",
+    "lines": 65,
+    "ports": 4,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "gen_rst",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/testbench/gen_rst.v",
+    "lines": 20,
+    "ports": 2,
+    "params": 0,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "gen_rst",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/common/gen_rst.v",
+    "lines": 20,
+    "ports": 2,
+    "params": 0,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "get_data_access_banken",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/get_data_access_banken.v",
+    "lines": 82,
+    "ports": 0,
+    "params": 4,
+    "fsm": 0,
+    "children": 3
+  },
+  {
+    "module": "get_entry_status",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/icache/get_entry_status.v",
+    "lines": 45,
+    "ports": 3,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "get_entry_status_req",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/l1_mshr/get_entry_status_req.v",
+    "lines": 52,
+    "ports": 3,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "get_entry_status_rsp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/l1_mshr/get_entry_status_rsp.v",
+    "lines": 45,
+    "ports": 1,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "get_setid",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/icache/get_setid.v",
+    "lines": 21,
+    "ports": 2,
+    "params": 6,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "gpgpu_axi_adapter_top",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/gpgpu_axi_adpater.v",
+    "lines": 161,
+    "ports": 38,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "gpgpu_axi_top",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/gpgpu_axi_top.sv",
+    "lines": 409,
+    "ports": 38,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "gpu_interface",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/gpu_interface.v",
+    "lines": 462,
+    "ports": 38,
+    "params": 0,
+    "fsm": 6,
+    "children": 3
+  },
+  {
+    "module": "host_inter",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/testbench/host_inter.v",
+    "lines": 205,
+    "ports": 21,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "host_inter",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/common/host_inter.sv",
+    "lines": 265,
+    "ports": 21,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "ibuffer",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/ibuffer/ibuffer.v",
+    "lines": 357,
+    "ports": 32,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "ibuffer2issue",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/ibuffer2issue.v",
+    "lines": 302,
+    "ports": 29,
+    "params": 0,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "inflight_wg_buffer",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/inflight_wg_buffer.v",
+    "lines": 728,
+    "ports": 44,
+    "params": 0,
+    "fsm": 13,
+    "children": 6
+  },
+  {
+    "module": "input_fifo",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/input_fifo.v",
+    "lines": 125,
+    "ports": 46,
+    "params": 0,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "input_reverse",
+    "file": "ref_rtl/gpgpu/src/common_cell/input_reverse.v",
+    "lines": 21,
+    "ports": 2,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "inst_demux",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/operand_collector/inst_demux.v",
+    "lines": 198,
+    "ports": 45,
+    "params": 0,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "instruction_cache",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/icache/instruction_cache.v",
+    "lines": 293,
+    "ports": 24,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "int_div",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/int_div.v",
+    "lines": 324,
+    "ports": 11,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "int_to_fp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/int_to_fp.v",
+    "lines": 250,
+    "ports": 21,
+    "params": 3,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "int_to_fp_no_ctrl",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu_no_ctrl/int_to_fp_no_ctrl.v",
+    "lines": 183,
+    "ports": 11,
+    "params": 3,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "int_to_fp_postnorm",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/int_to_fp_postnorm.v",
+    "lines": 62,
+    "ports": 7,
+    "params": 2,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "int_to_fp_prenorm",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/int_to_fp_prenorm.v",
+    "lines": 101,
+    "ports": 7,
+    "params": 0,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "issue",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/issue.v",
+    "lines": 632,
+    "ports": 28,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "iteration_div_sqrt_mvp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/float_div_mvp/iteration_div_sqrt_mvp.sv",
+    "lines": 61,
+    "ports": 9,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "l1_dcache",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/l1_dcache.v",
+    "lines": 1903,
+    "ports": 22,
+    "params": 0,
+    "fsm": 0,
+    "children": 3
+  },
+  {
+    "module": "l1_mshr",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/l1_mshr/l1_mshr.v",
+    "lines": 455,
+    "ports": 10,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "l1cache_arb",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache_arb.v",
+    "lines": 93,
+    "ports": 2,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "l2_distribute",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2_distribute.v",
+    "lines": 111,
+    "ports": 34,
+    "params": 0,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "lru_matrix",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/common/lru_matrix.v",
+    "lines": 116,
+    "ports": 5,
+    "params": 2,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "lru_matrix",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/lru_matrix.v",
+    "lines": 116,
+    "ports": 5,
+    "params": 2,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "lsu2wb",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/lsu2wb.v",
+    "lines": 82,
+    "ports": 22,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "lsu_exe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/lsu_exe.v",
+    "lines": 356,
+    "ports": 35,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "lza",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/common_cells/lza.v",
+    "lines": 31,
+    "ports": 3,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "lzc",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/float_div_mvp/lzc.sv",
+    "lines": 112,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "mem_inter",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/testbench/mem_inter.v",
+    "lines": 171,
+    "ports": 18,
+    "params": 6,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "mshr",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/mshr_reg.v",
+    "lines": 445,
+    "ports": 12,
+    "params": 0,
+    "fsm": 1,
+    "children": 2
+  },
+  {
+    "module": "mshr_backup",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/mshr_backup.v",
+    "lines": 401,
+    "ports": 12,
+    "params": 0,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "mshr_icache",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/icache/mshr_icache.v",
+    "lines": 241,
+    "ports": 14,
+    "params": 7,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "mult_32",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/vmul/mult_32.v",
+    "lines": 148,
+    "ports": 5,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "naivemultiplier",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/naivemultiplier.v",
+    "lines": 41,
+    "ports": 6,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "near_path",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/common_cells/near_path.v",
+    "lines": 143,
+    "ports": 11,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "norm_div_sqrt_mvp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/float_div_mvp/norm_div_sqrt_mvp.sv",
+    "lines": 486,
+    "ports": 20,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "nrbd_nrsc_mvp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/float_div_mvp/nrbd_nrsc_mvp.sv",
+    "lines": 104,
+    "ports": 25,
+    "params": 0,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "one2bin",
+    "file": "ref_rtl/gpgpu/src/common_cell/one2bin.v",
+    "lines": 37,
+    "ports": 2,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "operand_arbiter",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/operand_collector/operand_arbiter.v",
+    "lines": 216,
+    "ports": 10,
+    "params": 1,
+    "fsm": 0,
+    "children": 4
+  },
+  {
+    "module": "operandcollector_top",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/operand_collector/operandcollector_top.sv",
+    "lines": 901,
+    "ports": 60,
+    "params": 1,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "pc_align",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/warp_scheduler/pc_align.v",
+    "lines": 27,
+    "ports": 3,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "pc_control",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/warp_scheduler/pc_control.v",
+    "lines": 55,
+    "ports": 7,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "pipe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/pipe.v",
+    "lines": 2109,
+    "ports": 40,
+    "params": 0,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "pop_cnt",
+    "file": "ref_rtl/gpgpu/src/common_cell/pop_cnt.v",
+    "lines": 33,
+    "ports": 2,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "prefer_select",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/prefer_select.v",
+    "lines": 68,
+    "ports": 4,
+    "params": 2,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "preprocess_mvp",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/float_div_mvp/preprocess_mvp.sv",
+    "lines": 425,
+    "ports": 25,
+    "params": 0,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "print",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/testbench/print.v",
+    "lines": 334,
+    "ports": 2,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "ram",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/ram.v",
+    "lines": 39,
+    "ports": 8,
+    "params": 3,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "resource_table",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/resource_table.v",
+    "lines": 882,
+    "ports": 13,
+    "params": 4,
+    "fsm": 19,
+    "children": 0
+  },
+  {
+    "module": "resource_table_group",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/resource_table_group.v",
+    "lines": 340,
+    "ports": 23,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "round_robin_arb",
+    "file": "ref_rtl/gpgpu/src/common_cell/round_robin_arb.v",
+    "lines": 40,
+    "ports": 4,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "rounding",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/common_cells/rounding.v",
+    "lines": 42,
+    "ports": 9,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "rsp_arb",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/rsp_arb.v",
+    "lines": 41,
+    "ports": 2,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "scalar_fpu",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/scalar_fpu.v",
+    "lines": 545,
+    "ports": 24,
+    "params": 4,
+    "fsm": 0,
+    "children": 7
+  },
+  {
+    "module": "scalar_fpu_no_ctrl",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu_no_ctrl/scalar_fpu_no_ctrl.v",
+    "lines": 356,
+    "ports": 14,
+    "params": 4,
+    "fsm": 0,
+    "children": 7
+  },
+  {
+    "module": "scalar_regfile_bank",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/operand_collector/scalar_regfile_bank.v",
+    "lines": 103,
+    "ports": 8,
+    "params": 0,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "scoreboard",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/scoreboard.v",
+    "lines": 178,
+    "ports": 34,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "sfu_exe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/sfu_v2/sfu_exe.v",
+    "lines": 575,
+    "ports": 30,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "shared_mem",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/shared_memory/sharemem.v",
+    "lines": 396,
+    "ports": 18,
+    "params": 0,
+    "fsm": 2,
+    "children": 0
+  },
+  {
+    "module": "shift_right_jam",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/fpu/common_cells/shift_right_jam.v",
+    "lines": 32,
+    "ports": 4,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "shiftboard",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/lsu/shiftboard.v",
+    "lines": 42,
+    "ports": 6,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "simt_stack",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/simt_stack/simt_stack.v",
+    "lines": 327,
+    "ports": 24,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "sinkA",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/sinkA.v",
+    "lines": 202,
+    "ports": 31,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "sinkD",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/sinkD.v",
+    "lines": 72,
+    "ports": 12,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "slowdown",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/ibuffer/slowdown.v",
+    "lines": 77,
+    "ports": 11,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "sm2cluster_arb",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm2cluster_arb.v",
+    "lines": 124,
+    "ports": 33,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "sm_wrapper",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/sm_wrapper.v",
+    "lines": 540,
+    "ports": 61,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "sm_wrapper",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/sm_wrapper_backup.v",
+    "lines": 484,
+    "ports": 61,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "sourceD",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/l2cache/sourceD.v",
+    "lines": 595,
+    "ports": 58,
+    "params": 8,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "spill_register",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/axi4_adapter/spill_register.sv",
+    "lines": 47,
+    "ports": 8,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "spill_register_flushable",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/axi4_adapter/spill_register_flushable.sv",
+    "lines": 99,
+    "ports": 9,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "sram_template",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/common/sram_template.v",
+    "lines": 84,
+    "ports": 9,
+    "params": 5,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "sram_template_l1d_tag",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/common/sram_template_l1d_tag.v",
+    "lines": 88,
+    "ports": 9,
+    "params": 5,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "stream_fifo",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo.v",
+    "lines": 47,
+    "ports": 8,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "stream_fifo_flow_true",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_flow_true.v",
+    "lines": 51,
+    "ports": 8,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "stream_fifo_hasflush_true",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_hasflush_true.v",
+    "lines": 52,
+    "ports": 9,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "stream_fifo_hasflush_true_no_empty_full",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_hasflush_true_no_empty_full.v",
+    "lines": 52,
+    "ports": 7,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "stream_fifo_pipe_true",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_pipe_true.v",
+    "lines": 51,
+    "ports": 8,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "stream_fifo_pipe_true_has_flush",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_pipe_true_has_flush.v",
+    "lines": 50,
+    "ports": 9,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "stream_fifo_pipe_true_with_count",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_pipe_true_with_count.v",
+    "lines": 57,
+    "ports": 9,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "stream_fifo_useSRAM",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_useSRAM.v",
+    "lines": 150,
+    "ports": 8,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "stream_fifo_useSRAM_with_count",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_useSRAM_with_count.v",
+    "lines": 154,
+    "ports": 8,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "stream_fifo_with_incount_useSRAM",
+    "file": "ref_rtl/gpgpu/src/common_cell/stream_fifo_with_incount_useSRAM.v",
+    "lines": 152,
+    "ports": 9,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "tag_access_icache",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/icache/tag_access_icache.v",
+    "lines": 167,
+    "ports": 12,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tag_access_top_v2",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/tag_access/tag_access_top_v2.v",
+    "lines": 573,
+    "ports": 4,
+    "params": 3,
+    "fsm": 0,
+    "children": 11
+  },
+  {
+    "module": "tag_checker",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/dcache/tag_access/tag_checker.v",
+    "lines": 31,
+    "ports": 5,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tag_checker_icache",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/l1cache/icache/tag_checker_icache.v",
+    "lines": 38,
+    "ports": 6,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/tc_bfs/tc.v",
+    "lines": 310,
+    "ports": 0,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/tc_vecadd/tc.v",
+    "lines": 255,
+    "ports": 0,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/tc_nn/tc.v",
+    "lines": 285,
+    "ports": 0,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/tc_gaussian/tc.v",
+    "lines": 325,
+    "ports": 0,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/tc_matadd/tc.v",
+    "lines": 209,
+    "ports": 0,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/tc_bfs/tc.v",
+    "lines": 374,
+    "ports": 0,
+    "params": 7,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/tc_vecadd/tc.v",
+    "lines": 333,
+    "ports": 0,
+    "params": 6,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/tc_nn/tc.v",
+    "lines": 358,
+    "ports": 0,
+    "params": 6,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/tc_gaussian/tc.v",
+    "lines": 396,
+    "ports": 0,
+    "params": 7,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/tc_matadd/tc.v",
+    "lines": 275,
+    "ports": 0,
+    "params": 6,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tc_add_pipe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/tc_add_pipe.v",
+    "lines": 285,
+    "ports": 19,
+    "params": 3,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "tc_dot_product",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/tc_dot_product.v",
+    "lines": 287,
+    "ports": 2,
+    "params": 3,
+    "fsm": 0,
+    "children": 5
+  },
+  {
+    "module": "tc_mul_pipe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/tc_mul_pipe.v",
+    "lines": 373,
+    "ports": 19,
+    "params": 3,
+    "fsm": 0,
+    "children": 4
+  },
+  {
+    "module": "tensor_core_exe",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/tensor_core_exe.v",
+    "lines": 119,
+    "ports": 17,
+    "params": 6,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "tensor_core_fp32",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/tensor/tensor_core_fp32.v",
+    "lines": 85,
+    "ports": 2,
+    "params": 6,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "test_gpu_axi_top",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_axi_top/common/test_gpu_axi_top.sv",
+    "lines": 275,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "test_gpu_top",
+    "file": "ref_rtl/gpgpu/testcase/test_gpgpu_top/testbench/test_gpu_top_hgx.sv",
+    "lines": 290,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "throttling_engine",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/throttling_engine.v",
+    "lines": 102,
+    "ports": 10,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "top_resource_table",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/top_resource_table.v",
+    "lines": 274,
+    "ports": 31,
+    "params": 0,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "valu",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/valu/valu.v",
+    "lines": 224,
+    "ports": 24,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "valu_top",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/valu/valu_top.v",
+    "lines": 123,
+    "ports": 25,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "valu_v2",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/valu/valu_v2.v",
+    "lines": 525,
+    "ports": 25,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "vector_regfile_bank",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/operand_collector/vector_regfile_bank.v",
+    "lines": 253,
+    "ports": 10,
+    "params": 0,
+    "fsm": 0,
+    "children": 9
+  },
+  {
+    "module": "vfpu",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/vfpu.v",
+    "lines": 146,
+    "ports": 23,
+    "params": 5,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "vfpu_v2",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/fpu/vfpu_v2.v",
+    "lines": 466,
+    "ports": 23,
+    "params": 6,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "vmul",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/vmul/vmul.v",
+    "lines": 176,
+    "ports": 27,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "vmul_top",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/vmul/vmul_top.v",
+    "lines": 130,
+    "ports": 27,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "vmul_v2",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/vmul/vmul_v2.v",
+    "lines": 562,
+    "ports": 27,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "warp_scheduler",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/warp_scheduler/warp_scheduler.v",
+    "lines": 286,
+    "ports": 36,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "wf_done_interface_single",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/wf_done_interface_single.v",
+    "lines": 38,
+    "ports": 7,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "wg_resource_table_neo",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/wg_resource_table_neo.v",
+    "lines": 62,
+    "ports": 9,
+    "params": 2,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "wg_slot_id_convert_opt",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/cta_top/cta/wg_slot_id_convert_opt.v",
+    "lines": 115,
+    "ports": 8,
+    "params": 2,
+    "fsm": 1,
+    "children": 3
+  },
+  {
+    "module": "writeback",
+    "file": "ref_rtl/gpgpu/src/gpgpu_top/sm/pipeline/writeback.v",
+    "lines": 139,
+    "ports": 4,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  }
+]

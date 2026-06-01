@@ -1,0 +1,23 @@
+# test_dma_client_axis_source_512_64
+
+## Parameters
+- `SEG_COUNT = 4`
+- `SEG_DATA_WIDTH = 128`
+- `SEG_ADDR_WIDTH = 12`
+- `SEG_BE_WIDTH = SEG_DATA_WIDTH/8`
+- `RAM_ADDR_WIDTH = SEG_ADDR_WIDTH+$clog2(SEG_COUNT)+$clog2(SEG_BE_WIDTH)`
+- `AXIS_DATA_WIDTH = 64`
+- `AXIS_KEEP_ENABLE = (AXIS_DATA_WIDTH>8)`
+- `AXIS_KEEP_WIDTH = (AXIS_DATA_WIDTH/8)`
+- `AXIS_LAST_ENABLE = 1`
+- `AXIS_ID_ENABLE = 1`
+- `AXIS_ID_WIDTH = 8`
+- `AXIS_DEST_ENABLE = 0`
+- `AXIS_DEST_WIDTH = 8`
+- `AXIS_USER_ENABLE = 1`
+- `AXIS_USER_WIDTH = 1`
+- `LEN_WIDTH = 20`
+- `TAG_WIDTH = 8`
+
+## Submodule Instances
+- `UUT`

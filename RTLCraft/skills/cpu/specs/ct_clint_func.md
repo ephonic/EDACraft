@@ -1,0 +1,30 @@
+# ct_clint_func
+
+## Parameters
+- `MSIP0 = 16'h0000`
+- `MSIP1 = 16'h0004`
+- `MSIP2 = 16'h0008`
+- `MSIP3 = 16'h000C`
+- `MTIMECMP0 = 16'h4000`
+- `MTIMECMPH0 = 16'h4004`
+- `MTIMECMP1 = 16'h4008`
+- `MTIMECMPH1 = 16'h400C`
+- `MTIMECMP2 = 16'h4010`
+- `MTIMECMPH2 = 16'h4014`
+- `MTIMECMP3 = 16'h4018`
+- `MTIMECMPH3 = 16'h401C`
+- `SSIP0 = 16'hC000`
+- `SSIP1 = 16'hC004`
+- `SSIP2 = 16'hC008`
+- `SSIP3 = 16'hC00C`
+- `STIMECMP0 = 16'hD000`
+- `STIMECMPH0 = 16'hD004`
+- `STIMECMP1 = 16'hD008`
+- `STIMECMPH1 = 16'hD00C`
+- `STIMECMP2 = 16'hD010`
+- `STIMECMPH2 = 16'hD014`
+- `STIMECMP3 = 16'hD018`
+- `STIMECMPH3 = 16'hD01C`
+
+## Logic Block Types
+- seq_async_reset

@@ -1,0 +1,108 @@
+# decodeUnit
+
+## Ports (101)
+- `input [1] clk`
+- `input [1] rst_n`
+- `input [`INSTLEN-1:0] inst_0_i`
+- `input [`INSTLEN-1:0] inst_1_i`
+- `input [1] inst_mask_0_i`
+- `input [1] inst_mask_1_i`
+- `input [`ADDRLEN-1:0] pc_i`
+- `input [`DEPTH_WARP-1:0] wid_i`
+- `input [`DEPTH_WARP-1:0] flush_wid_i`
+- `input [1] flush_wid_valid_i`
+- `input [`NUM_WARP-1:0] ibuffer_ready_i`
+- `output [1] control_mask_0_o`
+- `output [1] control_mask_1_o`
+- `output [`INSTLEN-1:0] control_Signals_inst_0_o`
+- `output [`DEPTH_WARP-1:0] control_Signals_wid_0_o`
+- `output [1] control_Signals_fp_0_o`
+- `output [1:0] control_Signals_branch_0_o`
+- `output [1] control_Signals_simt_stack_0_o`
+- `output [1] control_Signals_simt_stack_op_0_o`
+- `output [1] control_Signals_barrier_0_o`
+- `output [1:0] control_Signals_csr_0_o`
+- `output [1] control_Signals_reverse_0_o`
+- `output [1:0] control_Signals_sel_alu2_0_o`
+- `output [1:0] control_Signals_sel_alu1_0_o`
+- `output [1:0] control_Signals_sel_alu3_0_o`
+- `output [1] control_Signals_isvec_0_o`
+- `output [1] control_Signals_mask_0_o`
+- `output [3:0] control_Signals_sel_imm_0_o`
+- `output [1:0] control_Signals_mem_whb_0_o`
+- `output [1] control_Signals_mem_unsigned_0_o`
+- `output [5:0] control_Signals_alu_fn_0_o`
+- `output [1] control_Signals_force_rm_rtz_0_o`
+- `output [1] control_Signals_is_vls12_0_o`
+- `output [1] control_Signals_mem_0_o`
+- `output [1] control_Signals_mul_0_o`
+- `output [1] control_Signals_tc_0_o`
+- `output [1] control_Signals_disable_mask_0_o`
+- `output [1] control_Signals_custom_signal_0_0_o`
+- `output [1:0] control_Signals_mem_cmd_0_o`
+- `output [1:0] control_Signals_mop_0_o`
+- `output [`REGEXT_WIDTH + `REGIDX_WIDTH -1:0] control_Signals_reg_idx1_0_o`
+- `output [`REGEXT_WIDTH + `REGIDX_WIDTH -1:0] control_Signals_reg_idx2_0_o`
+- `output [`REGEXT_WIDTH + `REGIDX_WIDTH -1:0] control_Signals_reg_idx3_0_o`
+- `output [`REGEXT_WIDTH + `REGIDX_WIDTH -1:0] control_Signals_reg_idxw_0_o`
+- `output [1] control_Signals_wvd_0_o`
+- `output [1] control_Signals_fence_0_o`
+- `output [1] control_Signals_sfu_0_o`
+- `output [1] control_Signals_readmask_0_o`
+- `output [1] control_Signals_writemask_0_o`
+- `output [1] control_Signals_wxd_0_o`
+- `output [`INSTLEN-1:0] control_Signals_pc_0_o`
+- `output [6:0] control_Signals_imm_ext_0_o`
+- `output [1] control_Signals_atomic_0_o`
+- `output [1] control_Signals_aq_0_o`
+- `output [1] control_Signals_rl_0_o`
+- `output [2:0] rm_0_o`
+- `output [1] rm_is_static_0_o`
+- `output [`INSTLEN-1:0] control_Signals_inst_1_o`
+- `output [`DEPTH_WARP-1:0] control_Signals_wid_1_o`
+- `output [1] control_Signals_fp_1_o`
+- `output [1:0] control_Signals_branch_1_o`
+- `output [1] control_Signals_simt_stack_1_o`
+- `output [1] control_Signals_simt_stack_op_1_o`
+- `output [1] control_Signals_barrier_1_o`
+- `output [1:0] control_Signals_csr_1_o`
+- `output [1] control_Signals_reverse_1_o`
+- `output [1:0] control_Signals_sel_alu2_1_o`
+- `output [1:0] control_Signals_sel_alu1_1_o`
+- `output [1:0] control_Signals_sel_alu3_1_o`
+- `output [1] control_Signals_isvec_1_o`
+- `output [1] control_Signals_mask_1_o`
+- `output [3:0] control_Signals_sel_imm_1_o`
+- `output [1:0] control_Signals_mem_whb_1_o`
+- `output [1] control_Signals_mem_unsigned_1_o`
+- `output [5:0] control_Signals_alu_fn_1_o`
+- `output [1] control_Signals_force_rm_rtz_1_o`
+- `output [1] control_Signals_is_vls12_1_o`
+- `output [1] control_Signals_mem_1_o`
+- `output [1] control_Signals_mul_1_o`
+- `output [1] control_Signals_tc_1_o`
+- `output [1] control_Signals_disable_mask_1_o`
+- `output [1] control_Signals_custom_signal_0_1_o`
+- `output [1:0] control_Signals_mem_cmd_1_o`
+- `output [1:0] control_Signals_mop_1_o`
+- `output [`REGEXT_WIDTH + `REGIDX_WIDTH -1:0] control_Signals_reg_idx1_1_o`
+- `output [`REGEXT_WIDTH + `REGIDX_WIDTH -1:0] control_Signals_reg_idx2_1_o`
+- `output [`REGEXT_WIDTH + `REGIDX_WIDTH -1:0] control_Signals_reg_idx3_1_o`
+- `output [`REGEXT_WIDTH + `REGIDX_WIDTH -1:0] control_Signals_reg_idxw_1_o`
+- `output [1] control_Signals_wvd_1_o`
+- `output [1] control_Signals_fence_1_o`
+- `output [1] control_Signals_sfu_1_o`
+- `output [1] control_Signals_readmask_1_o`
+- `output [1] control_Signals_writemask_1_o`
+- `output [1] control_Signals_wxd_1_o`
+- `output [31:0] control_Signals_pc_1_o`
+- `output [6:0] control_Signals_imm_ext_1_o`
+- `output [1] control_Signals_atomic_1_o`
+- `output [1] control_Signals_aq_1_o`
+- `output [1] control_Signals_rl_1_o`
+- `output [2:0] rm_1_o`
+- `output [1] rm_is_static_1_o`
+
+## Logic Block Types
+- comb
+- seq_async_reset

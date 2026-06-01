@@ -1,0 +1,371 @@
+[
+  {
+    "module": "ALTERA_LNSIM_MEMORY_INITIALIZATION",
+    "file": "ref_rtl/fpga-npu/rtl/altera_syncram.sv",
+    "lines": 4292,
+    "ports": 0,
+    "params": 72,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "add_reduction",
+    "file": "ref_rtl/fpga-npu/rtl/mvu.sv",
+    "lines": 527,
+    "ports": 5,
+    "params": 35,
+    "fsm": 4,
+    "children": 0
+  },
+  {
+    "module": "asymmetric_fifo",
+    "file": "ref_rtl/fpga-npu/rtl/asymmetric_fifo.sv",
+    "lines": 112,
+    "ports": 0,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "axbs",
+    "file": "ref_rtl/fpga-npu/rtl/axbs.sv",
+    "lines": 43,
+    "ports": 4,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "bram_accum",
+    "file": "ref_rtl/fpga-npu/rtl/bram_accum.sv",
+    "lines": 132,
+    "ports": 6,
+    "params": 9,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "daisy_chain_interconnect",
+    "file": "ref_rtl/fpga-npu/rtl/daisy_chain_interconnect.sv",
+    "lines": 34,
+    "ports": 4,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "dma_buffer",
+    "file": "ref_rtl/fpga-npu/rtl/dma_buffer.v",
+    "lines": 84,
+    "ports": 0,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "dpe",
+    "file": "ref_rtl/fpga-npu/rtl/dpe.sv",
+    "lines": 325,
+    "ports": 11,
+    "params": 14,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "dpe_mrf",
+    "file": "ref_rtl/fpga-npu/rtl/dpe_mrf.sv",
+    "lines": 75,
+    "ports": 7,
+    "params": 8,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "evrf",
+    "file": "ref_rtl/fpga-npu/rtl/evrf.sv",
+    "lines": 333,
+    "ports": 0,
+    "params": 23,
+    "fsm": 4,
+    "children": 0
+  },
+  {
+    "module": "evrf_sched",
+    "file": "ref_rtl/fpga-npu/rtl/evrf_sched.sv",
+    "lines": 209,
+    "ports": 7,
+    "params": 34,
+    "fsm": 7,
+    "children": 0
+  },
+  {
+    "module": "fifo",
+    "file": "ref_rtl/fpga-npu/rtl/fifo.sv",
+    "lines": 349,
+    "ports": 0,
+    "params": 28,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "inst_fifo",
+    "file": "ref_rtl/fpga-npu/rtl/inst_fifo.sv",
+    "lines": 119,
+    "ports": 0,
+    "params": 10,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "inst_ram",
+    "file": "ref_rtl/fpga-npu/rtl/inst_ram.sv",
+    "lines": 97,
+    "ports": 0,
+    "params": 11,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "ld_sched",
+    "file": "ref_rtl/fpga-npu/rtl/ld_sched.sv",
+    "lines": 264,
+    "ports": 7,
+    "params": 34,
+    "fsm": 2,
+    "children": 0
+  },
+  {
+    "module": "loader",
+    "file": "ref_rtl/fpga-npu/rtl/ld.sv",
+    "lines": 373,
+    "ports": 8,
+    "params": 23,
+    "fsm": 11,
+    "children": 0
+  },
+  {
+    "module": "mfu",
+    "file": "ref_rtl/fpga-npu/rtl/mfu.sv",
+    "lines": 589,
+    "ports": 0,
+    "params": 27,
+    "fsm": 2,
+    "children": 0
+  },
+  {
+    "module": "mfu_sched",
+    "file": "ref_rtl/fpga-npu/rtl/mfu_sched.sv",
+    "lines": 245,
+    "ports": 7,
+    "params": 34,
+    "fsm": 4,
+    "children": 0
+  },
+  {
+    "module": "mrf_ram",
+    "file": "ref_rtl/fpga-npu/rtl/mrf_ram.sv",
+    "lines": 98,
+    "ports": 0,
+    "params": 12,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "mvu_sched",
+    "file": "ref_rtl/fpga-npu/rtl/mvu_sched.sv",
+    "lines": 297,
+    "ports": 7,
+    "params": 34,
+    "fsm": 3,
+    "children": 0
+  },
+  {
+    "module": "mvu_tile",
+    "file": "ref_rtl/fpga-npu/rtl/mvu_tile.sv",
+    "lines": 433,
+    "ports": 24,
+    "params": 39,
+    "fsm": 3,
+    "children": 0
+  },
+  {
+    "module": "mvu_vrf",
+    "file": "ref_rtl/fpga-npu/rtl/mvu_vrf.sv",
+    "lines": 156,
+    "ports": 0,
+    "params": 17,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "npu",
+    "file": "ref_rtl/fpga-npu/rtl/npu.sv",
+    "lines": 948,
+    "ports": 6,
+    "params": 46,
+    "fsm": 2,
+    "children": 0
+  },
+  {
+    "module": "npu_tb",
+    "file": "ref_rtl/fpga-npu/rtl/npu_tb.sv",
+    "lines": 269,
+    "ports": 0,
+    "params": 0,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "nx_axbs",
+    "file": "ref_rtl/fpga-npu/rtl/nx_axbs.sv",
+    "lines": 77,
+    "ports": 4,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "nx_axbs_core",
+    "file": "ref_rtl/fpga-npu/rtl/nx_axbs_core.sv",
+    "lines": 100,
+    "ports": 4,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "nx_axbs_slice",
+    "file": "ref_rtl/fpga-npu/rtl/nx_axbs_slice.sv",
+    "lines": 66,
+    "ports": 4,
+    "params": 5,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "nx_dot6_int8",
+    "file": "ref_rtl/fpga-npu/rtl/nx_dot6_int8.sv",
+    "lines": 73,
+    "ports": 14,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "nx_dot_product_int8",
+    "file": "ref_rtl/fpga-npu/rtl/nx_dot_product_int8.sv",
+    "lines": 122,
+    "ports": 0,
+    "params": 2,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "pcie_ed_MEM",
+    "file": "ref_rtl/fpga-npu/patch/pcie_ed_MEM.v",
+    "lines": 361,
+    "ports": 17,
+    "params": 45,
+    "fsm": 4,
+    "children": 0
+  },
+  {
+    "module": "pipeline_interconnect",
+    "file": "ref_rtl/fpga-npu/rtl/pipeline_interconnect.sv",
+    "lines": 29,
+    "ports": 4,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "prime_dsp_tensor_int8",
+    "file": "ref_rtl/fpga-npu/rtl/prime_dsp_tensor_int8.sv",
+    "lines": 242,
+    "ports": 15,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "ram",
+    "file": "ref_rtl/fpga-npu/rtl/ram.sv",
+    "lines": 97,
+    "ports": 0,
+    "params": 11,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "self_tester_shim",
+    "file": "ref_rtl/fpga-npu/rtl/self_tester_shim.sv",
+    "lines": 347,
+    "ports": 6,
+    "params": 45,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "self_tester_tb",
+    "file": "ref_rtl/fpga-npu/rtl/self_tester_tb.v",
+    "lines": 32,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "shim",
+    "file": "ref_rtl/fpga-npu/rtl/shim.sv",
+    "lines": 523,
+    "ports": 0,
+    "params": 58,
+    "fsm": 3,
+    "children": 0
+  },
+  {
+    "module": "sigmoid",
+    "file": "ref_rtl/fpga-npu/rtl/sigmoid.sv",
+    "lines": 117,
+    "ports": 0,
+    "params": 7,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "star_interconnect",
+    "file": "ref_rtl/fpga-npu/rtl/star_interconnect.sv",
+    "lines": 41,
+    "ports": 4,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tanh",
+    "file": "ref_rtl/fpga-npu/rtl/tanh.sv",
+    "lines": 126,
+    "ports": 0,
+    "params": 7,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "test_rom",
+    "file": "ref_rtl/fpga-npu/rtl/tester_rom.sv",
+    "lines": 62,
+    "ports": 0,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "top_sched",
+    "file": "ref_rtl/fpga-npu/rtl/top_sched.sv",
+    "lines": 344,
+    "ports": 22,
+    "params": 38,
+    "fsm": 0,
+    "children": 0
+  }
+]

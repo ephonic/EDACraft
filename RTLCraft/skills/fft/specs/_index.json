@@ -1,0 +1,155 @@
+[
+  {
+    "module": "Butterfly",
+    "file": "ref_rtl/fft/verilog/Butterfly.v",
+    "lines": 32,
+    "ports": 8,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "DelayBuffer",
+    "file": "ref_rtl/fft/verilog/DelayBuffer.v",
+    "lines": 32,
+    "ports": 5,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "FFT",
+    "file": "ref_rtl/fft/verilog/FFT128.v",
+    "lines": 76,
+    "ports": 8,
+    "params": 1,
+    "fsm": 0,
+    "children": 8
+  },
+  {
+    "module": "FFT",
+    "file": "ref_rtl/fft/verilog/FFT64.v",
+    "lines": 62,
+    "ports": 8,
+    "params": 1,
+    "fsm": 0,
+    "children": 6
+  },
+  {
+    "module": "FFT",
+    "file": "ref_rtl/fft/verilog/FFT1024_32B.v",
+    "lines": 89,
+    "ports": 8,
+    "params": 1,
+    "fsm": 0,
+    "children": 10
+  },
+  {
+    "module": "Multiply",
+    "file": "ref_rtl/fft/verilog/Multiply.v",
+    "lines": 35,
+    "ports": 6,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "SdfUnit",
+    "file": "ref_rtl/fft/verilog/SdfUnit.v",
+    "lines": 277,
+    "ports": 8,
+    "params": 3,
+    "fsm": 0,
+    "children": 11
+  },
+  {
+    "module": "SdfUnit",
+    "file": "ref_rtl/fft/verilog/SdfUnit_TC.v",
+    "lines": 344,
+    "ports": 8,
+    "params": 10,
+    "fsm": 0,
+    "children": 16
+  },
+  {
+    "module": "SdfUnit2",
+    "file": "ref_rtl/fft/verilog/SdfUnit2.v",
+    "lines": 94,
+    "ports": 8,
+    "params": 2,
+    "fsm": 0,
+    "children": 4
+  },
+  {
+    "module": "TB",
+    "file": "ref_rtl/fft/sim/fft_64/TB64.v",
+    "lines": 121,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "TB",
+    "file": "ref_rtl/fft/sim/fft_128_tc/TB128.v",
+    "lines": 132,
+    "ports": 0,
+    "params": 1,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "Twiddle",
+    "file": "ref_rtl/fft/verilog/Twiddle128.v",
+    "lines": 168,
+    "ports": 4,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "Twiddle",
+    "file": "ref_rtl/fft/verilog/Twiddle1024_32B.v",
+    "lines": 1064,
+    "ports": 4,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "Twiddle",
+    "file": "ref_rtl/fft/verilog/Twiddle64.v",
+    "lines": 104,
+    "ports": 4,
+    "params": 1,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "TwiddleConvert4",
+    "file": "ref_rtl/fft/verilog/TwiddleConvert4.v",
+    "lines": 61,
+    "ports": 7,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "TwiddleConvert8",
+    "file": "ref_rtl/fft/verilog/TwiddleConvert8.v",
+    "lines": 70,
+    "ports": 7,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "tb_fft128_trace",
+    "file": "ref_rtl/fft/verilog/tb_fft128_trace.v",
+    "lines": 71,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 1
+  }
+]

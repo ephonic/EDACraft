@@ -1,0 +1,24 @@
+# test_axi_fifo_delay
+
+## Parameters
+- `DATA_WIDTH = 32`
+- `ADDR_WIDTH = 32`
+- `STRB_WIDTH = (DATA_WIDTH/8)`
+- `ID_WIDTH = 8`
+- `AWUSER_ENABLE = 0`
+- `AWUSER_WIDTH = 1`
+- `WUSER_ENABLE = 0`
+- `WUSER_WIDTH = 1`
+- `BUSER_ENABLE = 0`
+- `BUSER_WIDTH = 1`
+- `ARUSER_ENABLE = 0`
+- `ARUSER_WIDTH = 1`
+- `RUSER_ENABLE = 0`
+- `RUSER_WIDTH = 1`
+- `WRITE_FIFO_DEPTH = 32`
+- `READ_FIFO_DEPTH = 32`
+- `WRITE_FIFO_DELAY = 1`
+- `READ_FIFO_DELAY = 1`
+
+## Submodule Instances
+- `UUT`
