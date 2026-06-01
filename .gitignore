@@ -13,3 +13,7 @@ dist/
 .env
 *.swp
 *.swo
+
+# AgentOS runtime state
+.rtlcraft/
+
