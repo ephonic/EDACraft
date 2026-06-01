@@ -15,14 +15,22 @@
    - Phase 3: DSL Implementation
    - Phase 4: PPA Optimization
    - Phase 5: Code Generation & Final Verification
-4. [Skills Library](#skills-library)
+4. [Three-Layer Forward Design Methodology](#three-layer-forward-design-methodology)
+   - The Problem
+   - Layer 1: Functional Model
+   - Layer 2: Cycle-Level Model
+   - Layer 3: DSL (rtlgen Modules)
+   - Cross-Layer Verification
+   - Concrete Example: ALU
+   - Verification Philosophy
+5. [Skills Library](#skills-library)
    - Overview
    - DSL Module Inventory (192 modules)
    - Per-Domain Skill Details
-5. [Architecture Framework Reference](#architecture-framework-reference)
-6. [Configuration System](#configuration-system)
-7. [Technology Node Library](#technology-node-library)
-8. [Files Reference](#files-reference)
+6. [Architecture Framework Reference](#architecture-framework-reference)
+7. [Configuration System](#configuration-system)
+8. [Technology Node Library](#technology-node-library)
+9. [Files Reference](#files-reference)
 
 ---
 
@@ -404,6 +412,264 @@ fill_doc_template(dut, doc)
 #### CHECKPOINT 5
 
 Human approves final output. Design is complete.
+
+---
+
+## Three-Layer Forward Design Methodology
+
+The preceding Spec2RTL workflow is built on a three-layer abstraction methodology that separates concerns across distinct design phases, with mandatory cross-layer verification at each boundary.
+
+### The Problem
+
+Traditional RTL design has no intermediate verification between specification and implementation. A spec says "ALU adds two numbers," the RTL implements it, and you only find bugs at simulation time — or worse, in silicon. As designs grow (a modern CPU core has 50+ sub-modules), the gap between "what it should do" and "what the RTL does" becomes unmanageable.
+
+RTLCraft addresses this by introducing **two intermediate layers** — Functional and Cycle-Level — that serve as verifiable stepping stones from spec to RTL:
+
+```
+Spec (natural language / YAML)
+    ↓
+ Layer 1 — Functional:    Pure functions, no timing
+    ↓  (verified against spec)
+ Layer 2 — Cycle-Level:   Register-accurate, with timing
+    ↓  (verified: L2==L1 via LayerVerifier)
+ Layer 3 — DSL:           Synthesizable rtlgen modules
+    ↓  (verified: L3==L2 via LayerVerifier)
+ Verilog
+```
+
+### Layer 1 — Functional Model
+
+**File**: `skills/cpu/functional.py` (8 functions: `ifu_pcgen_functional`, `ifu_bht_functional`, `iu_alu_functional`, `iu_bju_functional`, `rtu_rob_functional`, ...)
+
+**What**: Pure-Python functions with no timing or state. Each function is a mathematical mapping from inputs to outputs.
+
+**Why**: Serves as the golden reference. Before writing any RTL, you write a 10-line Python function that captures exactly what the hardware should compute. This is trivially verifiable against the spec — just call the function and check results.
+
+**How**:
+
+```python
+def iu_alu_functional(**kwargs) -> Callable:
+    def func(src0: int = 0, src1: int = 0, opcode: int = 0) -> Dict:
+        if opcode == 0: return {"result": src0 + src1}
+        if opcode == 1: return {"result": src0 - src1}
+        if opcode == 2: return {"result": src0 & src1}
+        if opcode == 3: return {"result": src0 | src1}
+        return {"result": 0}
+    return func
+```
+
+**Simulation**: Direct function call — `func(src0=5, src1=3, opcode=0)` → `{"result": 8}`.
+
+**Output**: A **Layer 1→2 guide** is auto-generated (via `generate_layer_guide(module, layer=1, ...)`) documenting the interface (ports, widths), state variables (none at L1), and behavioral descriptions. This guide is saved as a `.md` file and serves as the specification for Layer 2.
+
+### Layer 2 — Cycle-Level Model
+
+**File**: `skills/cpu/cycle_level.py` (86 models: `ifu_cycle`, `iu_alu_cycle`, `ibuf_cycle`, `pcgen_cycle`, `bpred_cycle`, `addrgen_cycle`, `lsu_ctrl_cycle`, ...)
+
+**What**: `CycleContext`-based behavior functions that introduce register boundaries and pipeline timing while remaining pure Python — no RTL constructs.
+
+**Why**: RTL bugs most often come from **timing errors** (wrong pipeline stage, missing register, incorrect handshake timing), not from wrong arithmetic. Layer 2 captures the cycle-accurate behavior — exactly when each signal changes — without the complexity of RTL syntax.
+
+**How**: Each model is a function returning a `Callable[[CycleContext], None]`:
+
+```python
+def iu_alu_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate ALU model (2-stage pipeline)."""
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input('rst_n', 1)
+        if rst_n == 0:
+            ctx.state['pipe'] = 0; return
+        src0 = ctx.get_input('src0', 0); src1 = ctx.get_input('src1', 0)
+        op = ctx.get_input('opcode', 0)
+        if op == 0: result = src0 + src1
+        elif op == 1: result = src0 - src1
+        elif op == 2: result = src0 & src1
+        else: result = 0
+        ctx.state['pipe'] = result
+        ctx.set_output('result', ctx.state.get('pipe', 0))
+    return behavior
+```
+
+The `ctx.state` dict represents **hardware registers** — values persist across clock cycles. `ctx.set_output()` drives module outputs.
+
+**Simulation**: L2 models are wrapped as `_beh_func` and run through the same `Simulator` as L3 DSL modules (see `_cycle_to_beh_func` in `rtlgen/forward.py`). This ensures the comparison framework is identical — no simulation artifacts.
+
+```
+Simulator          Simulator
+   │                   │
+ L2 beh_func       L3 DSL Module
+   │                   │
+   └─────┬─────┬───────┘
+         │     │
+   L2 result  L3 result
+         │     │
+   LayerVerifier.compare(L2, L3)
+```
+
+**Output**: A **Layer 2→3 guide** is generated with register names, widths, reset values, FSM states, and pipeline timing diagrams.
+
+### Layer 3 — DSL (rtlgen Modules)
+
+**Directory**: `skills/cpu/layer3_dsl/` (77 files: `alu.py`, `ibuf.py`, `pcgen.py`, `rob.py`, `csr.py`, `tage.py`, `ooo_issue.py`, `mmu_tlb.py`, ...)
+
+**What**: Synthesizable rtlgen DSL `Module` subclasses with `Input`/`Output`/`Reg`/`Wire` ports, `@self.comb`/`@self.seq` logic blocks, and `If`/`Elif`/`Else`/`Switch` control flow — directly translatable to Verilog.
+
+**Why**: This is the actual hardware description. Every signal, register, and logic gate is explicitly declared. The DSL is the **single source of truth** that generates Verilog.
+
+**How**:
+
+```python
+class ALU(Module):
+    def __init__(self, width=64):
+        super().__init__("alu")
+        self.clk = Input(1, "clk"); self.rst_n = Input(1, "rst_n")
+        self.op = Input(4, "op")
+        self.a = Input(width, "a"); self.b = Input(width, "b")
+        self.result = Output(width, "result")
+        self.zero = Output(1, "zero")
+
+        with self.comb:
+            with If(self.op == 0): self.result <<= self.a + self.b
+            with Elif(self.op == 1): self.result <<= self.a - self.b
+            with Elif(self.op == 2): self.result <<= self.a & self.b
+            with Elif(self.op == 3): self.result <<= self.a | self.b
+            with Elif(self.op == 4): self.result <<= self.a ^ self.b
+            with Elif(self.op == 5): self.result <<= self.a << self.b[5:0]
+            with Elif(self.op == 6): self.result <<= self.a >> self.b[5:0]
+            with Else(): self.result <<= Const(0, width)
+            self.zero <<= (self.result == 0)
+```
+
+**Simulation**: `Simulator(inst, use_xz=False)` — 94 out of 96 Layer 3 classes PASS cross-layer verification.
+
+**Output**: `VerilogEmitter().emit(module)` → 166 `.v` files (~17,700 lines total) in `generated_skill_ppa/cpu/hand_generated/`.
+
+### Cross-Layer Verification
+
+**File**: `rtlgen/forward.py` — `LayerVerifier`
+
+Cross-layer verification is **mandatory**. No module is accepted until L1 == L2 == L3 under identical test vectors:
+
+```python
+from rtlgen.forward import LayerVerifier
+
+ok = LayerVerifier.verify(
+    module_name="iu_alu",
+    l1_func=iu_alu_functional(),
+    l2_func=iu_alu_cycle(),
+    l3_class=ALU,
+    test_cases=[
+        {"inputs": {"src0": 5, "src1": 3, "opcode": 0},
+         "expect": {"result": 8}},
+        {"inputs": {"src0": 10, "src1": 4, "opcode": 1},
+         "expect": {"result": 6}},
+    ],
+)
+```
+
+If any layer disagrees:
+```
+AssertionError: L1!=L2!=L3 cross-layer mismatch!
+Design must be consistent across all layers.
+Fix Layer 1, 2, or 3 to match.
+```
+
+This prevents the common scenario where the RTL "implements" something different from what the spec intended.
+
+### Concrete Example: ALU Through All Three Layers
+
+Here is the complete path from function to Verilog for a 64-bit ALU:
+
+```
+Spec: "ALU supports ADD, SUB, AND, OR, XOR, SLL, SRL with zero flag"
+```
+
+**Step 1 — Layer 1 (Functional)**:
+```python
+def alu_l1(**kw):
+    ops = {0: kw['src0']+kw['src1'], 1: kw['src0']-kw['src1'],
+           2: kw['src0']&kw['src1'], 3: kw['src0']|kw['src1'],
+           4: kw['src0']^kw['src1']}
+    return {'result': ops.get(kw['opcode'], kw['src0']+kw['src1']),
+            'zero': ops.get(kw['opcode'], kw['src0']+kw['src1']) == 0}
+```
+
+**Step 2 — Layer 1→2 guide generated** (ports: `src0[64], src1[64], opcode[4]` → `result[64], zero[1]`).
+
+**Step 3 — Layer 2 (Cycle-Level)**: Add pipeline register for timing.
+```python
+def alu_cycle(**kwargs):
+    def behavior(ctx):
+        if ctx.get_input('rst_n', 1) == 0:
+            ctx.state['pipe'] = 0; return
+        src0 = ctx.get_input('src0', 0); src1 = ctx.get_input('src1', 0)
+        op = ctx.get_input('op', 0)
+        if op == 0: val = src0 + src1
+        elif op == 1: val = src0 - src1
+        elif op == 2: val = src0 & src1
+        elif op == 3: val = src0 | src1
+        elif op == 4: val = src0 ^ src1
+        else: val = 0
+        ctx.state['pipe'] = val
+        ctx.set_output('result', ctx.state.get('pipe', 0))
+        ctx.set_output('zero', ctx.state.get('pipe', 0) == 0)
+    return behavior
+```
+
+**Step 4 — Layer 2→3 guide generated** (registers: `pipe[64]`, pipeline stages: 2).
+
+**Step 5 — Layer 3 (DSL)**:
+```python
+class ALU(Module):
+    def __init__(self, width=64):
+        super().__init__("alu")
+        self.clk = Input(1, "clk"); self.rst_n = Input(1, "rst_n")
+        self.op = Input(4, "op")
+        self.a = Input(width, "a"); self.b = Input(width, "b")
+        self.result = Output(width, "result")
+        self.zero = Output(1, "zero")
+        r_pipe = Reg(width, "r_pipe")
+
+        with self.seq(self.clk, ~self.rst_n):
+            with If(~self.rst_n):
+                r_pipe <<= 0
+            with Else():
+                with If(self.op == 0): r_pipe <<= self.a + self.b
+                with Elif(self.op == 1): r_pipe <<= self.a - self.b
+                with Elif(self.op == 2): r_pipe <<= self.a & self.b
+                with Elif(self.op == 3): r_pipe <<= self.a | self.b
+                with Elif(self.op == 4): r_pipe <<= self.a ^ self.b
+                with Else(): r_pipe <<= 0
+
+        with self.comb:
+            self.result <<= r_pipe
+            self.zero <<= (r_pipe == 0)
+```
+
+**Step 6 — Cross-Layer Verification**:
+```python
+LayerVerifier.verify('alu', alu_l1, ALU,
+    test_cases=[...], l2_func=alu_cycle())
+# ✓ alu: L1==L2==L3 consistent
+```
+
+**Step 7 — Verilog Generation**:
+```python
+from rtlgen import VerilogEmitter
+v = VerilogEmitter().emit(ALU())
+# → 100+ lines of synthesizable Verilog
+# → generated_skill_ppa/cpu/hand_generated/alu_ALU.v
+```
+
+### Verification Philosophy
+
+| Layer | What It Verifies | How | Failure Mode |
+|-------|------------------|-----|--------------|
+| L1 | Functional correctness | `assert func(input) == expected_output` | Wrong algorithm |
+| L2 | Timing correctness | `assert L2_output == L1_output` (same inputs, same values, after N cycles) | Wrong pipeline depth, missing register |
+| L3 | RTL correctness | `assert L3_output == L2_output` (same inputs, same timing) | Wrong DSL syntax, wrong signal wiring |
+
+The key insight: **each layer adds exactly one new concern**. L1 adds function. L2 adds time. L3 adds hardware syntax. If verification fails at L2, the bug is in timing, not arithmetic. If it fails at L3, the bug is in RTL syntax or wiring, not timing. This makes debugging linear and predictable.
 
 ---
 

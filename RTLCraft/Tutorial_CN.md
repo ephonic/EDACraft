@@ -15,14 +15,22 @@
    - 第 3 阶段：DSL 实现
    - 第 4 阶段：PPA 优化
    - 第 5 阶段：代码生成与最终验证
-4. [Skills 库](#skills-库)
+4. [三层正向设计方法论](#三层正向设计方法论)
+   - 问题
+   - 第 1 层：功能级模型
+   - 第 2 层：周期级模型
+   - 第 3 层：DSL（rtlgen 模块）
+   - 跨层验证
+   - 具体示例：ALU
+   - 验证哲学
+5. [Skills 库](#skills-库)
    - 概述
    - DSL 模块清单（192 个模块）
    - 各域 Skill 详情
-5. [架构框架参考](#架构框架参考)
-6. [配置系统](#配置系统)
-7. [工艺节点库](#工艺节点库)
-8. [文件参考](#文件参考)
+6. [架构框架参考](#架构框架参考)
+7. [配置系统](#配置系统)
+8. [工艺节点库](#工艺节点库)
+9. [文件参考](#文件参考)
 
 ---
 
@@ -404,6 +412,264 @@ fill_doc_template(dut, doc)
 #### 检查点 5
 
 人类批准最终输出。设计完成。
+
+---
+
+## 三层正向设计方法论
+
+上述 Spec2RTL 工作流建立在一个三层抽象方法论之上，它将设计关注点分离到不同的阶段，并在每层边界执行强制性的跨层验证。
+
+### 问题
+
+传统的 RTL 设计在规格和实现之间没有中间验证步骤。规格说"ALU 将两个数相加"，RTL 实现了它，但你只有在仿真时——或者更糟，在芯片回来后——才能发现 bug。随着设计规模的增长（现代 CPU 核心有 50+ 个子模块），"应该做什么"和"RTL 实际做了什么"之间的差距变得难以管理。
+
+RTLCraft 通过引入**两个中间层**——功能级和周期级——来解决这个问题，它们作为从规格到 RTL 的可验证阶梯：
+
+```
+Spec（自然语言 / YAML）
+    ↓
+ 第 1 层 — 功能级：    纯函数，无时序
+    ↓  （与 spec 验证）
+ 第 2 层 — 周期级：    寄存器精确，含时序
+    ↓  （验证：L2==L1，通过 LayerVerifier）
+ 第 3 层 — DSL：       可综合的 rtlgen 模块
+    ↓  （验证：L3==L2，通过 LayerVerifier）
+ Verilog
+```
+
+### 第 1 层 — 功能级模型
+
+**文件**：`skills/cpu/functional.py`（8 个函数：`ifu_pcgen_functional`、`ifu_bht_functional`、`iu_alu_functional`、`iu_bju_functional`、`rtu_rob_functional` 等）
+
+**是什么**：无时序、无状态的纯 Python 函数。每个函数是从输入到输出的数学映射。
+
+**为什么**：作为黄金参考。在编写任何 RTL 之前，你编写一个 10 行的 Python 函数，精确捕获硬件应该计算的内容。这很容易与规格验证——只需调用函数并检查结果。
+
+**如何做**：
+
+```python
+def iu_alu_functional(**kwargs) -> Callable:
+    def func(src0: int = 0, src1: int = 0, opcode: int = 0) -> Dict:
+        if opcode == 0: return {"result": src0 + src1}
+        if opcode == 1: return {"result": src0 - src1}
+        if opcode == 2: return {"result": src0 & src1}
+        if opcode == 3: return {"result": src0 | src1}
+        return {"result": 0}
+    return func
+```
+
+**仿真**：直接函数调用 — `func(src0=5, src1=3, opcode=0)` → `{"result": 8}`。
+
+**输出**：自动生成 **L1→L2 指引**（通过 `generate_layer_guide(module, layer=1, ...)`），记录接口（端口、位宽）、状态变量（L1 阶段无）和行为描述。该指引保存为 `.md` 文件，作为第 2 层的规格。
+
+### 第 2 层 — 周期级模型
+
+**文件**：`skills/cpu/cycle_level.py`（86 个模型：`ifu_cycle`、`iu_alu_cycle`、`ibuf_cycle`、`pcgen_cycle`、`bpred_cycle`、`addrgen_cycle`、`lsu_ctrl_cycle` 等）
+
+**是什么**：基于 `CycleContext` 的行为函数，引入寄存器边界和流水线时序，同时保持纯 Python——无需 RTL 构造。
+
+**为什么**：RTL 的 bug 通常来自**时序错误**（错误的流水线级、缺少寄存器、握手时序不正确），而不是算术错误。第 2 层捕获周期精确的行为——每个信号确切的变化时刻——而无需 RTL 语法的复杂性。
+
+**如何做**：每个模型是一个函数，返回一个 `Callable[[CycleContext], None]`：
+
+```python
+def iu_alu_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """周期精确 ALU 模型（2 级流水线）。"""
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input('rst_n', 1)
+        if rst_n == 0:
+            ctx.state['pipe'] = 0; return
+        src0 = ctx.get_input('src0', 0); src1 = ctx.get_input('src1', 0)
+        op = ctx.get_input('opcode', 0)
+        if op == 0: result = src0 + src1
+        elif op == 1: result = src0 - src1
+        elif op == 2: result = src0 & src1
+        else: result = 0
+        ctx.state['pipe'] = result
+        ctx.set_output('result', ctx.state.get('pipe', 0))
+    return behavior
+```
+
+`ctx.state` 字典代表**硬件寄存器**——值在时钟周期之间保持。`ctx.set_output()` 驱动模块输出。
+
+**仿真**：L2 模型被包装为 `_beh_func` 并通过与 L3 DSL 模块相同的 `Simulator` 运行。这确保了比较框架完全一致——无仿真伪影。
+
+```
+Simulator          Simulator
+   │                   │
+ L2 beh_func       L3 DSL Module
+   │                   │
+   └─────┬─────┬───────┘
+         │     │
+   L2 结果  L3 结果
+         │     │
+   LayerVerifier.compare(L2, L3)
+```
+
+**输出**：生成 **L2→L3 指引**，包含寄存器名称、位宽、复位值、FSM 状态和流水线时序图。
+
+### 第 3 层 — DSL（rtlgen 模块）
+
+**目录**：`skills/cpu/layer3_dsl/`（77 个文件：`alu.py`、`ibuf.py`、`pcgen.py`、`rob.py`、`csr.py`、`tage.py`、`ooo_issue.py`、`mmu_tlb.py` 等）
+
+**是什么**：可综合的 rtlgen DSL `Module` 子类，包含 `Input`/`Output`/`Reg`/`Wire` 端口、`@self.comb`/`@self.seq` 逻辑块和 `If`/`Elif`/`Else`/`Switch` 控制流——可直接翻译为 Verilog。
+
+**为什么**：这是实际的硬件描述。每个信号、寄存器和逻辑门都被显式声明。DSL 是生成 Verilog 的**唯一真实来源**。
+
+**如何做**：
+
+```python
+class ALU(Module):
+    def __init__(self, width=64):
+        super().__init__("alu")
+        self.clk = Input(1, "clk"); self.rst_n = Input(1, "rst_n")
+        self.op = Input(4, "op")
+        self.a = Input(width, "a"); self.b = Input(width, "b")
+        self.result = Output(width, "result")
+        self.zero = Output(1, "zero")
+
+        with self.comb:
+            with If(self.op == 0): self.result <<= self.a + self.b
+            with Elif(self.op == 1): self.result <<= self.a - self.b
+            with Elif(self.op == 2): self.result <<= self.a & self.b
+            with Elif(self.op == 3): self.result <<= self.a | self.b
+            with Elif(self.op == 4): self.result <<= self.a ^ self.b
+            with Elif(self.op == 5): self.result <<= self.a << self.b[5:0]
+            with Elif(self.op == 6): self.result <<= self.a >> self.b[5:0]
+            with Else(): self.result <<= Const(0, width)
+            self.zero <<= (self.result == 0)
+```
+
+**仿真**：`Simulator(inst, use_xz=False)` — 94/96 个第 3 层类通过跨层验证。
+
+**输出**：`VerilogEmitter().emit(module)` → 166 个 `.v` 文件（约 17,700 行），位于 `generated_skill_ppa/cpu/hand_generated/`。
+
+### 跨层验证
+
+**文件**：`rtlgen/forward.py` — `LayerVerifier`
+
+跨层验证是**强制性的**。在 L1 == L2 == L3 对相同测试向量产生一致结果之前，任何模块都不被接受：
+
+```python
+from rtlgen.forward import LayerVerifier
+
+ok = LayerVerifier.verify(
+    module_name="iu_alu",
+    l1_func=iu_alu_functional(),
+    l2_func=iu_alu_cycle(),
+    l3_class=ALU,
+    test_cases=[
+        {"inputs": {"src0": 5, "src1": 3, "opcode": 0},
+         "expect": {"result": 8}},
+        {"inputs": {"src0": 10, "src1": 4, "opcode": 1},
+         "expect": {"result": 6}},
+    ],
+)
+```
+
+如果任一层不一致：
+```
+AssertionError: L1!=L2!=L3跨层不匹配！
+设计必须在所有层之间保持一致。
+修复第 1、2 或 3 层以使其匹配。
+```
+
+这防止了 RTL"实现"的内容与规格意图不同这一常见问题。
+
+### 具体示例：ALU 通过所有三层
+
+以下是 64 位 ALU 从函数到 Verilog 的完整路径：
+
+```
+规格："ALU 支持 ADD、SUB、AND、OR、XOR、SLL、SRL，带零标志"
+```
+
+**第 1 步 — 第 1 层（功能级）**：
+```python
+def alu_l1(**kw):
+    ops = {0: kw['src0']+kw['src1'], 1: kw['src0']-kw['src1'],
+           2: kw['src0']&kw['src1'], 3: kw['src0']|kw['src1'],
+           4: kw['src0']^kw['src1']}
+    return {'result': ops.get(kw['opcode'], kw['src0']+kw['src1']),
+            'zero': ops.get(kw['opcode'], kw['src0']+kw['src1']) == 0}
+```
+
+**第 2 步 — 生成 L1→L2 指引**（端口：`src0[64], src1[64], opcode[4]` → `result[64], zero[1]`）。
+
+**第 3 步 — 第 2 层（周期级）**：添加流水线寄存器以实现时序。
+```python
+def alu_cycle(**kwargs):
+    def behavior(ctx):
+        if ctx.get_input('rst_n', 1) == 0:
+            ctx.state['pipe'] = 0; return
+        src0 = ctx.get_input('src0', 0); src1 = ctx.get_input('src1', 0)
+        op = ctx.get_input('op', 0)
+        if op == 0: val = src0 + src1
+        elif op == 1: val = src0 - src1
+        elif op == 2: val = src0 & src1
+        elif op == 3: val = src0 | src1
+        elif op == 4: val = src0 ^ src1
+        else: val = 0
+        ctx.state['pipe'] = val
+        ctx.set_output('result', ctx.state.get('pipe', 0))
+        ctx.set_output('zero', ctx.state.get('pipe', 0) == 0)
+    return behavior
+```
+
+**第 4 步 — 生成 L2→L3 指引**（寄存器：`pipe[64]`，流水线级数：2）。
+
+**第 5 步 — 第 3 层（DSL）**：
+```python
+class ALU(Module):
+    def __init__(self, width=64):
+        super().__init__("alu")
+        self.clk = Input(1, "clk"); self.rst_n = Input(1, "rst_n")
+        self.op = Input(4, "op")
+        self.a = Input(width, "a"); self.b = Input(width, "b")
+        self.result = Output(width, "result")
+        self.zero = Output(1, "zero")
+        r_pipe = Reg(width, "r_pipe")
+
+        with self.seq(self.clk, ~self.rst_n):
+            with If(~self.rst_n):
+                r_pipe <<= 0
+            with Else():
+                with If(self.op == 0): r_pipe <<= self.a + self.b
+                with Elif(self.op == 1): r_pipe <<= self.a - self.b
+                with Elif(self.op == 2): r_pipe <<= self.a & self.b
+                with Elif(self.op == 3): r_pipe <<= self.a | self.b
+                with Elif(self.op == 4): r_pipe <<= self.a ^ self.b
+                with Else(): r_pipe <<= 0
+
+        with self.comb:
+            self.result <<= r_pipe
+            self.zero <<= (r_pipe == 0)
+```
+
+**第 6 步 — 跨层验证**：
+```python
+LayerVerifier.verify('alu', alu_l1, ALU,
+    test_cases=[...], l2_func=alu_cycle())
+# ✓ alu: L1==L2==L3 一致
+```
+
+**第 7 步 — Verilog 生成**：
+```python
+from rtlgen import VerilogEmitter
+v = VerilogEmitter().emit(ALU())
+# → 100+ 行可综合 Verilog
+# → generated_skill_ppa/cpu/hand_generated/alu_ALU.v
+```
+
+### 验证哲学
+
+| 层 | 验证内容 | 方法 | 失败模式 |
+|-------|----------|------|----------|
+| L1 | 功能正确性 | `assert func(input) == expected_output` | 算法错误 |
+| L2 | 时序正确性 | `assert L2_output == L1_output`（相同输入，相同值，N 周期后） | 流水线深度错误，缺少寄存器 |
+| L3 | RTL 正确性 | `assert L3_output == L2_output`（相同输入，相同时序） | DSL 语法错误，信号连线错误 |
+
+关键洞察：**每层只增加一个关注点**。L1 增加功能。L2 增加时间。L3 增加硬件语法。如果验证在 L2 失败，bug 在时序而非算术。如果它在 L3 失败，bug 在 RTL 语法或连线而非时序。这使得调试是线性且可预测的。
 
 ---
 
