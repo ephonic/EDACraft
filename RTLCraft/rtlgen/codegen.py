@@ -20,6 +20,7 @@ from rtlgen.core import (
     Const,
     Expr,
     ForGenNode,
+    FunctionCall,
     GenIfNode,
     GenVar,
     IfNode,
@@ -61,7 +62,7 @@ class EmitProfile:
 class VerilogEmitter:
     """Verilog 代码发射器。"""
 
-    def __init__(self, indent: str = "    ", use_sv_always: bool = False, emit_source_map: bool = False, profile: Optional[EmitProfile] = None, disable_cse: bool = False):
+    def __init__(self, indent: str = "    ", use_sv_always: bool = False, emit_source_map: bool = False, profile: Optional[EmitProfile] = None, disable_cse: bool = True):
         self.indent = indent
         self.use_sv_always = use_sv_always
         self.emit_source_map = emit_source_map
@@ -81,7 +82,32 @@ class VerilogEmitter:
     def emit(self, module: Module) -> str:
         """生成单个模块的 Verilog 代码。"""
         self.lines = []
+        self._extra_port_wires: List[Tuple[str, str]] = []
+        self._port_expr_counter: int = 0
+        # Build mapping from submodule port signal id to instance name.
+        # This lets us emit prefixed names (e.g. u_valu_wid) when a submodule
+        # port is referenced directly, avoiding name collisions between different
+        # submodule instances that have ports with the same bare name.
+        self._submod_port_inst_map: Dict[int, str] = {}
+        def _collect_submods(body):
+            for stmt in body:
+                if isinstance(stmt, SubmoduleInst):
+                    for sig in list(stmt.module._inputs.values()) + list(stmt.module._outputs.values()):
+                        self._submod_port_inst_map[id(sig)] = stmt.name
+                elif hasattr(stmt, 'then_body'):
+                    _collect_submods(stmt.then_body)
+                    if hasattr(stmt, 'else_body'):
+                        _collect_submods(stmt.else_body)
+        for inst_name, submod in module._submodules:
+            for sig in list(submod._inputs.values()) + list(submod._outputs.values()):
+                self._submod_port_inst_map[id(sig)] = inst_name
+        _collect_submods(module._top_level)
+        for body in module._comb_blocks:
+            _collect_submods(body)
+        for _, _, _, _, body in module._seq_blocks:
+            _collect_submods(body)
         self._emit_module(module)
+        del self._submod_port_inst_map
         return "\n".join(self.lines)
 
     def emit_with_lint(self, module: Module, auto_fix: bool = False, rules: Optional[List[str]] = None) -> Tuple[str, "LintResult"]:
@@ -99,7 +125,7 @@ class VerilogEmitter:
         自动基于模块结构（端口+参数）进行去重，避免同名/同构模块重复输出。
         如果 include_assertions=True，还会为带有 _module_assertions 的模块生成 SVA bind 模块。
         """
-        visited: Dict[str, Module] = {}
+        visited: set = set()
         order: List[Module] = []
 
         def _dfs_stmts(stmts: List[Any]):
@@ -127,10 +153,9 @@ class VerilogEmitter:
                         _dfs_stmts(body)
 
         def dfs(mod: Module):
-            type_name = getattr(mod, '_type_name', mod.name)
-            if type_name in visited:
+            if id(mod) in visited:
                 return
-            visited[type_name] = mod
+            visited.add(id(mod))
             for _, sub in mod._submodules:
                 dfs(sub)
             _dfs_stmts(mod._top_level)
@@ -156,17 +181,25 @@ class VerilogEmitter:
         name_remap: Dict[str, str] = {}
         id_remap: Dict[int, str] = {}
         deduped_order: List[Module] = []
+        used_names: set = set()
         for mod in order:
             fp = _fingerprint(mod)
-            canonical_name = getattr(fingerprint_to_canonical.get(fp), '_type_name', getattr(fingerprint_to_canonical.get(fp), 'name', mod.name))
             if fp in fingerprint_to_canonical:
+                canonical = fingerprint_to_canonical[fp]
+                canonical_name = getattr(canonical, '_type_name', getattr(canonical, 'name', mod.name))
                 name_remap[mod.name] = canonical_name
                 id_remap[id(mod)] = canonical_name
             else:
                 fingerprint_to_canonical[fp] = mod
                 tname = getattr(mod, '_type_name', mod.name)
-                name_remap[mod.name] = tname
-                id_remap[id(mod)] = tname
+                unique_name = tname
+                suffix = 1
+                while unique_name in used_names:
+                    unique_name = f"{tname}_{suffix}"
+                    suffix += 1
+                used_names.add(unique_name)
+                name_remap[mod.name] = unique_name
+                id_remap[id(mod)] = unique_name
                 deduped_order.append(mod)
 
         self._module_name_remap = name_remap
@@ -321,8 +354,14 @@ class VerilogEmitter:
         params = list(module._params.values())
         module_params = [p for p in params if not isinstance(p, LocalParam)]
         mod_name = getattr(module, '_type_name', module.name)
+        id_remap = getattr(self, "_module_id_remap", {})
+        mod_name = id_remap.get(id(module), mod_name)
         if module_params:
-            param_lines = ", ".join(f"parameter {p.name} = {p.value}" for p in module_params)
+            def _fmt_param_val(v):
+                if isinstance(v, str):
+                    return f'"{v}"'
+                return str(v)
+            param_lines = ", ".join(f"parameter {p.name} = {_fmt_param_val(p.value)}" for p in module_params)
             self.lines.append(f"module {mod_name} #({param_lines}) (")
         else:
             self.lines.append(f"module {mod_name} (")
@@ -347,6 +386,18 @@ class VerilogEmitter:
         # 内部信号声明
         self._emit_internal_decls(module)
 
+        # Emit extra port wires for complex slice expressions in submodule instances
+        for decl_line, assign_line in self._extra_port_wires:
+            self.lines.append(decl_line)
+            self.lines.append(assign_line)
+        if self._extra_port_wires:
+            self.lines.append("")
+
+        # Audit Fix 0522 — Section 2.2: Resolve cross-module assignments
+        # (e.g., ifu.clk <<= self.clk) into proper submodule port connections
+        # instead of redundant "assign clk = clk;" statements.
+        self._resolve_cross_module_assignments(module)
+
         # 顶层语句（assign、子模块实例等）
         for stmt in module._top_level:
             self._emit_toplevel_stmt(stmt)
@@ -360,6 +411,14 @@ class VerilogEmitter:
             if id(submod) in explicit_inst_mods:
                 continue
             self._emit_implicit_submodule(inst_name, submod, module)
+
+        # 锁存器块 (always_latch)
+        for body in module._latch_blocks:
+            self._emit_always_latch(body)
+
+        # 初始化块 (initial)
+        for body in module._init_blocks:
+            self._emit_initial(body)
 
         # 组合逻辑块
         doc = getattr(module, '_module_doc', None)
@@ -407,21 +466,30 @@ class VerilogEmitter:
 
     def _emit_memory_decls(self, module: Module):
         seen: set = set()
-        for mem in module._memories.values():
+        # Collect arrays from explicit registry AND auto-discover from AST
+        # Start with already-registered arrays/memories so auto-discovery doesn't override
+        all_arrays: Dict[str, Any] = dict(module._memories)
+        all_arrays.update(module._arrays)
+        self._collect_arrays_from_ast(module, all_arrays)
+        registered_array_names = {a.name for a in module._arrays.values()}
+        for mem in all_arrays.values():
             if mem.name in seen:
+                continue
+            # Skip arrays already registered in module._arrays — they're emitted in _emit_internal_decls
+            if mem.name in registered_array_names:
                 continue
             seen.add(mem.name)
             self.lines.append(f"    reg [{mem.width - 1}:0] {mem.name} [0:{mem.depth - 1}];")
-            if mem.init_file:
+            if getattr(mem, 'init_file', None):
                 self.lines.append(f"    initial begin")
                 self.lines.append(f"        $readmemh(\"{mem.init_file}\", {mem.name});")
                 self.lines.append(f"    end")
-            elif mem.init_data:
+            elif getattr(mem, 'init_data', None):
                 self.lines.append(f"    initial begin")
                 for idx, val in enumerate(mem.init_data):
                     self.lines.append(f"        {mem.name}[{idx}] = {mem.width}'d{val};")
                 self.lines.append(f"    end")
-            elif mem.init_zero:
+            elif getattr(mem, 'init_zero', None):
                 self.lines.append(f"    initial begin")
                 self.lines.append(f"        integer __i;")
                 self.lines.append(f"        for (__i = 0; __i < {mem.depth}; __i = __i + 1) begin")
@@ -430,6 +498,101 @@ class VerilogEmitter:
                 self.lines.append(f"    end")
         if module._memories:
             self.lines.append("")
+
+    @staticmethod
+    def _extract_literal_int(expr) -> int | None:
+        """Extract a literal integer value from an expression node, or None."""
+        from rtlgen.core import Const
+        if isinstance(expr, Const):
+            return expr.value
+        if isinstance(expr, int):
+            return expr
+        return None
+
+    @staticmethod
+    def _expr_bit_width(expr) -> int:
+        """Estimate the bit-width of an expression node."""
+        from rtlgen.core import Const, Slice, Ref
+        if isinstance(expr, Const):
+            return expr.width
+        if isinstance(expr, Slice):
+            return expr.hi - expr.lo + 1
+        if isinstance(expr, Ref):
+            return getattr(expr, 'width', 0)
+        return 0
+
+    def _collect_arrays_from_ast(self, module: Module, arrays: Dict[str, Any]):
+        """Scan AST for ArrayRead/ArrayWrite and register untracked Array objects."""
+        from rtlgen.core import Array, ArrayRead, ArrayWrite
+
+        # Two-pass: first collect all indices, then register with correct depth
+        array_indices: Dict[str, set] = {}
+        array_widths: Dict[str, int] = {}
+
+        def _record_index(array_name: str, idx_expr, width: int):
+            array_widths.setdefault(array_name, width)
+            idx_set = array_indices.setdefault(array_name, set())
+            # Extract literal integer index
+            lit = self._extract_literal_int(idx_expr)
+            if lit is not None:
+                idx_set.add(lit)
+            else:
+                # Dynamic index: estimate max from bit-width of the expression
+                bw = self._expr_bit_width(idx_expr)
+                if bw > 0:
+                    idx_set.add((1 << bw) - 1)  # max possible value for bw bits
+
+        def _scan_body(body):
+            from rtlgen.core import SwitchNode
+            for stmt in body:
+                if isinstance(stmt, ArrayWrite):
+                    _record_index(stmt.array_name, stmt.index, getattr(stmt, 'width', 64))
+                elif isinstance(stmt, ArrayRead):
+                    _record_index(stmt.array_name, stmt.index, stmt.width)
+                elif hasattr(stmt, 'value'):
+                    _scan_expr(stmt.value)
+                if hasattr(stmt, 'then_body'):
+                    _scan_body(stmt.then_body)
+                    if hasattr(stmt, 'else_body'):
+                        _scan_body(stmt.else_body)
+                if isinstance(stmt, SwitchNode):
+                    for _, case_body in stmt.cases:
+                        _scan_body(case_body)
+                    _scan_body(stmt.default_body)
+
+        def _scan_expr(expr):
+            if isinstance(expr, ArrayRead):
+                _record_index(expr.array_name, expr.index, expr.width)
+            elif hasattr(expr, 'lhs'):
+                _scan_expr(expr.lhs)
+            if hasattr(expr, 'rhs'):
+                _scan_expr(expr.rhs)
+            if hasattr(expr, 'operand'):
+                _scan_expr(expr.operand)
+            if hasattr(expr, 'cond'):
+                _scan_expr(expr.cond)
+            if hasattr(expr, 'true_expr'):
+                _scan_expr(expr.true_expr)
+            if hasattr(expr, 'false_expr'):
+                _scan_expr(expr.false_expr)
+            if hasattr(expr, 'operands'):
+                for op in expr.operands:
+                    _scan_expr(op)
+
+        for body in module._comb_blocks:
+            _scan_body(body)
+        for _, _, _, _, body in module._seq_blocks:
+            _scan_body(body)
+        for stmt in module._top_level:
+            _scan_body([stmt])
+
+        # Register arrays with inferred depth from collected indices
+        for name, indices in array_indices.items():
+            if name not in arrays:
+                width = array_widths.get(name, 64)
+                max_idx = max(indices) if indices else 0
+                depth = max_idx + 1
+                arrays[name] = Array(width, depth, name)
 
     def _collect_undeclared_signals(self, module: Module) -> List[Signal]:
         declared = set()
@@ -472,6 +635,9 @@ class VerilogEmitter:
                     _scan_expr(op)
             elif isinstance(expr, (MemRead, ArrayRead)):
                 _scan_expr(expr.addr if hasattr(expr, 'addr') else expr.index)
+            elif isinstance(expr, FunctionCall):
+                for arg in expr.args:
+                    _scan_expr(arg)
             elif isinstance(expr, (Const, GenVar, int)):
                 pass
         
@@ -533,12 +699,12 @@ class VerilogEmitter:
                 _scan_stmt(stmt)
         
         undeclared = []
-        seen = set()
+        seen_ids = set()
         for sig in refs:
-            if sig.name not in declared and getattr(sig, '_array_parent', None) is None and sig.name not in seen:
-                seen.add(sig.name)
+            if sig.name not in declared and getattr(sig, '_array_parent', None) is None and id(sig) not in seen_ids:
+                seen_ids.add(id(sig))
                 undeclared.append(sig)
-        undeclared.sort(key=lambda s: s.name)
+        undeclared.sort(key=lambda s: self._prefixed_name(s))
         return undeclared
 
     def _emit_internal_decls(self, module: Module):
@@ -551,8 +717,13 @@ class VerilogEmitter:
 
         # 隐式声明
         undeclared = self._collect_undeclared_signals(module)
+        seen_names = set()
         for sig in undeclared:
-            self.lines.append(self._sig_decl("logic", sig))
+            decl_name = self._prefixed_name(sig)
+            if decl_name in seen_names:
+                continue
+            seen_names.add(decl_name)
+            self.lines.append(self._sig_decl("logic", sig, name_override=decl_name))
         if undeclared:
             self.lines.append("")
 
@@ -572,7 +743,24 @@ class VerilogEmitter:
                 self.lines.append(f"    {vtype} {arr.name} [0:{arr.depth - 1}];")
             else:
                 self.lines.append(f"    {vtype} [{arr.width - 1}:0] {arr.name} [0:{arr.depth - 1}];")
-        # submodule outputs that are not already declared
+        # Declare wires for unconnected submodule outputs so they can be referenced
+        # in parent expressions (e.g. self.valid_out <<= ifu.valid_out | ...)
+        declared_names = set()
+        for sig in list(module._inputs.values()) + list(module._outputs.values()) + list(module._wires.values()) + list(module._regs.values()):
+            declared_names.add(sig.name)
+        for arr in module._arrays.values():
+            declared_names.add(arr.name)
+        for _, sub in module._submodules:
+            for sig in sub._outputs.values():
+                declared_names.add(sig.name)
+        for stmt in module._top_level:
+            if isinstance(stmt, SubmoduleInst):
+                for port_name, sig in stmt.module._outputs.items():
+                    if port_name not in stmt.port_map:
+                        wire_name = f"{stmt.name}_{port_name}"
+                        if wire_name not in seen_names and wire_name not in declared_names:
+                            seen_names.add(wire_name)
+                            self.lines.append(self._sig_decl("wire", sig, name_override=wire_name))
         for _, sub in module._submodules:
             for sig in sub._outputs.values():
                 if sig.name not in module._wires and sig.name not in module._regs:
@@ -580,13 +768,14 @@ class VerilogEmitter:
         if module._wires or module._regs or module._arrays or undeclared:
             self.lines.append("")
 
-    def _sig_decl(self, vtype: str, sig: Signal) -> str:
+    def _sig_decl(self, vtype: str, sig: Signal, name_override: Optional[str] = None) -> str:
         init_part = ""
         if isinstance(sig, Reg) and getattr(sig, 'init_value', None) is not None:
             init_part = f" = {self._emit_const_literal(sig.init_value, sig.width)}"
+        name = name_override if name_override is not None else sig.name
         if sig.width == 1:
-            return f"    {vtype} {sig.name}{init_part};"
-        return f"    {vtype} [{sig.width - 1}:0] {sig.name}{init_part};"
+            return f"    {vtype} {name}{init_part};"
+        return f"    {vtype} [{sig.width - 1}:0] {name}{init_part};"
 
     # -----------------------------------------------------------------
     # Statements
@@ -625,7 +814,11 @@ class VerilogEmitter:
             self.lines.append(f"    assign {lhs} = {rhs};")
         elif isinstance(stmt, IndexedAssign):
             rhs = self._emit_expr(stmt.value)
-            self.lines.append(f"    assign {stmt.target_signal.name}[{self._emit_expr(stmt.index)}] = {rhs};")
+            tname = self._prefixed_name(stmt.target_signal)
+            if stmt.target_signal.width == 1:
+                self.lines.append(f"    assign {tname} = {rhs};")
+            else:
+                self.lines.append(f"    assign {tname}[{self._emit_expr(stmt.index)}] = {rhs};")
         elif isinstance(stmt, SubmoduleInst):
             self._emit_submodule_inst(stmt)
         elif isinstance(stmt, IfNode):
@@ -677,7 +870,7 @@ class VerilogEmitter:
         elif isinstance(stmt, WhenNode):
             self._emit_when(stmt, indent_level, mode)
         elif isinstance(stmt, SwitchNode):
-            self.lines.append(f"{prefix}case ({self._emit_expr(stmt.expr)})")
+            self.lines.append(f"{prefix}{stmt.kind} ({self._emit_expr(stmt.expr)})")
             for val, body in stmt.cases:
                 self.lines.append(f"{prefix}{self.indent}{self._emit_case_label(val, stmt.expr.width)}: begin")
                 for s in body:
@@ -694,15 +887,23 @@ class VerilogEmitter:
         elif isinstance(stmt, GenIfNode):
             self._emit_gen_if(stmt, indent_level)
         elif isinstance(stmt, IndexedAssign):
-            if mode == "assign":
-                self.lines.append(
-                    f"{prefix}assign {stmt.target_signal.name}[{self._emit_expr(stmt.index)}] = {self._emit_expr(stmt.value)};"
-                )
+            tname = self._prefixed_name(stmt.target_signal)
+            if stmt.target_signal.width == 1:
+                if mode == "assign":
+                    self.lines.append(f"{prefix}assign {tname} = {self._emit_expr(stmt.value)};")
+                else:
+                    op = "=" if stmt.blocking else "<="
+                    self.lines.append(f"{prefix}{tname} {op} {self._emit_expr(stmt.value)};")
             else:
-                op = "=" if stmt.blocking else "<="
-                self.lines.append(
-                    f"{prefix}{stmt.target_signal.name}[{self._emit_expr(stmt.index)}] {op} {self._emit_expr(stmt.value)};"
-                )
+                if mode == "assign":
+                    self.lines.append(
+                        f"{prefix}assign {tname}[{self._emit_expr(stmt.index)}] = {self._emit_expr(stmt.value)};"
+                    )
+                else:
+                    op = "=" if stmt.blocking else "<="
+                    self.lines.append(
+                        f"{prefix}{tname}[{self._emit_expr(stmt.index)}] {op} {self._emit_expr(stmt.value)};"
+                    )
         elif isinstance(stmt, ArrayWrite):
             op = "<=" if mode == "seq" and not stmt.blocking else "="
             self.lines.append(
@@ -750,6 +951,21 @@ class VerilogEmitter:
         for stmt in body:
             if not isinstance(stmt, (Assign, IndexedAssign, ArrayWrite, Comment)):
                 return False
+        # If the same signal is assigned more than once, we must use always @(*)
+        # so that later assignments override earlier ones (procedural semantics).
+        seen = set()
+        for stmt in body:
+            if isinstance(stmt, Assign):
+                target = stmt.target
+                if isinstance(target, Signal):
+                    if id(target) in seen:
+                        return False
+                    seen.add(id(target))
+            elif isinstance(stmt, IndexedAssign):
+                target = stmt.target_signal
+                if id(target) in seen:
+                    return False
+                seen.add(id(target))
         return True
 
     def _emit_cse_decls(self, cse_wires: List[Signal]):
@@ -774,6 +990,11 @@ class VerilogEmitter:
         if has_mux_chain:
             if not self.disable_cse:
                 body = self._cse_pass(body)
+                extra_wires = []
+            elif self._needs_complexity_extraction(body):
+                body, extra_wires = self._complexity_pass(body)
+            else:
+                extra_wires = []
             cse_wires = []
             cse_assigns = []
             rest = []
@@ -784,6 +1005,8 @@ class VerilogEmitter:
                 else:
                     rest.append(stmt)
             self._emit_cse_decls(cse_wires)
+            if extra_wires:
+                self._emit_cse_decls(extra_wires)
             self.lines.append("    always @(*) begin")
             for stmt in cse_assigns:
                 lhs = self._emit_lhs(stmt.target)
@@ -796,9 +1019,13 @@ class VerilogEmitter:
                         lhs = self._emit_lhs(stmt.target)
                         self.lines.append(f"        {lhs} = {self._emit_assign_rhs(stmt.value, stmt.target)};")
                 elif isinstance(stmt, IndexedAssign):
-                    self.lines.append(
-                        f"        {stmt.target_signal.name}[{self._emit_expr(stmt.index)}] = {self._emit_expr(stmt.value)};"
-                    )
+                    tname = self._prefixed_name(stmt.target_signal)
+                    if stmt.target_signal.width == 1:
+                        self.lines.append(f"        {tname} = {self._emit_expr(stmt.value)};")
+                    else:
+                        self.lines.append(
+                            f"        {tname}[{self._emit_expr(stmt.index)}] = {self._emit_expr(stmt.value)};"
+                        )
                 elif isinstance(stmt, ArrayWrite):
                     self.lines.append(
                         f"        {stmt.array_name}[{self._emit_expr(stmt.index)}] = {self._emit_expr(stmt.value)};"
@@ -811,6 +1038,11 @@ class VerilogEmitter:
 
         if not self.disable_cse:
             body = self._cse_pass(body)
+            extra_wires: List[Signal] = []
+        elif self._needs_complexity_extraction(body):
+            body, extra_wires = self._complexity_pass(body)
+        else:
+            extra_wires = []
         cse_wires = []
         cse_assigns = []
         rest = []
@@ -821,6 +1053,9 @@ class VerilogEmitter:
             else:
                 rest.append(stmt)
         self._emit_cse_decls(cse_wires)
+        # Emit complexity-extracted wire declarations
+        if extra_wires:
+            self._emit_cse_decls(extra_wires)
         for stmt in cse_assigns:
             lhs = self._emit_lhs(stmt.target)
             rhs = self._emit_expr(stmt.value)
@@ -832,9 +1067,13 @@ class VerilogEmitter:
                 self.lines.append(f"    assign {lhs} = {rhs};")
             elif isinstance(stmt, IndexedAssign):
                 rhs = self._emit_expr(stmt.value)
-                self.lines.append(
-                    f"    assign {stmt.target_signal.name}[{self._emit_expr(stmt.index)}] = {rhs};"
-                )
+                tname = self._prefixed_name(stmt.target_signal)
+                if stmt.target_signal.width == 1:
+                    self.lines.append(f"    assign {tname} = {rhs};")
+                else:
+                    self.lines.append(
+                        f"    assign {tname}[{self._emit_expr(stmt.index)}] = {rhs};"
+                    )
             elif isinstance(stmt, ArrayWrite):
                 rhs = self._emit_expr(stmt.value)
                 self.lines.append(
@@ -1099,28 +1338,63 @@ class VerilogEmitter:
                 self._emit_stmt(s, indent_level + 1, mode)
         self.lines.append(f"{prefix}end")
 
+    def _emit_always_latch(self, body: List[Any]):
+        """Emit always_latch block."""
+        keyword = "always_latch" if self.use_sv_always else "always @(*)"  # lint: always_latch
+        self.lines.append(f"    {keyword} begin")
+        for stmt in body:
+            self._emit_stmt(stmt, indent_level=2, mode="comb")
+        self.lines.append("    end")
+        self.lines.append("")
+
+    def _emit_initial(self, body: List[Any]):
+        """Emit initial block."""
+        self.lines.append("    initial begin")
+        for stmt in body:
+            self._emit_stmt(stmt, indent_level=2, mode="seq")
+        self.lines.append("    end")
+        self.lines.append("")
+
     def _emit_always_seq(self, clk: Signal, rst: Optional[Signal], reset_async: bool, reset_active_low: bool, body: List[Any], doc_comment: str = ""):
         """Emit a sequential logic block.
 
         If doc_comment is provided, emit a key comment before the block
         explaining what it does.
         """
+        # Helper: resolve reset signal name and polarity from expressions like ~rst_n
+        def _resolve_reset(r):
+            if r is None:
+                return None, reset_async, reset_active_low
+            if isinstance(r, Signal) and r.name:
+                return r.name, reset_async, reset_active_low
+            if isinstance(r, Signal) and hasattr(r, '_expr'):
+                expr = r._expr
+                if isinstance(expr, UnaryOp) and expr.op == '~':
+                    inner = expr.operand
+                    if isinstance(inner, Ref):
+                        return inner.signal.name, True, True
+                    if isinstance(inner, Signal):
+                        return inner.name, True, True
+            return None, reset_async, reset_active_low
+
+        rst_name, rst_async, rst_active_low = _resolve_reset(rst)
+
         # Profile override for reset style
         reset_style = self.profile.reset_style if self.profile else None
         if reset_style == "sync":
             # Synchronous reset: omit reset from sensitivity list
             sens = f"posedge {clk.name}"
         elif reset_style == "async_high":
-            sens = f"posedge {clk.name} or posedge {rst.name}" if rst is not None else f"posedge {clk.name}"
+            sens = f"posedge {clk.name} or posedge {rst_name}" if rst_name is not None else f"posedge {clk.name}"
         elif reset_style == "async_low":
-            sens = f"posedge {clk.name} or negedge {rst.name}" if rst is not None else f"posedge {clk.name}"
+            sens = f"posedge {clk.name} or negedge {rst_name}" if rst_name is not None else f"posedge {clk.name}"
         else:
             # Fallback to decorator-provided settings
-            if rst is not None and reset_async:
-                if reset_active_low:
-                    sens = f"posedge {clk.name} or negedge {rst.name}"
+            if rst_name is not None and rst_async:
+                if rst_active_low:
+                    sens = f"posedge {clk.name} or negedge {rst_name}"
                 else:
-                    sens = f"posedge {clk.name} or posedge {rst.name}"
+                    sens = f"posedge {clk.name} or posedge {rst_name}"
             else:
                 sens = f"posedge {clk.name}"
 
@@ -1201,12 +1475,38 @@ class VerilogEmitter:
         else:
             self.lines.append(f"{prefix}{mod_name} {stmt.name} (")
 
+        def _needs_port_wire(expr):
+            if isinstance(expr, (Slice, PartSelect)):
+                op = expr.operand
+                if isinstance(op, (Concat, BinOp)):
+                    return True
+            return False
+
         port_map = stmt.port_map
-        items = list(port_map.items())
+        items = [(k, v) for k, v in port_map.items() if v is not None]
+        output_ports = set(stmt.module._outputs.keys())
+        # Also connect unconnected output ports to their prefix wires
+        for port_name in output_ports:
+            if port_name not in port_map:
+                items.append((port_name, Ref(Wire(stmt.module._outputs[port_name].width, f"{stmt.name}_{port_name}"))))
         for i, (port_name, expr) in enumerate(items):
             comma = "," if i < len(items) - 1 else ""
             expr_obj = _to_expr(expr) if isinstance(expr, Signal) else expr
-            self.lines.append(f"{inner}.{port_name}({self._emit_expr(expr_obj)}){comma}")
+            if _needs_port_wire(expr_obj):
+                wire_name = f"_port_expr_{self._port_expr_counter}"
+                self._port_expr_counter += 1
+                width = expr_obj.width
+                decl = f"    wire [{width-1}:0] {wire_name};"
+                assign = f"    assign {wire_name} = {self._emit_expr(expr_obj)};"
+                self._extra_port_wires.append((decl, assign))
+                expr_obj = Ref(Wire(width, wire_name))
+            # For output ports, emit bare name without $signed() wrapper
+            # because Verilog does not allow $signed() in output port connections
+            if port_name in output_ports:
+                expr_str = self._emit_expr(expr_obj, for_lhs=True)
+            else:
+                expr_str = self._emit_expr(expr_obj)
+            self.lines.append(f"{inner}.{port_name}({expr_str}){comma}")
         self.lines.append(f"{prefix});")
         self.lines.append("")
 
@@ -1236,6 +1536,138 @@ class VerilogEmitter:
         inst = SubmoduleInst(inst_name, submod, params, port_map)
         self._emit_submodule_inst(inst)
 
+    def _resolve_cross_module_assignments(self, module: Module):
+        """Audit Fix 0522 — Section 2.2: Convert cross-module assignments
+        (e.g., submod.port <<= self.sig) into proper port_map entries for
+        implicit submodules, and remove the original Assign statements
+        to avoid redundant "assign x = x;" output.
+
+        This handles two patterns:
+        1. self.sub = SubModule()  (registered in _submodules via __setattr__)
+        2. sub = SubModule()       (local variable, connected via direct assignment)
+        """
+        from rtlgen.core import Assign, Input, Output, Signal, SubmoduleInst
+
+        # =====================================================================
+        # Phase 1: Detect local-variable submodules from cross-module assignments
+        # =====================================================================
+        # Scan all Assign statements to find targets that belong to a submodule
+        # not yet registered in module._submodules.
+        local_submod_ports: Dict[int, Dict[str, Any]] = {}  # id(submod) -> info
+
+        def _collect_local_submods(body: List[Any]) -> List[int]:
+            to_remove: List[int] = []
+            for i, stmt in enumerate(body):
+                if not isinstance(stmt, Assign):
+                    continue
+                target = stmt.target
+                if not isinstance(target, Signal):
+                    continue
+                if not hasattr(target, '_parent_module') or target._parent_module is None:
+                    continue
+                submod = target._parent_module
+                if submod is module:
+                    continue
+                if not isinstance(submod, Module):
+                    continue
+                # Skip if already registered in _submodules
+                if any(id(s) == id(submod) for _, s in module._submodules):
+                    continue
+
+                # Find port name in the submodule
+                port_name = None
+                for pname, psig in list(submod._inputs.items()) + list(submod._outputs.items()):
+                    if psig is target:
+                        port_name = pname
+                        break
+                if port_name is None:
+                    continue
+
+                submod_id = id(submod)
+                if submod_id not in local_submod_ports:
+                    # Generate a unique instance name
+                    base_name = getattr(submod, '_type_name', submod.name)
+                    existing_names = {n for n, _ in module._submodules}
+                    for info in local_submod_ports.values():
+                        existing_names.add(info["inst_name"])
+                    inst_name = base_name
+                    if inst_name in existing_names:
+                        j = 1
+                        while f"{inst_name}_{j}" in existing_names:
+                            j += 1
+                        inst_name = f"{inst_name}_{j}"
+                    local_submod_ports[submod_id] = {
+                        "submod": submod,
+                        "inst_name": inst_name,
+                        "ports": {},
+                    }
+
+                local_submod_ports[submod_id]["ports"][port_name] = stmt.value
+                to_remove.append(i)
+            return to_remove
+
+        # Scan _top_level
+        top_remove = _collect_local_submods(module._top_level)
+        for i in reversed(top_remove):
+            module._top_level.pop(i)
+
+        # Scan _comb_blocks
+        for body in module._comb_blocks:
+            comb_remove = _collect_local_submods(body)
+            for i in reversed(comb_remove):
+                body.pop(i)
+
+        # Register local submodules and create SubmoduleInst nodes
+        for info in local_submod_ports.values():
+            submod = info["submod"]
+            inst_name = info["inst_name"]
+            port_map = info["ports"]
+
+            # Add to _submodules
+            module._submodules.append((inst_name, submod))
+            # Create SubmoduleInst — values may be Signal or Expr, both are fine
+            inst = SubmoduleInst(inst_name, submod, {}, port_map)
+            module._top_level.append(inst)
+
+        # =====================================================================
+        # Phase 2: Original logic — remove redundant assigns for ALL registered
+        # submodules (including those just registered in Phase 1).
+        # =====================================================================
+        submod_port_map: Dict[int, Tuple[str, Module, str]] = {}
+        for inst_name, submod in module._submodules:
+            for pname, sig in submod._inputs.items():
+                submod_port_map[id(sig)] = (inst_name, submod, pname)
+            for pname, sig in submod._outputs.items():
+                submod_port_map[id(sig)] = (inst_name, submod, pname)
+
+        if not submod_port_map:
+            return
+
+        # Scan top-level assigns for cross-module connections
+        to_remove: List[int] = []
+        for i, stmt in enumerate(module._top_level):
+            if not isinstance(stmt, Assign):
+                continue
+            target_id = id(stmt.target) if hasattr(stmt.target, '__class__') else None
+            if target_id and target_id in submod_port_map:
+                to_remove.append(i)
+
+        # Remove cross-module assigns in reverse order to preserve indices
+        for i in reversed(to_remove):
+            module._top_level.pop(i)
+
+        # Also scan comb blocks for cross-module assigns
+        for body in module._comb_blocks:
+            to_remove_comb: List[int] = []
+            for i, stmt in enumerate(body):
+                if not isinstance(stmt, Assign):
+                    continue
+                target_id = id(stmt.target) if hasattr(stmt.target, '__class__') else None
+                if target_id and target_id in submod_port_map:
+                    to_remove_comb.append(i)
+            for i in reversed(to_remove_comb):
+                body.pop(i)
+
     # -----------------------------------------------------------------
     # Expressions
     # -----------------------------------------------------------------
@@ -1249,6 +1681,18 @@ class VerilogEmitter:
             self._scan_stmt_for_reg_outputs(stmt, "top", reg_outputs)
         for body in module._comb_blocks:
             if self._is_simple_comb_block(body):
+                # Even simple comb blocks may be wrapped in always @(*) if they
+                # contain mux chains (CSE pass wraps them for readability).
+                # If any statement has a mux chain, ALL outputs in the block
+                # will be emitted inside that always.
+                has_mux_chain = any(
+                    isinstance(stmt, Assign) and self._is_mux_chain(stmt.value)
+                    for stmt in body
+                )
+                if has_mux_chain:
+                    for stmt in body:
+                        if isinstance(stmt, Assign) and isinstance(stmt.target, Output):
+                            reg_outputs.add(stmt.target.name)
                 continue
             for stmt in body:
                 self._scan_stmt_for_reg_outputs(stmt, "comb", reg_outputs)
@@ -1257,10 +1701,23 @@ class VerilogEmitter:
                 self._scan_stmt_for_reg_outputs(stmt, "seq", reg_outputs)
         return reg_outputs
 
+    def _extract_output_signal(self, expr):
+        if isinstance(expr, Output):
+            return expr
+        if isinstance(expr, (Slice, PartSelect, BitSelect)):
+            return self._extract_output_signal(expr.operand)
+        if isinstance(expr, Ref):
+            return self._extract_output_signal(expr.signal)
+        return None
+
     def _scan_stmt_for_reg_outputs(self, stmt: Any, mode: str, reg_outputs: set):
         if isinstance(stmt, Assign):
-            if isinstance(stmt.target, Output) and mode in ("comb", "seq"):
-                reg_outputs.add(stmt.target.name)
+            target = self._extract_output_signal(stmt.target)
+            if isinstance(target, Output) and mode in ("comb", "seq"):
+                reg_outputs.add(target.name)
+        elif isinstance(stmt, IndexedAssign):
+            if isinstance(stmt.target_signal, Output) and mode in ("comb", "seq"):
+                reg_outputs.add(stmt.target_signal.name)
         elif isinstance(stmt, IfNode):
             for s in stmt.then_body:
                 self._scan_stmt_for_reg_outputs(s, mode, reg_outputs)
@@ -1284,6 +1741,199 @@ class VerilogEmitter:
         prefix = self.indent * indent_level
         for line in stmt.text.strip().splitlines():
             self.lines.append(f"{prefix}// {line}")
+
+    # -----------------------------------------------------------------
+    # Complexity-based sub-expression extraction
+    # -----------------------------------------------------------------
+    # When CSE is disabled (user wants readable RTL), overly complex
+    # expressions still get fully inlined into unreadable mega-lines.
+    # This pass detects expressions that exceed complexity thresholds
+    # and extracts them into named intermediate wires, even if they
+    # only appear once.
+    # -----------------------------------------------------------------
+
+    _COMPLEXITY_DEPTH_LIMIT = 4      # max tree depth before extraction
+    _COMPLEXITY_CHAR_LIMIT = 300     # max emitted chars before extraction
+    _COMPLEXITY_NODE_LIMIT = 20      # max AST nodes before extraction
+
+    def _expr_depth(self, expr: Any) -> int:
+        """Maximum nesting depth of an expression tree."""
+        if expr is None or isinstance(expr, (int, Const, GenVar, Signal)):
+            return 0
+        if isinstance(expr, Ref):
+            return 0
+        if isinstance(expr, (UnaryOp, Slice)):
+            return 1 + self._expr_depth(getattr(expr, 'operand', None))
+        if isinstance(expr, (PartSelect, BitSelect)):
+            return 1 + max(
+                self._expr_depth(expr.operand),
+                self._expr_depth(getattr(expr, 'index', getattr(expr, 'offset', None)))
+            )
+        if isinstance(expr, BinOp):
+            return 1 + max(self._expr_depth(expr.lhs), self._expr_depth(expr.rhs))
+        if isinstance(expr, Mux):
+            return 1 + max(
+                self._expr_depth(expr.cond),
+                self._expr_depth(expr.true_expr),
+                self._expr_depth(expr.false_expr)
+            )
+        if isinstance(expr, Concat):
+            return 1 + max((self._expr_depth(op) for op in expr.operands), default=0)
+        return 0
+
+    def _expr_node_count(self, expr: Any) -> int:
+        """Total number of non-trivial AST nodes."""
+        if expr is None or isinstance(expr, (int, Const, GenVar, Signal)):
+            return 0
+        if isinstance(expr, Ref):
+            return 0
+        if isinstance(expr, UnaryOp):
+            return 1 + self._expr_node_count(expr.operand)
+        if isinstance(expr, (BinOp, Slice)):
+            return 1 + self._expr_node_count(getattr(expr, 'lhs', getattr(expr, 'operand', None))) + self._expr_node_count(getattr(expr, 'rhs', None))
+        if isinstance(expr, Mux):
+            return 1 + self._expr_node_count(expr.cond) + self._expr_node_count(expr.true_expr) + self._expr_node_count(expr.false_expr)
+        if isinstance(expr, Concat):
+            return 1 + sum(self._expr_node_count(op) for op in expr.operands)
+        if isinstance(expr, (PartSelect, BitSelect)):
+            return 1 + self._expr_node_count(expr.operand)
+        return 0
+
+    def _is_too_complex(self, expr: Any) -> bool:
+        """Check if an expression exceeds complexity thresholds."""
+        try:
+            emitted = self._emit_expr(expr)
+            if len(emitted) > self._COMPLEXITY_CHAR_LIMIT:
+                return True
+        except Exception:
+            pass
+        if self._expr_depth(expr) > self._COMPLEXITY_DEPTH_LIMIT:
+            return True
+        if self._expr_node_count(expr) > self._COMPLEXITY_NODE_LIMIT:
+            return True
+        return False
+
+    def _extract_sub_exprs(self, target_name: str, expr: Any,
+                           body: list, wire_counter: list) -> Any:
+        """Recursively extract complex sub-expressions into named wires.
+
+        Returns the simplified expression (with wire refs replacing extracted parts).
+        Appends new Assign statements to `body`.
+        """
+        if expr is None or isinstance(expr, (int, Const, GenVar, Signal, Ref)):
+            return expr
+        if not self._is_too_complex(expr):
+            return expr
+
+        # Recurse first (deepest-first extraction)
+        if isinstance(expr, BinOp):
+            new_lhs = self._extract_sub_exprs(target_name, expr.lhs, body, wire_counter)
+            new_rhs = self._extract_sub_exprs(target_name, expr.rhs, body, wire_counter)
+            result = BinOp(expr.op, new_lhs, new_rhs, expr.width)
+            if not self._is_too_complex(result):
+                return result
+            # Still too complex — extract this node itself
+            wire_name = f"_{target_name}_ex{wire_counter[0]}"
+            wire_counter[0] += 1
+            wire = Wire(getattr(expr, 'width', 1), wire_name)
+            body.append(Assign(wire, result, blocking=True))
+            return wire
+        if isinstance(expr, Mux):
+            new_cond = self._extract_sub_exprs(target_name, expr.cond, body, wire_counter)
+            new_true = self._extract_sub_exprs(target_name, expr.true_expr, body, wire_counter)
+            new_false = self._extract_sub_exprs(target_name, expr.false_expr, body, wire_counter)
+            result = Mux(new_cond, new_true, new_false, expr.width)
+            if not self._is_too_complex(result):
+                return result
+            # Still too complex — extract this node itself
+            wire_name = f"_{target_name}_ex{wire_counter[0]}"
+            wire_counter[0] += 1
+            wire = Wire(getattr(expr, 'width', 1), wire_name)
+            body.append(Assign(wire, result, blocking=True))
+            return wire
+        if isinstance(expr, UnaryOp):
+            new_op = self._extract_sub_exprs(target_name, expr.operand, body, wire_counter)
+            if new_op is expr.operand:
+                return expr
+            return UnaryOp(expr.op, new_op, expr.width)
+        if isinstance(expr, (Slice, PartSelect, BitSelect)):
+            new_op = self._extract_sub_exprs(target_name, expr.operand, body, wire_counter)
+            if new_op is expr.operand:
+                return expr
+            return type(expr)(new_op, *(
+                getattr(expr, a) for a in ('hi', 'lo', 'offset', 'width') if hasattr(expr, a)
+            ))
+        if isinstance(expr, Concat):
+            new_ops = [self._extract_sub_exprs(target_name, op, body, wire_counter) for op in expr.operands]
+            if all(n is o for n, o in zip(new_ops, expr.operands)):
+                return expr
+            return Concat(*new_ops, width=expr.width)
+
+        # If still too complex after recursion, extract this node itself
+        wire_name = f"_{target_name}_ex{wire_counter[0]}"
+        wire_counter[0] += 1
+        wire = Wire(getattr(expr, 'width', 1), wire_name)
+        body.append(Assign(wire, expr, blocking=True))
+        ref = Ref(wire)
+        ref.signal = wire  # ensure signal is set
+        return ref
+
+    def _needs_complexity_extraction(self, body: List[Any]) -> bool:
+        """Quick check: does any assignment in body have a complex RHS?"""
+        for stmt in body:
+            if isinstance(stmt, Assign):
+                target = stmt.target
+                if isinstance(target, Wire) and target.name.startswith("_cse_"):
+                    continue
+                if self._is_mux_chain(stmt.value):
+                    continue
+                if self._is_too_complex(stmt.value):
+                    return True
+        return False
+
+    def _complexity_pass(self, body: List[Any]) -> Tuple[List[Any], List[Signal]]:
+        """Extract overly complex expressions into named intermediate wires.
+
+        Returns (new_body, extracted_wires). Extracted wires need declarations.
+        """
+        new_body = []
+        wire_counter = [0]
+        extracted_wires: List[Signal] = []
+
+        def extract_with_tracking(target_name, expr, body_out, counter):
+            result = self._extract_sub_exprs(target_name, expr, body_out, counter)
+            # Collect any new wires added to body_out that we haven't seen
+            return result
+
+        for stmt in body:
+            if not isinstance(stmt, Assign):
+                new_body.append(stmt)
+                continue
+
+            target = stmt.target
+            if isinstance(target, Wire) and target.name.startswith("_cse_"):
+                new_body.append(stmt)
+                continue
+
+            # Skip if already a mux chain (handled by _emit_mux_chain_as_case)
+            if self._is_mux_chain(stmt.value):
+                new_body.append(stmt)
+                continue
+
+            target_name = getattr(target, 'name', 'tmp')
+            before_count = len(new_body)
+
+            if self._is_too_complex(stmt.value):
+                simplified = extract_with_tracking(target_name, stmt.value, new_body, wire_counter)
+                # Collect wires added during extraction
+                for s in new_body[before_count:]:
+                    if isinstance(s, Assign) and isinstance(s.target, Wire):
+                        extracted_wires.append(s.target)
+                new_body.append(Assign(target, simplified, blocking=True))
+            else:
+                new_body.append(stmt)
+
+        return new_body, extracted_wires
 
     # -----------------------------------------------------------------
     # Mux chain -> case optimization
@@ -1343,8 +1993,13 @@ class VerilogEmitter:
 
     def _emit_lhs(self, target) -> str:
         if isinstance(target, Signal):
-            return target.name
+            inst_name = getattr(self, '_submod_port_inst_map', {}).get(id(target))
+            return f"{inst_name}_{target.name}" if inst_name is not None else target.name
         return self._emit_expr(target, for_lhs=True)
+
+    def _prefixed_name(self, sig: Signal) -> str:
+        inst_name = getattr(self, '_submod_port_inst_map', {}).get(id(sig))
+        return f"{inst_name}_{sig.name}" if inst_name is not None else sig.name
 
     def _emit_mux_chain_as_case(self, target_name: str, expr: Expr, indent_level: int, mode: str):
         """将级联 Mux 输出为 case 语句（可选 always @(*) 包装）。"""
@@ -1376,6 +2031,8 @@ class VerilogEmitter:
             return str(v)
         if isinstance(v, Const):
             return str(int(v.value))
+        if isinstance(v, str):
+            return f'"{v}"'
         return self._emit_expr(_to_expr(v))
 
     def _precedence(self, op: str) -> int:
@@ -1408,16 +2065,42 @@ class VerilogEmitter:
     def _emit_expr(self, expr: Expr, parent_op: Optional[str] = None, for_lhs: bool = False) -> str:
         if isinstance(expr, int):
             width = max(expr.bit_length(), 1)
+            # Omit width prefix for 0/1 — they are commonly used as indices
+            # and are context-independent in most Verilog contexts.
+            # Const(0, N) still emits N'd0 via _emit_const_literal.
+            if expr == 0 or expr == 1:
+                return str(expr)
             return f"{width}'d{expr}"
         if isinstance(expr, Const):
             val = int(expr.value)
             return self._emit_const_literal(val, expr.width)
+        if isinstance(expr, Signal):
+            # Direct signal reference (including Input, Output, Wire, Reg)
+            inst_name = getattr(self, '_submod_port_inst_map', {}).get(id(expr))
+            name = f"{inst_name}_{expr.name}" if inst_name is not None else expr.name
+            return name
         if isinstance(expr, Ref):
-            if getattr(expr.signal, "signed", False) and not for_lhs:
-                return f"$signed({expr.signal.name})"
-            return expr.signal.name
+            sig = expr.signal
+            inst_name = getattr(self, '_submod_port_inst_map', {}).get(id(sig))
+            name = f"{inst_name}_{sig.name}" if inst_name is not None else sig.name
+            if getattr(sig, "signed", False) and not for_lhs:
+                return f"$signed({name})"
+            return name
         if isinstance(expr, BinOp):
             op_str = expr.op
+
+            # Peephole: simplify redundant == 1 / & 1 on 1-bit comparison results
+            if op_str == '==' and isinstance(expr.rhs, Const) and int(expr.rhs.value) == 1:
+                if isinstance(expr.lhs, BinOp) and expr.lhs.width == 1:
+                    return self._emit_expr(expr.lhs, parent_op, for_lhs)
+            if op_str == '&':
+                if isinstance(expr.rhs, Const) and int(expr.rhs.value) == 1:
+                    if isinstance(expr.lhs, BinOp) and expr.lhs.width == 1:
+                        return self._emit_expr(expr.lhs, parent_op, for_lhs)
+                if isinstance(expr.lhs, Const) and int(expr.lhs.value) == 1:
+                    if isinstance(expr.rhs, BinOp) and expr.rhs.width == 1:
+                        return self._emit_expr(expr.rhs, parent_op, for_lhs)
+
             # Arithmetic right shift: emit Verilog >>> operator
             if op_str == '>>>':
                 lhs_str = self._emit_expr(expr.lhs, expr.op, for_lhs)
@@ -1426,7 +2109,17 @@ class VerilogEmitter:
                 if parent_op is not None and self._precedence(expr.op) < self._precedence(parent_op):
                     return f"({s})"
                 return s
-            s = f"{self._emit_expr(expr.lhs, expr.op, for_lhs)} {expr.op} {self._emit_expr(expr.rhs, expr.op, for_lhs)}"
+            # Add parens around comparison operands in bitwise ops (&, |, ^)
+            # to prevent Verilog precedence bugs: (a == 0) & (b != 0) not a == 0 & b != 0
+            lhs_str = self._emit_expr(expr.lhs, expr.op, for_lhs)
+            rhs_str = self._emit_expr(expr.rhs, expr.op, for_lhs)
+            if expr.op in ('&', '|', '^'):
+                _cmp_ops = ('==', '!=', '<', '>', '<=', '>=')
+                if isinstance(expr.lhs, BinOp) and expr.lhs.op in _cmp_ops:
+                    lhs_str = f"({lhs_str})"
+                if isinstance(expr.rhs, BinOp) and expr.rhs.op in _cmp_ops:
+                    rhs_str = f"({rhs_str})"
+            s = f"{lhs_str} {expr.op} {rhs_str}"
             if parent_op is not None and self._precedence(expr.op) < self._precedence(parent_op):
                 return f"({s})"
             return s
@@ -1436,13 +2129,42 @@ class VerilogEmitter:
                 return f"({s})"
             return s
         if isinstance(expr, Slice):
-            if expr.hi == expr.lo:
-                return f"{self._emit_expr(expr.operand, parent_op, for_lhs)}[{expr.hi}]"
-            return f"{self._emit_expr(expr.operand, parent_op, for_lhs)}[{expr.hi}:{expr.lo}]"
+            op = expr.operand
+            # Handle $signed(signal)[hi:lo] — Verilog does not allow slicing $signed()
+            if isinstance(op, Ref) and getattr(op.signal, "signed", False):
+                operand_str = self._emit_expr(op, None, for_lhs=True)
+            elif isinstance(op, UnaryOp) and op.op == "$signed":
+                op = op.operand
+                operand_str = self._emit_expr(op, None, for_lhs)
+            else:
+                operand_str = self._emit_expr(expr.operand, None, for_lhs)
+            op_sig = getattr(op, 'signal', op) if isinstance(op, Ref) else op
+            if isinstance(op_sig, Signal) and op_sig.width == 1 and expr.hi == 0 and expr.lo == 0:
+                return operand_str
+            hi, lo = expr.hi, expr.lo
+            if hi < lo:
+                hi, lo = lo, hi
+            if isinstance(expr.operand, (BinOp, UnaryOp, Mux, Concat)):
+                # iverilog does not support (expr)[hi:lo]; emulate with shift+mask
+                width = hi - lo + 1
+                mask = (1 << width) - 1
+                if lo == 0:
+                    return f"(({operand_str}) & {width}'d{mask})"
+                return f"((({operand_str}) >> {lo}) & {width}'d{mask})"
+            if hi == lo:
+                return f"{operand_str}[{hi}]"
+            return f"{operand_str}[{hi}:{lo}]"
         if isinstance(expr, PartSelect):
             return f"{self._emit_expr(expr.operand, parent_op, for_lhs)}[{self._emit_expr(expr.offset, parent_op, for_lhs)} +: {expr.width}]"
         if isinstance(expr, Concat):
-            parts = ", ".join(self._emit_expr(op, parent_op, for_lhs) for op in expr.operands)
+            ops = expr.operands
+            # Detect repetition: {x, x, x, ...} -> {{N{x}}
+            if len(ops) > 1:
+                first_str = self._emit_expr(ops[0], parent_op, for_lhs)
+                all_same = all(self._emit_expr(op, parent_op, for_lhs) == first_str for op in ops)
+                if all_same:
+                    return f"{{{len(ops)}{{{first_str}}}}}"
+            parts = ", ".join(self._emit_expr(op, parent_op, for_lhs) for op in ops)
             return f"{{{parts}}}"
         if isinstance(expr, Mux):
             s = f"{self._emit_expr(expr.cond, '?')} ? {self._emit_expr(expr.true_expr, '?')} : {self._emit_expr(expr.false_expr, '?')}"
@@ -1454,9 +2176,17 @@ class VerilogEmitter:
         if isinstance(expr, ArrayRead):
             return f"{expr.array_name}[{self._emit_expr(expr.index, parent_op)}]"
         if isinstance(expr, BitSelect):
+            op = expr.operand
+            op_sig = getattr(op, 'signal', op) if isinstance(op, Ref) else op
+            if isinstance(op_sig, Signal) and op_sig.width == 1:
+                return self._emit_expr(op, parent_op)
             return f"{self._emit_expr(expr.operand, parent_op)}[{self._emit_expr(expr.index, parent_op)}]"
         if isinstance(expr, GenVar):
             return expr.name
+        if isinstance(expr, FunctionCall):
+            prefix = "$" if expr.is_system else ""
+            args = ", ".join(self._emit_expr(a, parent_op) for a in expr.args)
+            return f"{prefix}{expr.name}({args})"
         raise TypeError(f"Unknown expression: {type(expr)}")
 
     def _emit_case_label(self, expr: Expr, selector_width: int) -> str:

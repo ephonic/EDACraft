@@ -78,18 +78,24 @@ class DSP_MULT(Module):
         self.output_tvalid = Output(1, "output_tvalid")
         self.output_tready = Input(1, "output_tready")
 
-        self._input_a_reg_0 = Reg(width, "input_a_reg_0", init_value=0)
-        self._input_a_reg_1 = Reg(width, "input_a_reg_1", init_value=0)
-        self._input_b_reg_0 = Reg(width, "input_b_reg_0", init_value=0)
-        self._input_b_reg_1 = Reg(width, "input_b_reg_1", init_value=0)
-        self._output_reg_0 = Reg(width * 2, "output_reg_0", init_value=0)
-        self._output_reg_1 = Reg(width * 2, "output_reg_1", init_value=0)
+        self._input_a_reg_0 = Reg(width, "input_a_reg_0", init_value=0, signed=True)
+        self._input_a_reg_1 = Reg(width, "input_a_reg_1", init_value=0, signed=True)
+        self._input_b_reg_0 = Reg(width, "input_b_reg_0", init_value=0, signed=True)
+        self._input_b_reg_1 = Reg(width, "input_b_reg_1", init_value=0, signed=True)
+        self._output_reg_0 = Reg(width * 2, "output_reg_0", init_value=0, signed=True)
+        self._output_reg_1 = Reg(width * 2, "output_reg_1", init_value=0, signed=True)
+
+        # 4-stage valid pipeline to track output validity
+        self._valid_reg_0 = Reg(1, "valid_reg_0", init_value=0)
+        self._valid_reg_1 = Reg(1, "valid_reg_1", init_value=0)
+        self._valid_reg_2 = Reg(1, "valid_reg_2", init_value=0)
+        self._valid_reg_3 = Reg(1, "valid_reg_3", init_value=0)
 
         with self.comb:
             self.input_a_tready <<= self.input_b_tvalid & self.output_tready
             self.input_b_tready <<= self.input_a_tvalid & self.output_tready
             self.output_tdata <<= self._output_reg_1
-            self.output_tvalid <<= self.input_a_tvalid & self.input_b_tvalid
+            self.output_tvalid <<= self._valid_reg_3
 
         with self.seq(self.clk, self.rst):
             with If(self.rst == 1):
@@ -99,14 +105,26 @@ class DSP_MULT(Module):
                 self._input_b_reg_1 <<= 0
                 self._output_reg_0 <<= 0
                 self._output_reg_1 <<= 0
+                self._valid_reg_0 <<= 0
+                self._valid_reg_1 <<= 0
+                self._valid_reg_2 <<= 0
+                self._valid_reg_3 <<= 0
             with Else():
+                # Pipeline always advances (data+valid shift)
+                self._input_a_reg_1 <<= self._input_a_reg_0
+                self._input_b_reg_1 <<= self._input_b_reg_0
+                self._output_reg_0 <<= self._input_a_reg_1 * self._input_b_reg_1
+                self._output_reg_1 <<= self._output_reg_0
+                self._valid_reg_1 <<= self._valid_reg_0
+                self._valid_reg_2 <<= self._valid_reg_1
+                self._valid_reg_3 <<= self._valid_reg_2
+
                 with If(self.input_a_tvalid & self.input_b_tvalid & self.output_tready):
                     self._input_a_reg_0 <<= self.input_a_tdata
                     self._input_b_reg_0 <<= self.input_b_tdata
-                    self._input_a_reg_1 <<= self._input_a_reg_0
-                    self._input_b_reg_1 <<= self._input_b_reg_0
-                    self._output_reg_0 <<= self._input_a_reg_1 * self._input_b_reg_1
-                    self._output_reg_1 <<= self._output_reg_0
+                    self._valid_reg_0 <<= 1
+                with Else():
+                    self._valid_reg_0 <<= 0
 
         tpl = ModuleDocTemplate(
             source="ref_rtl/dsp/rtl/dsp_mult.v",

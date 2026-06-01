@@ -25,6 +25,9 @@ from rtlgen.arch_def import (
     InterconnectSpec,
     ProcessingElement,
 )
+from rtlgen.memory_model import MemoryModel
+from rtlgen.regfile_model import RegisterFileModel
+from rtlgen.cache_model import CacheModel
 
 
 class _HandshakeState:
@@ -159,6 +162,69 @@ class ArchSimulator:
         self._instance_map: Dict[str, List[str]] = {}  # base_name → [instance_names]
         self._expand_instances()
 
+        # --- Behavioral model instances (memory, register files, caches) ---
+        self._pe_memory: Dict[str, MemoryModel] = {}
+        self._pe_register_files: Dict[str, Dict[str, RegisterFileModel]] = {}
+        self._pe_caches: Dict[str, Dict[str, CacheModel]] = {}
+        self._pe_fifos: Dict[str, Dict[str, deque]] = {}
+        self._init_behavioral_models()
+
+    def _init_behavioral_models(self):
+        """Initialize per-PE behavioral models (memory, register files, caches, FIFOs).
+
+        Infers model requirements from PE metadata:
+        - buffer_type="regfile" → RegisterFileModel
+        - buffer_type="memory" → MemoryModel
+        - buffer_type="queue" / "fifo" → deque FIFO
+        - pe_type contains "cache" → CacheModel
+        """
+        for pe in self.arch.processing_elements:
+            pe_name = pe.name
+
+            # Memory model (for CPU cores, DMA, etc.)
+            if pe.buffer_type == "memory" or pe.pe_type in ("cpu", "rv64_core", "perf_core", "eff_core", "core"):
+                self._pe_memory[pe_name] = MemoryModel(
+                    size=2**32,
+                    base_addr=0x8000_0000,
+                    little_endian=True,
+                )
+
+            # Register file (for CPU cores)
+            if pe.buffer_type == "regfile" or pe.pe_type in ("cpu", "rv64_core", "perf_core", "eff_core", "core"):
+                rf_width = 64 if "64" in pe.pe_type else 32
+                self._pe_register_files[pe_name] = {
+                    "int_rf": RegisterFileModel(
+                        num_regs=32,
+                        width=rf_width,
+                        x0_is_zero=True,
+                        read_ports=2,
+                        write_ports=1,
+                    ),
+                }
+
+            # Cache models
+            if "cache" in pe.pe_type:
+                ways = 8 if "big" in pe.name.lower() or "l2" in pe.pe_type else 2
+                sets = 128 if "l2" in pe.pe_type else 64
+                protocol = "MESI" if "coh" in pe.pe_type or pe.pe_type in ("l1_cache", "l2_cache") else "none"
+                self._pe_caches[pe_name] = {
+                    pe.name: CacheModel(
+                        sets=sets,
+                        ways=ways,
+                        line_size=64,
+                        protocol=protocol,
+                        replacement="LRU",
+                        name=pe.name,
+                    ),
+                }
+
+            # FIFOs for queue-based PEs
+            if pe.buffer_type in ("queue", "fifo") or pe.pe_type in ("noc_router", "router", "arbiter"):
+                depth = pe.buffer_depth if pe.buffer_depth > 0 else 8
+                self._pe_fifos[pe_name] = {
+                    "main_q": deque(maxlen=depth),
+                }
+
     def _expand_instances(self):
         """展开多实例 PE。
 
@@ -216,12 +282,26 @@ class ArchSimulator:
         return order
 
     def _init_signals(self, init_inputs: Optional[Dict[str, Any]] = None):
-        """初始化信号表。"""
-        self._signals.clear()
+        """初始化信号表。
+
+        Supports both bare port names (applied to all PEs) and
+        fully-qualified names like ``pe_name.port_name`` for per-PE
+        control (e.g. ``sm_0.imem_wr_en``).
+
+        Only resets input-port signals; preserves state and other
+        signals so that multi-phase workloads (e.g. imem loading
+        followed by kernel launch) do not lose state.
+        """
         for pe in self.arch.processing_elements:
             for port in pe.inputs:
                 key = f"{pe.name}.{port.name}"
-                self._signals[key] = init_inputs.get(port.name, 0) if init_inputs else 0
+                if init_inputs is None:
+                    self._signals[key] = 0
+                else:
+                    # Prefer fully-qualified key, fallback to bare port name
+                    self._signals[key] = init_inputs.get(
+                        key, init_inputs.get(port.name, 0)
+                    )
 
     def _evaluate_handshake(self, conn: InterconnectSpec, src_name: str,
                              dst_name: str) -> bool:
@@ -338,6 +418,11 @@ class ArchSimulator:
             if outputs is not None:
                 pe_outputs[pe_name] = outputs
 
+        # 6. 周期边界：提交寄存器文件 pending writes，clear pipeline control flags
+        for pe_name, rfs in self._pe_register_files.items():
+            for rf in rfs.values():
+                rf.commit()
+
         self._cycle += 1
         self._global_metrics["total_cycles"] = self._cycle
         return pe_outputs
@@ -364,7 +449,7 @@ class ArchSimulator:
 
         self._pe_metrics[pe.name]["cycles_active"] += 1
 
-        # Execute behavior
+        # Attach behavioral models to CycleContext
         ctx = CycleContext(
             cycle=self._cycle,
             inputs=inp,
@@ -372,6 +457,10 @@ class ArchSimulator:
                       s.default if s.default is not None else 0)
                    for s in pe.state},
             model=self.arch.model,
+            memory=self._pe_memory.get(pe.name),
+            register_files=self._pe_register_files.get(pe.name, {}),
+            caches=self._pe_caches.get(pe.name, {}),
+            fifos=self._pe_fifos.get(pe.name, {}),
         )
         if pe.behavior is not None:
             pe.behavior(ctx)
@@ -385,6 +474,10 @@ class ArchSimulator:
                           s.default if s.default is not None else 0)
                        for s in child.state},
                 model=self.arch.model,
+                memory=self._pe_memory.get(child.name),
+                register_files=self._pe_register_files.get(child.name, {}),
+                caches=self._pe_caches.get(child.name, {}),
+                fifos=self._pe_fifos.get(child.name, {}),
             )
             if child.behavior is not None:
                 child.behavior(child_ctx)

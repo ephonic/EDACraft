@@ -15,6 +15,7 @@ from rtlgen.core import (
     ArrayWrite,
     Assign,
     BinOp,
+    FunctionCall,
     BitSelect,
     Comment,
     Concat,
@@ -122,6 +123,7 @@ class Simulator:
         self._sig_to_hier_name: Dict[int, str] = {}
         # 子模块output信号 -> child_simulator 映射，用于 _eval_expr 直接读取子模块输出
         self._output_signal_map: Dict[int, "Simulator"] = {}
+        self._convergence_counter: Dict[str, int] = {}
         self._init()
         self._init_jit()
 
@@ -399,8 +401,16 @@ class Simulator:
                                         continue
                                     t = then_map.get(k)
                                     e = else_map.get(k)
+                                    is_output = k in submod._outputs
                                     if t is not None and e is not None and t is e:
                                         pmap[k] = t
+                                    elif is_output:
+                                        if t is not None and e is not None:
+                                            pmap[k] = Mux(stmt.cond, t, e, _get_width(k))
+                                        elif t is not None:
+                                            pmap[k] = t
+                                        elif e is not None:
+                                            pmap[k] = e
                                     else:
                                         width = _get_width(k)
                                         t_expr = t if t is not None else Const(0, width=width)
@@ -423,10 +433,20 @@ class Simulator:
                                             current_map[k] = c
                                         else:
                                             width = _get_width(k)
-                                            c_expr = c if c is not None else Const(0, width=width)
-                                            d_expr = d if d is not None else Const(0, width=width)
-                                            cond = BinOp("==", stmt.expr, match_expr, width=1)
-                                            current_map[k] = Mux(cond, c_expr, d_expr, width)
+                                            is_output = k in submod._outputs
+                                            if is_output:
+                                                if c is not None and d is not None:
+                                                    cond = BinOp("==", stmt.expr, match_expr, width=1)
+                                                    current_map[k] = Mux(cond, c, d, width)
+                                                elif c is not None:
+                                                    current_map[k] = c
+                                                elif d is not None:
+                                                    current_map[k] = d
+                                            else:
+                                                c_expr = c if c is not None else Const(0, width=width)
+                                                d_expr = d if d is not None else Const(0, width=width)
+                                                cond = BinOp("==", stmt.expr, match_expr, width=1)
+                                                current_map[k] = Mux(cond, c_expr, d_expr, width)
                                 for k, v in current_map.items():
                                     if k in submod._inputs or k in submod._outputs:
                                         pmap[k] = v
@@ -442,8 +462,16 @@ class Simulator:
                                         continue
                                     t = then_map.get(k)
                                     e = else_map.get(k)
+                                    is_output = k in submod._outputs
                                     if t is not None and e is not None and t is e:
                                         pmap[k] = t
+                                    elif is_output:
+                                        if t is not None and e is not None:
+                                            pmap[k] = Mux(stmt.cond, t, e, _get_width(k))
+                                        elif t is not None:
+                                            pmap[k] = t
+                                        elif e is not None:
+                                            pmap[k] = e
                                     else:
                                         width = _get_width(k)
                                         t_expr = t if t is not None else Const(0, width=width)
@@ -904,7 +932,7 @@ class Simulator:
             sig_id = id(expr.signal)
             if sig_id in self._output_signal_map:
                 child_sim = self._output_signal_map[sig_id]
-                val = child_sim.get(expr.signal.name)
+                val = _to_int(child_sim.get(expr.signal.name))
                 if expr.signal.signed:
                     width = expr.signal.width
                     if val & (1 << (width - 1)):
@@ -912,7 +940,7 @@ class Simulator:
                 return val
             name = expr.signal.name
             if name in self.state:
-                val = self.state[name]
+                val = _to_int(self.state[name])
                 if expr.signal.signed:
                     width = expr.signal.width
                     if val & (1 << (width - 1)):
@@ -1071,9 +1099,16 @@ class Simulator:
                 st = dict(self.state.get(name, {}))
                 st[idx_i] = new_val
                 self.state[name] = st
+        elif isinstance(expr, Mux):
+            cond = self._eval_parent_expr(expr.cond, loop_vars)
+            if self.use_xz:
+                if isinstance(cond, SimValue) and cond.x_mask & 1:
+                    return
+                target = expr.true_expr if cond.v & 1 else expr.false_expr
+            else:
+                target = expr.true_expr if cond else expr.false_expr
+            self._write_parent_expr(target, value, loop_vars)
         elif isinstance(expr, Concat):
-            # 理论上 output 不会连接到 Concat，但这里简单处理：忽略
-            # 因为 SV 中 output 连到 Concat 也是非法的（需要中间 wire）
             pass
         else:
             raise TypeError(f"Cannot write to parent expression type: {type(expr)}")
@@ -1081,19 +1116,34 @@ class Simulator:
     # -----------------------------------------------------------------
     # Evaluation engines
     # -----------------------------------------------------------------
-    def _eval_comb(self):
+    def _eval_comb(self, _depth: int = 0):
         """评估组合逻辑直到收敛（支持跨模块依赖链）。"""
-        max_iter = 100
-        for _ in range(max_iter):
+        if _depth > 200:
+            import warnings
+            warnings.warn(f"Combinational loop detected in module '{self.module.name}': "
+                          f"state oscillates after {_depth} iterations. "
+                          f"Check for circular dependencies in combinational logic.")
+            return
+        max_iter = 500
+        prev_changed_count = None
+        monotonic_decrease_streak = 0
+        soft_stable_count = 0
+
+        for iteration in range(max_iter):
             changed = False
+            changed_count = 0
 
             # 子模块 comb（同步 -> 评估 -> 写回）
             for _, child_sim, port_map in self._subsim_info:
                 self._sync_to_child(child_sim, port_map)
                 state_before = {k: _to_int(v) for k, v in child_sim.state.items()}
-                child_sim._eval_comb()
-                if {k: _to_int(v) for k, v in child_sim.state.items()} != state_before:
+                child_sim._eval_comb(_depth + 1)
+                state_after = {k: _to_int(v) for k, v in child_sim.state.items()}
+                if state_after != state_before:
                     changed = True
+                    for k in state_after:
+                        if k not in state_before or state_after[k] != state_before[k]:
+                            changed_count += 1
                 self._sync_from_child(child_sim, port_map)
 
             # 父模块 comb
@@ -1129,11 +1179,44 @@ class Simulator:
                 elif isinstance(stmt, GenIfNode):
                     self._exec_gen_if(stmt, mode="comb")
                 # SubmoduleInst / Comment ignored
-            if {k: _to_int(v) for k, v in self.state.items()} != state_before:
+            state_after = {k: _to_int(v) for k, v in self.state.items()}
+            if state_after != state_before:
                 changed = True
+                for k in state_after:
+                    if k not in state_before or state_after[k] != state_before[k]:
+                        changed_count += 1
 
             if not changed:
                 break
+
+            # Track convergence: if changed count is decreasing monotonically
+            # or stays small and stable, we're converging.
+            if prev_changed_count is not None:
+                if changed_count < prev_changed_count:
+                    monotonic_decrease_streak += 1
+                elif changed_count > prev_changed_count:
+                    monotonic_decrease_streak = 0
+            prev_changed_count = changed_count
+
+            # Soft convergence: exit early when only a few signals still oscillate.
+            # A small stable count (≤3 for 5+ iterations) or a strong decreasing
+            # trend (streak ≥3) indicates benign residual oscillation.
+            if changed_count <= 3:
+                soft_stable_count += 1
+            else:
+                soft_stable_count = 0
+            if monotonic_decrease_streak >= 3 or soft_stable_count >= 5:
+                break
+        else:
+            import warnings
+            self._convergence_counter[self.module.name] = self._convergence_counter.get(self.module.name, 0) + 1
+            count = self._convergence_counter[self.module.name]
+            if count % 200 == 1:
+                warnings.warn(f"Combinational loop in module '{self.module.name}': "
+                              f"did not converge after {max_iter} iterations "
+                              f"(monotonic decrease streak: {monotonic_decrease_streak}, "
+                              f"last changed count: {changed_count}). "
+                              f"Check for cyclic dependencies in combinational logic.")
 
     def _eval_seq(self, clk: Optional[str] = None):
         for clock, rst, reset_async, reset_active_low, body in self.module._seq_blocks:
@@ -1270,8 +1353,20 @@ class Simulator:
             c = bool(cond)
         if c:
             self._exec_stmts(stmt.then_body, mode, loop_vars)
-        elif stmt.else_body:
-            self._exec_stmts(stmt.else_body, mode, loop_vars)
+        else:
+            matched = False
+            for elif_cond, elif_body in stmt.elif_bodies:
+                ec = self._eval_expr(elif_cond, loop_vars)
+                if self.use_xz:
+                    ec_b = bool(int(ec)) if isinstance(ec, SimValue) else bool(ec)
+                else:
+                    ec_b = bool(ec)
+                if ec_b:
+                    self._exec_stmts(elif_body, mode, loop_vars)
+                    matched = True
+                    break
+            if not matched and stmt.else_body:
+                self._exec_stmts(stmt.else_body, mode, loop_vars)
 
     def _exec_if(self, stmt: IfNode, mode: str, loop_vars: Optional[Dict[str, int]] = None):
         cond = self._eval_expr(stmt.cond, loop_vars)
@@ -1281,8 +1376,20 @@ class Simulator:
             c = bool(cond)
         if c:
             self._exec_stmts(stmt.then_body, mode, loop_vars)
-        elif stmt.else_body:
-            self._exec_stmts(stmt.else_body, mode, loop_vars)
+        else:
+            matched = False
+            for elif_cond, elif_body in stmt.elif_bodies:
+                ec = self._eval_expr(elif_cond, loop_vars)
+                if self.use_xz:
+                    ec_b = bool(int(ec)) if isinstance(ec, SimValue) else bool(ec)
+                else:
+                    ec_b = bool(ec)
+                if ec_b:
+                    self._exec_stmts(elif_body, mode, loop_vars)
+                    matched = True
+                    break
+            if not matched and stmt.else_body:
+                self._exec_stmts(stmt.else_body, mode, loop_vars)
 
     def _exec_switch(self, stmt: SwitchNode, mode: str, loop_vars: Optional[Dict[str, int]] = None):
         expr_val = self._eval_expr(stmt.expr, loop_vars)
@@ -1353,7 +1460,7 @@ class Simulator:
             sig_id = id(expr.signal)
             if sig_id in self._output_signal_map:
                 child_sim = self._output_signal_map[sig_id]
-                v = child_sim.get(expr.signal.name)
+                v = _to_int(child_sim.get(expr.signal.name))
                 # Sign-extend if the signal is signed
                 if getattr(expr.signal, 'signed', False):
                     w = expr.signal.width
@@ -1362,7 +1469,7 @@ class Simulator:
                 return v
             name = expr.signal.name
             if name in self.state:
-                v = self.state[name]
+                v = _to_int(self.state[name])
                 # Sign-extend if the signal is signed
                 if getattr(expr.signal, 'signed', False):
                     w = expr.signal.width
@@ -1435,6 +1542,18 @@ class Simulator:
                     return SimValue(0, x_mask=(1 << expr.width) - 1, width=expr.width)
                 return self._eval_expr(expr.true_expr if c.v & 1 else expr.false_expr, loop_vars)
             return self._eval_expr(expr.true_expr if cond else expr.false_expr, loop_vars)
+        if isinstance(expr, FunctionCall):
+            args = [self._eval_expr(a, loop_vars) for a in expr.args]
+            if expr.name == "clog2":
+                if args:
+                    v = int(args[0]) if isinstance(args[0], SimValue) else args[0]
+                    return max((v - 1).bit_length(), 1)
+                return 0
+            if expr.name == "bits":
+                from rtlgen.core import _to_expr
+                w = _to_expr(expr.args[0]).width if expr.args else 0
+                return w
+            return args[0] if args else 0
         if isinstance(expr, MemRead):
             addr = self._eval_expr(expr.addr, loop_vars)
             mem = self.memories.get(expr.mem_name)
@@ -1538,6 +1657,10 @@ class Simulator:
                 return l_i >> r_i
             if op == "%":
                 return l_i % r_i if r_i != 0 else 0
+            if op == "&&":
+                return 1 if (l_i != 0) and (r_i != 0) else 0
+            if op == "||":
+                return 1 if (l_i != 0) or (r_i != 0) else 0
             raise ValueError(f"Unknown binary operator: {op}")
 
     def _unop(self, op: str, operand, width: int):
@@ -1548,8 +1671,23 @@ class Simulator:
                 return SimValue(new_v, v.x_mask, v.z_mask, width)
             raise ValueError(f"Unsupported unary op: {op}")
         v_i = int(operand) if isinstance(operand, SimValue) else operand
+        mask = (1 << width) - 1
         if op == "~":
-            return (~v_i) & ((1 << width) - 1)
+            return (~v_i) & mask
+        if op == "&":
+            return 1 if (v_i & mask) == mask else 0
+        if op == "~&":
+            return 0 if (v_i & mask) == mask else 1
+        if op == "|":
+            return 1 if v_i != 0 else 0
+        if op == "~|":
+            return 1 if v_i == 0 else 0
+        if op == "^":
+            return (v_i & mask).bit_count() & 1
+        if op == "~^":
+            return 1 ^ ((v_i & mask).bit_count() & 1)
+        if op == "!":
+            return 1 if v_i == 0 else 0
         raise ValueError(f"Unsupported unary op: {op}")
 
     # -----------------------------------------------------------------

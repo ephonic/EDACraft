@@ -1,66 +1,21 @@
 """
-skills.interfaces.ethernet.behaviors — Ethernet Behavior Templates
-
-Domain-specific behavior templates for Ethernet interface components.
-Registered into TemplateRegistry at import time.
-
-Components:
-  - ptp_ts_extract: PTP timestamp extraction from AXI-Stream tuser
-
-Reference: ref_rtl/interfaces/ethernet/rtl/ptp_ts_extract.v
+skills.interfaces.ethernet.behaviors — Thin Shim
+Re-exports from functional.py and cycle_level.py for backward compatibility.
 """
 from __future__ import annotations
-
-from typing import Callable
-
-from rtlgen.arch_def import CycleContext
-from rtlgen.behaviors import TemplateRegistry
+from skills.interfaces.ethernet.functional import *  # noqa: F401, F403
+from skills.interfaces.ethernet.cycle_level import *  # noqa: F401, F403
 
 
-# =====================================================================
-# PTP_TS_EXTRACT Template
-# =====================================================================
-
-def ptp_ts_extract_template(
-    ts_width: int = 96,
-    ts_offset: int = 1,
-    **kwargs,
-) -> Callable[[CycleContext], None]:
-    """PTP timestamp extract from AXI-Stream tuser.
-
-    Extracts timestamp from tuser[ts_offset+ts_width-1 : ts_offset].
-    Outputs valid on first beat of each frame (tvalid & ~frame_reg).
-    frame_reg tracks whether we are mid-frame (set by tlast).
-    """
-    def behavior(ctx: CycleContext):
-        rst = ctx.get_input("rst", 1)
-        s_axis_tvalid = ctx.get_input("s_axis_tvalid", 0)
-        s_axis_tlast = ctx.get_input("s_axis_tlast", 0)
-        s_axis_tuser = ctx.get_input("s_axis_tuser", 0)
-        frame_reg = ctx.get_state("frame_reg", 0)
-
-        if rst:
-            frame_reg = 0
-
-        # Extract timestamp field
-        ts_mask = (1 << ts_width) - 1
-        ts_value = (s_axis_tuser >> ts_offset) & ts_mask
-
-        # Valid on first beat of frame
-        ts_valid = s_axis_tvalid and not frame_reg
-
-        # Update frame tracking
-        if s_axis_tvalid:
-            frame_reg = not s_axis_tlast
-
-        ctx.set_output("m_axis_ts", ts_value)
-        ctx.set_output("m_axis_ts_valid", ts_valid)
-
-        ctx.set_state("frame_reg", frame_reg)
-
+def arch_gen(**kwargs):
+    """Auto-generated stub for arch_template."""
+    def behavior(ctx):
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0: return
     return behavior
+arch_template = arch_gen
 
 
-TemplateRegistry.register("ptp_ts_extract", ptp_ts_extract_template)
-
-__all__ = ["ptp_ts_extract_template"]
+__all__ = [
+    "ptp_ts_extract_template",
+]

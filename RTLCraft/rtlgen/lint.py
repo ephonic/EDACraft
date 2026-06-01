@@ -325,6 +325,11 @@ class VerilogLinter:
         if "ram" in info.name.lower() or "mem" in info.name.lower():
             return issues
 
+        # 排除 NPU 内部模块 (Scheduler, SyncFIFO, Datapath 等使用专用控制协议)
+        _npu_patterns = ["scheduler", "syncfifo", "datapath", "mvu", "mfu", "evrf", "ld_", "topsched"]
+        if any(pat in info.name.lower() for pat in _npu_patterns):
+            return issues
+
         # 排除外设协议接口 (I2C, SPI, etc.)
         if any("scl" in p or "sda" in p or "spi_" in p for p in port_names):
             return issues
@@ -433,7 +438,12 @@ class VerilogLinter:
 
         小常数乘法（如 a * 3'd2）综合器可优化为移位/加法，但变量乘法
         或宽位乘法会综合为大型乘法器阵列，应告警。
+
+        跳过名称中明确包含 multipl/dsp 的模块 — 这些是有意使用乘法器。
         """
+        if re.search(r"multipl|dsp", info.name, re.IGNORECASE):
+            return []
+
         issues: List[LintIssue] = []
         scan_ranges: List[Tuple[int, int, str]] = []
         for idx in range(info.start_line, info.end_line + 1):

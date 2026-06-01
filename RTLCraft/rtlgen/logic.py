@@ -18,6 +18,7 @@ from rtlgen.core import (
     Const as _ConstExpr,
     Context,
     ForGenNode,
+    FunctionCall as _FunctionCall,
     GenIfNode,
     GenVar,
     IfNode,
@@ -25,7 +26,10 @@ from rtlgen.core import (
     Ref,
     Signal,
     SwitchNode,
+    UnaryOp as _UnaryOp,
     WhenNode,
+    _make_binop,
+    _make_unop,
     _to_expr,
 )
 
@@ -141,20 +145,21 @@ class _StmtContainerContext:
 
 
 class Switch:
-    """多路分支（生成 Verilog case）。
+    """多路分支（生成 Verilog case/casez/casex）。
 
     示例:
         with Switch(opcode) as sw:
             with sw.case(0b001):
                 result <<= a + b
-            with sw.case(0b010):
-                result <<= a - b
             with sw.default():
                 result <<= 0
+        with Switch(opcode, kind="casez") as sw:
+            with sw.case(4'bzz01):
+                ...
     """
 
-    def __init__(self, expr: Any):
-        self.node = SwitchNode(expr=_to_expr(expr))
+    def __init__(self, expr: Any, kind: str = "case"):
+        self.node = SwitchNode(expr=_to_expr(expr), kind=kind)
         ctx = Context.current()
         if ctx and ctx.stmt_container is not None:
             ctx.stmt_container.append(self.node)
@@ -168,7 +173,6 @@ class Switch:
                 raise RuntimeError("Switch used outside of any module or logic block")
 
     def __enter__(self):
-        # 禁止在 with Switch: 内部直接写语句，必须通过 sw.case()
         ctx = Context.current()
         mod = ctx.module if ctx else _find_module_in_stack()
         Context.push(Context(module=mod, stmt_container=None))
@@ -178,13 +182,11 @@ class Switch:
         Context.pop()
 
     def case(self, value: Any):
-        """添加一个 case 分支。返回上下文管理器。"""
         body: List[Any] = []
         self.node.cases.append((_to_expr(value), body))
         return _StmtContainerContext(body)
 
     def default(self):
-        """添加 default 分支。返回上下文管理器。"""
         body: List[Any] = []
         self.node.default_body = body
         return _StmtContainerContext(body)
@@ -778,3 +780,41 @@ class Otherwise:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         Context.pop()
+
+# =====================================================================
+# Reduction operators (&a, |a, ^a, ~&a, ~|a, ~^a)
+# =====================================================================
+
+def _unop_w1(op, a):
+    s = Signal(width=1)
+    s._expr = _UnaryOp(op, _to_expr(a), width=1)
+    return s
+
+def REDUCE_AND(a): return _unop_w1("&", a)
+def REDUCE_NAND(a): return _unop_w1("~&", a)
+def REDUCE_OR(a): return _unop_w1("|", a)
+def REDUCE_NOR(a): return _unop_w1("~|", a)
+def REDUCE_XOR(a): return _unop_w1("^", a)
+def REDUCE_XNOR(a): return _unop_w1("~^", a)
+
+
+# =====================================================================
+# Logical operators (&&, ||, !)
+# =====================================================================
+
+def LOGIC_AND(a, b): return _make_binop("&&", _to_expr(a), _to_expr(b), width=1)
+def LOGIC_OR(a, b): return _make_binop("||", _to_expr(a), _to_expr(b), width=1)
+def LOGIC_NOT(a): return _unop_w1("!", a)
+
+
+# =====================================================================
+# Function call helpers ($clog2, $bits, user functions)
+# =====================================================================
+
+def FCall(name, *args, width=1, is_system=True):
+    s = Signal(width=width)
+    s._expr = _FunctionCall(name, list(args), width=width, is_system=is_system)
+    return s
+
+def clog2(x): return FCall("clog2", x, width=32, is_system=True)
+def bits(x): return FCall("bits", x, width=32, is_system=True)

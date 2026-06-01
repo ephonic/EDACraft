@@ -337,15 +337,10 @@ class PosiCtrl(Module):
         self.mod_rd_ena_o = Output(1, "mod_rd_ena_o")
         self.mod_rd_adr_o = Output(9, "mod_rd_adr_o")
         self.mod_rd_dat_i = Input(6, "mod_rd_dat_i")
-        self.ori_rd_ena_o = Output(1, "ori_rd_ena_o")
-        self.ori_rd_sel_o = Output(2, "ori_rd_sel_o")
-        self.ori_rd_siz_o = Output(2, "ori_rd_siz_o")
-        self.ori_rd_4x4_x_o = Output(4, "ori_rd_4x4_x_o")
-        self.ori_rd_4x4_y_o = Output(4, "ori_rd_4x4_y_o")
-        self.ori_rd_idx_o = Output(5, "ori_rd_idx_o")
-        self.mod_wr_ena_o = Output(1, "mod_wr_ena_o")
-        self.mod_wr_adr_o = Output(8, "mod_wr_adr_o")
-        self.mod_wr_dat_o = Output(6, "mod_wr_dat_o")
+        self.tra_busy_o = Output(1, "tra_busy_o")
+        self.tra_mode_o = Output(1, "tra_mode_o")
+        self.size_o = Output(2, "size_o")
+        self.position_o = Output(8, "position_o")
         self.tra_pre_start_o = Output(1, "tra_pre_start_o")
         self.tra_pre_done_i = Input(1, "tra_pre_done_i")
         self.tra_pos_start_o = Output(1, "tra_pos_start_o")
@@ -438,13 +433,10 @@ class PosiCtrl(Module):
             self.mod_rd_ena_o <<= ((self._state >= self.ST_SIZE_4X4) & (self._state <= self.ST_SIZE_32X32))
             addr_tmp = (self._size_level << 6) + (self._blk_y << 4) + self._blk_x
             self.mod_rd_adr_o <<= addr_tmp[8:0]
-            self.ori_rd_ena_o <<= ((self._state >= self.ST_SIZE_4X4) & (self._state <= self.ST_SIZE_32X32))
-            self.ori_rd_sel_o <<= 0
-            self.ori_rd_siz_o <<= self._size_level[1:0]
-            self.ori_rd_4x4_x_o <<= self._blk_x; self.ori_rd_4x4_y_o <<= self._blk_y
-            self.ori_rd_idx_o <<= self._mode_cnt[4:0]
-            self.mod_wr_ena_o <<= (self._state == self.ST_DONE)
-            self.mod_wr_adr_o <<= 0; self.mod_wr_dat_o <<= self.mod_rd_dat_i
+            self.tra_busy_o <<= (self._state == self.ST_TRA_PRE) | (self._state == self.ST_TRA_POS)
+            self.tra_mode_o <<= (self._state == self.ST_TRA_POS)
+            self.size_o <<= self._size_level[1:0]
+            self.position_o <<= addr_tmp[7:0]
 
 
 # ============================================================================
@@ -709,6 +701,10 @@ class PosiTop(Module):
         w_satd_done = Wire(1, "w_satd_done")
         w_dec_start = Wire(1, "w_dec_start")
         w_dec_done = Wire(1, "w_dec_done")
+        w_tra_busy = Wire(1, "w_tra_busy")
+        w_tra_mode = Wire(1, "w_tra_mode")
+        w_ctr_size = Wire(2, "w_ctr_size")
+        w_ctr_position = Wire(8, "w_ctr_position")
         self._ctrl = PosiCtrl()
         self.instantiate(self._ctrl, "u_ctrl", port_map={
             "clk": self.clk, "rst_n": self.rst_n,
@@ -720,15 +716,12 @@ class PosiTop(Module):
             "qp_i": self.qp_i,
             "mod_rd_ena_o": self.mod_rd_ena_o, "mod_rd_adr_o": self.mod_rd_adr_o,
             "mod_rd_dat_i": self.mod_rd_dat_i,
-            "ori_rd_ena_o": self.ori_rd_ena_o, "ori_rd_sel_o": self.ori_rd_sel_o,
-            "ori_rd_siz_o": self.ori_rd_siz_o, "ori_rd_4x4_x_o": self.ori_rd_4x4_x_o,
-            "ori_rd_4x4_y_o": self.ori_rd_4x4_y_o, "ori_rd_idx_o": self.ori_rd_idx_o,
-            "mod_wr_ena_o": self.mod_wr_ena_o, "mod_wr_adr_o": self.mod_wr_adr_o,
-            "mod_wr_dat_o": self.mod_wr_dat_o,
             "tra_pre_start_o": w_tra_pre_start, "tra_pre_done_i": w_tra_pre_done,
             "tra_pos_start_o": w_tra_pos_start, "tra_pos_done_i": w_tra_pos_done,
             "satd_start_o": w_satd_start, "satd_done_i": w_satd_done,
             "dec_start_o": w_dec_start, "dec_done_i": w_dec_done,
+            "tra_busy_o": w_tra_busy, "tra_mode_o": w_tra_mode,
+            "size_o": w_ctr_size, "position_o": w_ctr_position,
         })
         # Datapath wires
         w_tra_pre_val = Wire(1, "w_tra_pre_val")
@@ -741,17 +734,22 @@ class PosiTop(Module):
         w_dec_done_i = Wire(1, "w_dec_done_i")
         w_posi_partition = Wire(85, "w_posi_partition")
         w_posi_cost = Wire(POSI_COST_WIDTH, "w_posi_cost")
+        w_tra_ori_rd_ena = Wire(1, "w_tra_ori_rd_ena")
+        w_tra_ori_rd_siz = Wire(2, "w_tra_ori_rd_siz")
+        w_tra_ori_rd_4x4_x = Wire(4, "w_tra_ori_rd_4x4_x")
+        w_tra_ori_rd_4x4_y = Wire(4, "w_tra_ori_rd_4x4_y")
+        w_tra_ori_rd_idx = Wire(5, "w_tra_ori_rd_idx")
         self._transfer = PosiTransfer()
         self.instantiate(self._transfer, "u_transfer", port_map={
             "clk": self.clk, "rst_n": self.rst_n,
             "start_i": w_tra_pre_start, "done_o": w_tra_pre_done_i,
-            "mode_i": 0,
+            "mode_i": w_tra_mode,
             "ctu_x_cur_i": self.ctu_x_cur_i,
-            "ori_rd_ena_o": self.ori_rd_ena_o,
-            "ori_rd_siz_o": self.ori_rd_siz_o,
-            "ori_rd_4x4_x_o": self.ori_rd_4x4_x_o,
-            "ori_rd_4x4_y_o": self.ori_rd_4x4_y_o,
-            "ori_rd_idx_o": self.ori_rd_idx_o,
+            "ori_rd_ena_o": w_tra_ori_rd_ena,
+            "ori_rd_siz_o": w_tra_ori_rd_siz,
+            "ori_rd_4x4_x_o": w_tra_ori_rd_4x4_x,
+            "ori_rd_4x4_y_o": w_tra_ori_rd_4x4_y,
+            "ori_rd_idx_o": w_tra_ori_rd_idx,
             "ori_rd_dat_i": self.ori_rd_dat_i,
             "row_wr_ena_o": Wire(1, "w_row_wr_ena"),
             "row_wr_adr_o": Wire(8, "w_row_wr_adr"),
@@ -799,6 +797,12 @@ class PosiTop(Module):
             w_dec_done <<= w_dec_done_i
             self.partition_o <<= w_posi_partition
             self.cost_o <<= w_posi_cost
+            self.ori_rd_ena_o <<= w_tra_ori_rd_ena
+            self.ori_rd_sel_o <<= 0
+            self.ori_rd_siz_o <<= w_tra_ori_rd_siz
+            self.ori_rd_4x4_x_o <<= w_tra_ori_rd_4x4_x
+            self.ori_rd_4x4_y_o <<= w_tra_ori_rd_4x4_y
+            self.ori_rd_idx_o <<= w_tra_ori_rd_idx
 
 
 # ============================================================================
@@ -1373,10 +1377,6 @@ class CabacTop(Module):
             self.bs_data_o <<= w_bp_byte
             self.bs_val_o <<= w_bp_ready
             self.slice_done_o <<= w_bina_end_slice
-            self.ec_coe_rd_sel_o <<= 0
-            self.ec_coe_rd_siz_o <<= 0
-            self.ec_coe_rd_4x4_x_o <<= 0
-            self.ec_coe_rd_4x4_y_o <<= 0
 
 
 # ============================================================================
@@ -1870,7 +1870,6 @@ class EncCore(Module):
             "fetch_start_o": w_fetch_start,
             "ctu_x_cur_o": w_ctu_x,
             "ctu_y_cur_o": w_ctu_y,
-            "rc_qp_o": w_rc_qp,
         })
 
         # PREI
@@ -2313,10 +2312,7 @@ class ImeDatArray(Module):
                                     idx = row * 32 + col
                                     self._array[idx] <<= self.dat_ver_i[(row + 1) * IME_PIXEL_WIDTH - 1 : row * IME_PIXEL_WIDTH]
         with self.comb:
-            out_vec = Const(0, IME_PIXEL_WIDTH * 1024)
-            for i in range(1024):
-                out_vec = Cat(out_vec, self._array[i])
-            self.dat_o <<= out_vec
+            self.dat_o <<= Cat(*self._array)
 
 
 # ============================================================================
@@ -3721,6 +3717,8 @@ class FetchRefLuma(Module):
         with self.comb:
             ime_addr = Cat(self.ime_ref_y_i[4:0], self.ime_ref_x_i[4:0])
             fme_addr = Cat(self.fme_ref_y_i[4:0], self.fme_ref_x_i[4:0])
-            self.ime_ref_pel_o <<= self._bank[ime_addr[7:0]][255:0] if self.ime_ref_rden_i else 0
+            _ime_data = Wire(1024, "_ime_data")
+            _ime_data <<= self._bank[ime_addr[7:0]]
+            self.ime_ref_pel_o <<= _ime_data[255:0] if self.ime_ref_rden_i else 0
             self.fme_ref_pel_o <<= self._bank[fme_addr[7:0]] if self.fme_ref_rden_i else 0
 

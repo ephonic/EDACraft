@@ -416,7 +416,17 @@ class FFTSdfUnit(Module):
             else:
                 self.tw_sel[0] <<= Const(0, 1)
             self.tw_num <<= self.bf2_count << (log_n - log_m)
-            self.tw_addr <<= self.tw_num * self.tw_sel
+            # Replace variable multiplication with shift/add to avoid lint hardware_multiplier rule
+            # tw_sel is 2 bits (0-3): sel*num = 0, num, num<<1, num+(num<<1)
+            with Switch(self.tw_sel) as sw:
+                with sw.case(0):
+                    self.tw_addr <<= Const(0, log_n)
+                with sw.case(1):
+                    self.tw_addr <<= self.tw_num
+                with sw.case(2):
+                    self.tw_addr <<= self.tw_num << 1
+                with sw.default():
+                    self.tw_addr <<= self.tw_num + (self.tw_num << 1)
 
             # Multiply bypass
             self.mu_a_re <<= Mux(self.mu_en, self.bf2_do_re, Const(0, width))

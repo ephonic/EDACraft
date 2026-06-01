@@ -27,16 +27,23 @@ from typing import Any, Dict, List, Optional, Tuple
 from rtlgen.core import (
     Assign,
     BinOp,
+    BitSelect,
+    Concat,
     Const,
     Expr,
     IfNode,
     Module,
     Mux,
+    Ref,
+    Reg,
     Signal,
+    Slice,
     SwitchNode,
+    UnaryOp,
     Wire,
 )
 from rtlgen.ppa import PPAAnalyzer
+from rtlgen.logic import If, Else
 from rtlgen.spec_ir import OptimizableOp, SpecIR
 
 
@@ -241,12 +248,8 @@ class OptimizationGuide:
 class OptimizationStrategy:
     """Base class for an optimization strategy.
 
-    策略仅负责 **分析现状并提出建议**，不执行任何 AST 修改。
-    智能体阅读建议后，直接操作 Module 的 AST（_comb_blocks, _wires, _regs 等）
-    完成优化，然后通过 PPAOptimizer.inject_optimized() 注入结果。
-
-    注意：本类**没有** apply() 方法。智能体不编写策略的 Python 实现代码，
-    而是直接根据建议对 DSL 模块做结构性修改。
+    策略负责 **分析现状、提出建议并执行 AST 修改**。
+    optimize() 迭代调用 propose → apply → re-analyze → verify。
     """
 
     name: str = "base"
@@ -255,6 +258,10 @@ class OptimizationStrategy:
     def propose(self, module: Module, spec: SpecIR) -> List[Dict[str, Any]]:
         """Propose candidate optimizations. Returns list of change dicts."""
         return []
+
+    def apply(self, module: Module, change: Dict[str, Any]) -> bool:
+        """Actually apply the change to the module AST. Returns True if successful."""
+        return False
 
     def estimate_impact(self, report: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, float]:
         """Estimate the impact of a change on the PPA report."""
@@ -266,7 +273,13 @@ class OptimizationStrategy:
 # ---------------------------------------------------------------------------
 
 class PipelineInsertion(OptimizationStrategy):
-    """建议插入流水线寄存器以打断长组合路径。"""
+    """插入流水线寄存器以打断长组合路径。
+
+    Improved: batch ALL signals exceeding the depth threshold into a single
+    pipeline stage (one `always @(posedge clk)` block), instead of creating
+    individual sequential blocks per signal. This produces proper staged
+    pipeline registers with intermediate combinational logic preserved.
+    """
 
     name = "pipeline_insertion"
     level = 1
@@ -277,29 +290,280 @@ class PipelineInsertion(OptimizationStrategy):
         if goal_depth is None:
             return proposals
 
-        for name, sig in module._outputs.items():
-            proposals.append({
-                "type": "pipeline_output",
-                "signal": name,
-                "stages": 2,
-                "description": f"在输出 '{name}' 的路径上插入 {2} 级流水线寄存器，"
-                               f"将组合逻辑深度从当前值降至目标 {goal_depth} 以内。",
-            })
+        analyzer = PPAAnalyzer(module)
+        depths = analyzer._critical_path_depth()
+        if not depths:
+            return proposals
 
-        for name, wire in module._wires.items():
-            if wire.width > 16:
-                proposals.append({
-                    "type": "pipeline_wire",
-                    "signal": name,
-                    "stages": 2,
-                    "description": f"在宽位内部信号 '{name}' ({wire.width}-bit) 上插入流水线寄存器，"
-                                   f"降低关键路径延迟。",
-                })
+        max_depth = max(depths.values())
+        if max_depth > goal_depth:
+            # Collect ALL signals exceeding the threshold in one batch
+            exceeders = [
+                (sig, d) for sig, d in depths.items() if d > goal_depth
+            ]
+            exceeders.sort(key=lambda x: -x[1])
+
+            # Cap to avoid huge stages; take top signals up to a reasonable limit
+            max_signals_per_stage = 12
+            batch = exceeders[:max_signals_per_stage]
+
+            proposals.append({
+                "type": "pipeline_stage",
+                "signals": [s for s, _ in batch],
+                "depths": {s: d for s, d in batch},
+                "max_depth": max_depth,
+                "target_depth": goal_depth,
+                "num_signals": len(batch),
+                "description": f"Insert pipeline stage for {len(batch)} signals exceeding depth {goal_depth} "
+                               f"(max depth={max_depth}). Signals: {[s for s, _ in batch[:5]]}"
+                               + (f" +{len(batch)-5} more" if len(batch) > 5 else ""),
+            })
 
         return proposals
 
+    def apply(self, module: Module, change: Dict[str, Any]) -> bool:
+        """Insert a pipeline stage for a batch of signals in a single seq block.
+
+        For each signal:
+        1. Remove its combinational assignment (capture the driven value)
+        2. Create a pipeline register (`_pipeline_<signal>`)
+        3. Replace downstream references with the pipeline register
+
+        All pipeline registers are assigned in ONE `always @(posedge clk)` block,
+        producing a clean staged pipeline boundary.
+        """
+        targets = change.get("signals")
+        if not targets:
+            # Backward compat: single signal from old proposal format
+            sig = change.get("signal")
+            if sig:
+                targets = [sig]
+            else:
+                return False
+
+        # Find clock signal
+        clk_signal = None
+        for name, inp in module._inputs.items():
+            if "clk" in name.lower():
+                clk_signal = inp
+                break
+        if clk_signal is None:
+            return False
+
+        def _get_assign_target_name(stmt) -> str:
+            t = stmt.target
+            if hasattr(t, 'name'):
+                return t.name
+            if isinstance(t, Slice) and hasattr(t.operand, 'name'):
+                return t.operand.name
+            return ""
+
+        def _find_sig(name: str):
+            for d in (module._wires, module._outputs):
+                if name in d:
+                    return d[name]
+            if name in module._regs:
+                return module._regs[name]
+            # Scan comb block targets for unregistered Wire objects
+            for body in module._comb_blocks:
+                for stmt in body:
+                    if isinstance(stmt, Assign) and _get_assign_target_name(stmt) == name:
+                        return stmt.target
+            if module._top_level:
+                for stmt in module._top_level:
+                    if isinstance(stmt, Assign) and _get_assign_target_name(stmt) == name:
+                        return stmt.target
+            return None
+
+        def _remove_assigns_in_body(body: List[Any], target_name: str) -> Tuple[bool, Any]:
+            """Recursively remove ALL assignments to target_name from body.
+
+            Returns (found, first_driven_value) — captures the first value found.
+            Handles nested IfNode/SwitchNode bodies.
+            """
+            found = False
+            driven_value = None
+
+            for stmt in body:
+                if isinstance(stmt, Assign) and _get_assign_target_name(stmt) == target_name:
+                    if driven_value is None:
+                        driven_value = stmt.value
+                    found = True
+                    # Mark for removal (set target to None)
+                    stmt._remove = True
+                elif isinstance(stmt, IfNode):
+                    # Check then_body
+                    f, v = _remove_assigns_in_body(stmt.then_body, target_name)
+                    if f: found = True
+                    if v is not None and driven_value is None:
+                        driven_value = v
+                    # Check else_body
+                    f, v = _remove_assigns_in_body(stmt.else_body, target_name)
+                    if f: found = True
+                    if v is not None and driven_value is None:
+                        driven_value = v
+                    # Check elif_bodies
+                    for _cond, case_body in stmt.elif_bodies:
+                        f, v = _remove_assigns_in_body(case_body, target_name)
+                        if f: found = True
+                        if v is not None and driven_value is None:
+                            driven_value = v
+                elif isinstance(stmt, SwitchNode):
+                    for _case_val, case_body in stmt.cases:
+                        f, v = _remove_assigns_in_body(case_body, target_name)
+                        if f: found = True
+                        if v is not None and driven_value is None:
+                            driven_value = v
+                    f, v = _remove_assigns_in_body(stmt.default_body, target_name)
+                    if f: found = True
+                    if v is not None and driven_value is None:
+                        driven_value = v
+
+            return found, driven_value
+
+        def _prune_removed(body: List[Any]) -> List[Any]:
+            """Remove statements marked with _remove, recursively prune IfNode/SwitchNode bodies."""
+            new_body = []
+            for stmt in body:
+                if getattr(stmt, '_remove', False):
+                    continue
+                elif isinstance(stmt, IfNode):
+                    stmt.then_body = _prune_removed(stmt.then_body)
+                    stmt.else_body = _prune_removed(stmt.else_body)
+                    stmt.elif_bodies = [
+                        (cond, _prune_removed(case_body))
+                        for cond, case_body in stmt.elif_bodies
+                    ]
+                    new_body.append(stmt)
+                elif isinstance(stmt, SwitchNode):
+                    stmt.cases = [
+                        (case_val, _prune_removed(case_body))
+                        for case_val, case_body in stmt.cases
+                    ]
+                    stmt.default_body = _prune_removed(stmt.default_body)
+                    new_body.append(stmt)
+                else:
+                    new_body.append(stmt)
+            return new_body
+
+        # Gather all (signal_obj, driven_value, body_ref) tuples
+        pipeline_regs: List[Tuple[str, Reg, Any]] = []  # (old_name, pipe_reg, driven_value)
+
+        for target in targets:
+            target_sig = _find_sig(target)
+            if target_sig is None:
+                continue
+
+            driven_value = None
+            # Search comb blocks + top_level for ALL assignments (including nested)
+            search_lists: List[List[Any]] = list(module._comb_blocks)
+            if module._top_level:
+                search_lists = search_lists + [module._top_level]
+
+            for body in search_lists:
+                found, dv = _remove_assigns_in_body(body, target)
+                if found and dv is not None:
+                    driven_value = dv
+                    # Prune removed statements
+                    body[:] = _prune_removed(body)
+
+            if driven_value is None:
+                continue
+
+            # Create pipeline register
+            pipe_reg_name = f"_pipeline_{target}"
+            pipe_reg = Reg(target_sig.width, pipe_reg_name)
+            module._regs[pipe_reg_name] = pipe_reg
+            pipeline_regs.append((target, pipe_reg, driven_value))
+
+        if not pipeline_regs:
+            return False
+
+        # Emit ALL pipeline register assignments in a SINGLE seq block
+        with module.seq(clk_signal):
+            for _name, pipe_reg, driven_value in pipeline_regs:
+                pipe_reg <<= driven_value
+
+        # Re-drive each pipelined signal from its pipeline register.
+        # This ensures output ports and non-pipelined downstream signals
+        # that still reference the original name get the pipelined value.
+        for old_name, pipe_reg, driven_value in pipeline_regs:
+            target_sig = _find_sig(old_name)
+            if target_sig is not None:
+                # Append a fresh comb assignment: old_name = _pipeline_<old_name>
+                module._comb_blocks[-1].append(Assign(target_sig, Ref(pipe_reg), True))
+
+        # Replace downstream references for each signal
+        for old_name, pipe_reg, _driven_value in pipeline_regs:
+            for block in module._comb_blocks:
+                self._replace_refs_in_body(block, old_name, pipe_reg)
+            if module._top_level:
+                self._replace_refs_in_body(module._top_level, old_name, pipe_reg)
+
+        # Also replace references in the driven_value expressions of other pipeline regs.
+        # This handles the case where signal B = signal A, and both are pipelined:
+        # _pipeline_B's driven_value originally references A, which must be updated
+        # to reference _pipeline_A after A itself is pipelined.
+        for old_name, pipe_reg, _driven_value in pipeline_regs:
+            for _other_name, _other_reg, other_driven in pipeline_regs:
+                if other_driven is not None:
+                    self._replace_in_expr(other_driven, old_name, pipe_reg)
+
+        return True
+
+    def _replace_refs_in_body(self, body: List[Any], old_name: str, new_signal: Reg) -> int:
+        """Replace Ref(old_name) or direct Signal(old_name) with Ref(new_signal) in body."""
+        count = 0
+        for stmt in body:
+            if isinstance(stmt, Assign):
+                if isinstance(stmt.value, Signal) and stmt.value.name == old_name:
+                    stmt.value = Ref(new_signal)
+                    count += 1
+                else:
+                    count += self._replace_in_expr(stmt.value, old_name, new_signal)
+            elif isinstance(stmt, IfNode):
+                count += self._replace_in_expr(stmt.cond, old_name, new_signal)
+                count += self._replace_refs_in_body(stmt.then_body, old_name, new_signal)
+                count += self._replace_refs_in_body(stmt.else_body, old_name, new_signal)
+            elif isinstance(stmt, SwitchNode):
+                count += self._replace_in_expr(stmt.expr, old_name, new_signal)
+                for _, case_body in stmt.cases:
+                    count += self._replace_refs_in_body(case_body, old_name, new_signal)
+                count += self._replace_refs_in_body(stmt.default_body, old_name, new_signal)
+        return count
+
+    def _replace_in_expr(self, expr: Expr, old_name: str, new_signal: Reg) -> int:
+        """Replace Ref(old_name) or direct Signal(old_name) in expression tree with Ref(new_signal)."""
+        count = 0
+        if isinstance(expr, Ref) and expr.signal.name == old_name:
+            expr.signal = new_signal
+            count += 1
+        elif isinstance(expr, Signal) and expr.name == old_name:
+            expr.name = new_signal.name
+            expr.width = new_signal.width
+            count += 1
+        elif isinstance(expr, BinOp):
+            count += self._replace_in_expr(expr.lhs, old_name, new_signal)
+            count += self._replace_in_expr(expr.rhs, old_name, new_signal)
+        elif isinstance(expr, UnaryOp):
+            count += self._replace_in_expr(expr.operand, old_name, new_signal)
+        elif isinstance(expr, Mux):
+            count += self._replace_in_expr(expr.cond, old_name, new_signal)
+            count += self._replace_in_expr(expr.true_expr, old_name, new_signal)
+            count += self._replace_in_expr(expr.false_expr, old_name, new_signal)
+        elif isinstance(expr, Slice):
+            count += self._replace_in_expr(expr.operand, old_name, new_signal)
+        elif isinstance(expr, BitSelect):
+            count += self._replace_in_expr(expr.operand, old_name, new_signal)
+            count += self._replace_in_expr(expr.index, old_name, new_signal)
+        elif isinstance(expr, Concat):
+            for op in expr.operands:
+                count += self._replace_in_expr(op, old_name, new_signal)
+        return count
+
     def estimate_impact(self, report: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, float]:
-        return {"logic_depth": -1, "registers": +1, "area": +5}
+        num = change.get("num_signals", change.get("stages", 1))
+        return {"logic_depth": -num, "registers": +num, "area": +num * 3}
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +571,7 @@ class PipelineInsertion(OptimizationStrategy):
 # ---------------------------------------------------------------------------
 
 class ResourceSharing(OptimizationStrategy):
-    """建议共享互斥路径中的算子以减少面积。"""
+    """在互斥路径中共享算子以减少面积。"""
 
     name = "resource_sharing"
     level = 1
@@ -339,6 +603,10 @@ class ResourceSharing(OptimizationStrategy):
 
         return proposals
 
+    def apply(self, module: Module, change: Dict[str, Any]) -> bool:
+        """Resource sharing requires significant AST restructuring; skip for now."""
+        return False
+
     def _count_ops(self, expr: Expr) -> Dict[str, int]:
         counts: Dict[str, int] = {}
         self._walk_ops(expr, counts)
@@ -363,24 +631,33 @@ class ResourceSharing(OptimizationStrategy):
 # ---------------------------------------------------------------------------
 
 class BitwidthReduction(OptimizationStrategy):
-    """建议移除冗余的位宽扩展和掩码。"""
+    """根据实际使用情况缩减位宽。"""
 
     name = "bitwidth_reduction"
     level = 2
 
     def propose(self, module: Module, spec: SpecIR) -> List[Dict[str, Any]]:
         proposals = []
+        analyzer = PPAAnalyzer(module)
+        fanout = analyzer._fanout_analysis()
 
         for name, wire in module._wires.items():
-            proposals.append({
-                "type": "check_width",
-                "signal": name,
-                "current_width": wire.width,
-                "description": f"检查信号 '{name}' 的位宽 ({wire.width} bit) 是否超出其实际使用需求，"
-                               f"考虑截断以减小面积和功耗。",
-            })
+            if wire.width > 32 and fanout.get(name, 0) <= 1:
+                # Low fanout, wide wire — likely can be narrowed
+                proposals.append({
+                    "type": "narrow_wire",
+                    "signal": name,
+                    "current_width": wire.width,
+                    "fanout": fanout.get(name, 0),
+                    "description": f"低扇出宽信号 '{name}' ({wire.width}-bit, fanout={fanout.get(name, 0)}), "
+                                   f"建议检查是否可以截断。",
+                })
 
         return proposals
+
+    def apply(self, module: Module, change: Dict[str, Any]) -> bool:
+        """Bitwidth narrowing requires dataflow analysis; not fully automatic."""
+        return False
 
     def estimate_impact(self, report: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, float]:
         return {"area": -5, "power": -3}
@@ -391,7 +668,7 @@ class BitwidthReduction(OptimizationStrategy):
 # ---------------------------------------------------------------------------
 
 class OperatorSelection(OptimizationStrategy):
-    """建议根据 PPA 目标更换算子实现。"""
+    """根据 PPA 目标选择算子实现。"""
 
     name = "operator_selection"
     level = 1
@@ -416,6 +693,10 @@ class OperatorSelection(OptimizationStrategy):
 
         return proposals
 
+    def apply(self, module: Module, change: Dict[str, Any]) -> bool:
+        """Operator selection is handled by the synthesis tool, not at DSL level."""
+        return False
+
     def estimate_impact(self, report: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, float]:
         if change.get("type") == "enable_fast_adder":
             return {"logic_depth": -1, "area": +5}
@@ -429,7 +710,7 @@ class OperatorSelection(OptimizationStrategy):
 # ---------------------------------------------------------------------------
 
 class MuxBalancing(OptimizationStrategy):
-    """建议将不平衡的多路复用器树重新平衡。"""
+    """将不平衡的 If/Switch 链转换为平衡的多路复用器树。"""
 
     name = "mux_balancing"
     level = 2
@@ -437,12 +718,13 @@ class MuxBalancing(OptimizationStrategy):
     def propose(self, module: Module, spec: SpecIR) -> List[Dict[str, Any]]:
         proposals = []
 
-        for block in module._comb_blocks:
+        for i, block in enumerate(module._comb_blocks):
             for stmt in block:
                 depth = self._max_if_depth(stmt)
                 if depth > 4:
                     proposals.append({
                         "type": "balance_mux_tree",
+                        "block_index": i,
                         "location": id(stmt),
                         "current_depth": depth,
                         "description": f"发现深度为 {depth} 的嵌套 If/Switch 链，"
@@ -451,11 +733,64 @@ class MuxBalancing(OptimizationStrategy):
 
         return proposals
 
+    def apply(self, module: Module, change: Dict[str, Any]) -> bool:
+        """Flatten deeply nested if-else chains into a single Mux chain."""
+        block_index = change.get("block_index")
+        if block_index is None or block_index >= len(module._comb_blocks):
+            return False
+        block = module._comb_blocks[block_index]
+        return self._flatten_if_chain(block)
+
+    def _flatten_if_chain(self, block: List[Any]) -> bool:
+        """Replace deeply nested IfNode with flat priority mux chain."""
+        new_body = []
+        changes = 0
+        for stmt in block:
+            if isinstance(stmt, IfNode):
+                depth = self._max_if_depth(stmt)
+                if depth > 4:
+                    # Flatten: collect all (cond, body) pairs and emit as single mux chain
+                    flat = self._flatten_if_node(stmt)
+                    new_body.extend(flat)
+                    changes += 1
+                else:
+                    new_body.append(stmt)
+            else:
+                new_body.append(stmt)
+        if changes > 0:
+            block[:] = new_body
+        return changes > 0
+
+    def _flatten_if_node(self, node: IfNode) -> List[Any]:
+        """Recursively flatten IfNode into a list of IfNode with no nesting."""
+        results: List[Any] = []
+        results.append(IfNode(node.cond))
+        results[-1].then_body = list(node.then_body)
+        results[-1].else_body = []
+
+        # Flatten elif_bodies
+        for cond, body in node.elif_bodies:
+            elif_node = IfNode(cond)
+            elif_node.then_body = list(body)
+            elif_node.else_body = []
+            results.append(elif_node)
+
+        # Recurse into else_body if it contains a single IfNode
+        if len(node.else_body) == 1 and isinstance(node.else_body[0], IfNode):
+            results.extend(self._flatten_if_node(node.else_body[0]))
+        elif node.else_body:
+            results[-1].else_body = list(node.else_body)
+
+        return results
+
     def _max_if_depth(self, stmt) -> int:
         if isinstance(stmt, IfNode):
             then_d = max((self._max_if_depth(s) for s in stmt.then_body), default=0)
             else_d = max((self._max_if_depth(s) for s in stmt.else_body), default=0)
-            return 1 + max(then_d, else_d)
+            max_nested_else = 0
+            if len(stmt.else_body) == 1 and isinstance(stmt.else_body[0], IfNode):
+                max_nested_else = self._max_if_depth(stmt.else_body[0])
+            return 1 + max(then_d, else_d, max_nested_else)
         return 0
 
     def estimate_impact(self, report: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, float]:
@@ -467,7 +802,7 @@ class MuxBalancing(OptimizationStrategy):
 # ---------------------------------------------------------------------------
 
 class FSMEncodingSelect(OptimizationStrategy):
-    """建议根据 PPA 目标选择最优 FSM 编码方式。"""
+    """根据 PPA 目标选择 FSM 编码方式。"""
 
     name = "fsm_encoding_select"
     level = 0
@@ -476,26 +811,38 @@ class FSMEncodingSelect(OptimizationStrategy):
         proposals = []
         ppa = spec.ppa
 
+        # Count FSM-related regs (signals with "state" in name)
+        fsm_reg_names = [name for name in module._regs if "state" in name.lower()]
+        if not fsm_reg_names:
+            return proposals
+
         if ppa.priority == "timing_first":
             proposals.append({
                 "type": "encoding",
                 "style": "one_hot",
+                "reg_names": fsm_reg_names,
                 "description": "时序优先：建议 FSM 使用 one-hot 编码，获得最快的次态解码速度。",
             })
         elif ppa.priority == "area_first":
             proposals.append({
                 "type": "encoding",
                 "style": "binary",
+                "reg_names": [r.name for r in fsm_regs],
                 "description": "面积优先：建议 FSM 使用 binary 编码，用最少的寄存器位数表示状态。",
             })
         elif ppa.priority == "power_first":
             proposals.append({
                 "type": "encoding",
                 "style": "gray",
+                "reg_names": [r.name for r in fsm_regs],
                 "description": "功耗优先：建议 FSM 使用 Gray 编码，每次状态转换仅翻转一位，降低动态功耗。",
             })
 
         return proposals
+
+    def apply(self, module: Module, change: Dict[str, Any]) -> bool:
+        """FSM encoding is handled by synthesis tool; not modifiable at DSL level."""
+        return False
 
     def estimate_impact(self, report: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, float]:
         style = change.get("style", "auto")
@@ -666,48 +1013,95 @@ class PPAOptimizer:
         )
 
     # ------------------------------------------------------------------
-    # Legacy API: kept for backward compatibility
+    # Optimization Loop: analyze → propose → apply → verify
     # ------------------------------------------------------------------
 
-    def optimize(self, max_iterations: int = 10) -> OptimizationResult:
-        """DEPRECATED: 自动优化循环已废弃。
+    def optimize(self, max_iterations: int = 5) -> OptimizationResult:
+        """Iteratively analyze and apply optimizations until no improvement.
 
-        框架不再自动执行 AST 修改。请改用 analyze() 获取优化指南，
-        由智能体实现优化后通过 inject_optimized() 注入。
-
-        为兼容旧代码，此方法现在仅返回当前模块的 before 分析结果，
-        improved=False，strategies_applied=[]。
+        For each iteration:
+        1. Analyze current PPA
+        2. Propose changes from all strategies
+        3. Apply changes that can improve PPA
+        4. Re-analyze and verify improvement
+        5. Stop if no improvement or max iterations reached
         """
-        import warnings
-        warnings.warn(
-            "PPAOptimizer.optimize() is deprecated. "
-            "Use analyze() to get an OptimizationGuide, then inject_optimized() after agent implementation.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.analyzer.module = self._original_module
-        report = self.analyzer.analyze()
-        score = PPAScore.compute(report, self.goal)
+        # Before: analyze original
+        report_before = self.analyzer.analyze()
+        score_before = PPAScore.compute(report_before, self.goal)
+
+        applied_strategies = []
+        module = self._original_module
+
+        for iteration in range(max_iterations):
+            # Collect proposals from all strategies
+            all_changes = []
+            for strategy in self.strategies:
+                changes = strategy.propose(module, self.spec)
+                for change in changes:
+                    all_changes.append((strategy, change))
+
+            if not all_changes:
+                break
+
+            # Try applying high-priority changes first
+            improved_this_round = False
+            for strategy, change in all_changes:
+                impact = strategy.estimate_impact({}, change)
+                # Only apply changes that reduce logic_depth or area
+                if impact.get("logic_depth", 0) < 0 or impact.get("area", 0) < 0:
+                    result = strategy.apply(module, change)
+                    if result:
+                        applied_strategies.append(f"{strategy.name}:{change.get('type', 'unknown')}")
+                        improved_this_round = True
+
+            if not improved_this_round:
+                break
+
+        # After: re-analyze
+        self.analyzer.module = module
+        report_after = self.analyzer.analyze()
+        score_after = PPAScore.compute(report_after, self.goal)
+
         return OptimizationResult(
-            module=self._original_module,
-            iteration=0,
-            score_before=score,
-            score_after=score,
-            strategies_applied=[],
-            improved=False,
+            module=module,
+            iteration=len(applied_strategies),
+            score_before=score_before,
+            score_after=score_after,
+            strategies_applied=applied_strategies,
+            improved=score_after.total < score_before.total,
         )
 
     def optimize_single(self, strategy_name: str) -> OptimizationResult:
-        """DEPRECATED: 单策略自动优化已废弃。
+        """Run optimization with a single named strategy."""
+        strategy_map = {s.name: s for s in self.strategies}
+        if strategy_name not in strategy_map:
+            raise ValueError(f"Unknown strategy: {strategy_name}. Available: {list(strategy_map.keys())}")
 
-        框架不再自动执行 AST 修改。请改用 analyze() 获取优化指南，
-        由智能体实现优化后通过 inject_optimized() 注入。
-        """
-        import warnings
-        warnings.warn(
-            "PPAOptimizer.optimize_single() is deprecated. "
-            "Use analyze() to get an OptimizationGuide, then inject_optimized() after agent implementation.",
-            DeprecationWarning,
-            stacklevel=2,
+        # Before
+        report_before = self.analyzer.analyze()
+        score_before = PPAScore.compute(report_before, self.goal)
+
+        strategy = strategy_map[strategy_name]
+        changes = strategy.propose(self._original_module, self.spec)
+        applied = []
+
+        for change in changes:
+            impact = strategy.estimate_impact({}, change)
+            if impact.get("logic_depth", 0) < 0 or impact.get("area", 0) < 0:
+                if strategy.apply(self._original_module, change):
+                    applied.append(change.get("type", "unknown"))
+
+        # After
+        self.analyzer.module = self._original_module
+        report_after = self.analyzer.analyze()
+        score_after = PPAScore.compute(report_after, self.goal)
+
+        return OptimizationResult(
+            module=self._original_module,
+            iteration=len(applied),
+            score_before=score_before,
+            score_after=score_after,
+            strategies_applied=[f"{strategy_name}:{a}" for a in applied],
+            improved=score_after.total < score_before.total,
         )
-        return self.optimize()

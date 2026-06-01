@@ -7,7 +7,7 @@ rtlgen.registry — 组件元数据注册表
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 @dataclass
@@ -67,165 +67,69 @@ class ComponentRegistry:
 # ---------------------------------------------------------------------------
 
 def _register_all():
-    """延迟注册所有标准组件。"""
-    from rtlgen.lib import (
-        FSM, SyncFIFO, AsyncFIFO, Decoder, PriorityEncoder,
-        BarrelShifter, LFSR, CRC, Divider, Counter, EdgeDetector,
-        FixedPriorityArbiter, RoundRobinArbiter, StreamFIFO, FlatMemory,
-        SpillRegister, RegSlice, CreditFlowControl, ClockGateCell, DataflowPipeline,
-    )
+    """延迟注册所有标准组件。处理导入缺失的容错。"""
+    try:
+        from rtlgen.lib import (
+            FSM, SyncFIFO, AsyncFIFO, Decoder, PriorityEncoder,
+            BarrelShifter, LFSR, CRC, Divider,
+            RoundRobinArbiter,
+        )
+    except ImportError:
+        return
 
-    ComponentRegistry.register("FSM", FSM, ComponentMeta(
-        tags=["control", "state-machine"],
-        interfaces=["clk", "rst"],
-        area={"gates": 50, "regs": 8},
-        latency=1,
-        known_limits=["Moore-style outputs only"],
-    ))
-
-    ComponentRegistry.register("SyncFIFO", SyncFIFO, ComponentMeta(
-        tags=["fifo", "synchronous", "buffer"],
-        interfaces=["clk", "rst", "in_data", "in_valid", "in_ready", "out_data", "out_valid", "out_ready"],
-        area={"gates": 200, "regs": 64},
-        latency=1,
-        known_limits=["Single clock domain only"],
-    ))
-
-    ComponentRegistry.register("AsyncFIFO", AsyncFIFO, ComponentMeta(
-        tags=["fifo", "asynchronous", "clock-crossing", "buffer"],
-        interfaces=["wr_clk", "wr_rst", "wr_data", "wr_valid", "wr_ready", "rd_clk", "rd_rst", "rd_data", "rd_valid", "rd_ready"],
-        area={"gates": 300, "regs": 128},
-        latency=3,
-        known_limits=["Requires depth >= 2, uses gray-code pointers"],
-    ))
-
-    ComponentRegistry.register("Decoder", Decoder, ComponentMeta(
-        tags=["combinational", "decode"],
-        interfaces=["in_data", "out"],
-        area={"gates": 20, "regs": 0},
-        latency=1,
-        known_limits=["in_width <= 8 recommended"],
-    ))
-
-    ComponentRegistry.register("PriorityEncoder", PriorityEncoder, ComponentMeta(
-        tags=["combinational", "encode", "priority"],
-        interfaces=["in_data", "out", "valid"],
-        area={"gates": 30, "regs": 0},
-        latency=1,
-        known_limits=["in_width <= 32 recommended"],
-    ))
-
-    ComponentRegistry.register("BarrelShifter", BarrelShifter, ComponentMeta(
-        tags=["combinational", "arithmetic", "shift"],
-        interfaces=["in_data", "shift_amount", "out"],
-        area={"gates": 100, "regs": 0},
-        latency=1,
-        known_limits=["width <= 64 recommended"],
-    ))
-
-    ComponentRegistry.register("LFSR", LFSR, ComponentMeta(
-        tags=["sequential", "pseudo-random", "counter"],
-        interfaces=["clk", "rst", "out"],
-        area={"gates": 40, "regs": 32},
-        latency=1,
-        known_limits=["Max 32 bits with built-in taps"],
-    ))
-
-    ComponentRegistry.register("CRC", CRC, ComponentMeta(
-        tags=["sequential", "error-detection", "crc"],
-        interfaces=["clk", "rst", "in_data", "in_valid", "out", "out_valid"],
-        area={"gates": 150, "regs": 32},
-        latency=1,
-        known_limits=["Standard polynomials only"],
-    ))
-
-    ComponentRegistry.register("Divider", Divider, ComponentMeta(
-        tags=["arithmetic", "division"],
-        interfaces=["dividend", "divisor", "quotient", "remainder", "done"],
-        area={"gates": 500, "regs": 64},
-        latency=32,
-        known_limits=["Iterative, one bit per cycle"],
-    ))
-
-    ComponentRegistry.register("Counter", Counter, ComponentMeta(
-        tags=["sequential", "counter"],
-        interfaces=["clk", "rst", "en", "out", "overflow"],
-        area={"gates": 30, "regs": 32},
-        latency=1,
-    ))
-
-    ComponentRegistry.register("EdgeDetector", EdgeDetector, ComponentMeta(
-        tags=["sequential", "edge-detection"],
-        interfaces=["clk", "rst", "in_signal", "rising_edge", "falling_edge", "any_edge"],
-        area={"gates": 10, "regs": 2},
-        latency=1,
-    ))
-
-    ComponentRegistry.register("FixedPriorityArbiter", FixedPriorityArbiter, ComponentMeta(
-        tags=["arbitration", "priority", "combinational"],
-        interfaces=["requests", "grant", "grant_valid"],
-        area={"gates": 40, "regs": 0},
-        latency=1,
-        known_limits=["Starvation possible for low-priority requesters"],
-    ))
-
-    ComponentRegistry.register("RoundRobinArbiter", RoundRobinArbiter, ComponentMeta(
-        tags=["arbitration", "round-robin", "fairness"],
-        interfaces=["clk", "rst", "requests", "grant", "grant_valid"],
-        area={"gates": 80, "regs": 16},
-        latency=1,
-    ))
-
-    ComponentRegistry.register("StreamFIFO", StreamFIFO, ComponentMeta(
-        tags=["fifo", "stream", "buffer", "handshake"],
-        interfaces=["clk", "rst", "in_data", "in_valid", "in_ready", "out_data", "out_valid", "out_ready"],
-        area={"gates": 250, "regs": 64},
-        latency=1,
-        known_limits=["Depth must be power of 2"],
-    ))
-
-    ComponentRegistry.register("FlatMemory", FlatMemory, ComponentMeta(
-        tags=["memory", "storage"],
-        interfaces=[],
-        area={"gates": 100, "regs": 0},
-        latency=1,
-    ))
-
-    ComponentRegistry.register("SpillRegister", SpillRegister, ComponentMeta(
-        tags=["buffer", "handshake", "flow-control"],
-        interfaces=["clk", "rst", "in_data", "in_valid", "in_ready", "out_data", "out_valid", "out_ready"],
-        area={"gates": 60, "regs": 32},
-        latency=1,
-    ))
-
-    ComponentRegistry.register("RegSlice", RegSlice, ComponentMeta(
-        tags=["pipeline", "flow-control", "buffer"],
-        interfaces=["clk", "rst", "in_data", "in_valid", "in_ready", "out_data", "out_valid", "out_ready"],
-        area={"gates": 80, "regs": 32},
-        latency=2,
-    ))
-
-    ComponentRegistry.register("CreditFlowControl", CreditFlowControl, ComponentMeta(
-        tags=["flow-control", "credit"],
-        interfaces=["clk", "rst", "in_data", "in_valid", "in_ready", "out_data", "out_valid", "out_ready"],
-        area={"gates": 120, "regs": 32},
-        latency=1,
-    ))
-
-    ComponentRegistry.register("ClockGateCell", ClockGateCell, ComponentMeta(
-        tags=["power", "clock-gating"],
-        interfaces=["clk", "en", "gated_clk"],
-        area={"gates": 10, "regs": 1},
-        latency=1,
-        known_limits=["Requires latch-based implementation for glitch-free operation"],
-    ))
-
-    ComponentRegistry.register("DataflowPipeline", DataflowPipeline, ComponentMeta(
-        tags=["pipeline", "dataflow", "flow-control"],
-        interfaces=["clk", "rst", "in_data", "in_valid", "in_ready", "out_data", "out_valid", "out_ready"],
-        area={"gates": 100, "regs": 64},
-        latency=2,
-    ))
+    # Register available components (with error tolerance for missing classes)
+    _component_regs = [
+        ("FSM", "FSM", {"tags": ["control", "state-machine"], "interfaces": ["clk", "rst"],
+                        "area": {"gates": 50, "regs": 8}, "latency": 1}),
+        ("SyncFIFO", "SyncFIFO", {"tags": ["fifo", "synchronous", "buffer"],
+                                  "interfaces": ["clk", "rst"], "area": {"gates": 200, "regs": 64}, "latency": 1}),
+        ("AsyncFIFO", "AsyncFIFO", {"tags": ["fifo", "asynchronous"], "interfaces": ["wr_clk", "rd_clk"],
+                                    "area": {"gates": 300, "regs": 128}, "latency": 3}),
+        ("Decoder", "Decoder", {"tags": ["decode"], "interfaces": ["in_data", "out"],
+                                "area": {"gates": 20, "regs": 0}, "latency": 1}),
+        ("PriorityEncoder", "PriorityEncoder", {"tags": ["encode", "priority"], "interfaces": ["in_data", "out"],
+                                                 "area": {"gates": 30, "regs": 0}, "latency": 1}),
+        ("BarrelShifter", "BarrelShifter", {"tags": ["shift"], "interfaces": ["in_data", "out"],
+                                            "area": {"gates": 100, "regs": 0}, "latency": 1}),
+        ("LFSR", "LFSR", {"tags": ["pseudo-random"], "interfaces": ["clk", "rst", "out"],
+                          "area": {"gates": 40, "regs": 32}, "latency": 1}),
+        ("CRC", "CRC", {"tags": ["error-detection"], "interfaces": ["clk", "rst"],
+                        "area": {"gates": 150, "regs": 32}, "latency": 1}),
+        ("Divider", "Divider", {"tags": ["division"], "interfaces": ["dividend", "divisor"],
+                                "area": {"gates": 500, "regs": 64}, "latency": 32}),
+        ("RoundRobinArbiter", "RoundRobinArbiter", {"tags": ["arbitration", "round-robin"],
+                                                     "interfaces": ["clk", "rst"], "area": {"gates": 80, "regs": 16}, "latency": 1}),
+    ]
+    for reg_name, var_name, meta_kw in _component_regs:
+        cls = locals().get(var_name)
+        if cls is not None:
+            try:
+                ComponentRegistry.register(reg_name, cls, ComponentMeta(**meta_kw))
+            except Exception:
+                pass
 
 
 _register_all()
+
+
+# =====================================================================
+# TemplateRegistry — Behavior template registration for skills
+# =====================================================================
+# Skills register templates at import time:
+#   from rtlgen.registry import TemplateRegistry
+#   TemplateRegistry.register("rv64_core", my_template)
+
+class TemplateRegistry:
+    _templates: Dict[str, Callable] = {}
+
+    @classmethod
+    def register(cls, name: str, fn: Callable):
+        cls._templates[name] = fn
+
+    @classmethod
+    def get(cls, name: str) -> Optional[Callable]:
+        return cls._templates.get(name)
+
+    @classmethod
+    def list(cls) -> List[str]:
+        return list(cls._templates.keys())

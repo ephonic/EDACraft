@@ -157,67 +157,16 @@ class AXIS_ADAPTER(Module):
         self.m_axis_tready = Input(1, "m_axis_tready")
         self.m_axis_tlast = Output(1, "m_axis_tlast")
 
-        # Segment counter
-        seg_bits = max(seg_count.bit_length(), 1)
-        self._seg_reg = Reg(seg_bits, "seg_reg", init_value=0)
+        self._build_with_seg_regs(s_data_width, m_data_width, seg_count)
 
-        # Input buffer registers (skid)
-        self._s_axis_tdata_reg = Reg(s_data_width, "s_axis_tdata_reg", init_value=0)
-        self._s_axis_tvalid_reg = Reg(1, "s_axis_tvalid_reg", init_value=0)
-        self._s_axis_tlast_reg = Reg(1, "s_axis_tlast_reg", init_value=0)
-
-        # Output registers
-        self._m_axis_tdata_reg = Reg(m_data_width, "m_axis_tdata_reg", init_value=0)
-        self._m_axis_tvalid_reg = Reg(1, "m_axis_tvalid_reg", init_value=0)
-        self._m_axis_tlast_reg = Reg(1, "m_axis_tlast_reg", init_value=0)
-
-        # Per-segment data wires for construction
-        # Since dynamic slices [expr+:width] aren't supported in DSL,
-        # we use a concatenation approach with per-segment wires.
-        self._seg_data = [Wire(s_data_width, f"seg_data_{i}") for i in range(seg_count)]
-
-        with self.comb:
-            self.s_axis_tready <<= ~self._s_axis_tvalid_reg
-            self.m_axis_tdata <<= self._m_axis_tdata_reg
-            self.m_axis_tvalid <<= self._m_axis_tvalid_reg
-            self.m_axis_tlast <<= self._m_axis_tlast_reg
-
-            # Build segment data from output register
-            for i in range(seg_count):
-                lo = i * s_data_width
-                hi = lo + s_data_width - 1
-                self._seg_data[i] <<= self._m_axis_tdata_reg[hi:lo]
-
-        with self.seq(self.clk):
-            self._m_axis_tvalid_reg <<= self._m_axis_tvalid_reg & ~self.m_axis_tready
-
-            with If(~self._m_axis_tvalid_reg | self.m_axis_tready):
-                # Output register empty or being consumed
-                with If(self._s_axis_tvalid_reg == 1):
-                    # Use buffered input
-                    self._s_axis_tvalid_reg <<= 0
-                    # Update current segment from buffer
-                    # Build new data by updating the appropriate segment
-                    new_data_bits = []
-                    for i in range(seg_count - 1, -1, -1):
-                        with If(self._seg_reg == i):
-                            new_data_bits.append(self._s_axis_tdata_reg)
-                        with Else():
-                            new_data_bits.append(self._seg_data[i])
-                    # Since we can't do dynamic if-else in list comprehension,
-                    # we'll use a different approach: construct via Mux chain
-                with Else():
-                    with If(self.s_axis_tvalid == 1):
-                        pass
-
-            with If(self.rst == 1):
-                self._seg_reg <<= 0
-                self._s_axis_tvalid_reg <<= 0
-                self._m_axis_tvalid_reg <<= 0
-
-        # ---- Re-implement with explicit segment registers to avoid dynamic slice issues ----
-        # DSL limitation: cannot do reg[expr+:width] or reg[hi:lo] where hi/lo are expressions
-        # Workaround: use SEG_COUNT individual segment registers, then Cat them for output
+        tpl = ModuleDocTemplate(
+            source="AXIS_ADAPTER — ref_rtl/interfaces/axis/rtl/axis_adapter.v",
+            description=f"AXI-Stream width adapter: {s_data_width}-bit → {m_data_width}-bit up-size. "
+                        "Collects input segments with skid buffer and tlast propagation.",
+            author="rtlgen agent", version="1.0",
+            timing="Registered: variable latency, skid-buffered input",
+        )
+        fill_doc_template(tpl, self)
 
     def _build_with_seg_regs(self, s_data_width, m_data_width, seg_count):
         """Rebuild logic using per-segment registers (no dynamic slices)."""
@@ -227,7 +176,7 @@ class AXIS_ADAPTER(Module):
         self._seg_out = [Reg(s_data_width, f"seg_out_{i}", init_value=0)
                          for i in range(seg_count)]
 
-        # Input buffer
+        # Input skid buffer
         self._s_data_reg = Reg(s_data_width, "s_data_reg", init_value=0)
         self._s_valid_reg = Reg(1, "s_valid_reg", init_value=0)
         self._s_last_reg = Reg(1, "s_last_reg", init_value=0)
@@ -236,48 +185,68 @@ class AXIS_ADAPTER(Module):
         self._m_valid_reg = Reg(1, "m_valid_reg", init_value=0)
         self._m_last_reg = Reg(1, "m_last_reg", init_value=0)
 
+        # Next-state wires (computed combinationally, sampled at clk)
+        self._slot_avail = Wire(1, "slot_avail")
+        self._have_data = Wire(1, "have_data")
+        self._data_in = Wire(s_data_width, "data_in")
+        self._last_in = Wire(1, "last_in")
+        self._seg_cnt_next = Wire(seg_bits, "seg_cnt_next")
+        self._m_valid_next = Wire(1, "m_valid_next")
+        self._m_last_next = Wire(1, "m_last_next")
+        self._s_valid_next = Wire(1, "s_valid_next")
+        self._store_to_seg = Wire(1, "store_to_seg")
+
         with self.comb:
-            self.s_axis_tready <<= ~self._s_valid_reg
+            self.s_axis_tready <<= self._slot_avail & ~self._s_valid_reg
             self.m_axis_tvalid <<= self._m_valid_reg
             self.m_axis_tlast <<= self._m_last_reg
-            # Concatenate segment registers for output
             self.m_axis_tdata <<= Cat(*[self._seg_out[i] for i in range(seg_count - 1, -1, -1)])
 
-        with self.seq(self.clk):
-            self._m_valid_reg <<= self._m_valid_reg & ~self.m_axis_tready
+            # Slot available when output empty or being consumed
+            self._slot_avail <<= ~self._m_valid_reg | self.m_axis_tready
 
-            with If(~self._m_valid_reg | self.m_axis_tready):
-                # Output slot available
-                with If(self._s_valid_reg == 1):
-                    # Consume from input buffer
-                    self._s_valid_reg <<= 0
-                    # Write buffered data to current segment
-                    for i in range(seg_count):
-                        with If(self._seg_cnt == i):
-                            self._seg_out[i] <<= self._s_data_reg
-                    with If(self._s_last_reg | (self._seg_cnt == seg_count - 1)):
-                        self._seg_cnt <<= 0
-                        self._m_valid_reg <<= 1
-                        self._m_last_reg <<= self._s_last_reg
+            # Data source: skid buffer first, then direct input
+            self._have_data <<= self._s_valid_reg | self.s_axis_tvalid
+            self._data_in <<= Mux(self._s_valid_reg, self._s_data_reg, self.s_axis_tdata)
+            self._last_in <<= Mux(self._s_valid_reg, self._s_last_reg, self.s_axis_tlast)
+
+            # Default next states (hold)
+            self._seg_cnt_next <<= self._seg_cnt
+            self._m_valid_next <<= self._m_valid_reg
+            self._m_last_next <<= self._m_last_reg
+            self._s_valid_next <<= self._s_valid_reg
+            self._store_to_seg <<= 0
+
+            with If(self._slot_avail):
+                with If(self._have_data):
+                    self._store_to_seg <<= 1
+                    with If(self._last_in | (self._seg_cnt == seg_count - 1)):
+                        self._seg_cnt_next <<= 0
+                        self._m_valid_next <<= 1
+                        self._m_last_next <<= self._last_in
                     with Else():
-                        self._seg_cnt <<= self._seg_cnt + 1
-                with Else():
-                    with If(self.s_axis_tvalid == 1):
-                        # Direct from input
-                        for i in range(seg_count):
-                            with If(self._seg_cnt == i):
-                                self._seg_out[i] <<= self.s_axis_tdata
-                        with If(self.s_axis_tlast | (self._seg_cnt == seg_count - 1)):
-                            self._seg_cnt <<= 0
-                            self._m_valid_reg <<= 1
-                            self._m_last_reg <<= self.s_axis_tlast
-                        with Else():
-                            self._seg_cnt <<= self._seg_cnt + 1
+                        self._seg_cnt_next <<= self._seg_cnt + 1
+                    # If consuming from skid buffer, clear it
+                    with If(self._s_valid_reg):
+                        self._s_valid_next <<= 0
+
+            # If input arrives but slot is busy, buffer it
+            with If(self.s_axis_tvalid & ~self.s_axis_tready):
+                self._s_valid_next <<= 1
+
+        with self.seq(self.clk):
+            self._m_valid_reg <<= self._m_valid_next
+            self._m_last_reg <<= self._m_last_next
+            self._seg_cnt <<= self._seg_cnt_next
+            self._s_valid_reg <<= self._s_valid_next
+
+            with If(self._store_to_seg):
+                for i in range(seg_count):
+                    with If(self._seg_cnt == i):
+                        self._seg_out[i] <<= self._data_in
 
             with If((self.s_axis_tvalid == 1) & (self.s_axis_tready == 1)):
-                # Store input to skid buffer
                 self._s_data_reg <<= self.s_axis_tdata
-                self._s_valid_reg <<= 1
                 self._s_last_reg <<= self.s_axis_tlast
 
             with If(self.rst == 1):

@@ -23,8 +23,10 @@ tmp/
 
 # Generated artifacts
 generated/
-generated_soc/
+generated_*/
+generated_*
 *.v
+*.vcd
 
 # Cache / runtime state
 .pytest_cache/
@@ -53,6 +55,7 @@ plan.md
 new-plan.md
 skills_add.md
 design_*.py
+design_scripts/
 test_*.py
 debug_*.py
 gen_*.py
@@ -60,6 +63,7 @@ fix_design.py
 verify_lut4_netlist.py
 adder4.py
 dsl_comment.md
+batch_test.py
 BP.zip
 BP/
 impl_ref/

@@ -1,0 +1,215 @@
+skills:
+- id: module:fft:FFTButterfly
+  source:
+    file: skills/fft/dsl_modules.py
+    class: FFTButterfly
+  kind: module
+  domain: fft
+  behavior_tags: &id001
+  - fft_butterfly
+  - complex_add_sub
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - radix2_butterfly
+  - complex_arithmetic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: FFTButterfly module in fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:fft:FFTDelayBuffer
+  source:
+    file: skills/fft/dsl_modules.py
+    class: FFTDelayBuffer
+  kind: module
+  domain: fft
+  behavior_tags: &id002
+  - delay_buffer
+  - shift_register
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - circular_buffer
+  - fifo_delay
+  datapath_patterns:
+  - mux_select
+  useful_for: *id002
+  summary: FFTDelayBuffer module in fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:fft:FFTMultiply
+  source:
+    file: skills/fft/dsl_modules.py
+    class: FFTMultiply
+  kind: module
+  domain: fft
+  behavior_tags: &id003
+  - complex_multiply
+  - twiddle_multiply
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - complex_multiplier
+  - coefficient_multiply
+  datapath_patterns:
+  - mux_select
+  useful_for: *id003
+  summary: FFTMultiply module in fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:fft:FFTTwiddle
+  source:
+    file: skills/fft/dsl_modules.py
+    class: FFTTwiddle
+  kind: module
+  domain: fft
+  behavior_tags: &id004
+  - twiddle_factor
+  - coefficient_rom
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - rom_table
+  - cos_sin_lookup
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: FFTTwiddle module in fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:fft:FFTSdfUnit
+  source:
+    file: skills/fft/dsl_modules.py
+    class: FFTSdfUnit
+  kind: module
+  domain: fft
+  behavior_tags: &id005
+  - sdf_unit
+  - single_delay_feedback
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - butterfly_plus_delay
+  - pipeline_stage
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: FFTSdfUnit module in fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:fft:FFTSdfUnit2
+  source:
+    file: skills/fft/dsl_modules.py
+    class: FFTSdfUnit2
+  kind: module
+  domain: fft
+  behavior_tags: &id006
+  - sdf_unit
+  - dual_path
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - butterfly_plus_mux
+  - feedback_path
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: FFTSdfUnit2 module in fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:fft:FFTController
+  source:
+    file: skills/fft/dsl_modules.py
+    class: FFTController
+  kind: module
+  domain: fft
+  behavior_tags: &id007
+  - fft_controller
+  - address_generation
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - bit_reverse_address
+  - stage_counter
+  datapath_patterns:
+  - mux_select
+  useful_for: *id007
+  summary: FFTController module in fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: pattern:fft:butterfly_operation
+  kind: pattern
+  domain: fft
+  behavior_tags: &id008
+  - butterfly_operation
+  control_patterns:
+  - butterfly_operation
+  datapath_patterns:
+  - mux_select
+  useful_for: *id008
+  summary: Reusable butterfly_operation pattern for fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:fft:twiddle_factor
+  kind: pattern
+  domain: fft
+  behavior_tags: &id009
+  - twiddle_factor
+  control_patterns:
+  - twiddle_factor
+  datapath_patterns:
+  - mux_select
+  useful_for: *id009
+  summary: Reusable twiddle_factor pattern for fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:fft:sdf_pipeline
+  kind: pattern
+  domain: fft
+  behavior_tags: &id010
+  - sdf_pipeline
+  control_patterns:
+  - sdf_pipeline
+  datapath_patterns:
+  - mux_select
+  useful_for: *id010
+  summary: Reusable sdf_pipeline pattern for fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:fft:complex_multiply
+  kind: pattern
+  domain: fft
+  behavior_tags: &id011
+  - complex_multiply
+  control_patterns:
+  - complex_multiply
+  datapath_patterns:
+  - mux_select
+  useful_for: *id011
+  summary: Reusable complex_multiply pattern for fft domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true

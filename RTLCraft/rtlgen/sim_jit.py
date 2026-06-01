@@ -23,6 +23,7 @@ from rtlgen.core import (
     Concat,
     Const,
     Expr,
+    FunctionCall,
     ForGenNode,
     GenIfNode,
     GenVar,
@@ -105,7 +106,7 @@ class JITModule:
         """Recursively collect all signals, memories, arrays."""
         for name, sig in list(mod._inputs.items()) + list(mod._outputs.items()) + \
                          list(mod._wires.items()) + list(mod._regs.items()):
-            flat_name = prefix + name
+            flat_name = prefix + sig.name
             idx = len(self.sig_names)
             self.sig_names.append(flat_name)
             self.sig_widths.append(sig.width)
@@ -388,12 +389,32 @@ class JITModule:
                 return lambda: l_fn() >> r_fn()
             if op == "%":
                 return lambda: l_fn() % r_fn() if r_fn() != 0 else 0
+            if op == "&&":
+                return lambda: 1 if (l_fn() != 0) and (r_fn() != 0) else 0
+            if op == "||":
+                return lambda: 1 if (l_fn() != 0) or (r_fn() != 0) else 0
             raise ValueError(f"JIT: unknown binary op {op}")
         if isinstance(expr, UnaryOp):
             v_fn = self._compile_expr(expr.operand, prefix)
             op = expr.op
+            w = expr.width
+            mask = (1 << w) - 1
             if op == "~":
-                return lambda: ~v_fn()
+                return lambda: (~v_fn()) & mask
+            if op == "&":
+                return lambda: 1 if v_fn() & mask == mask else 0
+            if op == "~&":
+                return lambda: 0 if v_fn() & mask == mask else 1
+            if op == "|":
+                return lambda: 1 if v_fn() != 0 else 0
+            if op == "~|":
+                return lambda: 1 if v_fn() == 0 else 0
+            if op == "^":
+                return lambda: (v_fn() & mask).bit_count() & 1
+            if op == "~^":
+                return lambda: 1 ^ ((v_fn() & mask).bit_count() & 1)
+            if op == "!":
+                return lambda: 1 if v_fn() == 0 else 0
             raise ValueError(f"JIT: unknown unary op {op}")
         if isinstance(expr, Slice):
             v_fn = self._compile_expr(expr.operand, prefix)
@@ -469,6 +490,18 @@ class JITModule:
             return lambda: self.arrays[arr_i].get(idx_fn(), 0) & mask
         if isinstance(expr, GenVar):
             raise RuntimeError("JIT: GenVar should have been substituted before compilation")
+        if isinstance(expr, FunctionCall):
+            arg_fns = [self._compile_expr(a, prefix) for a in expr.args]
+            if expr.name == "clog2":
+                return lambda: max((arg_fns[0]() - 1).bit_length(), 1)
+            if expr.name == "bits":
+                from rtlgen.core import _to_expr
+                w = _to_expr(expr.args[0]).width if expr.args else 0
+                return lambda: w
+            # Generic function call: return first argument (passthrough)
+            if arg_fns:
+                return lambda: arg_fns[0]()
+            return lambda: 0
         raise TypeError(f"JIT: unsupported expression type {type(expr).__name__}")
 
     # -----------------------------------------------------------------
@@ -578,13 +611,24 @@ class JITModule:
         cond_fn = self._compile_expr(stmt.cond, prefix)
         then_fns = [f for s in stmt.then_body if (f := self._compile_stmt(s, prefix, mode))]
         else_fns = [f for s in stmt.else_body if (f := self._compile_stmt(s, prefix, mode))]
+        # Compile elif branches (each is (cond, body) pair)
+        elif_pairs = []
+        for cond, body in stmt.elif_bodies:
+            ec = self._compile_expr(cond, prefix)
+            eb = [f for s in body if (f := self._compile_stmt(s, prefix, mode))]
+            elif_pairs.append((ec, eb))
         def _if():
             if cond_fn():
-                for fn in then_fns:
-                    fn()
+                for fn in then_fns: fn()
             else:
-                for fn in else_fns:
-                    fn()
+                matched = False
+                for ec, eb in elif_pairs:
+                    if ec():
+                        for fn in eb: fn()
+                        matched = True
+                        break
+                if not matched:
+                    for fn in else_fns: fn()
         return _if
 
     def _compile_switch(self, stmt: SwitchNode, prefix: str, mode: str) -> Callable[[], None]:

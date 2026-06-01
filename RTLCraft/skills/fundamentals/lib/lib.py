@@ -205,6 +205,7 @@ class SyncFIFO(Module):
         self.full = Output(1, "full")
         self.empty = Output(1, "empty")
         self.count = Output(addr_w + 1, "count")
+        self.rd_rdy = Output(1, "rd_rdy")
 
         self._wr_ptr = Reg(addr_w, "wr_ptr")
         self._rd_ptr = Reg(addr_w, "rd_ptr")
@@ -215,6 +216,7 @@ class SyncFIFO(Module):
             self.full <<= self._count == depth
             self.empty <<= self._count == 0
             self.count <<= self._count
+            self.rd_rdy <<= ~self.empty
 
         @self.seq(self.clk, self.rst)
         def _seq():

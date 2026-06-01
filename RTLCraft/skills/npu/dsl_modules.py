@@ -230,7 +230,7 @@ class TopScheduler(Module):
             full = Wire(1, f"_{prefix}_fifo_full")
             empty = Wire(1, f"_{prefix}_fifo_empty")
             usedw = Wire(QDEPTH_AW, f"_{prefix}_fifo_usedw")
-            self.instantiate(fifo, f"minst_ofifo_{prefix}", port_map={"i_wr_en": wren, "i_wr_data": wrdata, "i_rd_en": rden, "o_rd_rdy": rdrdy, "o_rd_data": rddata, "o_full": full, "o_empty": empty, "o_usedw": usedw, "clk": self.clk, "rst_n": self.rst_n})
+            self.instantiate(fifo, f"minst_ofifo_{prefix}", port_map={"wr_en": wren, "din": wrdata, "rd_en": rden, "rd_rdy": rdrdy, "dout": rddata, "full": full, "empty": empty, "count": usedw, "clk": self.clk, "rst": ~self.rst_n})
             self._fifos[prefix] = {
                 "wren": wren, "wrdata": wrdata, "rden": rden,
                 "rdrdy": rdrdy, "rddata": rddata, "full": full,
@@ -399,8 +399,8 @@ class GenericScheduler(Module):
         self._uinst_fifo_empty = Wire(1, "_uinst_fifo_empty")
         self._uinst_fifo_usedw = Wire(QDEPTH_AW, "_uinst_fifo_usedw")
 
-        self.instantiate(self._minst_fifo, "minst_ififo", port_map={"i_wr_en": self._minst_fifo_wr_en, "i_wr_data": self._minst_fifo_wr_data, "i_rd_en": self._minst_fifo_rd_en, "o_rd_rdy": self._minst_fifo_rd_rdy, "o_rd_data": self._minst_fifo_rd_data, "o_full": self._minst_fifo_full, "o_empty": self._minst_fifo_empty, "o_usedw": self._minst_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
-        self.instantiate(self._uinst_fifo, "uinst_ofifo", port_map={"i_wr_en": self._uinst_fifo_wr_en, "i_wr_data": self._uinst_fifo_wr_data, "i_rd_en": self._uinst_fifo_rd_en, "o_rd_rdy": self._uinst_fifo_rd_rdy, "o_rd_data": self._uinst_fifo_rd_data, "o_full": self._uinst_fifo_full, "o_empty": self._uinst_fifo_empty, "o_usedw": self._uinst_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._minst_fifo, "minst_ififo", port_map={"wr_en": self._minst_fifo_wr_en, "din": self._minst_fifo_wr_data, "rd_en": self._minst_fifo_rd_en, "rd_rdy": self._minst_fifo_rd_rdy, "dout": self._minst_fifo_rd_data, "full": self._minst_fifo_full, "empty": self._minst_fifo_empty, "count": self._minst_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
+        self.instantiate(self._uinst_fifo, "uinst_ofifo", port_map={"wr_en": self._uinst_fifo_wr_en, "din": self._uinst_fifo_wr_data, "rd_en": self._uinst_fifo_rd_en, "rd_rdy": self._uinst_fifo_rd_rdy, "dout": self._uinst_fifo_rd_data, "full": self._uinst_fifo_full, "empty": self._uinst_fifo_empty, "count": self._uinst_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # State machine
         self.add_localparam("ST_INIT", 0)
@@ -597,7 +597,7 @@ class MVU(Module):
         self._inst_fifo_full = Wire(1, "_inst_fifo_full")
         self._inst_fifo_empty = Wire(1, "_inst_fifo_empty")
         self._inst_fifo_usedw = Wire(QDEPTH_AW, "_inst_fifo_usedw")
-        self.instantiate(self._inst_fifo, "inst_fifo", port_map={"i_wr_en": self._inst_fifo_wr_en, "i_wr_data": self._inst_fifo_wr_data, "i_rd_en": self._inst_fifo_rd_en, "o_rd_rdy": self._inst_fifo_rd_rdy, "o_rd_data": self._inst_fifo_rd_data, "o_full": self._inst_fifo_full, "o_empty": self._inst_fifo_empty, "o_usedw": self._inst_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._inst_fifo, "inst_fifo", port_map={"wr_en": self._inst_fifo_wr_en, "din": self._inst_fifo_wr_data, "rd_en": self._inst_fifo_rd_en, "rd_rdy": self._inst_fifo_rd_rdy, "dout": self._inst_fifo_rd_data, "full": self._inst_fifo_full, "empty": self._inst_fifo_empty, "count": self._inst_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # State machine
         self.add_localparam("ST_IDLE", 0)
@@ -693,7 +693,47 @@ class MVU(Module):
                 with If(self.i_data_rd_en[0]):
                     self._state <<= self.ST_IDLE
 
-        # Combinational: dot-product computation
+        # Module-level combinational assignments (avoid massive for-loops inside always @(*))
+        # which cause iverilog to timeout due to dependency-graph explosion.
+
+        # Read MRF for each tile/DPE
+        for t in range(NTILE):
+            for d in range(NDPE):
+                idx = t * NDPE + d
+                mrf_bank_addr = idx * Const(MRFD, MRFAW + 1) + self._inst_mrf_addr
+                self._mrf_rdata_arr[idx] <<= self._mrf[mrf_bank_addr]
+
+        # Compute dot-products for all tiles and DPEs
+        for t in range(NTILE):
+            for d in range(NDPE):
+                idx = t * NDPE + d
+                total = None
+                for l in range(DOTW):
+                    lo_v = l * ACCW
+                    hi_v = lo_v + (ACCW - 1)
+                    lo_m = l * EW
+                    hi_m = lo_m + (EW - 1)
+                    vrf_lane = self._vrf_rdata[hi_v : lo_v]
+                    mrf_lane = self._mrf_rdata_arr[idx][hi_m : lo_m]
+                    prod = vrf_lane * mrf_lane
+                    if total is None:
+                        total = prod
+                    else:
+                        total = total + prod
+                self._dot_sum[idx] <<= total
+
+        # Reduction tree: sum across tiles for each DPE
+        for d in range(NDPE):
+            total = None
+            for t in range(NTILE):
+                idx = t * NDPE + d
+                if total is None:
+                    total = self._dot_sum[idx]
+                else:
+                    total = total + self._dot_sum[idx]
+            self._reduced_result[d] <<= total
+
+        # Simple combinational signals stay in comb block
         with self.comb:
             self._inst_fifo_wr_en <<= self.i_inst_wr_en
             self._inst_fifo_wr_data <<= Cat(self.i_vrf_rd_addr, self.i_vrf_rd_id, self.i_reg_sel,
@@ -701,38 +741,6 @@ class MVU(Module):
                                             self.i_acc_size, self.i_vrf_en)
             self._inst_fifo_rd_en <<= (self._state == self.ST_IDLE) & ~self._inst_fifo_empty
             self.o_inst_wr_rdy <<= ~self._inst_fifo_full
-
-            # Read MRF for each tile/DPE
-            with ForGen("t", 0, NTILE) as t:
-                with ForGen("d", 0, NDPE) as d:
-                    idx = t * NDPE + d
-                    mrf_bank_addr = idx * Const(MRFD, MRFAW + 1) + self._inst_mrf_addr
-                    self._mrf_rdata_arr[idx] <<= self._mrf[mrf_bank_addr]
-
-            # Compute dot-products for all tiles and DPEs
-            with ForGen("t", 0, NTILE) as t:
-                with ForGen("d", 0, NDPE) as d:
-                    idx = t * NDPE + d
-                    # Initialize
-                    self._dot_sum[idx] <<= Const(0, ACCW)
-                    with ForGen("l", 0, DOTW) as l:
-                        # Extract lane data
-                        lo_v = l * ACCW
-                        hi_v = lo_v + (ACCW - 1)
-                        lo_m = l * EW
-                        hi_m = lo_m + (EW - 1)
-                        vrf_lane = self._vrf_rdata[hi_v : lo_v]
-                        mrf_lane = self._mrf_rdata_arr[idx][hi_m : lo_m]
-                        prod = vrf_lane * mrf_lane
-                        self._dot_sum[idx] <<= self._dot_sum[idx] + prod
-
-            # Reduction tree: sum across tiles for each DPE
-            with ForGen("d", 0, NDPE) as d:
-                self._reduced_result[d] <<= Const(0, ACCW)
-                with ForGen("t", 0, NTILE) as t:
-                    self._reduced_result[d] <<= self._reduced_result[d] + self._dot_sum[t * NDPE + d]
-
-            # Output
             self.o_data_rd_dout <<= self._out_data
             self.o_data_rd_rdy <<= self._out_valid
 
@@ -778,7 +786,7 @@ class MFU(Module):
         self._inst_fifo_full = Wire(1, "_inst_fifo_full")
         self._inst_fifo_empty = Wire(1, "_inst_fifo_empty")
         self._inst_fifo_usedw = Wire(QDEPTH_AW, "_inst_fifo_usedw")
-        self.instantiate(self._inst_fifo, "inst_fifo", port_map={"i_wr_en": self._inst_fifo_wr_en, "i_wr_data": self._inst_fifo_wr_data, "i_rd_en": self._inst_fifo_rd_en, "o_rd_rdy": self._inst_fifo_rd_rdy, "o_rd_data": self._inst_fifo_rd_data, "o_full": self._inst_fifo_full, "o_empty": self._inst_fifo_empty, "o_usedw": self._inst_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._inst_fifo, "inst_fifo", port_map={"wr_en": self._inst_fifo_wr_en, "din": self._inst_fifo_wr_data, "rd_en": self._inst_fifo_rd_en, "rd_rdy": self._inst_fifo_rd_rdy, "dout": self._inst_fifo_rd_data, "full": self._inst_fifo_full, "empty": self._inst_fifo_empty, "count": self._inst_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # Data input FIFO (per-lane or shared)
         self._data_fifo = SyncFIFO(ACCW * DOTW, QDEPTH_AW)
@@ -790,7 +798,7 @@ class MFU(Module):
         self._data_fifo_full = Wire(1, "_data_fifo_full")
         self._data_fifo_empty = Wire(1, "_data_fifo_empty")
         self._data_fifo_usedw = Wire(QDEPTH_AW, "_data_fifo_usedw")
-        self.instantiate(self._data_fifo, "data_fifo", port_map={"i_wr_en": self._data_fifo_wr_en, "i_wr_data": self._data_fifo_wr_data, "i_rd_en": self._data_fifo_rd_en, "o_rd_rdy": self._data_fifo_rd_rdy, "o_rd_data": self._data_fifo_rd_data, "o_full": self._data_fifo_full, "o_empty": self._data_fifo_empty, "o_usedw": self._data_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._data_fifo, "data_fifo", port_map={"wr_en": self._data_fifo_wr_en, "din": self._data_fifo_wr_data, "rd_en": self._data_fifo_rd_en, "rd_rdy": self._data_fifo_rd_rdy, "dout": self._data_fifo_rd_data, "full": self._data_fifo_full, "empty": self._data_fifo_empty, "count": self._data_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # Output FIFO
         self._out_fifo = SyncFIFO(ACCW * DOTW, QDEPTH_AW)
@@ -802,7 +810,7 @@ class MFU(Module):
         self._out_fifo_full = Wire(1, "_out_fifo_full")
         self._out_fifo_empty = Wire(1, "_out_fifo_empty")
         self._out_fifo_usedw = Wire(QDEPTH_AW, "_out_fifo_usedw")
-        self.instantiate(self._out_fifo, "out_fifo", port_map={"i_wr_en": self._out_fifo_wr_en, "i_wr_data": self._out_fifo_wr_data, "i_rd_en": self._out_fifo_rd_en, "o_rd_rdy": self._out_fifo_rd_rdy, "o_rd_data": self._out_fifo_rd_data, "o_full": self._out_fifo_full, "o_empty": self._out_fifo_empty, "o_usedw": self._out_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._out_fifo, "out_fifo", port_map={"wr_en": self._out_fifo_wr_en, "din": self._out_fifo_wr_data, "rd_en": self._out_fifo_rd_en, "rd_rdy": self._out_fifo_rd_rdy, "dout": self._out_fifo_rd_data, "full": self._out_fifo_full, "empty": self._out_fifo_empty, "count": self._out_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # State machine
         self.add_localparam("ST_IDLE", 0)
@@ -984,7 +992,7 @@ class EVRF(Module):
         self._inst_fifo_full = Wire(1, "_inst_fifo_full")
         self._inst_fifo_empty = Wire(1, "_inst_fifo_empty")
         self._inst_fifo_usedw = Wire(QDEPTH_AW, "_inst_fifo_usedw")
-        self.instantiate(self._inst_fifo, "inst_fifo", port_map={"i_wr_en": self._inst_fifo_wr_en, "i_wr_data": self._inst_fifo_wr_data, "i_rd_en": self._inst_fifo_rd_en, "o_rd_rdy": self._inst_fifo_rd_rdy, "o_rd_data": self._inst_fifo_rd_data, "o_full": self._inst_fifo_full, "o_empty": self._inst_fifo_empty, "o_usedw": self._inst_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._inst_fifo, "inst_fifo", port_map={"wr_en": self._inst_fifo_wr_en, "din": self._inst_fifo_wr_data, "rd_en": self._inst_fifo_rd_en, "rd_rdy": self._inst_fifo_rd_rdy, "dout": self._inst_fifo_rd_data, "full": self._inst_fifo_full, "empty": self._inst_fifo_empty, "count": self._inst_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # Data input FIFO
         self._data_fifo = SyncFIFO(ACCW * NDPE, QDEPTH_AW)
@@ -996,7 +1004,7 @@ class EVRF(Module):
         self._data_fifo_full = Wire(1, "_data_fifo_full")
         self._data_fifo_empty = Wire(1, "_data_fifo_empty")
         self._data_fifo_usedw = Wire(QDEPTH_AW, "_data_fifo_usedw")
-        self.instantiate(self._data_fifo, "data_fifo", port_map={"i_wr_en": self._data_fifo_wr_en, "i_wr_data": self._data_fifo_wr_data, "i_rd_en": self._data_fifo_rd_en, "o_rd_rdy": self._data_fifo_rd_rdy, "o_rd_data": self._data_fifo_rd_data, "o_full": self._data_fifo_full, "o_empty": self._data_fifo_empty, "o_usedw": self._data_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._data_fifo, "data_fifo", port_map={"wr_en": self._data_fifo_wr_en, "din": self._data_fifo_wr_data, "rd_en": self._data_fifo_rd_en, "rd_rdy": self._data_fifo_rd_rdy, "dout": self._data_fifo_rd_data, "full": self._data_fifo_full, "empty": self._data_fifo_empty, "count": self._data_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # Output FIFO
         self._out_fifo = SyncFIFO(ACCW * DOTW, QDEPTH_AW)
@@ -1008,7 +1016,7 @@ class EVRF(Module):
         self._out_fifo_full = Wire(1, "_out_fifo_full")
         self._out_fifo_empty = Wire(1, "_out_fifo_empty")
         self._out_fifo_usedw = Wire(QDEPTH_AW, "_out_fifo_usedw")
-        self.instantiate(self._out_fifo, "out_fifo", port_map={"i_wr_en": self._out_fifo_wr_en, "i_wr_data": self._out_fifo_wr_data, "i_rd_en": self._out_fifo_rd_en, "o_rd_rdy": self._out_fifo_rd_rdy, "o_rd_data": self._out_fifo_rd_data, "o_full": self._out_fifo_full, "o_empty": self._out_fifo_empty, "o_usedw": self._out_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._out_fifo, "out_fifo", port_map={"wr_en": self._out_fifo_wr_en, "din": self._out_fifo_wr_data, "rd_en": self._out_fifo_rd_en, "rd_rdy": self._out_fifo_rd_rdy, "dout": self._out_fifo_rd_data, "full": self._out_fifo_full, "empty": self._out_fifo_empty, "count": self._out_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # State machine
         self.add_localparam("ST_IDLE", 0)
@@ -1128,7 +1136,7 @@ class LD(Module):
         self._in_fifo_full = Wire(1, "_in_fifo_full")
         self._in_fifo_empty = Wire(1, "_in_fifo_empty")
         self._in_fifo_usedw = Wire(INBUF_AW, "_in_fifo_usedw")
-        self.instantiate(self._in_fifo, "in_fifo", port_map={"i_wr_en": self._in_fifo_wr_en, "i_wr_data": self._in_fifo_wr_data, "i_rd_en": self._in_fifo_rd_en, "o_rd_rdy": self._in_fifo_rd_rdy, "o_rd_data": self._in_fifo_rd_data, "o_full": self._in_fifo_full, "o_empty": self._in_fifo_empty, "o_usedw": self._in_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._in_fifo, "in_fifo", port_map={"wr_en": self._in_fifo_wr_en, "din": self._in_fifo_wr_data, "rd_en": self._in_fifo_rd_en, "rd_rdy": self._in_fifo_rd_rdy, "dout": self._in_fifo_rd_data, "full": self._in_fifo_full, "empty": self._in_fifo_empty, "count": self._in_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         self._wb_fifo = SyncFIFO(ACCW * DOTW, QDEPTH_AW)
         self._wb_fifo_wr_en = Wire(1, "_wb_fifo_wr_en")
@@ -1139,7 +1147,7 @@ class LD(Module):
         self._wb_fifo_full = Wire(1, "_wb_fifo_full")
         self._wb_fifo_empty = Wire(1, "_wb_fifo_empty")
         self._wb_fifo_usedw = Wire(QDEPTH_AW, "_wb_fifo_usedw")
-        self.instantiate(self._wb_fifo, "wb_fifo", port_map={"i_wr_en": self._wb_fifo_wr_en, "i_wr_data": self._wb_fifo_wr_data, "i_rd_en": self._wb_fifo_rd_en, "o_rd_rdy": self._wb_fifo_rd_rdy, "o_rd_data": self._wb_fifo_rd_data, "o_full": self._wb_fifo_full, "o_empty": self._wb_fifo_empty, "o_usedw": self._wb_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._wb_fifo, "wb_fifo", port_map={"wr_en": self._wb_fifo_wr_en, "din": self._wb_fifo_wr_data, "rd_en": self._wb_fifo_rd_en, "rd_rdy": self._wb_fifo_rd_rdy, "dout": self._wb_fifo_rd_data, "full": self._wb_fifo_full, "empty": self._wb_fifo_empty, "count": self._wb_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         self._inst_fifo = SyncFIFO(UIW_LD, QDEPTH_AW)
         self._inst_fifo_wr_en = Wire(1, "_inst_fifo_wr_en")
@@ -1150,7 +1158,7 @@ class LD(Module):
         self._inst_fifo_full = Wire(1, "_inst_fifo_full")
         self._inst_fifo_empty = Wire(1, "_inst_fifo_empty")
         self._inst_fifo_usedw = Wire(QDEPTH_AW, "_inst_fifo_usedw")
-        self.instantiate(self._inst_fifo, "inst_fifo", port_map={"i_wr_en": self._inst_fifo_wr_en, "i_wr_data": self._inst_fifo_wr_data, "i_rd_en": self._inst_fifo_rd_en, "o_rd_rdy": self._inst_fifo_rd_rdy, "o_rd_data": self._inst_fifo_rd_data, "o_full": self._inst_fifo_full, "o_empty": self._inst_fifo_empty, "o_usedw": self._inst_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._inst_fifo, "inst_fifo", port_map={"wr_en": self._inst_fifo_wr_en, "din": self._inst_fifo_wr_data, "rd_en": self._inst_fifo_rd_en, "rd_rdy": self._inst_fifo_rd_rdy, "dout": self._inst_fifo_rd_data, "full": self._inst_fifo_full, "empty": self._inst_fifo_empty, "count": self._inst_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         self._out_fifo = SyncFIFO(ACCW * DOTW + 1, OUTBUF_AW)
         self._out_fifo_wr_en = Wire(1, "_out_fifo_wr_en")
@@ -1161,7 +1169,7 @@ class LD(Module):
         self._out_fifo_full = Wire(1, "_out_fifo_full")
         self._out_fifo_empty = Wire(1, "_out_fifo_empty")
         self._out_fifo_usedw = Wire(OUTBUF_AW, "_out_fifo_usedw")
-        self.instantiate(self._out_fifo, "out_fifo", port_map={"i_wr_en": self._out_fifo_wr_en, "i_wr_data": self._out_fifo_wr_data, "i_rd_en": self._out_fifo_rd_en, "o_rd_rdy": self._out_fifo_rd_rdy, "o_rd_data": self._out_fifo_rd_data, "o_full": self._out_fifo_full, "o_empty": self._out_fifo_empty, "o_usedw": self._out_fifo_usedw, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._out_fifo, "out_fifo", port_map={"wr_en": self._out_fifo_wr_en, "din": self._out_fifo_wr_data, "rd_en": self._out_fifo_rd_en, "rd_rdy": self._out_fifo_rd_rdy, "dout": self._out_fifo_rd_data, "full": self._out_fifo_full, "empty": self._out_fifo_empty, "count": self._out_fifo_usedw, "clk": self.clk, "rst": ~self.rst_n})
 
         # State machine
         self.add_localparam("ST_IDLE", 0)
@@ -1310,37 +1318,50 @@ class NPUTop(Module):
         self.o_done = Output(1, "o_done")
 
         # Internal wires for interconnection
-        # TopScheduler -> Schedulers (macro-inst)
+        # TopScheduler -> Schedulers (macro-inst) valid/ready
         self._mvu_minst_rd_rdy = Wire(1, "_mvu_minst_rd_rdy")
+        self._mvu_sched_rdy = Wire(1, "_mvu_sched_rdy")
         self._mvu_minst_rd_dout = Wire(MIW_MVU, "_mvu_minst_rd_dout")
         self._evrf_minst_rd_rdy = Wire(1, "_evrf_minst_rd_rdy")
+        self._evrf_sched_rdy = Wire(1, "_evrf_sched_rdy")
         self._evrf_minst_rd_dout = Wire(MIW_EVRF, "_evrf_minst_rd_dout")
         self._mfu0_minst_rd_rdy = Wire(1, "_mfu0_minst_rd_rdy")
+        self._mfu0_sched_rdy = Wire(1, "_mfu0_sched_rdy")
         self._mfu0_minst_rd_dout = Wire(MIW_MFU, "_mfu0_minst_rd_dout")
         self._mfu1_minst_rd_rdy = Wire(1, "_mfu1_minst_rd_rdy")
+        self._mfu1_sched_rdy = Wire(1, "_mfu1_sched_rdy")
         self._mfu1_minst_rd_dout = Wire(MIW_MFU, "_mfu1_minst_rd_dout")
         self._ld_minst_rd_rdy = Wire(1, "_ld_minst_rd_rdy")
+        self._ld_sched_rdy = Wire(1, "_ld_sched_rdy")
         self._ld_minst_rd_dout = Wire(MIW_LD, "_ld_minst_rd_dout")
 
-        # Schedulers -> Datapaths (micro-inst)
+        # Schedulers -> Datapaths (micro-inst) valid/ready
         self._mvu_uinst_rd_rdy = Wire(1, "_mvu_uinst_rd_rdy")
+        self._mvu_inst_rdy = Wire(1, "_mvu_inst_rdy")
         self._mvu_uinst_rd_dout = Wire(UIW_MVU, "_mvu_uinst_rd_dout")
         self._evrf_uinst_rd_rdy = Wire(1, "_evrf_uinst_rd_rdy")
+        self._evrf_inst_rdy = Wire(1, "_evrf_inst_rdy")
         self._evrf_uinst_rd_dout = Wire(UIW_EVRF, "_evrf_uinst_rd_dout")
         self._mfu0_uinst_rd_rdy = Wire(1, "_mfu0_uinst_rd_rdy")
+        self._mfu0_inst_rdy = Wire(1, "_mfu0_inst_rdy")
         self._mfu0_uinst_rd_dout = Wire(UIW_MFU, "_mfu0_uinst_rd_dout")
         self._mfu1_uinst_rd_rdy = Wire(1, "_mfu1_uinst_rd_rdy")
+        self._mfu1_inst_rdy = Wire(1, "_mfu1_inst_rdy")
         self._mfu1_uinst_rd_dout = Wire(UIW_MFU, "_mfu1_uinst_rd_dout")
         self._ld_uinst_rd_rdy = Wire(1, "_ld_uinst_rd_rdy")
+        self._ld_inst_rdy = Wire(1, "_ld_inst_rdy")
         self._ld_uinst_rd_dout = Wire(UIW_LD, "_ld_uinst_rd_dout")
 
-        # Datapath -> LD writeback
+        # Datapath -> LD writeback (valid/ready separated)
         self._mvu_data_rd_rdy = Wire(DOTW, "_mvu_data_rd_rdy")
         self._mvu_data_rd_dout = Wire(ACCW * NDPE, "_mvu_data_rd_dout")
+        self._evrf_wr_ready = Wire(DOTW, "_evrf_wr_ready")
         self._evrf_data_rd_rdy = Wire(DOTW, "_evrf_data_rd_rdy")
         self._evrf_data_rd_dout = Wire(ACCW * DOTW, "_evrf_data_rd_dout")
+        self._mfu0_wr_ready = Wire(DOTW, "_mfu0_wr_ready")
         self._mfu0_data_rd_rdy = Wire(DOTW, "_mfu0_data_rd_rdy")
         self._mfu0_data_rd_dout = Wire(ACCW * DOTW, "_mfu0_data_rd_dout")
+        self._mfu1_wr_ready = Wire(DOTW, "_mfu1_wr_ready")
         self._mfu1_data_rd_rdy = Wire(DOTW, "_mfu1_data_rd_rdy")
         self._mfu1_data_rd_dout = Wire(ACCW * DOTW, "_mfu1_data_rd_dout")
 
@@ -1358,34 +1379,34 @@ class NPUTop(Module):
 
         # Instantiate modules
         self._top_sched = TopScheduler()
-        self.instantiate(self._top_sched, "top_sched", port_map={"i_minst_chain_wr_en": self.i_minst_chain_wr_en, "i_minst_chain_wr_addr": self.i_minst_chain_wr_addr, "i_minst_chain_wr_din": self.i_minst_chain_wr_din, "i_start": self.i_start, "pc_start_offset": self.pc_start_offset, "i_mvu_minst_rd_en": self._mvu_minst_rd_rdy, "i_evrf_minst_rd_en": self._evrf_minst_rd_rdy, "i_mfu0_minst_rd_en": self._mfu0_minst_rd_rdy, "i_mfu1_minst_rd_en": self._mfu1_minst_rd_rdy, "i_ld_minst_rd_en": self._ld_minst_rd_rdy, "o_mvu_minst_rd_rdy": self._mvu_minst_rd_rdy, "o_mvu_minst_rd_dout": self._mvu_minst_rd_dout, "o_evrf_minst_rd_rdy": self._evrf_minst_rd_rdy, "o_evrf_minst_rd_dout": self._evrf_minst_rd_dout, "o_mfu0_minst_rd_rdy": self._mfu0_minst_rd_rdy, "o_mfu0_minst_rd_dout": self._mfu0_minst_rd_dout, "o_mfu1_minst_rd_rdy": self._mfu1_minst_rd_rdy, "o_mfu1_minst_rd_dout": self._mfu1_minst_rd_dout, "o_ld_minst_rd_rdy": self._ld_minst_rd_rdy, "o_ld_minst_rd_dout": self._ld_minst_rd_dout, "o_done": self.o_done, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._top_sched, "top_sched", port_map={"i_minst_chain_wr_en": self.i_minst_chain_wr_en, "i_minst_chain_wr_addr": self.i_minst_chain_wr_addr, "i_minst_chain_wr_din": self.i_minst_chain_wr_din, "i_start": self.i_start, "pc_start_offset": self.pc_start_offset, "i_mvu_minst_rd_en": self._mvu_sched_rdy, "i_evrf_minst_rd_en": self._evrf_sched_rdy, "i_mfu0_minst_rd_en": self._mfu0_sched_rdy, "i_mfu1_minst_rd_en": self._mfu1_sched_rdy, "i_ld_minst_rd_en": self._ld_sched_rdy, "o_mvu_minst_rd_rdy": self._mvu_minst_rd_rdy, "o_mvu_minst_rd_dout": self._mvu_minst_rd_dout, "o_evrf_minst_rd_rdy": self._evrf_minst_rd_rdy, "o_evrf_minst_rd_dout": self._evrf_minst_rd_dout, "o_mfu0_minst_rd_rdy": self._mfu0_minst_rd_rdy, "o_mfu0_minst_rd_dout": self._mfu0_minst_rd_dout, "o_mfu1_minst_rd_rdy": self._mfu1_minst_rd_rdy, "o_mfu1_minst_rd_dout": self._mfu1_minst_rd_dout, "o_ld_minst_rd_rdy": self._ld_minst_rd_rdy, "o_ld_minst_rd_dout": self._ld_minst_rd_dout, "o_done": self.o_done, "clk": self.clk, "rst_n": self.rst_n})
 
         self._mvu_sched = MVUScheduler()
-        self.instantiate(self._mvu_sched, "mvu_sched", port_map={"i_minst_wr_en": self._mvu_minst_rd_rdy, "i_minst_wr_din": self._mvu_minst_rd_dout, "i_uinst_rd_en": self._mvu_uinst_rd_rdy, "o_minst_wr_rdy": self._mvu_minst_rd_rdy, "o_uinst_rd_rdy": self._mvu_uinst_rd_rdy, "o_uinst_rd_dout": self._mvu_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._mvu_sched, "mvu_sched", port_map={"i_minst_wr_en": self._mvu_minst_rd_rdy, "i_minst_wr_din": self._mvu_minst_rd_dout, "i_uinst_rd_en": self._mvu_inst_rdy, "o_minst_wr_rdy": self._mvu_sched_rdy, "o_uinst_rd_rdy": self._mvu_uinst_rd_rdy, "o_uinst_rd_dout": self._mvu_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
 
         self._evrf_sched = EVRFScheduler()
-        self.instantiate(self._evrf_sched, "evrf_sched", port_map={"i_minst_wr_en": self._evrf_minst_rd_rdy, "i_minst_wr_din": self._evrf_minst_rd_dout, "i_uinst_rd_en": self._evrf_uinst_rd_rdy, "o_minst_wr_rdy": self._evrf_minst_rd_rdy, "o_uinst_rd_rdy": self._evrf_uinst_rd_rdy, "o_uinst_rd_dout": self._evrf_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._evrf_sched, "evrf_sched", port_map={"i_minst_wr_en": self._evrf_minst_rd_rdy, "i_minst_wr_din": self._evrf_minst_rd_dout, "i_uinst_rd_en": self._evrf_inst_rdy, "o_minst_wr_rdy": self._evrf_sched_rdy, "o_uinst_rd_rdy": self._evrf_uinst_rd_rdy, "o_uinst_rd_dout": self._evrf_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
 
         self._mfu0_sched = MFUScheduler()
-        self.instantiate(self._mfu0_sched, "mfu0_sched", port_map={"i_minst_wr_en": self._mfu0_minst_rd_rdy, "i_minst_wr_din": self._mfu0_minst_rd_dout, "i_uinst_rd_en": self._mfu0_uinst_rd_rdy, "o_minst_wr_rdy": self._mfu0_minst_rd_rdy, "o_uinst_rd_rdy": self._mfu0_uinst_rd_rdy, "o_uinst_rd_dout": self._mfu0_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._mfu0_sched, "mfu0_sched", port_map={"i_minst_wr_en": self._mfu0_minst_rd_rdy, "i_minst_wr_din": self._mfu0_minst_rd_dout, "i_uinst_rd_en": self._mfu0_inst_rdy, "o_minst_wr_rdy": self._mfu0_sched_rdy, "o_uinst_rd_rdy": self._mfu0_uinst_rd_rdy, "o_uinst_rd_dout": self._mfu0_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
 
         self._mfu1_sched = MFUScheduler()
-        self.instantiate(self._mfu1_sched, "mfu1_sched", port_map={"i_minst_wr_en": self._mfu1_minst_rd_rdy, "i_minst_wr_din": self._mfu1_minst_rd_dout, "i_uinst_rd_en": self._mfu1_uinst_rd_rdy, "o_minst_wr_rdy": self._mfu1_minst_rd_rdy, "o_uinst_rd_rdy": self._mfu1_uinst_rd_rdy, "o_uinst_rd_dout": self._mfu1_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._mfu1_sched, "mfu1_sched", port_map={"i_minst_wr_en": self._mfu1_minst_rd_rdy, "i_minst_wr_din": self._mfu1_minst_rd_dout, "i_uinst_rd_en": self._mfu1_inst_rdy, "o_minst_wr_rdy": self._mfu1_sched_rdy, "o_uinst_rd_rdy": self._mfu1_uinst_rd_rdy, "o_uinst_rd_dout": self._mfu1_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
 
         self._ld_sched = LDScheduler()
-        self.instantiate(self._ld_sched, "ld_sched", port_map={"i_minst_wr_en": self._ld_minst_rd_rdy, "i_minst_wr_din": self._ld_minst_rd_dout, "i_uinst_rd_en": self._ld_uinst_rd_rdy, "o_minst_wr_rdy": self._ld_minst_rd_rdy, "o_uinst_rd_rdy": self._ld_uinst_rd_rdy, "o_uinst_rd_dout": self._ld_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._ld_sched, "ld_sched", port_map={"i_minst_wr_en": self._ld_minst_rd_rdy, "i_minst_wr_din": self._ld_minst_rd_dout, "i_uinst_rd_en": self._ld_inst_rdy, "o_minst_wr_rdy": self._ld_sched_rdy, "o_uinst_rd_rdy": self._ld_uinst_rd_rdy, "o_uinst_rd_dout": self._ld_uinst_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
 
         self._mvu = MVU()
-        self.instantiate(self._mvu, "mvu", port_map={"i_mrf_wr_en": self.i_mrf_wr_en, "i_mrf_wr_addr": self.i_mrf_wr_addr, "i_mrf_wr_data": self.i_mrf_wr_data, "i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_inst_wr_en": self._mvu_uinst_rd_rdy, "i_vrf_rd_addr": self._mvu_uinst_rd_dout[VRFAW - 1 : 0], "i_vrf_rd_id": self._mvu_uinst_rd_dout[VRFAW + VRFIDW - 1 : VRFAW], "i_reg_sel": self._mvu_uinst_rd_dout[VRFAW + VRFIDW], "i_mrf_rd_addr": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW - 1 : VRFAW + VRFIDW + 1], "i_acc_op": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW + NTAGW + 2 - 1 : VRFAW + VRFIDW + 1 + MRFAW + NTAGW], "i_tag": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW + NTAGW - 1 : VRFAW + VRFIDW + 1 + MRFAW], "i_acc_size": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW + NTAGW + 2 + 5 - 1 : VRFAW + VRFIDW + 1 + MRFAW + NTAGW + 2], "i_vrf_en": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW + NTAGW + 2 + 5], "i_data_rd_en": self._evrf_data_rd_rdy, "o_inst_wr_rdy": self._mvu_uinst_rd_rdy, "o_data_rd_rdy": self._mvu_data_rd_rdy, "o_data_rd_dout": self._mvu_data_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._mvu, "mvu", port_map={"i_mrf_wr_en": self.i_mrf_wr_en, "i_mrf_wr_addr": self.i_mrf_wr_addr, "i_mrf_wr_data": self.i_mrf_wr_data, "i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_inst_wr_en": self._mvu_uinst_rd_rdy, "i_vrf_rd_addr": self._mvu_uinst_rd_dout[VRFAW - 1 : 0], "i_vrf_rd_id": self._mvu_uinst_rd_dout[VRFAW + VRFIDW - 1 : VRFAW], "i_reg_sel": self._mvu_uinst_rd_dout[VRFAW + VRFIDW], "i_mrf_rd_addr": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW - 1 : VRFAW + VRFIDW + 1], "i_acc_op": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW + NTAGW + 2 - 1 : VRFAW + VRFIDW + 1 + MRFAW + NTAGW], "i_tag": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW + NTAGW - 1 : VRFAW + VRFIDW + 1 + MRFAW], "i_acc_size": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW + NTAGW + 2 + 5 - 1 : VRFAW + VRFIDW + 1 + MRFAW + NTAGW + 2], "i_vrf_en": self._mvu_uinst_rd_dout[VRFAW + VRFIDW + 1 + MRFAW + NTAGW + 2 + 5], "i_data_rd_en": self._evrf_wr_ready, "o_inst_wr_rdy": self._mvu_inst_rdy, "o_data_rd_rdy": self._mvu_data_rd_rdy, "o_data_rd_dout": self._mvu_data_rd_dout, "clk": self.clk, "rst_n": self.rst_n})
 
         self._evrf = EVRF()
-        self.instantiate(self._evrf, "evrf", port_map={"i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_data_wr_en": self._mvu_data_rd_rdy, "i_data_wr_din": self._mvu_data_rd_dout, "i_data_rd_en": self._mfu0_data_rd_rdy, "i_inst_wr_en": self._evrf_uinst_rd_rdy, "i_vrf_rd_addr": self._evrf_uinst_rd_dout[VRFAW - 1 : 0], "i_src_sel": self._evrf_uinst_rd_dout[VRFAW + 2 - 1 : VRFAW], "i_tag": self._evrf_uinst_rd_dout[VRFAW + 2 + NTAGW - 1 : VRFAW + 2], "i_tag_update_en": self._ld_tag_update_en, "o_data_wr_rdy": self._evrf_data_rd_rdy, "o_data_rd_rdy": self._evrf_data_rd_rdy, "o_data_rd_dout": self._evrf_data_rd_dout, "o_inst_wr_rdy": self._evrf_uinst_rd_rdy, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._evrf, "evrf", port_map={"i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_data_wr_en": self._mvu_data_rd_rdy, "i_data_wr_din": self._mvu_data_rd_dout, "i_data_rd_en": self._mfu0_wr_ready, "i_inst_wr_en": self._evrf_uinst_rd_rdy, "i_vrf_rd_addr": self._evrf_uinst_rd_dout[VRFAW - 1 : 0], "i_src_sel": self._evrf_uinst_rd_dout[VRFAW + 2 - 1 : VRFAW], "i_tag": self._evrf_uinst_rd_dout[VRFAW + 2 + NTAGW - 1 : VRFAW + 2], "i_tag_update_en": self._ld_tag_update_en, "o_data_wr_rdy": self._evrf_wr_ready, "o_data_rd_rdy": self._evrf_data_rd_rdy, "o_data_rd_dout": self._evrf_data_rd_dout, "o_inst_wr_rdy": self._evrf_inst_rdy, "clk": self.clk, "rst_n": self.rst_n})
 
         self._mfu0 = MFU()
-        self.instantiate(self._mfu0, "mfu0", port_map={"i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_data_wr_en": self._evrf_data_rd_rdy, "i_data_wr_din": self._evrf_data_rd_dout, "i_data_rd_en": self._mfu1_data_rd_rdy, "i_inst_wr_en": self._mfu0_uinst_rd_rdy, "i_vrf0_rd_addr": self._mfu0_uinst_rd_dout[VRFAW - 1 : 0], "i_vrf1_rd_addr": self._mfu0_uinst_rd_dout[2 * VRFAW - 1 : VRFAW], "i_func_op": self._mfu0_uinst_rd_dout[2 * VRFAW + 6 - 1 : 2 * VRFAW], "i_tag": self._mfu0_uinst_rd_dout[2 * VRFAW + 6 + NTAGW - 1 : 2 * VRFAW + 6], "i_tag_update_en": self._ld_tag_update_en, "o_data_wr_rdy": self._mfu0_data_rd_rdy, "o_data_rd_rdy": self._mfu0_data_rd_rdy, "o_data_rd_dout": self._mfu0_data_rd_dout, "o_inst_wr_rdy": self._mfu0_uinst_rd_rdy, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._mfu0, "mfu0", port_map={"i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_data_wr_en": self._evrf_data_rd_rdy, "i_data_wr_din": self._evrf_data_rd_dout, "i_data_rd_en": self._mfu1_wr_ready, "i_inst_wr_en": self._mfu0_uinst_rd_rdy, "i_vrf0_rd_addr": self._mfu0_uinst_rd_dout[VRFAW - 1 : 0], "i_vrf1_rd_addr": self._mfu0_uinst_rd_dout[2 * VRFAW - 1 : VRFAW], "i_func_op": self._mfu0_uinst_rd_dout[2 * VRFAW + 6 - 1 : 2 * VRFAW], "i_tag": self._mfu0_uinst_rd_dout[2 * VRFAW + 6 + NTAGW - 1 : 2 * VRFAW + 6], "i_tag_update_en": self._ld_tag_update_en, "o_data_wr_rdy": self._mfu0_wr_ready, "o_data_rd_rdy": self._mfu0_data_rd_rdy, "o_data_rd_dout": self._mfu0_data_rd_dout, "o_inst_wr_rdy": self._mfu0_inst_rdy, "clk": self.clk, "rst_n": self.rst_n})
 
         self._mfu1 = MFU()
-        self.instantiate(self._mfu1, "mfu1", port_map={"i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_data_wr_en": self._mfu0_data_rd_rdy, "i_data_wr_din": self._mfu0_data_rd_dout, "i_data_rd_en": self._ld_uinst_rd_rdy, "i_inst_wr_en": self._mfu1_uinst_rd_rdy, "i_vrf0_rd_addr": self._mfu1_uinst_rd_dout[VRFAW - 1 : 0], "i_vrf1_rd_addr": self._mfu1_uinst_rd_dout[2 * VRFAW - 1 : VRFAW], "i_func_op": self._mfu1_uinst_rd_dout[2 * VRFAW + 6 - 1 : 2 * VRFAW], "i_tag": self._mfu1_uinst_rd_dout[2 * VRFAW + 6 + NTAGW - 1 : 2 * VRFAW + 6], "i_tag_update_en": self._ld_tag_update_en, "o_data_wr_rdy": self._mfu1_data_rd_rdy, "o_data_rd_rdy": self._mfu1_data_rd_rdy, "o_data_rd_dout": self._mfu1_data_rd_dout, "o_inst_wr_rdy": self._mfu1_uinst_rd_rdy, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._mfu1, "mfu1", port_map={"i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_data_wr_en": self._mfu0_data_rd_rdy, "i_data_wr_din": self._mfu0_data_rd_dout, "i_data_rd_en": self._ld_uinst_rd_rdy, "i_inst_wr_en": self._mfu1_uinst_rd_rdy, "i_vrf0_rd_addr": self._mfu1_uinst_rd_dout[VRFAW - 1 : 0], "i_vrf1_rd_addr": self._mfu1_uinst_rd_dout[2 * VRFAW - 1 : VRFAW], "i_func_op": self._mfu1_uinst_rd_dout[2 * VRFAW + 6 - 1 : 2 * VRFAW], "i_tag": self._mfu1_uinst_rd_dout[2 * VRFAW + 6 + NTAGW - 1 : 2 * VRFAW + 6], "i_tag_update_en": self._ld_tag_update_en, "o_data_wr_rdy": self._mfu1_wr_ready, "o_data_rd_rdy": self._mfu1_data_rd_rdy, "o_data_rd_dout": self._mfu1_data_rd_dout, "o_inst_wr_rdy": self._mfu1_inst_rdy, "clk": self.clk, "rst_n": self.rst_n})
 
         self._debug_ififo = Wire(32, "_debug_ififo")
         self._debug_wbfifo = Wire(32, "_debug_wbfifo")
@@ -1393,4 +1414,4 @@ class NPUTop(Module):
         self._debug_ofifo = Wire(32, "_debug_ofifo")
         self._debug_result_cnt = Wire(32, "_debug_result_cnt")
         self._ld = LD()
-        self.instantiate(self._ld, "ld", port_map={"i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_in_wr_en": self.i_ld_in_wr_en, "i_in_wr_din": self.i_ld_in_wr_din, "i_wb_wr_en": self._mfu1_data_rd_rdy, "i_wb_wr_din": self._mfu1_data_rd_dout, "i_out_rd_en": self.i_ld_out_rd_en, "i_inst_wr_en": self._ld_uinst_rd_rdy, "i_inst_wr_din": self._ld_uinst_rd_dout, "i_tag": self._ld_uinst_rd_dout[NVRF + 2 * VRFAW + 4 - 1 : NVRF + 2 * VRFAW + 4 - NTAGW], "i_tag_update_en": self._ld_tag_update_en, "i_start": self._ld_start, "o_vrf_wr_en": self._ld_vrf_wr_en, "o_vrf_wr_id": self._ld_vrf_wr_id, "o_vrf0_wr_addr": self._ld_vrf0_wr_addr, "o_vrf1_wr_addr": self._ld_vrf1_wr_addr, "o_vrf_wr_data": self._ld_vrf_wr_data, "o_in_wr_rdy": self.o_ld_in_wr_rdy, "o_in_usedw": self.o_ld_in_usedw, "o_out_rd_rdy": self.o_ld_out_rd_rdy, "o_out_rd_dout": self.o_ld_out_rd_dout, "o_out_usedw": self.o_ld_out_usedw, "o_inst_wr_rdy": self._ld_uinst_rd_rdy, "o_tag_update_en": self._ld_tag_update_en, "o_start": self._ld_start, "o_done": self._ld_done, "o_debug_ld_ififo_counter": self._debug_ififo, "o_debug_ld_wbfifo_counter": self._debug_wbfifo, "o_debug_ld_instfifo_counter": self._debug_instfifo, "o_debug_ld_ofifo_counter": self._debug_ofifo, "o_result_count": self._debug_result_cnt, "clk": self.clk, "rst_n": self.rst_n})
+        self.instantiate(self._ld, "ld", port_map={"i_vrf_wr_en": self._ld_vrf_wr_en, "i_vrf_wr_id": self._ld_vrf_wr_id, "i_vrf0_wr_addr": self._ld_vrf0_wr_addr, "i_vrf1_wr_addr": self._ld_vrf1_wr_addr, "i_vrf_wr_data": self._ld_vrf_wr_data, "i_in_wr_en": self.i_ld_in_wr_en, "i_in_wr_din": self.i_ld_in_wr_din, "i_wb_wr_en": self._mfu1_data_rd_rdy, "i_wb_wr_din": self._mfu1_data_rd_dout, "i_out_rd_en": self.i_ld_out_rd_en, "i_inst_wr_en": self._ld_uinst_rd_rdy, "i_inst_wr_din": self._ld_uinst_rd_dout, "i_tag": self._ld_uinst_rd_dout[NVRF + 2 * VRFAW + 4 - 1 : NVRF + 2 * VRFAW + 4 - NTAGW], "i_tag_update_en": self._ld_tag_update_en, "i_start": self._ld_start, "o_vrf_wr_en": self._ld_vrf_wr_en, "o_vrf_wr_id": self._ld_vrf_wr_id, "o_vrf0_wr_addr": self._ld_vrf0_wr_addr, "o_vrf1_wr_addr": self._ld_vrf1_wr_addr, "o_vrf_wr_data": self._ld_vrf_wr_data, "o_in_wr_rdy": self.o_ld_in_wr_rdy, "o_in_usedw": self.o_ld_in_usedw, "o_out_rd_rdy": self.o_ld_out_rd_rdy, "o_out_rd_dout": self.o_ld_out_rd_dout, "o_out_usedw": self.o_ld_out_usedw, "o_inst_wr_rdy": self._ld_inst_rdy, "o_tag_update_en": self._ld_tag_update_en, "o_start": self._ld_start, "o_done": self._ld_done, "o_debug_ld_ififo_counter": self._debug_ififo, "o_debug_ld_wbfifo_counter": self._debug_wbfifo, "o_debug_ld_instfifo_counter": self._debug_instfifo, "o_debug_ld_ofifo_counter": self._debug_ofifo, "o_result_count": self._debug_result_cnt, "clk": self.clk, "rst_n": self.rst_n})

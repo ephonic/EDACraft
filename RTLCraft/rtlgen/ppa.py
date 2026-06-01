@@ -25,6 +25,7 @@ from rtlgen.core import (
     Module,
     Mux,
     Ref,
+    Signal,
     Slice,
     SubmoduleInst,
     SwitchNode,
@@ -335,8 +336,9 @@ class PPAAnalyzer:
 
         for body in self.module._comb_blocks:
             _collect(body)
-        for _, _, _, _, body in self.module._seq_blocks:
-            _collect(body)
+        # Skip seq blocks: sequential assignments break combinatorial paths.
+        # Pipeline registers driven in seq blocks should NOT appear in depth
+        # analysis — they terminate the combinatorial chain.
         for stmt in self.module._top_level:
             _collect([stmt])
 
@@ -354,10 +356,11 @@ class PPAAnalyzer:
                 return 0
             visiting.add(name)
             expr, select_extra = drivers[name]
-            d = self._expr_depth(expr) + select_extra
+            expr_d = self._expr_depth(expr)
+            d = expr_d + select_extra
             for ref_name in self._collect_ref_names(expr):
                 if ref_name != name:
-                    d = max(d, _depth(ref_name) + select_extra)
+                    d = max(d, _depth(ref_name) + expr_d + select_extra)
             visiting.discard(name)
             memo[name] = d
             return d
@@ -403,9 +406,11 @@ class PPAAnalyzer:
                 elif isinstance(stmt, IndexedAssign):
                     total += replication * self._expr_area(stmt.value)
                 elif isinstance(stmt, IfNode):
-                    # If 语句本身引入一个 Mux 面积（cond width=1）
                     total += replication * _AREA_WEIGHTS.get("Mux", 3.0) * stmt.cond.width
                     _scan_body(stmt.then_body, replication)
+                    for _, eb in stmt.elif_bodies:
+                        total += replication * _AREA_WEIGHTS.get("Mux", 3.0)
+                        _scan_body(eb, replication)
                     _scan_body(stmt.else_body, replication)
                 elif isinstance(stmt, SwitchNode):
                     # Switch 面积估算：N 个 case 相当于 N-1 级 MUX 或 decoder
@@ -946,10 +951,13 @@ class PPAAnalyzer:
         return self._expr_to_str(target)
 
     def _collect_ref_names(self, expr: Any) -> Set[str]:
-        """从表达式中提取所有 Ref 信号名。"""
+        """从表达式中提取所有信号名（Ref 和直接 Signal 引用）。"""
         names: Set[str] = set()
         if isinstance(expr, Ref):
             names.add(expr.signal.name)
+        elif isinstance(expr, Signal):
+            # Direct signal reference (e.g. in BinOp lhs/rhs)
+            names.add(expr.name)
         elif isinstance(expr, BinOp):
             names |= self._collect_ref_names(expr.lhs)
             names |= self._collect_ref_names(expr.rhs)

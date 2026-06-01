@@ -1459,28 +1459,28 @@ class Network(Module):
                 push_w = W_req[idx] if x < MESH_SIZE - 1 else Const(0, 1)
                 w_state = W_en[idx] if x < MESH_SIZE - 1 else Const(0, 1)
                 w_w_ack = W_ack[idx] if x < MESH_SIZE - 1 else Const(0, 1)
-                push_w_ack = W_ack[idx] if x < MESH_SIZE - 1 else Wire(1, f"pwa_{idx}")
+                push_w_ack = Wire(1, f"pwa_{idx}")
 
                 # East input
                 ie = east[idx] if x > 0 else Const(0, FLIT_WIDTH)
                 push_e = E_req[idx] if x > 0 else Const(0, 1)
                 e_state = E_en[idx] if x > 0 else Const(0, 1)
                 w_e_ack = E_ack[idx] if x > 0 else Const(0, 1)
-                push_e_ack = E_ack[idx] if x > 0 else Wire(1, f"pea_{idx}")
+                push_e_ack = Wire(1, f"pea_{idx}")
 
                 # North input
                 in_ = north[idx] if y < MESH_SIZE - 1 else Const(0, FLIT_WIDTH)
                 push_n = N_req[idx] if y < MESH_SIZE - 1 else Const(0, 1)
                 n_state = N_en[idx] if y < MESH_SIZE - 1 else Const(0, 1)
                 w_n_ack = N_ack[idx] if y < MESH_SIZE - 1 else Const(0, 1)
-                push_n_ack = N_ack[idx] if y < MESH_SIZE - 1 else Wire(1, f"pna_{idx}")
+                push_n_ack = Wire(1, f"pna_{idx}")
 
                 # South input
                 is_ = south[idx] if y > 0 else Const(0, FLIT_WIDTH)
                 push_s = S_req[idx] if y > 0 else Const(0, 1)
                 s_state = S_en[idx] if y > 0 else Const(0, 1)
                 w_s_ack = S_ack[idx] if y > 0 else Const(0, 1)
-                push_s_ack = S_ack[idx] if y > 0 else Wire(1, f"psa_{idx}")
+                push_s_ack = Wire(1, f"psa_{idx}")
 
                 # Outputs
                 w_oe = Wire(FLIT_WIDTH, f"oe_{idx}")

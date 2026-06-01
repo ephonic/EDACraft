@@ -40,7 +40,7 @@ from rtlgen.core import (
     Memory, Parameter, LocalParam,
 )
 from rtlgen import Cat, Rep, Mux
-from rtlgen.logic import If, Else, Switch, ForGen, GenIf, GenElse
+from rtlgen.logic import If, Else, Elif, Switch, ForGen, GenIf, GenElse
 from rtlgen.codegen import VerilogEmitter, EmitProfile, ModuleDocTemplate, fill_doc_template
 
 try:
@@ -65,7 +65,8 @@ class PriorityEncoder(Module):
 
         self.input_unencoded = Input(width, "input_unencoded")
         self.output_valid = Output(1, "output_valid")
-        self.output_encoded = Output(max(width.bit_length(), 1), "output_encoded")
+        enc_width = max((width - 1).bit_length(), 1) if width > 1 else 1
+        self.output_encoded = Output(enc_width, "output_encoded")
         self.output_unencoded = Output(width, "output_unencoded")
 
         # Build recursive tree in Python (mirrors reference RTL's generate-if)
@@ -86,73 +87,30 @@ class PriorityEncoder(Module):
         fill_doc_template(tpl, self)
 
     def _build_tree(self, width: int, lsb_priority: str):
-        """Recursively build priority encoder tree via submodule instantiation."""
-        if width == 1:
-            with self.comb:
-                self.output_valid <<= self.input_unencoded[0]
-                self.output_encoded <<= 0
-            return
-
-        if width == 2:
-            with self.comb:
-                self.output_valid <<= self.input_unencoded[0] | self.input_unencoded[1]
-                if lsb_priority == "LOW":
-                    self.output_encoded <<= self.input_unencoded[1]
-                else:
-                    self.output_encoded <<= ~self.input_unencoded[0]
-            return
-
-        # width > 2: split and recurse
-        w1 = 2 ** math.ceil(math.log2(width)) if width > 1 else 1
-        w2 = w1 // 2
-        enc_w = max(w2.bit_length(), 1)
-
-        out1 = Wire(enc_w, "out1")
-        out2 = Wire(enc_w, "out2")
-        valid1 = Wire(1, "valid1")
-        valid2 = Wire(1, "valid2")
-
-        pe1 = PriorityEncoder(width=w2, lsb_priority=lsb_priority)
-        pe2 = PriorityEncoder(width=w2, lsb_priority=lsb_priority)
-
-        self.instantiate(pe1, "pe1", port_map={
-            "input_unencoded": self.input_unencoded[w2 - 1 : 0],
-            "output_valid": valid1,
-            "output_encoded": out1,
-        })
-
-        if width == w1:
-            # No padding needed
-            self.instantiate(pe2, "pe2", port_map={
-                "input_unencoded": self.input_unencoded[width - 1 : w2],
-                "output_valid": valid2,
-                "output_encoded": out2,
-            })
-        else:
-            # Pad with zeros
-            pad = w1 - width
-            self.instantiate(pe2, "pe2", port_map={
-                "input_unencoded": Cat(Const(0, pad), self.input_unencoded[width - 1 : w2]),
-                "output_valid": valid2,
-                "output_encoded": out2,
-            })
-
+        """Build flat priority encoder logic without recursive submodule instantiation."""
         with self.comb:
-            self.output_valid <<= valid1 | valid2
+            self.output_valid <<= 0
+            self.output_encoded <<= 0
             if lsb_priority == "LOW":
-                # MSB priority: valid2 (upper half) wins
-                self.output_encoded <<= Mux(
-                    valid2,
-                    Cat(Const(1, 1), out2),
-                    Cat(Const(0, 1), out1),
-                )
+                # MSB priority: highest set bit wins, scan from MSB to LSB
+                for i in range(width - 1, -1, -1):
+                    if i == width - 1:
+                        ctx = If(self.input_unencoded[i] == 1)
+                    else:
+                        ctx = Elif(self.input_unencoded[i] == 1)
+                    with ctx:
+                        self.output_valid <<= 1
+                        self.output_encoded <<= i
             else:
-                # LSB priority: valid1 (lower half) wins
-                self.output_encoded <<= Mux(
-                    valid1,
-                    Cat(Const(0, 1), out1),
-                    Cat(Const(1, 1), out2),
-                )
+                # LSB priority: lowest set bit wins, scan from LSB to MSB
+                for i in range(width):
+                    if i == 0:
+                        ctx = If(self.input_unencoded[i] == 1)
+                    else:
+                        ctx = Elif(self.input_unencoded[i] == 1)
+                    with ctx:
+                        self.output_valid <<= 1
+                        self.output_encoded <<= i
 
 
 print("  - PriorityEncoder defined")

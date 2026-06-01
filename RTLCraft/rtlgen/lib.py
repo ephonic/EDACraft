@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from rtlgen.core import Input, Module, Output, Reg, Signal, Wire
-from rtlgen.logic import Cat, Const, Else, If, Switch
+from rtlgen.core import Input, Memory, Module, Output, Parameter, Reg, Signal, Wire
+from rtlgen.logic import Cat, Const, Else, Elif, If, Switch
 
 
 # ---------------------------------------------------------------------
@@ -205,6 +205,7 @@ class SyncFIFO(Module):
         self.full = Output(1, "full")
         self.empty = Output(1, "empty")
         self.count = Output(addr_w + 1, "count")
+        self.rd_rdy = Output(1, "rd_rdy")
 
         self._wr_ptr = Reg(addr_w, "wr_ptr")
         self._rd_ptr = Reg(addr_w, "rd_ptr")
@@ -215,6 +216,7 @@ class SyncFIFO(Module):
             self.full <<= self._count == depth
             self.empty <<= self._count == 0
             self.count <<= self._count
+            self.rd_rdy <<= ~self.empty
 
         @self.seq(self.clk, self.rst)
         def _seq():
@@ -609,3 +611,788 @@ class Divider(Module):
                                 self._count <<= dividend_width
                                 self._quotient <<= self.dividend
                                 self._remainder <<= 0
+
+
+# =====================================================================
+# PipelineShift — Multi-cycle pipeline with valid/ready handshake
+# =====================================================================
+
+class PipelineShift(Module):
+    """Configurable-depth pipeline shift register with valid/ready handshake.
+    Useful for inserting latency in any datapath.
+
+    Ports:
+        clk, rst, in_valid, out_ready, in_ready, out_valid
+        data_in[N-1:0], data_out[N-1:0]
+
+    Latency = depth cycles from in_valid&in_ready to out_valid.
+    """
+
+    def __init__(self, width: int = 32, depth: int = 3, name: str = "PipelineShift"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.data_in = Input(width, "data_in")
+        self.in_valid = Input(1, "in_valid"); self.out_ready = Input(1, "out_ready")
+        self.data_out = Output(width, "data_out")
+        self.out_valid = Output(1, "out_valid"); self.in_ready = Output(1, "in_ready")
+
+        self._pv = [Reg(1, f"pv_{i}") for i in range(depth)]
+        self._pd = [Reg(width, f"pd_{i}") for i in range(depth)]
+
+        with self.comb:
+            self.in_ready <<= (self._pv[depth - 1] == 0) | self.out_ready
+
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                for i in range(depth): self._pv[i] <<= 0; self._pd[i] <<= 0
+            with Else():
+                # Last stage consumed
+                with If(self._pv[depth - 1] & self.out_ready):
+                    self._pv[depth - 1] <<= 0
+                # Shift stages (reverse order for non-blocking correctness)
+                for s in range(depth - 2, -1, -1):
+                    nxt_free = (self._pv[s + 1] == 0)
+                    with If(self._pv[s] & (nxt_free | self.out_ready)):
+                        self._pd[s + 1] <<= self._pd[s]
+                        self._pv[s + 1] <<= 1
+                        self._pv[s] <<= 0
+                # Stage 0: new input
+                with If(self.in_valid & self.in_ready):
+                    self._pd[0] <<= self.data_in
+                    self._pv[0] <<= 1
+
+        with self.comb:
+            self.data_out <<= self._pd[depth - 1]
+            self.out_valid <<= self._pv[depth - 1]
+
+
+# =====================================================================
+# Counter — Loadable counter with en/load/rst/max
+# =====================================================================
+
+class Counter(Module):
+    """Configurable-width up-counter with enable, load, max.
+
+    Ports:
+        clk, rst, en, load, load_val[N-1:0], count[N-1:0], zero, max_reached
+    """
+
+    def __init__(self, width: int = 32, max_val: Optional[int] = None, name: str = "Counter"):
+        super().__init__(name)
+        max_val = max_val or (1 << width) - 1
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.en = Input(1, "en"); self.load = Input(1, "load")
+        self.load_val = Input(width, "load_val")
+        self.count = Output(width, "count")
+        self.zero = Output(1, "zero")
+        self.max_reached = Output(1, "max_reached")
+
+        self._cnt = Reg(width, "cnt")
+
+        with self.comb:
+            self.count <<= self._cnt
+            self.zero <<= (self._cnt == 0)
+            self.max_reached <<= (self._cnt >= max_val)
+
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                self._cnt <<= 0
+            with Else():
+                with If(self.load == 1):
+                    self._cnt <<= self.load_val
+                with Elif(self.en == 1):
+                    with If(self._cnt >= max_val):
+                        self._cnt <<= 0
+                    with Else():
+                        self._cnt <<= self._cnt + 1
+
+
+# =====================================================================
+# MultiCycleFSM — IDLE → REQ → WAIT → DONE
+# =====================================================================
+
+class MultiCycleFSM(Module):
+    """Generic multi-cycle FSM: IDLE=0, REQ=1, WAIT=2, DONE=3.
+
+    Ports:
+        clk, rst, start, busy, done
+        wait_cycles[N-1:0] — number of WAIT cycles before DONE
+    """
+
+    def __init__(self, wait_width: int = 16, name: str = "MultiCycleFSM"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.start = Input(1, "start")
+        self.wait_cycles = Input(wait_width, "wait_cycles")
+        self.busy = Output(1, "busy"); self.done = Output(1, "done")
+
+        self._state = Reg(2, "state")
+        self._timer = Reg(wait_width, "timer")
+
+        with self.comb:
+            self.busy <<= (self._state != 0)
+            self.done <<= (self._state == 3)
+
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                self._state <<= 0; self._timer <<= 0
+            with Else():
+                with Switch(self._state) as sw:
+                    with sw.case(0):  # IDLE
+                        with If(self.start):
+                            self._state <<= 1
+                    with sw.case(1):  # REQ
+                        self._state <<= 2
+                        self._timer <<= self.wait_cycles
+                    with sw.case(2):  # WAIT
+                        with If(self._timer > 0):
+                            self._timer <<= self._timer - 1
+                        with Else():
+                            self._state <<= 3
+                    with sw.case(3):  # DONE
+                        self._state <<= 0
+
+
+# =====================================================================
+# RegisterFile — Multi-port register file with write-enable
+# =====================================================================
+
+class RegisterFile(Module):
+    """Multi-port register file with separate read/write addresses.
+
+    Ports per read port: rd_addr, rd_data
+    Ports per write port: wr_addr, wr_data, wr_en
+    """
+
+    def __init__(self, width: int = 32, depth: int = 32,
+                 n_read: int = 2, n_write: int = 1,
+                 name: str = "RegisterFile"):
+        super().__init__(name)
+        aw = max((depth - 1).bit_length(), 1)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+
+        self.rd_addr = [Input(aw, f"rd_addr_{i}") for i in range(n_read)]
+        self.rd_data = [Output(width, f"rd_data_{i}") for i in range(n_read)]
+        self.wr_addr = [Input(aw, f"wr_addr_{i}") for i in range(n_write)]
+        self.wr_data = [Input(width, f"wr_data_{i}") for i in range(n_write)]
+        self.wr_en = [Input(1, f"wr_en_{i}") for i in range(n_write)]
+
+        self._rf = [Reg(width, f"rf_{i}") for i in range(depth)]
+
+        with self.comb:
+            for r in range(n_read):
+                self.rd_data[r] <<= 0
+                for i in range(depth):
+                    with If(self.rd_addr[r] == i):
+                        self.rd_data[r] <<= self._rf[i]
+
+        with self.seq(self.clk, self.rst):
+            for w in range(n_write):
+                with If(self.wr_en[w]):
+                    for i in range(depth):
+                        with If(self.wr_addr[w] == i):
+                            self._rf[i] <<= self.wr_data[w]
+
+
+# =====================================================================
+# DualPortRAM — Dual-port RAM with independent read/write ports
+# =====================================================================
+
+class DualPortRAM(Module):
+    """Dual-port RAM with independent port A (read/write) and port B (read-only)."""
+
+    def __init__(self, width: int = 32, depth: int = 1024, name: str = "DualPortRAM"):
+        super().__init__(name)
+        aw = max((depth - 1).bit_length(), 1)
+        self.clk = Input(1, "clk")
+        self.a_addr = Input(aw, "a_addr"); self.a_wen = Input(1, "a_wen")
+        self.a_wdata = Input(width, "a_wdata"); self.a_rdata = Output(width, "a_rdata")
+        self.b_addr = Input(aw, "b_addr"); self.b_rdata = Output(width, "b_rdata")
+
+        self._mem = Memory(width, depth, "mem")
+
+        with self.seq(self.clk, None):
+            with If(self.a_wen):
+                self._mem[self.a_addr] <<= self.a_wdata
+
+        with self.comb:
+            self.a_rdata <<= self._mem[self.a_addr]
+            self.b_rdata <<= self._mem[self.b_addr]
+
+
+# =====================================================================
+# CAM — Content-Addressable Memory (fully-associative)
+# =====================================================================
+
+class CAM(Module):
+    """Fully-associative CAM. Write: match_data + wen. Lookup: lookup_data → hit + index.
+
+    Ports:
+        clk, rst
+        lookup_data[N-1:0], hit, hit_index[log2(depth)-1:0]
+        write_data[N-1:0], write_en, write_index[log2(depth)-1:0]
+    """
+
+    def __init__(self, width: int = 32, depth: int = 8, name: str = "CAM"):
+        super().__init__(name)
+        iw = max((depth - 1).bit_length(), 1)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.lookup_data = Input(width, "lookup_data")
+        self.hit = Output(1, "hit"); self.hit_index = Output(iw, "hit_index")
+        self.write_data = Input(width, "write_data")
+        self.write_en = Input(1, "write_en")
+        self.write_index = Input(iw, "write_index")
+
+        self._cam_tags = [Reg(width, f"ctag_{i}") for i in range(depth)]
+        self._cam_vld = [Reg(1, f"cvld_{i}") for i in range(depth)]
+
+        with self.comb:
+            self.hit <<= 0; self.hit_index <<= 0
+            for i in range(depth):
+                with If(self._cam_vld[i] & (self._cam_tags[i] == self.lookup_data)):
+                    self.hit <<= 1; self.hit_index <<= i
+
+        with self.seq(self.clk, self.rst):
+            with If(self.write_en):
+                for i in range(depth):
+                    with If(self.write_index == i):
+                        self._cam_tags[i] <<= self.write_data
+                        self._cam_vld[i] <<= 1
+
+
+# =====================================================================
+# LUT — Lookup Table ROM (combinational read)
+# =====================================================================
+
+class LUT(Module):
+    """Combinational lookup table ROM. Initialized with init_data list.
+
+    Ports:
+        addr[log2(len(init_data))-1:0], dout[width-1:0]
+    """
+
+    def __init__(self, width: int = 32, init_data: Optional[List[int]] = None,
+                 depth: Optional[int] = None, name: str = "LUT"):
+        super().__init__(name)
+        if init_data is not None:
+            depth = len(init_data)
+        elif depth is None:
+            depth = 256
+        if init_data is None:
+            init_data = [0] * depth
+        aw = max((depth - 1).bit_length(), 1)
+        self.addr = Input(aw, "addr")
+        self.dout = Output(width, "dout")
+        self._mem = Memory(width, depth, "lut", init_data=init_data)
+
+        with self.comb:
+            self.dout <<= self._mem[self.addr]
+
+
+# =====================================================================
+# MAC — Multiply-Accumulate (signed, pipelined)
+# =====================================================================
+
+class MAC(Module):
+    """Signed multiply-accumulate: acc = acc + a * b. Pipelined.
+
+    Ports:
+        clk, rst, a[N-1:0], b[N-1:0], load_acc, acc_out[2N-1:0]
+    """
+
+    def __init__(self, width: int = 16, name: str = "MAC"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.a = Input(width, "a", signed=True)
+        self.b = Input(width, "b", signed=True)
+        self.load_acc = Input(1, "load_acc")
+        self.acc_out = Output(width * 2, "acc_out")
+        self.valid = Output(1, "valid")
+
+        self._pipe_a = Reg(width, "pipe_a", signed=True)
+        self._pipe_b = Reg(width, "pipe_b", signed=True)
+        self._prod = Reg(width * 2, "prod")
+        self._acc = Reg(width * 2, "acc")
+
+        with self.comb:
+            self.acc_out <<= self._acc
+            self.valid <<= 1
+
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                self._pipe_a <<= 0; self._pipe_b <<= 0
+                self._prod <<= 0; self._acc <<= 0
+            with Else():
+                self._pipe_a <<= self.a
+                self._pipe_b <<= self.b
+                self._prod <<= self._pipe_a * self._pipe_b
+                with If(self.load_acc):
+                    self._acc <<= 0
+                with Else():
+                    self._acc <<= self._acc + self._prod
+
+
+# =====================================================================
+# SignedMultiplier — Pipelined signed multiplier (configurable stages)
+# =====================================================================
+
+class SignedMultiplier(Module):
+    """Configurable-latency signed multiplier with valid/ready handshake."""
+
+    def __init__(self, width: int = 16, latency: int = 4, name: str = "SignedMultiplier"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.a = Input(width, "a", signed=True)
+        self.b = Input(width, "b", signed=True)
+        self.in_valid = Input(1, "in_valid"); self.out_ready = Input(1, "out_ready")
+        self.product = Output(width * 2, "product"); self.out_valid = Output(1, "out_valid")
+        self.in_ready = Output(1, "in_ready")
+
+        self._pv = [Reg(1, f"mpv_{i}") for i in range(latency)]
+        self._pd = [Reg(width * 2, f"mpd_{i}") for i in range(latency)]
+
+        with self.comb:
+            self.in_ready <<= (self._pv[latency - 1] == 0) | self.out_ready
+
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                for i in range(latency): self._pv[i] <<= 0; self._pd[i] <<= 0
+            with Else():
+                with If(self._pv[latency - 1] & self.out_ready):
+                    self._pv[latency - 1] <<= 0
+                for s in range(latency - 2, -1, -1):
+                    nxt_free = (self._pv[s + 1] == 0)
+                    with If(self._pv[s] & (nxt_free | self.out_ready)):
+                        self._pd[s + 1] <<= self._pd[s]
+                        self._pv[s + 1] <<= 1; self._pv[s] <<= 0
+                with If(self.in_valid & self.in_ready):
+                    self._pd[0] <<= self.a * self.b
+                    self._pv[0] <<= 1
+
+        with self.comb:
+            self.product <<= self._pd[latency - 1]
+            self.out_valid <<= self._pv[latency - 1]
+
+
+# =====================================================================
+# DirectMappedCache — Direct-mapped cache with valid/tag/data
+# =====================================================================
+
+class DirectMappedCache(Module):
+    """Direct-mapped cache with line_size bytes per line.
+
+    Ports:
+        clk, rst, addr, req_valid, wen, wdata[line_size*8-1:0]
+        fill_valid, fill_data[line_size*8-1:0], fill_index
+        hit, rdata[line_size*8-1:0], miss
+    """
+
+    def __init__(self, size: int = 4096, line_size: int = 64,
+                 data_width: int = 512, name: str = "DirectMappedCache"):
+        super().__init__(name)
+        n_lines = size // line_size
+        aw = max((n_lines - 1).bit_length(), 1)
+        tag_w = max(32 - (aw + (line_size.bit_length() - 1)), 1)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.addr = Input(32, "addr"); self.req_valid = Input(1, "req_valid")
+        self.wen = Input(1, "wen"); self.wdata = Input(data_width, "wdata")
+        self.fill_valid = Input(1, "fill_valid")
+        self.fill_data = Input(data_width, "fill_data")
+        self.fill_addr = Input(32, "fill_addr")
+        self.hit = Output(1, "hit"); self.rdata = Output(data_width, "rdata")
+        self.miss = Output(1, "miss")
+
+        self._tag = Memory(tag_w, n_lines, "tag")
+        self._data = Memory(data_width, n_lines, "data")
+        self._valid = Reg(n_lines, "valid_bits")
+
+        idx = Wire(aw, "cache_idx"); tag = Wire(tag_w, "cache_tag")
+        line_bits = line_size.bit_length() - 1
+        with self.comb:
+            idx <<= (self.addr >> line_bits) % n_lines
+            tag <<= self.addr >> (line_bits + aw)
+
+        vld = Wire(1, "vld_bit")
+        with self.comb:
+            vld <<= (self._valid >> idx) & 1
+
+        with self.comb:
+            self.hit <<= vld & (self._tag[idx] == tag)
+            self.rdata <<= self._data[idx]
+            self.miss <<= self.req_valid & ~(vld & (self._tag[idx] == tag))
+
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                self._valid <<= 0
+            with Else():
+                with If(self.fill_valid):
+                    fi = Wire(aw, "fi")
+                    fi <<= (self.fill_addr >> line_bits) % n_lines
+                    self._data[fi] <<= self.fill_data
+                    self._valid <<= self._valid | (1 << fi)
+                    ft = Wire(tag_w, "ft")
+                    ft <<= self.fill_addr >> (line_bits + aw)
+                    self._tag[fi] <<= ft
+                with If(self.wen & self.hit):
+                    self._data[idx] <<= self.wdata
+
+
+# =====================================================================
+# SetAssocCache — N-way set-associative cache with LRU replacement
+# =====================================================================
+
+class SetAssocCache(Module):
+    """N-way set-associative cache with LRU replacement.
+
+    Ports:
+        clk, rst, addr, req_valid, wen, wdata
+        fill_valid, fill_data, fill_addr
+        hit, rdata, miss, evict_addr, evict_valid
+    """
+
+    def __init__(self, n_ways: int = 4, size: int = 32768, line_size: int = 64,
+                 data_width: int = 512, name: str = "SetAssocCache"):
+        super().__init__(name)
+        n_sets = size // (n_ways * line_size)
+        sw = max((n_sets - 1).bit_length(), 1)
+        line_bits = line_size.bit_length() - 1
+        tag_w = max(32 - (sw + line_bits), 1)
+
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.addr = Input(32, "addr"); self.req_valid = Input(1, "req_valid")
+        self.wen = Input(1, "wen"); self.wdata = Input(data_width, "wdata")
+        self.fill_valid = Input(1, "fill_valid")
+        self.fill_data = Input(data_width, "fill_data")
+        self.fill_addr = Input(32, "fill_addr")
+        self.hit = Output(1, "hit"); self.hit_way = Output(3, "hit_way")
+        self.rdata = Output(data_width, "rdata")
+        self.miss = Output(1, "miss"); self.miss_addr = Output(32, "miss_addr")
+        self.evict_way = Output(3, "evict_way")
+
+        set_idx = Wire(sw, "l2_set"); tag = Wire(tag_w, "l2_tag")
+        with self.comb:
+            set_idx <<= (self.addr >> line_bits) % n_sets
+            tag <<= self.addr >> (sw + line_bits)
+
+        tags = [Memory(tag_w, n_sets, f"tag_{w}") for w in range(n_ways)]
+        datas = [Memory(data_width, n_sets, f"data_{w}") for w in range(n_ways)]
+        self._sac_vld = [Reg(n_sets, f"svld_{w}") for w in range(n_ways)]
+        self._sac_lru = [Reg(3, f"slru_{w}") for w in range(n_ways)]
+
+        with self.comb:
+            self.hit <<= 0; self.hit_way <<= 0; self.rdata <<= 0
+            for w in range(n_ways):
+                v = Wire(1, f"v_{w}")
+                v <<= (self._sac_vld[w] >> set_idx) & 1
+                with If(v & (tags[w][set_idx] == tag)):
+                    self.hit <<= 1; self.hit_way <<= w
+                    self.rdata <<= datas[w][set_idx]
+            self.miss <<= self.req_valid & ~self.hit
+            self.miss_addr <<= self.addr
+            self.evict_way <<= 0
+
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                for w in range(n_ways): self._sac_vld[w] <<= 0; self._sac_lru[w] <<= w
+            with Else():
+                with If(self.fill_valid):
+                    f_idx = Wire(sw, "fi")
+                    f_idx <<= (self.fill_addr >> line_bits) % n_sets
+                    f_tag = Wire(tag_w, "ft")
+                    f_tag <<= self.fill_addr >> (sw + line_bits)
+                    for w in range(n_ways):
+                        with If(self.evict_way == w):
+                            datas[w][f_idx] <<= self.fill_data
+                            tags[w][f_idx] <<= f_tag
+                            self._sac_vld[w] <<= self._sac_vld[w] | (1 << f_idx)
+
+
+# =====================================================================
+# SyncCell — 2-flop CDC synchronizer
+# =====================================================================
+
+class SyncCell(Module):
+    """2-flop synchronizer for crossing clock domains.
+    Ports: clk_dst, rst_dst, data_in, data_out
+    """
+    def __init__(self, width: int = 1, name: str = "SyncCell"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.data_in = Input(width, "data_in")
+        self.data_out = Output(width, "data_out")
+        self._ff1 = Reg(width, "sync_ff1"); self._ff2 = Reg(width, "sync_ff2")
+        with self.comb:
+            self.data_out <<= self._ff2
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                self._ff1 <<= 0; self._ff2 <<= 0
+            with Else():
+                self._ff1 <<= self.data_in; self._ff2 <<= self._ff1
+
+
+# =====================================================================
+# PulseSynchronizer — CDC pulse synchronizer
+# =====================================================================
+
+class PulseSynchronizer(Module):
+    """Pulse-based CDC: toggle → sync → edge detect.
+    Ports: clk_src, clk_dst, rst, pulse_in, pulse_out
+    """
+    def __init__(self, name: str = "PulseSync"):
+        super().__init__(name)
+        self.clk_src = Input(1, "clk_src"); self.clk_dst = Input(1, "clk_dst")
+        self.rst = Input(1, "rst")
+        self.pulse_in = Input(1, "pulse_in"); self.pulse_out = Output(1, "pulse_out")
+        self._toggle_src = Reg(1, "toggle_src")
+        self._sync = [Reg(1, f"sync_{i}") for i in range(3)]
+        with self.seq(self.clk_src, self.rst):
+            with If(self.rst == 1): self._toggle_src <<= 0
+            with Elif(self.pulse_in == 1): self._toggle_src <<= ~self._toggle_src
+        with self.seq(self.clk_dst, self.rst):
+            with If(self.rst == 1):
+                for i in range(3): self._sync[i] <<= 0
+            with Else():
+                self._sync[0] <<= self._toggle_src
+                self._sync[1] <<= self._sync[0]
+                self._sync[2] <<= self._sync[1]
+        with self.comb:
+            self.pulse_out <<= self._sync[1] ^ self._sync[2]
+
+
+# =====================================================================
+# EdgeDetector — Rising/falling edge detector
+# =====================================================================
+
+class EdgeDetector(Module):
+    """Detect rising/falling edges of a signal."""
+    def __init__(self, name: str = "EdgeDetect"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.sig = Input(1, "sig")
+        self.rising = Output(1, "rising"); self.falling = Output(1, "falling")
+        self._delay = Reg(1, "sig_d")
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1): self._delay <<= 0
+            with Else(): self._delay <<= self.sig
+        with self.comb:
+            self.rising <<= self.sig & ~self._delay
+            self.falling <<= ~self.sig & self._delay
+
+
+# =====================================================================
+# ClockGate — Clock gating cell
+# =====================================================================
+
+class ClockGate(Module):
+    """Clock gating: clk_out = clk_en ? clk_in : 0 (latch-based)."""
+    def __init__(self, name: str = "ClockGate"):
+        super().__init__(name)
+        self.clk_in = Input(1, "clk_in"); self.clk_en = Input(1, "clk_en")
+        self.clk_out = Output(1, "clk_out")
+        self._latch = Reg(1, "cg_latch")
+        with self.seq(~self.clk_in, None):
+            with If(self.clk_en == 1): self._latch <<= 1
+            with Else(): self._latch <<= 0
+        with self.comb:
+            self.clk_out <<= self.clk_in & self._latch
+
+
+# =====================================================================
+# AsyncResetRel — Async reset synchronizer (reset release CDC)
+# =====================================================================
+
+class AsyncResetRel(Module):
+    """Asynchronous reset synchronizer for reset deassertion CDC."""
+    def __init__(self, name: str = "AsyncResetRel"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst_async = Input(1, "rst_async")
+        self.rst_sync = Output(1, "rst_sync")
+        self._ff1 = Reg(1, "ar_ff1"); self._ff2 = Reg(1, "ar_ff2")
+        with self.seq(self.clk, self.rst_async, reset_async=True):
+            self._ff1 <<= 1; self._ff2 <<= self._ff1
+        with self.comb:
+            self.rst_sync <<= ~self._ff2
+
+
+# =====================================================================
+# OneHotMux — One-hot encoded multiplexer
+# =====================================================================
+
+class OneHotMux(Module):
+    """One-hot multiplexer: select[bit] = 1 picks data[i]."""
+    def __init__(self, width: int = 32, n_inputs: int = 4, name: str = "OneHotMux"):
+        super().__init__(name)
+        self.sel = Input(n_inputs, "sel")
+        self.data = [Input(width, f"data_{i}") for i in range(n_inputs)]
+        self.dout = Output(width, "dout")
+        with self.comb:
+            result = 0
+            for i in range(n_inputs):
+                with If(self.sel[i] == 1):
+                    result |= self.data[i]
+            self.dout <<= result
+
+
+# =====================================================================
+# PipelineInterlock — Stall/hold logic for pipeline control
+# =====================================================================
+
+class PipelineInterlock(Module):
+    """Pipeline interlock: stall_next when hold condition is met.
+    Ports: hold, stall, valid_in, valid_out, ready_in, ready_out
+    """
+    def __init__(self, name: str = "PipelineInterlock"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.hold = Input(1, "hold")
+        self.valid_in = Input(1, "valid_in"); self.ready_out = Output(1, "ready_out")
+        self.valid_out = Output(1, "valid_out"); self.ready_in = Input(1, "ready_in")
+        self._pipe_v = Reg(1, "pl_v"); self._stall = Reg(1, "pl_stall")
+        with self.comb:
+            self.ready_out <<= ~self._stall
+            self.valid_out <<= self._pipe_v
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                self._pipe_v <<= 0; self._stall <<= 0
+            with Else():
+                self._stall <<= self.hold
+                with If(self._stall == 0):
+                    self._pipe_v <<= self.valid_in
+
+
+# =====================================================================
+# BypassNetwork — Forwarding network for execution units
+# =====================================================================
+
+class BypassNetwork(Module):
+    """Forwarding network: forward result from EX stage to DS stage inputs.
+    Compares rd_addr of producing unit with rs_addr of consuming unit.
+    """
+    def __init__(self, n_ports: int = 4, width: int = 32, name: str = "BypassNetwork"):
+        super().__init__(name)
+        self.rd_addr = [Input(8, f"rd_addr_{i}") for i in range(n_ports)]
+        self.rd_data = [Input(width, f"rd_data_{i}") for i in range(n_ports)]
+        self.rd_valid = [Input(1, f"rd_valid_{i}") for i in range(n_ports)]
+        self.rs_addr = Input(8, "rs_addr")
+        self.fwd_data = Output(width, "fwd_data"); self.fwd_valid = Output(1, "fwd_valid")
+        with self.comb:
+            self.fwd_data <<= 0; self.fwd_valid <<= 0
+            for i in range(n_ports):
+                with If(self.rd_valid[i] & (self.rd_addr[i] == self.rs_addr)):
+                    self.fwd_data <<= self.rd_data[i]; self.fwd_valid <<= 1
+
+
+# =====================================================================
+# GrayCounter — Gray code counter (for CDC pointers)
+# =====================================================================
+
+class GrayCounter(Module):
+    """Gray code counter: count in Gray, bin2gray conversion."""
+    def __init__(self, width: int = 8, name: str = "GrayCounter"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.en = Input(1, "en")
+        self.gray = Output(width, "gray"); self.binary = Output(width, "binary")
+        self._bin = Reg(width, "gb_bin")
+        with self.comb:
+            self.gray <<= self._bin ^ (self._bin >> 1)
+            self.binary <<= self._bin
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1): self._bin <<= 0
+            with Elif(self.en == 1): self._bin <<= self._bin + 1
+
+
+# =====================================================================
+# FIFO with Gray-code CDC pointers (async FIFO)
+# =====================================================================
+
+class AsyncFIFO(Module):
+    """Async FIFO with Gray-code pointers for CDC.
+    Ports: wr_clk, rd_clk, wr_rst, rd_rst, din, wr_en, rd_en, dout, full, empty
+    """
+    def __init__(self, width: int = 32, depth: int = 8, name: str = "AsyncFIFO"):
+        super().__init__(name)
+        aw = max((depth - 1).bit_length(), 1)
+        self.wr_clk = Input(1, "wr_clk"); self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst"); self.rd_rst = Input(1, "rd_rst")
+        self.din = Input(width, "din"); self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.dout = Output(width, "dout"); self.full = Output(1, "full")
+        self.empty = Output(1, "empty")
+        self._mem = Memory(width, depth, "af_mem")
+        self._wr_ptr = Reg(aw + 1, "wr_ptr"); self._rd_ptr = Reg(aw + 1, "rd_ptr")
+        self._wr_gray = Reg(aw + 1, "wr_gray"); self._rd_gray = Reg(aw + 1, "rd_gray")
+        self._wr_sync = [Reg(aw + 1, f"wrs_{i}") for i in range(2)]
+        self._rd_sync = [Reg(aw + 1, f"rds_{i}") for i in range(2)]
+
+        ptr_w = aw
+        wr_next = Wire(aw + 1, "wr_nxt")
+        with self.comb:
+            wr_next <<= self._wr_ptr + 1
+            self.full <<= ((wr_next[ptr_w:0] == self._wr_sync[1][ptr_w:0]) &
+                          (wr_next[aw] != self._wr_sync[1][aw]))
+
+        rd_next = Wire(aw + 1, "rd_nxt")
+        with self.comb:
+            rd_next <<= self._rd_ptr + 1
+            self.empty <<= (rd_next == self._rd_sync[1])
+
+        with self.seq(self.wr_clk, self.wr_rst):
+            with If(self.wr_rst == 1):
+                self._wr_ptr <<= 0; self._wr_gray <<= 0
+            with Else():
+                with If(self.wr_en & (self.full == 0)):
+                    self._mem[self._wr_ptr[ptr_w - 1:0]] <<= self.din
+                    self._wr_ptr <<= wr_next
+                    self._wr_gray <<= wr_next ^ (wr_next >> 1)
+
+        with self.seq(self.rd_clk, self.rd_rst):
+            with If(self.rd_rst == 1):
+                self._rd_ptr <<= 0; self._rd_gray <<= 0
+            with Else():
+                with If(self.rd_en & (self.empty == 0)):
+                    self._rd_ptr <<= rd_next
+                    self._rd_gray <<= rd_next ^ (rd_next >> 1)
+
+        with self.seq(self.rd_clk, self.rd_rst):
+            with If(self.rd_rst == 1):
+                for i in range(2): self._wr_sync[i] <<= 0
+            with Else():
+                self._wr_sync[0] <<= self._wr_gray
+                self._wr_sync[1] <<= self._wr_sync[0]
+
+        with self.seq(self.wr_clk, self.wr_rst):
+            with If(self.wr_rst == 1):
+                for i in range(2): self._rd_sync[i] <<= 0
+            with Else():
+                self._rd_sync[0] <<= self._rd_gray
+                self._rd_sync[1] <<= self._rd_sync[0]
+
+        with self.comb:
+            self.dout <<= self._mem[self._rd_ptr[ptr_w - 1:0]]
+
+
+# =====================================================================
+# MultiCyclePath — Multi-cycle timing path constraint marker
+# =====================================================================
+
+class MultiCyclePath(Module):
+    """Multi-cycle timing path: holds data for N cycles before sampling.
+    Use for paths that need >1 cycle to propagate.
+    """
+    def __init__(self, width: int = 32, n_cycles: int = 2, name: str = "MultiCyclePath"):
+        super().__init__(name)
+        self.clk = Input(1, "clk"); self.rst = Input(1, "rst")
+        self.data_in = Input(width, "data_in"); self.en = Input(1, "en")
+        self.data_out = Output(width, "data_out")
+        self._pipe = [Reg(width, f"mcp_{i}") for i in range(n_cycles)]
+        with self.comb:
+            self.data_out <<= self._pipe[n_cycles - 1]
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                for i in range(n_cycles): self._pipe[i] <<= 0
+            with Else():
+                self._pipe[0] <<= self.data_in
+                for i in range(1, n_cycles):
+                    with If(self.en == 1):
+                        self._pipe[i] <<= self._pipe[i - 1]

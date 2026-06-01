@@ -25,7 +25,12 @@ from skills.npu.arch_templates import (
     CustomNpuArchTemplate,
     get_template, list_templates, register_template,
 )
-from skills.npu.design_flow import NPUConfig, run_npu_design_flow
+# design_flow and design_wizard are optional — skip if not available
+try:
+    from skills.npu.design_flow import NPUConfig, run_npu_design_flow
+except ImportError:
+    NPUConfig = None  # type: ignore[misc,assignment]
+    run_npu_design_flow = None  # type: ignore[misc,assignment]
 from skills.npu.skeleton_templates import register_npu_skeleton_steps
 
 from skills.npu.dsl_modules import (
@@ -50,6 +55,6 @@ __all__ = [
     "BasicTemplate", "DualPipelineTemplate", "MultiTileTemplate",
     "CustomNpuArchTemplate",
     "get_template", "list_templates", "register_template",
-    "NPUConfig", "run_npu_design_flow",
+    "NPUConfig", "run_npu_design_flow",  # may be None
     "register_npu_skeleton_steps",
 ]

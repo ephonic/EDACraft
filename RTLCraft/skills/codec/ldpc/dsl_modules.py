@@ -340,19 +340,20 @@ class CheckNode(Module):
                 self._min_w[i] <<= self._abs_Q[i]
                 self._sec_w[i] <<= Const((1 << prec) - 1, prec)
 
-            # Internal comparator nodes
-            for i in range(num_connections - 1):
-                idx = i + num_connections
-                comp = Comparator(prec=prec)
-                self.instantiate(comp, f"cmp_{i}", port_map={
-                    "min1": self._min_w[i * 2],
-                    "min2": self._min_w[i * 2 + 1],
-                    "sec_min1": self._sec_w[i * 2],
-                    "sec_min2": self._sec_w[i * 2 + 1],
-                    "min": self._min_w[idx],
-                    "sec_min": self._sec_w[idx],
-                })
+        # Internal comparator nodes (outside comb block — Verilog does not allow module instantiation inside always)
+        for i in range(num_connections - 1):
+            idx = i + num_connections
+            comp = Comparator(prec=prec)
+            self.instantiate(comp, f"cmp_{i}", port_map={
+                "min1": self._min_w[i * 2],
+                "min2": self._min_w[i * 2 + 1],
+                "sec_min1": self._sec_w[i * 2],
+                "sec_min2": self._sec_w[i * 2 + 1],
+                "min": self._min_w[idx],
+                "sec_min": self._sec_w[idx],
+            })
 
+        with self.comb:
             self._min <<= self._min_w[tree_size - 1]
             self._second_min <<= self._sec_w[tree_size - 1]
 
@@ -437,39 +438,43 @@ class VarNode(Module):
         with self.comb:
             for i in range(num_connections):
                 self._R_vals[i] <<= self.Rwires[(i + 1) * prec - 1 : i * prec]
-
             for i in range(num_connections):
                 self._sum_w[i] <<= self._R_vals[i]
 
-            for i in range(num_connections - 1):
-                idx = i + num_connections
-                adder = QuantizedAdder(prec=prec)
-                self.instantiate(adder, f"add_{i}", port_map={
-                    "in1": self._sum_w[i * 2],
-                    "in2": self._sum_w[i * 2 + 1],
-                    "sum": self._sum_w[idx],
-                })
+        for i in range(num_connections - 1):
+            idx = i + num_connections
+            adder = QuantizedAdder(prec=prec)
+            self.instantiate(adder, f"add_{i}", port_map={
+                "in1": self._sum_w[i * 2],
+                "in2": self._sum_w[i * 2 + 1],
+                "sum": self._sum_w[idx],
+            })
 
+        with self.comb:
             self._sum_R <<= self._sum_w[tree_size - 1]
 
-            pv_adder = QuantizedAdder(prec=prec)
-            self.instantiate(pv_adder, "pv_add", port_map={
-                "in1": self._sum_R,
-                "in2": self.llr,
-                "sum": self._P_v_wire,
-            })
+        pv_adder = QuantizedAdder(prec=prec)
+        self.instantiate(pv_adder, "pv_add", port_map={
+            "in1": self._sum_R,
+            "in2": self.llr,
+            "sum": self._P_v_wire,
+        })
+
+        with self.comb:
             self.P_v <<= self._P_v_wire
             self.x <<= self._P_v_wire[prec - 1]
 
-            for i in range(num_connections):
-                subber = QuantizedSubber(prec=prec)
-                self.instantiate(subber, f"sub_{i}", port_map={
-                    "in1": self._P_v_wire,
-                    "in2": self._R_vals[i],
-                    "sum": self._sub_w[i],
-                })
-                self._Q_vals[i] <<= self._sub_w[i]
+        for i in range(num_connections):
+            subber = QuantizedSubber(prec=prec)
+            self.instantiate(subber, f"sub_{i}", port_map={
+                "in1": self._P_v_wire,
+                "in2": self._R_vals[i],
+                "sum": self._sub_w[i],
+            })
 
+        with self.comb:
+            for i in range(num_connections):
+                self._Q_vals[i] <<= self._sub_w[i]
             q_bits = []
             for i in range(num_connections - 1, -1, -1):
                 q_bits.append(self._Q_vals[i])

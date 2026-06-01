@@ -10,6 +10,22 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
+# Re-export from rtlgen.logic so DSL files can import everything from core.
+# Deferred to avoid circular import (logic.py imports from core.py).
+# Mux/Cat/Rep/SRA are not defined in core.py (only Mux as Expr class above),
+# so lazy-import pulls in the logic function versions that auto-infer width.
+def __getattr__(name: str):
+    if name in ("If", "Else", "Elif", "Switch", "Cat", "Rep", "SRA"):
+        from rtlgen.logic import If, Else, Elif, Switch, Cat, Rep, SRA
+        return locals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return list(globals().keys()) + [
+        "If", "Else", "Elif", "Switch", "Mux", "Cat", "Rep", "SRA",
+    ]
+
 # ---------------------------------------------------------------------
 # Module Documentation — Structured metadata for Verilog comment injection
 # ---------------------------------------------------------------------
@@ -67,6 +83,18 @@ class Expr:
     def __init__(self, width: int = 1):
         self.width = width
 
+    def __ror__(self, other):
+        return _make_binop("|", _to_expr(other), self)
+
+    def __rand__(self, other):
+        return _make_binop("&", _to_expr(other), self)
+
+    def __rxor__(self, other):
+        return _make_binop("^", _to_expr(other), self)
+
+    def __rlshift__(self, other):
+        return _make_binop("<<", _to_expr(other), self, width=_to_expr(other).width)
+
 
 @dataclass
 class SourceLoc:
@@ -79,6 +107,36 @@ class Const(Expr):
     def __init__(self, value: int, width: int = 1):
         super().__init__(width)
         self.value = value
+
+    def __invert__(self):
+        return Const(~self.value & ((1 << self.width) - 1), self.width)
+
+    def __and__(self, other):
+        w = max(self.width, getattr(other, "width", self.width))
+        if isinstance(other, Const):
+            return Const(self.value & other.value, w)
+        return _make_binop("&", self, other, w)
+
+    def __or__(self, other):
+        w = max(self.width, getattr(other, "width", self.width))
+        if isinstance(other, Const):
+            return Const(self.value | other.value, w)
+        return _make_binop("|", self, other, w)
+
+    def __xor__(self, other):
+        w = max(self.width, getattr(other, "width", self.width))
+        if isinstance(other, Const):
+            return Const(self.value ^ other.value, w)
+        return _make_binop("^", self, other, w)
+
+
+class FunctionCall(Expr):
+    """Verilog function / system function call: $clog2(x), my_func(a, b)."""
+    def __init__(self, name: str, args: List[Any], width: int = 1, is_system: bool = False):
+        super().__init__(width)
+        self.name = name
+        self.args = [_to_expr(a) for a in args]
+        self.is_system = is_system
 
 
 class Ref(Expr):
@@ -138,8 +196,19 @@ class Concat(Expr):
         self.operands = operands
 
 
+def _width_of(val) -> int:
+    """Get width of an Expr, int, or object with .width attribute."""
+    if isinstance(val, Expr):
+        return val.width
+    if isinstance(val, int):
+        return max(val.bit_length(), 1)
+    return getattr(val, "width", 1)
+
+
 class Mux(Expr):
-    def __init__(self, cond: Expr, true_expr: Expr, false_expr: Expr, width: int):
+    def __init__(self, cond: Expr, true_expr: Expr, false_expr: Expr, width: Optional[int] = None):
+        if width is None:
+            width = max(_width_of(true_expr), _width_of(false_expr))
         super().__init__(width)
         self.cond = cond
         self.true_expr = true_expr
@@ -172,8 +241,9 @@ class GenIfNode:
 
 
 class SwitchNode:
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr, kind: str = "case"):
         self.expr = expr
+        self.kind = kind  # "case", "casez", "casex"
         self.cases: List[Tuple[Expr, List[Any]]] = []
         self.default_body: List[Any] = []
 
@@ -196,6 +266,153 @@ class SubmoduleInst:
         self.module = module
         self.params = params
         self.port_map = port_map
+
+
+# ---------------------------------------------------------------------
+# Interface — protocol-level signal grouping and bulk connection
+# ---------------------------------------------------------------------
+
+class Interface:
+    """Base class for protocol-level signal grouping.
+
+    Subclasses define a set of ports (name, direction, width) and provide
+    bulk connection methods.  An Interface instance holds live Signal
+    objects that can be connected to module ports or used in port_map.
+
+    Usage::
+
+        hs = HandshakeInterface(64, "hs")
+        self.instantiate(sub, "u_sub", port_map={**hs.connect_port_map(src_hs)})
+    """
+
+    def __init__(self, name: str):
+        self.name = name
+        # Dict[str, Signal] — the actual signal objects
+        self.signals: Dict[str, Signal] = {}
+
+    def _add_signal(self, name: str, direction: type, width: int):
+        sig = direction(width, f"{self.name}_{name}") if width != 1 else direction(f"{self.name}_{name}")
+        self.signals[name] = sig
+        return sig
+
+    def all_signals(self) -> Dict[str, Signal]:
+        return dict(self.signals)
+
+    def connect_to(self, other: "Interface") -> Dict[str, Tuple[Signal, Signal]]:
+        """Return a dict of (my_signal -> other_signal) pairs for matching ports."""
+        if type(self) is not type(other):
+            raise TypeError(f"Cannot connect {type(self).__name__} to {type(other).__name__}")
+        pairs: Dict[str, Tuple[Signal, Signal]] = {}
+        for name, sig in self.signals.items():
+            if name in other.signals:
+                pairs[name] = (sig, other.signals[name])
+        return pairs
+
+
+class HandshakeInterface(Interface):
+    """valid / ready / data handshake interface.
+
+    Direction convention: the *producer* drives `valid` and `data`,
+    the *consumer* drives `ready`.  For port_map generation, the
+    caller decides which side is producer vs consumer.
+    """
+
+    def __init__(self, data_width: int, name: str = "hs"):
+        super().__init__(name)
+        self.data_width = data_width
+        self.valid = self._add_signal("valid", Input, 1)
+        self.ready = self._add_signal("ready", Input, 1)
+        self.data = self._add_signal("data", Input, data_width)
+
+    def connect_port_map(self, other: "HandshakeInterface",
+                         direction: str = "src_to_dst") -> Dict[str, Signal]:
+        """Generate a port_map dict for self.instantiate().
+
+        Args:
+            other: The HandshakeInterface on the other side of the connection.
+            direction: "src_to_dst" means self is producer, other is consumer.
+                       "dst_to_src" means self is consumer, other is producer.
+        """
+        if direction == "src_to_dst":
+            # self's outputs → other's inputs, self's inputs ← other's outputs
+            return {
+                "valid": self.valid,    # self drives valid → sub receives valid
+                "data": self.data,      # self drives data → sub receives data
+                "ready": other.ready,   # other drives ready ← sub provides ready
+            }
+        else:
+            return {
+                "valid": other.valid,
+                "data": other.data,
+                "ready": self.ready,
+            }
+
+
+class CacheInterface(Interface):
+    """CPU ↔ L1 cache request/response interface.
+
+    CPU side: drives req, addr, wdata, wen.
+    Cache side: drives valid, rdata, ready.
+    """
+
+    def __init__(self, addr_width: int = 64, data_width: int = 64, name: str = "cache"):
+        super().__init__(name)
+        self.addr_width = addr_width
+        self.data_width = data_width
+        # CPU → Cache
+        self.req = self._add_signal("req", Input, 1)
+        self.addr = self._add_signal("addr", Input, addr_width)
+        self.wdata = self._add_signal("wdata", Input, data_width)
+        self.wen = self._add_signal("wen", Input, 1)
+        # Cache → CPU
+        self.valid = self._add_signal("valid", Input, 1)
+        self.rdata = self._add_signal("rdata", Input, data_width)
+        self.ready = self._add_signal("ready", Input, 1)
+
+    def connect_port_map(self, other: "CacheInterface",
+                         direction: str = "cpu_to_cache") -> Dict[str, Signal]:
+        """Generate a port_map dict for self.instantiate()."""
+        if direction == "cpu_to_cache":
+            return {
+                "req": self.req,
+                "addr": self.addr,
+                "wdata": self.wdata,
+                "wen": self.wen,
+                "valid": other.valid,
+                "rdata": other.rdata,
+                "ready": self.ready,
+            }
+        else:
+            return {
+                "req": other.req,
+                "addr": other.addr,
+                "wdata": other.wdata,
+                "wen": other.wen,
+                "valid": self.valid,
+                "rdata": self.rdata,
+                "ready": other.ready,
+            }
+
+
+def connect_interfaces(src: Interface, dst: Interface,
+                       src_dir: str = "out", dst_dir: str = "in") -> Dict[str, Signal]:
+    """Bulk connect two interfaces of the same type.
+
+    Returns a port_map suitable for Module.instantiate().
+
+    Args:
+        src: Source interface (signals driven by the caller module).
+        dst: Destination interface (signals from the submodule).
+        src_dir: "out" means src's signals are outputs from caller's perspective.
+        dst_dir: "in" means dst's signals are inputs to caller's perspective.
+    """
+    if type(src) is not type(dst):
+        raise TypeError(f"Cannot connect {type(src).__name__} to {type(dst).__name__}")
+    port_map: Dict[str, Signal] = {}
+    for name, src_sig in src.signals.items():
+        if name in dst.signals:
+            port_map[name] = src_sig
+    return port_map
 
 
 class MemRead(Expr):
@@ -641,6 +858,17 @@ def _derive_partselect_width(hi_expr: Expr, lo_expr: Expr) -> Optional[int]:
             return hi_expr.rhs.value - lo_expr.rhs.value + 1
         if _expr_equal(hi_expr.rhs, lo_expr.lhs) and _expr_equal(hi_expr.lhs, lo_expr.rhs):
             return hi_expr.lhs.value - lo_expr.lhs.value + 1
+    # 情况 4: hi = (base + 1) * N - 1, lo = base * N  (e.g. lane*32+31 : lane*32)
+    if (isinstance(hi_expr, BinOp) and hi_expr.op == '-'
+            and isinstance(hi_expr.rhs, Const) and hi_expr.rhs.value == 1
+            and isinstance(hi_expr.lhs, BinOp) and hi_expr.lhs.op == '*'
+            and isinstance(hi_expr.lhs.lhs, BinOp) and hi_expr.lhs.lhs.op == '+'
+            and isinstance(hi_expr.lhs.lhs.rhs, Const) and hi_expr.lhs.lhs.rhs.value == 1
+            and isinstance(lo_expr, BinOp) and lo_expr.op == '*'
+            and isinstance(lo_expr.rhs, Const)
+            and _expr_equal(hi_expr.lhs.lhs.lhs, lo_expr.lhs)
+            and hi_expr.lhs.rhs.value == lo_expr.rhs.value):
+        return lo_expr.rhs.value
     return None
 
 
@@ -1028,10 +1256,26 @@ class IntentContext:
 # Context Managers for comb / seq
 # ---------------------------------------------------------------------
 
-class _CombContext:
-    """Context manager for combinational logic: ``with self.comb:`` or ``@self.comb``."""
-
+class _InitContext:
+    """Context manager for initial blocks: ``with self.init:``."""
     def __init__(self, module: "Module"):
+        self._module = module
+    def __enter__(self):
+        body: List[Any] = []
+        self._module._init_blocks.append(body)
+        Context.push(Context(module=self._module, stmt_container=body))
+        return self
+    def __exit__(self, *args):
+        Context.pop()
+    def __call__(self, func):
+        with self: func()
+        return func
+
+
+class _CombContext:
+    """Context manager for combinational/latch logic."""
+
+    def __init__(self, module: "Module", always_latch: bool = False):
         self._module = module
 
     def __enter__(self):
@@ -1200,6 +1444,8 @@ class Module(metaclass=ModuleMeta):
         self._arrays: Dict[str, Array] = {}
         self._submodules: List[Tuple[str, Module]] = []
         self._comb_blocks: List[List[Any]] = []
+        self._latch_blocks: List[List[Any]] = []
+        self._init_blocks: List[List[Any]] = []
         self._seq_blocks: List[Tuple[Signal, Optional[Signal], List[Any]]] = []
         self._top_level: List[Any] = []
         self._param_bindings: Dict[str, Any] = dict(param_bindings) if param_bindings else {}
@@ -2087,6 +2333,54 @@ class Module(metaclass=ModuleMeta):
         else:
             object.__setattr__(self, key, value)
 
+    def add_submodule(self, module: "Module", name: Optional[str] = None) -> "Module":
+        """Add a sub-module created as a local variable.
+
+        This is the preferred way to register sub-modules that were
+        created without a ``self.xxx`` assignment.  It automatically
+        generates port bindings by name matching and creates a
+        SubmoduleInst in the top-level statement list.
+
+        Usage::
+
+            buf = NoCBuffer()       # local variable
+            self.add_submodule(buf) # auto-wired by port name
+
+        Args:
+            module: The sub-module instance to add.
+            name: Instance name.  Defaults to the module's type name.
+        """
+        inst_name = name or getattr(module, '_type_name', module.name)
+        # Deduplicate: append _1, _2 etc. if name is taken
+        existing = {n for n, _ in self._submodules}
+        if inst_name in existing:
+            i = 1
+            while f"{inst_name}_{i}" in existing:
+                i += 1
+            inst_name = f"{inst_name}_{i}"
+
+        self._submodules.append((inst_name, module))
+        object.__setattr__(module, '_parent', self)
+
+        # Auto-generate port bindings by name matching
+        port_map: Dict[str, Union[Signal, Expr]] = {}
+        for pname in list(module._inputs.keys()) + list(module._outputs.keys()):
+            if hasattr(self, pname):
+                val = getattr(self, pname)
+                if isinstance(val, Signal):
+                    port_map[pname] = val
+                elif isinstance(val, (int, Const)):
+                    port_map[pname] = Const(int(val), 1) if isinstance(val, int) else val
+
+        # Auto-pass parent parameters
+        params: Dict[str, Any] = {}
+        for pname, param in module._params.items():
+            if hasattr(self, pname):
+                params[pname] = getattr(self, pname)
+
+        self._top_level.append(SubmoduleInst(inst_name, module, params, port_map))
+        return module
+
     # ---- comb / seq blocks --------------------------------------------
     @property
     def comb(self) -> _CombContext:
@@ -2102,6 +2396,16 @@ class Module(metaclass=ModuleMeta):
                 self.y <<= self.a + self.b
         """
         return _CombContext(self)
+
+    @property
+    def latch(self) -> _CombContext:
+        """Latch logic context manager: generates always_latch block."""
+        return _CombContext(self, always_latch=True)
+
+    @property
+    def init(self) -> _InitContext:
+        """Initial block context manager: generates initial block."""
+        return _InitContext(self)
 
     def seq(self, clock: Signal, reset: Optional[Signal] = None,
             reset_async: bool = False, reset_active_low: bool = False) -> _SeqContext:
@@ -2146,7 +2450,66 @@ class Module(metaclass=ModuleMeta):
         """显式实例化子模块（亦可直接通过 self.sub = SubModule() 隐式实例化）。"""
         params = params or {}
         port_map = port_map or {}
-        port_map = {k: _to_expr(v) for k, v in port_map.items()}
+        port_map = {k: _to_expr(v) for k, v in port_map.items() if v is not None}
+        inst = SubmoduleInst(name, submodule, params, port_map)
+        ctx = Context.current()
+        if ctx and ctx.stmt_container is not None:
+            ctx.stmt_container.append(inst)
+        elif ctx and ctx.module is not None:
+            ctx.module._top_level.append(inst)
+        else:
+            self._top_level.append(inst)
+
+    def instantiate_with_ifaces(
+        self,
+        submodule: "Module",
+        name: str,
+        params: Optional[Dict[str, Any]] = None,
+        parent_ifaces: Optional[Dict[str, Interface]] = None,
+        sub_ifaces: Optional[Dict[str, Interface]] = None,
+        extra_ports: Optional[Dict[str, Union[Signal, Expr]]] = None,
+    ):
+        """Instantiate a submodule using Interface-based bulk connection.
+
+        Instead of manually mapping every port, pass interface objects and
+        the method auto-generates the port_map by matching interface names.
+
+        Args:
+            submodule: The Module to instantiate.
+            name: Instance name.
+            params: Optional parameter dict.
+            parent_ifaces: Dict of interface name -> Interface on this (parent) module.
+            sub_ifaces: Dict of interface name -> Interface on the submodule.
+                        If None, assumes same names as parent_ifaces.
+            extra_ports: Additional port mappings that don't belong to any interface.
+
+        Usage::
+
+            self.instantiate_with_ifaces(
+                router, "u_router",
+                parent_ifaces={"hs_in": hs_in, "hs_out": hs_out},
+                extra_ports={"clk": self.clk, "rst_n": self.rst_n},
+            )
+        """
+        params = params or {}
+        sub_ifaces = sub_ifaces or {}
+        extra_ports = extra_ports or {}
+
+        port_map: Dict[str, Union[Signal, Expr]] = dict(extra_ports)
+        for iface_name, parent_iface in (parent_ifaces or {}).items():
+            sub_iface = sub_ifaces.get(iface_name, parent_iface)
+            if sub_iface is None:
+                continue
+            if type(parent_iface) is not type(sub_iface):
+                raise TypeError(
+                    f"Interface type mismatch on '{iface_name}': "
+                    f"{type(parent_iface).__name__} vs {type(sub_iface).__name__}"
+                )
+            for sig_name, parent_sig in parent_iface.signals.items():
+                if sig_name in sub_iface.signals:
+                    port_map[sub_iface.signals[sig_name].name] = parent_sig
+
+        port_map = {k: _to_expr(v) for k, v in port_map.items() if v is not None}
         inst = SubmoduleInst(name, submodule, params, port_map)
         ctx = Context.current()
         if ctx and ctx.stmt_container is not None:

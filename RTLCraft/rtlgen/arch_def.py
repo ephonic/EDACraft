@@ -15,6 +15,7 @@ stream processors (video/image), and algorithm blocks (LDPC/FFT).
 from __future__ import annotations
 
 import copy
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -184,15 +185,24 @@ class SchedulerConfig:
 
 @dataclass
 class CycleContext:
-    """仿真周期上下文。行为函数通过此对象访问输入/输出/状态/领域模型。
+    """Cycle-accurate behavioral simulation context.
 
-    用法:
+    Behavior functions access inputs/outputs/state through this object.
+    Extended with memory, register file, cache, and pipeline event support
+    for true executable behavioral models.
+
+    Usage:
         def my_behavior(ctx: CycleContext):
             if ctx.get_input("rst_n") == 0:
                 ctx.set_state("pc", 0)
                 return
-            ctx.set_output("result", ctx.get_state("acc", 0) + ctx.get_input("data"))
-            ctx.set_state("acc", ctx.get_output("result"))
+            # Memory access
+            inst = ctx.memory_read(ctx.get_state("pc", 0), size=4)
+            # Register file access
+            rs1 = ctx.register_read("int_rf", ctx.get_input("rs1", 0))
+            # Cache access
+            hit, way = ctx.cache_access("l1_icache", ctx.get_state("pc", 0))
+            ctx.set_output("result", rs1 + ctx.get_input("imm", 0))
     """
     cycle: int = 0
     inputs: Dict[str, Any] = field(default_factory=dict)
@@ -200,13 +210,24 @@ class CycleContext:
     state: Dict[str, Any] = field(default_factory=dict)
     next_state: Dict[str, Any] = field(default_factory=dict)
 
-    # 领域特定模型（由 ArchDefinition.model 注入）
+    # Domain-specific model (injected by ArchDefinition.model)
     model: Optional["ModelProvider"] = None
+
+    # Extended behavioral models (injected by ArchSimulator)
+    memory: Optional["MemoryModel"] = None
+    register_files: Dict[str, "RegisterFileModel"] = field(default_factory=dict)
+    caches: Dict[str, "CacheModel"] = field(default_factory=dict)
+    fifos: Dict[str, deque] = field(default_factory=dict)
 
     metrics: Dict[str, Any] = field(default_factory=dict)
 
-    # 指令退休计数 (用于精确 IPC 计算)
+    # Instruction retirement count (for precise IPC)
     retired: int = 0
+
+    # Pipeline control
+    _stall: bool = False
+    _flush: bool = False
+    _flush_target: int = 0
 
     def get_input(self, name: str, default: Any = 0) -> Any:
         return self.inputs.get(name, default)
@@ -224,10 +245,13 @@ class CycleContext:
         self.next_state[name] = value
 
     def get_model_service(self, name: str, **kwargs) -> Any:
-        """获取领域模型服务（ISA 取指、协议时序、golden reference 等）。"""
+        """Get domain model service (ISA fetch, protocol timing, golden ref, etc.)."""
         if self.model is None:
             return None
-        return self.model.get_service(name, **kwargs)
+        try:
+            return self.model.get_service(name, **kwargs)
+        except NotImplementedError:
+            return None
 
     def record_metric(self, key: str, value: Any):
         if key in self.metrics:
@@ -239,8 +263,208 @@ class CycleContext:
             self.metrics[key] = value
 
     def retire(self, n: int = 1):
-        """标记指令退休。用于精确 IPC 计算。"""
+        """Mark instruction retirement. Used for precise IPC calculation."""
         self.retired += n
+
+    # -----------------------------------------------------------------
+    # Memory access
+    # -----------------------------------------------------------------
+    def memory_read(self, addr: int, size: int = 4) -> int:
+        """Read `size` bytes from memory at `addr`."""
+        if self.memory is None:
+            raise RuntimeError("memory_read called but no MemoryModel attached")
+        return self.memory.read(addr, size)
+
+    def memory_write(self, addr: int, value: int, size: int = 4):
+        """Write `size` bytes of `value` to memory at `addr`."""
+        if self.memory is None:
+            raise RuntimeError("memory_write called but no MemoryModel attached")
+        self.memory.write(addr, value, size)
+
+    def memory_read_signed(self, addr: int, size: int = 4) -> int:
+        """Read `size` bytes and sign-extend."""
+        if self.memory is None:
+            raise RuntimeError("memory_read_signed called but no MemoryModel attached")
+        return self.memory.read_signed(addr, size)
+
+    # -----------------------------------------------------------------
+    # Register file access
+    # -----------------------------------------------------------------
+    def register_read(self, rf_name: str, idx: int, bypass: bool = True) -> int:
+        """Read register `idx` from register file `rf_name`."""
+        rf = self.register_files.get(rf_name)
+        if rf is None:
+            raise RuntimeError(f"register_read called but no register file '{rf_name}' attached")
+        return rf.read(idx, bypass)
+
+    def register_write(self, rf_name: str, idx: int, value: int):
+        """Write `value` to register `idx` in register file `rf_name`."""
+        rf = self.register_files.get(rf_name)
+        if rf is None:
+            raise RuntimeError(f"register_write called but no register file '{rf_name}' attached")
+        rf.write(idx, value)
+
+    def register_write_pending(self, rf_name: str, idx: int, value: int):
+        """Queue a register write to be committed on next cycle."""
+        rf = self.register_files.get(rf_name)
+        if rf is None:
+            raise RuntimeError(f"register_write_pending called but no register file '{rf_name}' attached")
+        rf.write_pending(idx, value)
+
+    def register_set_forward(self, rf_name: str, idx: int, value: int):
+        """Set bypass value for read-after-write forwarding."""
+        rf = self.register_files.get(rf_name)
+        if rf is None:
+            raise RuntimeError(f"register_set_forward called but no register file '{rf_name}' attached")
+        rf.set_forward(idx, value)
+
+    def register_commit(self, rf_name: str):
+        """Commit all pending writes to register file."""
+        rf = self.register_files.get(rf_name)
+        if rf is not None:
+            rf.commit()
+
+    # -----------------------------------------------------------------
+    # Cache access
+    # -----------------------------------------------------------------
+    def cache_access(self, cache_name: str, addr: int, is_write: bool = False) -> Tuple[bool, int]:
+        """Access cache `cache_name` at `addr`. Returns (hit, way)."""
+        cache = self.caches.get(cache_name)
+        if cache is None:
+            raise RuntimeError(f"cache_access called but no cache '{cache_name}' attached")
+        return cache.access(addr, is_write)
+
+    def cache_hit(self, cache_name: str, addr: int) -> bool:
+        """Check if cache `cache_name` has `addr` (read-only check)."""
+        cache = self.caches.get(cache_name)
+        if cache is None:
+            return False
+        hit, _ = cache.access(addr, is_write=False)
+        return hit
+
+    def cache_fill(self, cache_name: str, addr: int, way: int, data: bytes,
+                   state: Optional[str] = None):
+        """Fill cache line with data."""
+        cache = self.caches.get(cache_name)
+        if cache is None:
+            raise RuntimeError(f"cache_fill called but no cache '{cache_name}' attached")
+        cache.fill_line(addr, way, data, state)
+
+    def cache_read(self, cache_name: str, addr: int, size: int = 8) -> int:
+        """Read `size` bytes from cache `cache_name` at `addr`."""
+        cache = self.caches.get(cache_name)
+        if cache is None:
+            raise RuntimeError(f"cache_read called but no cache '{cache_name}' attached")
+        return cache.read(addr, size)
+
+    def cache_write(self, cache_name: str, addr: int, value: int, size: int = 8):
+        """Write `size` bytes to cache `cache_name` at `addr`."""
+        cache = self.caches.get(cache_name)
+        if cache is None:
+            raise RuntimeError(f"cache_write called but no cache '{cache_name}' attached")
+        cache.write(addr, value, size)
+
+    def cache_invalidate(self, cache_name: str, addr: int) -> bool:
+        """Invalidate line at `addr` in cache `cache_name`. Returns True if line was dirty."""
+        cache = self.caches.get(cache_name)
+        if cache is None:
+            return False
+        return cache.invalidate_line(addr)
+
+    def cache_snoop(self, cache_name: str, addr: int, is_invalidate: bool = False) -> Tuple[bool, str, bool]:
+        """Snoop cache for coherence. Returns (hit, state, was_dirty)."""
+        cache = self.caches.get(cache_name)
+        if cache is None:
+            return False, "I", False
+        return cache.snoop(addr, is_invalidate)
+
+    # -----------------------------------------------------------------
+    # Coherence
+    # -----------------------------------------------------------------
+    def coherence_request(self, req_type: str, addr: int) -> dict:
+        """Issue a coherence request.
+
+        req_type: "read_shared", "read_exclusive", "writeback", "invalidate"
+        Returns: {"granted": bool, "data": bytes, "state": str}
+        """
+        self.record_metric("coherence_requests", 1)
+        self.record_metric(f"coherence_{req_type}", 1)
+        # Default: always grant, return empty data
+        # Subclasses or model-specific behavior can override
+        return {"granted": True, "data": b"", "state": "I"}
+
+    # -----------------------------------------------------------------
+    # FIFO / Queue
+    # -----------------------------------------------------------------
+    def fifo_push(self, fifo_name: str, data: Any) -> bool:
+        """Push data to FIFO `fifo_name`. Returns True if successful."""
+        q = self.fifos.get(fifo_name)
+        if q is None:
+            raise RuntimeError(f"fifo_push called but no FIFO '{fifo_name}' attached")
+        if len(q) >= getattr(q, "maxlen", 16):
+            return False
+        q.append(data)
+        return True
+
+    def fifo_pop(self, fifo_name: str) -> Optional[Any]:
+        """Pop data from FIFO `fifo_name`. Returns None if empty."""
+        q = self.fifos.get(fifo_name)
+        if q is None:
+            raise RuntimeError(f"fifo_pop called but no FIFO '{fifo_name}' attached")
+        if not q:
+            return None
+        return q.popleft()
+
+    def fifo_peek(self, fifo_name: str) -> Optional[Any]:
+        """Peek at head of FIFO `fifo_name`. Returns None if empty."""
+        q = self.fifos.get(fifo_name)
+        if q is None:
+            return None
+        return q[0] if q else None
+
+    def fifo_count(self, fifo_name: str) -> int:
+        """Return number of items in FIFO `fifo_name`."""
+        q = self.fifos.get(fifo_name)
+        return len(q) if q else 0
+
+    def fifo_empty(self, fifo_name: str) -> bool:
+        """Check if FIFO `fifo_name` is empty."""
+        return self.fifo_count(fifo_name) == 0
+
+    def fifo_full(self, fifo_name: str, depth: int = 16) -> bool:
+        """Check if FIFO `fifo_name` is full."""
+        return self.fifo_count(fifo_name) >= depth
+
+    # -----------------------------------------------------------------
+    # Pipeline control
+    # -----------------------------------------------------------------
+    def pipeline_stall(self, reason: str = ""):
+        """Mark pipeline as stalled this cycle."""
+        self._stall = True
+        self.record_metric("stalls", 1)
+        if reason:
+            self.record_metric(f"stall_{reason}", 1)
+
+    def pipeline_flush(self, target_pc: int = 0):
+        """Mark pipeline as flushed this cycle."""
+        self._flush = True
+        self._flush_target = target_pc
+        self.record_metric("flushes", 1)
+
+    def is_stalled(self) -> bool:
+        return self._stall
+
+    def is_flushed(self) -> bool:
+        return self._flush
+
+    def flush_target(self) -> int:
+        return self._flush_target
+
+    def clear_control(self):
+        """Clear stall/flush flags at cycle boundary."""
+        self._stall = False
+        self._flush = False
+        self._flush_target = 0
 
 
 # =====================================================================

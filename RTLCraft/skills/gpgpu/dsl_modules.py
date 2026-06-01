@@ -2164,19 +2164,23 @@ class SIMTStack(Module):
 
         with self.comb:
             self.in_ready <<= 1
-            self.out2br_valid <<= 0
-            self.out2br_wid <<= 0
-            self.out2br_jump <<= 0
-            self.out2br_new_pc <<= 0
 
         with self.seq(self.clk, self.rst_n):
             with If(self.rst_n == 0):
+                self.out2br_valid <<= 0
+                self.out2br_wid <<= 0
+                self.out2br_jump <<= 0
+                self.out2br_new_pc <<= 0
                 for i in range(NUM_WARP):
                     self._sp[i] <<= 0
                     for e in range(8):
                         self._pc_stack[i * 8 + e] <<= 0
                         self._mask_stack[i * 8 + e] <<= 0
             with Else():
+                self.out2br_valid <<= 0
+                self.out2br_wid <<= 0
+                self.out2br_jump <<= 0
+                self.out2br_new_pc <<= 0
                 with If(self.in_valid):
                     for i in range(NUM_WARP):
                         with If(self.wid == i):
@@ -4501,7 +4505,7 @@ class GPGPUTop(Module):
             "mem_req_vec_out_param": Wire(NUM_L2CACHE * PARAM_BITS, "l2d_req_vec_param"),
             "mem_rsp_vec_in_ready": Wire(NUM_L2CACHE, "l2d_rsp_ready"),
             "mem_rsp_out_valid": Wire(1, "l2d_rsp_valid"),
-            "mem_rsp_out_ready": 1,
+            "mem_rsp_out_ready": Wire(1, "l2d_rsp_ready_dummy"),
             "mem_rsp_out_address": Wire(ADDRESS_BITS, "l2d_rsp_address"),
             "mem_rsp_out_opcode": Wire(OP_BITS, "l2d_rsp_opcode"),
             "mem_rsp_out_size": Wire(SIZE_BITS, "l2d_rsp_size"),

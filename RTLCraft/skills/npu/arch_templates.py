@@ -24,6 +24,9 @@ Usage:
 """
 from __future__ import annotations
 
+# Import behaviors first to register templates in TemplateRegistry
+import skills.npu.behaviors  # noqa: F401
+
 import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -695,3 +698,14 @@ class CustomNpuArchTemplate(NpuArchTemplate):
 
     def build_interconnects(self, params: NpuArchParams) -> List[Tuple[str, str, List[str]]]:
         return self._connections
+
+
+def build_npu_arch() -> ArchDefinition:
+    """Build default NPU ArchDefinition for Spec2RTL flow.
+
+    Creates a basic NPU with TopScheduler + MVU/MFU/EVRF/LD datapaths
+    and interconnects between them.
+    """
+    params = NpuArchParams(name="npu_default")
+    template = MultiTileTemplate()
+    return template.build(params)
