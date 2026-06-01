@@ -110,6 +110,30 @@ RTLCraft 内置 22 个参数化、工业级硬件模板，位于 `rtlgen/lib.py`
 | **增量修改** | 插入/删除流水线级、修改位宽 | ECO、优化 |
 | **迭代验证** | `sim.step()` → `sim.get_int()` → agent 检查 | 自主修复 bug |
 | **PPA 反馈** | `PPAAnalyzer.report()` → agent 读取 → 编辑 DSL | 时序收敛 |
+| **检查点/回退** | `CheckpointStore.snapshot()` 工具调用前快照 | 失败后恢复到任意历史状态 |
+| **情景记忆** | `EpisodicMemory.record()` → `format_for_prompt()` | 跨 session 学习，避免重复踩坑 |
+| **层归属** | `AnnotatedToolCall(layer, trace_id)` | 定位问题来自哪一层 |
+
+### Agent 运行时模块
+
+RTLCraft 新增三个运行时模块，专为 agent 驱动的工作流设计：
+
+| 模块 | 文件 | 作用 |
+|--------|------|---------|
+| **CheckpointStore** | `rtlgen/checkpoint.py` | 基于 git 的快照/回退。每次工具调用前 `snapshot(layer, state)` 创建 git commit；失败时 `revert(id)` 恢复到任意历史状态。 |
+| **EpisodicMemory** | `rtlgen/memory.py` | 跨 session 学习。`record()` 实时写入 JSONL；`save_session()` 聚合错误/成功模式到 `.rtlcraft/memory/patterns/`；`format_for_prompt()` 注入历史经验到系统提示。 |
+| **Layer 契约** | `rtlgen/contracts.py` | 三层枚举 (L1 规约 / L2 规划 / L3 执行)，`AnnotatedToolCall(layer, trace_id, retry_count)`，`LayerTracer` 完整执行路径追溯。 |
+
+```python
+from rtlgen.checkpoint import CheckpointStore
+from rtlgen.memory import EpisodicMemory
+from rtlgen.contracts import Layer, AnnotatedToolCall, LayerTracer
+
+store = CheckpointStore(".")
+ckpt = store.snapshot(layer=3, state={"tool": "bash"}, summary="执行前快照")
+# ... 执行 ...
+state = store.revert(ckpt)  # 失败时回退
+```
 
 ### 开始使用
 
@@ -145,7 +169,10 @@ rtlgen/                    # 核心框架
 ├── arch_sim.py            # 架构仿真器
 ├── logic.py               # 控制流 (If/Switch/ForGen)
 ├── pipeline.py            # 流水线引擎
-└── protocols.py           # AXI/APB/Wishbone 协议
+├── protocols.py           # AXI/APB/Wishbone 协议
+├── checkpoint.py          # CheckpointStore: git 快照/回退
+├── memory.py              # EpisodicMemory: 跨 session 情景记忆
+└── contracts.py           # Layer 契约: L1(Spec)/L2(Plan)/L3(Exec)
 
 skills/                    # 设计技能库 (18 个设计域)
 ├── thor/                  # Thor GPU (三层参考实现)

@@ -107,6 +107,31 @@ The framework is specifically designed for LLM-driven hardware design:
 | **Modify incrementally** | Insert/remove pipeline stages, change widths | ECO, optimization |
 | **Verify iteratively** | `sim.step()` → `sim.get_int()` → agent check | Fix bugs autonomously |
 | **PPA feedback** | `PPAAnalyzer.report()` → agent reads → edits DSL | Timing closure |
+| **Checkpoint/revert** | `CheckpointStore.snapshot()` before tool calls | Failure recovery |
+| **Episodic memory** | `EpisodicMemory.record()` → `format_for_prompt()` | Learn from past mistakes |
+| **Layer attribution** | `AnnotatedToolCall(layer, trace_id)` | Debug which layer caused failure |
+
+### Agent Runtime Modules
+
+RTLCraft includes three runtime modules for agent-driven workflows:
+
+| Module | File | Purpose |
+|--------|------|---------|
+| **CheckpointStore** | `rtlgen/checkpoint.py` | Git-backed snapshot/revert before each tool call. `snapshot(layer, state)` creates a git commit; `revert(id)` restores any prior state. |
+| **EpisodicMemory** | `rtlgen/memory.py` | Cross-session learning. `record()` writes episodes to JSONL in real time; `save_session()` aggregates error/success patterns into `.rtlcraft/memory/patterns/`; `format_for_prompt()` injects past lessons into the system prompt. |
+| **Layer contracts** | `rtlgen/contracts.py` | Layer enum (L1 Spec / L2 Plan / L3 Exec), `AnnotatedToolCall(layer, trace_id, retry_count)`, `LayerTracer` for full execution path reconstruction. |
+
+```python
+from rtlgen.checkpoint import CheckpointStore
+from rtlgen.memory import EpisodicMemory
+from rtlgen.contracts import Layer, AnnotatedToolCall, LayerTracer
+
+store = CheckpointStore(".")
+ckpt = store.snapshot(layer=3, state={"tool": "bash"}, summary="before sim")
+# ... execute ...
+state = store.revert(ckpt)  # restore on failure
+```
+
     L1!=L2!=L3 → AssertionError, design blocked.
     ↓
 Verilog (~17,700 lines, generated_skill_ppa/cpu/hand_generated/)
@@ -885,6 +910,11 @@ RTLCraft/
 │   ├── regmodel.py           # UVM RAL register model
 │   ├── debug.py              # Debug probe utilities
 │   ├── dpi_runtime.py        # DPI-C runtime
+│   │
+│   │── ── Agent Runtime ──
+│   ├── checkpoint.py         # CheckpointStore: git-backed snapshot/revert
+│   ├── memory.py             # EpisodicMemory: cross-session pattern learning
+│   └── contracts.py          # Layer contracts: L1(Spec)/L2(Plan)/L3(Exec) + LayerTracer
 │   │
 │   │── ── Skill-Guided Generation ──
 │   ├── gen_requirement.py    # ModuleRequirement / ReferenceSummary / GenerationContext
