@@ -23,14 +23,21 @@
    - Cross-Layer Verification
    - Concrete Example: ALU
    - Verification Philosophy
-5. [Skills Library](#skills-library)
+5. [Cross-Layer Constraint & Intent Framework](#cross-layer-constraint--intent-framework)
+   - Motivation
+   - Core Abstractions
+   - Forward Propagation
+   - Backward Validation & Feedback
+   - Design Scaffold
+   - Usage Example
+6. [Skills Library](#skills-library)
    - Overview
    - DSL Module Inventory (192 modules)
    - Per-Domain Skill Details
-6. [Architecture Framework Reference](#architecture-framework-reference)
-7. [Configuration System](#configuration-system)
-8. [Technology Node Library](#technology-node-library)
-9. [Files Reference](#files-reference)
+7. [Architecture Framework Reference](#architecture-framework-reference)
+8. [Configuration System](#configuration-system)
+9. [Technology Node Library](#technology-node-library)
+10. [Files Reference](#files-reference)
 
 ---
 
@@ -59,6 +66,19 @@ Code Generation (Verilog + lint + documentation bundle)
 - **Behavior-first**: the behavior function IS the golden reference for RTL verification
 - **Agent-human collaboration**: agent executes, human decides at checkpoints
 - **PPA analysis based on AST**: synthesis is expensive and unnecessary for agent optimization
+
+The current implementation also exposes a reviewable lowering slice:
+
+```text
+SpecIR
+  -> BehaviorIR
+  -> CycleIR
+  -> MicroArchitectureIR (via ArchitectureIR)
+  -> StructuralIR
+  -> DSL AST
+```
+
+For each generated PE type, `rtlgen.skill_ppa` writes both JSON sidecars and a markdown review bundle so the human can inspect each lowering stage before sign-off.
 
 ---
 
@@ -673,6 +693,117 @@ The key insight: **each layer adds exactly one new concern**. L1 adds function. 
 
 ---
 
+## Cross-Layer Constraint & Intent Framework
+
+### Motivation
+
+In a production Spec2RTL flow, requirements are not just test vectors: they are **constraints** and **verification intents** that must hold across all representation layers. A power budget defined at specification time must still be satisfied after synthesis; a division-by-zero rule must be traceable from the ISS golden model down to the generated UVM sequence.
+
+The Cross-Layer Constraint & Intent Framework makes these requirements first-class IR artifacts. It provides:
+
+- First-class `IRConstraint` objects attached to any `IREntity` (`Module`, `Signal`, etc.).
+- Bidirectional propagation: forward refinement (SpecIR → Verilog) and backward validation (Verilog → SpecIR).
+- Structured feedback (`ConstraintFeedback`) when lower layers cannot meet an upper-layer constraint.
+- A standardized `DesignScaffold` loop: propose → propagate → generate → validate → resolve → commit.
+- Human/AI ownership tracking on every constraint and decision.
+
+### Core Abstractions
+
+```python
+from rtlgen import (
+    IRConstraint, FunctionalConstraint, PerformanceConstraint,
+    PowerConstraint, TimingConstraint, VerificationIntent,
+    ConstraintPropagator, ConstraintFeedback, DesignGate,
+    DesignDecision, DesignScaffold, IREntity, LayerEmitter,
+)
+```
+
+| Class | Purpose |
+|-------|---------|
+| `IRConstraint` | Base constraint object: uid, name, category, layer, expr, target, owner, derived_from. |
+| `FunctionalConstraint` / `PerformanceConstraint` / `PowerConstraint` / `TimingConstraint` | Typed subclasses. |
+| `VerificationIntent` | A constraint that materializes as a testbench artifact (UVM sequence, SVA, cocotb test). |
+| `IREntity` | Mixin attached to `Module` and `Signal`; stores constraints. |
+| `ConstraintPropagator` | Registers forward/backward transforms between named layers. |
+| `ConstraintFeedback` | Issue object with severity (INFO/WARNING/VIOLATION/BLOCKER) and suggested resolutions. |
+| `DesignGate` | Checkpoint between two layers; can emit feedback and stop the flow. |
+| `DesignDecision` | Records an architecture decision with rationale, alternatives, and impacted constraints. |
+| `LayerEmitter` | Generates per-layer artifacts from constraints. |
+| `DesignScaffold` | Standard agent loop with compliance checklist. |
+
+### Forward Propagation
+
+Forward propagation refines an abstract constraint into progressively more concrete constraints:
+
+```
+SpecIR → BehaviorIR → CycleIR → ArchitectureIR → StructuralIR → DSL → Verilog
+```
+
+Example: a SpecIR rule `DIV by zero -> -1` becomes a BehaviorIR ISS test, an ArchitectureIR invariant on `div_result`, a StructuralIR monitor, and finally a Verilog UVM sequence.
+
+Register a transform:
+
+```python
+propagator = ConstraintPropagator()
+propagator.register_forward("SpecIR", "BehaviorIR", my_transform)
+```
+
+### Backward Validation & Feedback
+
+Backward validation checks whether the implementation can satisfy the original constraints. When it cannot, the framework emits structured feedback instead of silently producing wrong RTL.
+
+```python
+propagator.register_backward("SpecIR", "Verilog", check_power_feasibility)
+```
+
+If the check returns a `ConstraintFeedback` with severity `BLOCKER`, the `DesignScaffold` stops and requires resolution.
+
+### Design Scaffold
+
+The `DesignScaffold` enforces a repeatable agent workflow:
+
+```python
+scaffold = DesignScaffold(propagator, emitter, layers=...
+scaffold.register_entity(my_module)
+scaffold.register_gate(power_gate)
+scaffold.record_decision(decision)
+ok, feedback = scaffold.run(resolver=my_resolver)
+checklist = scaffold.compliance_checklist()
+```
+
+Compliance items include: has entities, has constraints, has decisions, forward propagated, artifacts generated, no unresolved blockers.
+
+### Usage Example
+
+```python
+from rtlgen import (
+    Module, FunctionalConstraint, PowerConstraint,
+    ConstraintPropagator, DesignScaffold, LayerEmitter,
+)
+
+class MyEmitter(LayerEmitter):
+    def emit(self, entity, layer):
+        # Return {filename: content} for the given layer
+        return {}
+
+propagator = ConstraintPropagator()
+# ... register transforms ...
+
+m = Module("core")
+m.add_constraint(FunctionalConstraint(
+    uid="REQ-001", name="safe_div", layer="SpecIR",
+    expr="DIV by zero returns -1", target="core",
+))
+
+scaffold = DesignScaffold(propagator, MyEmitter())
+scaffold.register_entity(m)
+ok, feedback = scaffold.run()
+```
+
+See `earphone/design_earphone.py` for a complete end-to-end example using the Earphone SoC.
+
+---
+
 ## Skills Library
 
 ### Overview
@@ -1019,8 +1150,10 @@ print(node.pipeline_recommendation)  # "3-4 stages for 1GHz"
 | `rtlgen/ppa_optimizer.py` | `PPAOptimizer`, `OptimizationGuide`, `PPAScore`, `PPAGoal` |
 | `rtlgen/codegen.py` | `VerilogEmitter`, `EmitProfile`, `ModuleDocTemplate`, `fill_doc_template` |
 | `rtlgen/lint.py` | `VerilogLinter`, `LintIssue`, `LintResult` |
-| `rtlgen/spec_ir.py` | `SpecIR`, `ArchitectureIR`, `PortSpec`, `FunctionSpec`, `PPASpec`, `TimingSpec`, `VerificationSpec` |
-| `rtlgen/dsl_gen.py` | `DSLGenerator` — SpecIR + ArchitectureIR → DSL Module |
+| `rtlgen/spec_ir.py` | `SpecIR`, `BehaviorIR`, `CycleIR`, `StructuralIR`, `ArchitectureIR`, `VerificationPlanIR`, `PortSpec`, `FunctionSpec`, `PPASpec`, `TimingSpec`, `VerificationSpec` |
+| `rtlgen/dsl_gen.py` | `DSLGenerator` — SpecIR + ArchitectureIR → DSL Module, including deterministic hierarchical wrappers |
+| `rtlgen/dsl_sim.py` | `DSLSimValidator` — static completeness + simulation-driven DSL validation |
+| `rtlgen/verifier.py` | `Verifier` — syntax/lint/smoke/behavior verification levels with repair context support |
 | `rtlgen/processor_models.py` | `RV32ISS`, `GPGPUModel`, `CPUModel`, `BehavioralModelFactory` |
 | `rtlgen/iss_base.py` | `ISSBase` — abstract ISS interface (any ISA) |
 | `rtlgen/behaviors.py` | Pre-built behavior templates: `ifu`, `idu`, `alu`, `lsu`, `rob`, `regfile`, `datapath`, `fifo`, `axi_handshake`, `bpu`, `issue_queue`, `pipeline_connect`, `circular_queue`, `writeback_arbiter` |

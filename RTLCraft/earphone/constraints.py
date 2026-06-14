@@ -8,16 +8,17 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from rtlgen.contracts import (
+# Import from the stable rtlgen package-level API.
+from rtlgen import (
     ConstraintPropagator,
     FunctionalConstraint,
     IRConstraint,
     LayerEmitter,
+    Module,
     PerformanceConstraint,
     PowerConstraint,
     VerificationIntent,
 )
-from rtlgen.core import Module
 
 # Standard 6-layer path used across the Earphone SoC.
 EARPHONE_LAYERS = [
@@ -466,7 +467,7 @@ class EarphoneLayerEmitter(LayerEmitter):
 
 import re
 
-from rtlgen.contracts import ConstraintFeedback, DesignGate, FeedbackSeverity, IREntity
+from rtlgen import ConstraintFeedback, DesignGate, FeedbackSeverity, IREntity
 
 
 # Feasibility assumption: based on current architecture, the minimum achievable

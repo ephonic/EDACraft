@@ -2,21 +2,24 @@
 
 import pytest
 
-from rtlgen.contracts import (
+# Use the stable rtlgen package-level API for the constraint framework.
+from rtlgen import (
     ConstraintFeedback,
     ConstraintPropagator,
     DesignDecision,
     DesignGate,
+    DesignScaffold,
     FeedbackSeverity,
     FunctionalConstraint,
     IRConstraint,
+    Module,
     PerformanceConstraint,
     PowerConstraint,
+    Signal,
     VerificationIntent,
+    make_scaffold,
     generate_constraint_report,
 )
-from rtlgen.core import Module, Signal
-from rtlgen.scaffold import DesignScaffold, make_scaffold
 
 
 class TestIRConstraint:
