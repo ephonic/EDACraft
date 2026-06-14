@@ -167,9 +167,47 @@ class TestConstraintPropagator:
         result = prop.propagate_all(
             m,
             [("SpecIR", "BehaviorIR"), ("BehaviorIR", "CycleIR"), ("CycleIR", "ArchitectureIR")],
+            collect_intermediate=False,
         )
         assert len(result) == 1
         assert result[0].layer == "ArchitectureIR"
+
+    def test_propagate_all_collect_intermediate(self):
+        prop = ConstraintPropagator()
+
+        def forward(c, src, dst):
+            return IRConstraint(
+                uid=f"{c.uid}_{dst[:3]}",
+                name=c.name,
+                category=c.category,
+                layer=dst,
+                expr=c.expr,
+                derived_from=(c.uid,),
+            )
+
+        for src, dst in [
+            ("SpecIR", "BehaviorIR"),
+            ("BehaviorIR", "CycleIR"),
+            ("CycleIR", "ArchitectureIR"),
+        ]:
+            prop.register_forward(src, dst, forward)
+
+        m = Module("test")
+        m.add_constraint(
+            FunctionalConstraint(
+                uid="C1",
+                name="test",
+                layer="SpecIR",
+                expr="true",
+            )
+        )
+        result = prop.propagate_all(
+            m,
+            [("SpecIR", "BehaviorIR"), ("BehaviorIR", "CycleIR"), ("CycleIR", "ArchitectureIR")],
+        )
+        assert len(result) == 4  # SpecIR + 3 intermediates
+        layers = {c.layer for c in result}
+        assert layers == {"SpecIR", "BehaviorIR", "CycleIR", "ArchitectureIR"}
 
 
 class TestDesignGate:

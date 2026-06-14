@@ -538,11 +538,21 @@ class ConstraintPropagator:
         self,
         entity: IREntity,
         path: List[Tuple[str, str]],
+        collect_intermediate: bool = True,
     ) -> List[IRConstraint]:
-        constraints = entity.constraints()
+        """Propagate constraints through a layer path.
+
+        If ``collect_intermediate`` is True, all intermediate-layer constraints
+        are returned alongside the final-layer constraints, preserving full
+        traceability.
+        """
+        all_constraints = list(entity.constraints())
+        current = all_constraints
         for src_layer, dst_layer in path:
-            constraints = self.propagate_forward(constraints, src_layer, dst_layer)
-        return constraints
+            current = self.propagate_forward(current, src_layer, dst_layer)
+            if collect_intermediate:
+                all_constraints.extend(current)
+        return all_constraints if collect_intermediate else current
 
     def validate_all(
         self,

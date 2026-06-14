@@ -57,6 +57,8 @@ plan.md
 new-plan.md
 skills_add.md
 design_*.py
+!earphone/design_earphone.py
+!earphone/constraints.py
 design_scripts/
 /test_*.py
 debug_*.py
