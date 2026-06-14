@@ -278,13 +278,13 @@ This makes RTLCraft a **living tool chain** — capable of both green-field desi
 | `ppa_optimizer` | PPA Score + 6 optimization strategies (pipeline, sharing, bitwidth, operator, mux, FSM) | ✅ Available |
 | `verif_gen` | Verification Generator (reference model, directed/random tests, coverage, protocol checks) | ✅ Available |
 | `decomposition` | Gem5-style hierarchy decomposition, pre-PPA violation detection | ✅ Available |
-| `spec_ir` | Spec IR / Architecture IR / OptimizableOp dataclasses | ✅ Available |
+| `spec_ir` | Spec / Behavior / Cycle / Structural / Architecture IR dataclasses + OptimizableOp nodes | ✅ Available |
 | `spec_extractor` | Spec Completer + SpecExtractor (YAML, templates, natural language) | ✅ Available |
 | **`gen_requirement`** | ModuleRequirement, ReferenceSummary, GenerationContext, SubModuleInfo, ImplementationStep — structured data flow between layers | ✅ Available |
 | **`behavior_extract`** | Behavior requirement extraction from ProcessingElement — detects valid/ready, state, control, and datapath patterns | ✅ Available |
 | **`reference_extractor`** | Extracts structured summaries + actual code snippets from reference DSL modules in the skills library | ✅ Available |
 | **`behavior_roundtrip`** | DSL-to-behavior adapter with full Simulator step() (comb+seq); event-level trace comparison between behavioral model and generated DSL | ✅ Available |
-| **`skill_ppa`** | Skill-guided pipeline orchestrator: behaviors → arch → skeleton → agent_gen → PPA → verify → DSL → RTL → lint, with LLM iterative self-correction | ✅ Available |
+| **`skill_ppa`** | Skill-guided pipeline orchestrator: behaviors → arch → skeleton → agent_gen → PPA → verify → DSL → RTL → lint, with structured IR sidecars, review bundle export, and LLM iterative self-correction | ✅ Available |
 | **`skill_retriever`** | Skill retrieval engine with sub-module-level matching and fine-grained relevance scoring | ✅ Available |
 | **`dsl_parser`** | Safe DSL code parser with isolated namespace, syntax validation, and module instantiation | ✅ Available |
 | **`prompt_builder`** | Serializes GenerationContext into 9-section Claude agent prompt (spec, references with code snippets, rules, verification, sub-modules, steps, skeleton state, DSL syntax, task) | ✅ Available |
@@ -781,7 +781,7 @@ small = ComponentRegistry.search(max_area=100)
 
 ### 20. Spec-Driven RTL Generation (Spec2RTL)
 
-Closed-loop spec-to-RTL flow: **YAML/NL Spec → Spec IR → Architecture IR → DSL → RTL AST → Verification → PPA Optimization → Verilog**.
+Closed-loop spec-to-RTL flow: **YAML/NL Spec → SpecIR → BehaviorIR → CycleIR → MicroArchitectureIR (`ArchitectureIR`) → StructuralIR → DSL AST → Verification → PPA Optimization → Verilog**.
 
 ```python
 from rtlgen import (
@@ -831,6 +831,14 @@ result = optimizer.optimize(max_iterations=10)
 synth = ABCSynthesizer()
 feedback = synth.parse_feedback(synth_result)
 ```
+
+In the skill-driven flow, `rtlgen.skill_ppa` now also emits a reviewable vertical slice for each PE type:
+
+- JSON sidecars in `generated/<skill>/specs/`: `*_review_spec.json`, `*_behaviorir.json`, `*_cycleir.json`, `*_structuralir.json`, `*_specir.json`, `*_arch.json`
+- Markdown review bundle in `generated/<skill>/review/`: `01_spec_review.md` through `07_lowering_report.md`
+- Layer-to-layer checks recorded in `07_lowering_report.md`, so `dsl_from_spec` no longer hides all-fallback paths behind a PASS
+
+This makes the stream-pipeline MAC path explicitly reviewable and comparable at each lowering stage before broader expansion to ALU/FSM/FIFO/cache/router blocks.
 
 For the full tutorial, see [Tutorial.md](Tutorial.md).
 
