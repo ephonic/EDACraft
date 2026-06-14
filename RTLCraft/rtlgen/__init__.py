@@ -81,6 +81,7 @@ from rtlgen.contracts import (
     DesignDecision,
     IREntity,
     LayerEmitter,
+    generate_constraint_report,
 )
 from rtlgen.scaffold import DesignScaffold, make_scaffold
 from rtlgen.decomposition import (

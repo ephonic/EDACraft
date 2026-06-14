@@ -12,6 +12,8 @@ from rtlgen.contracts import (
     IRConstraint,
     PerformanceConstraint,
     PowerConstraint,
+    VerificationIntent,
+    generate_constraint_report,
 )
 from rtlgen.core import Module, Signal
 from rtlgen.scaffold import DesignScaffold, make_scaffold
@@ -295,6 +297,78 @@ class TestDesignScaffold:
         checklist = scaffold.compliance_checklist()
         assert checklist["has_entities"] is True
         assert checklist["has_constraints"] is False
+
+
+class TestConstraintReport:
+    def test_generate_constraint_report(self):
+        m = Module("test")
+        m.add_constraint(
+            FunctionalConstraint(
+                uid="H1",
+                name="human_req",
+                layer="SpecIR",
+                expr="x > 0",
+                owner="human",
+            )
+        )
+        m.add_constraint(
+            VerificationIntent(
+                uid="H1_V",
+                name="human_req_sva",
+                layer="Verilog",
+                expr="assert x > 0",
+                derived_from=("H1",),
+                owner="ai",
+                metadata={"filename": "x_check.sv"},
+            )
+        )
+        m.add_constraint(
+            PowerConstraint(
+                uid="H2",
+                name="unmet_budget",
+                layer="SpecIR",
+                expr="< 0.1",
+                unit="mW/MHz",
+                owner="human",
+            )
+        )
+
+        fb = ConstraintFeedback(
+            uid="FB-H2",
+            severity=FeedbackSeverity.BLOCKER,
+            source_constraint_uid="H2",
+            detected_at_layer="Verilog",
+            message="Power budget not achievable",
+            suggested_resolutions=["Relax budget"],
+        )
+
+        decision = DesignDecision(
+            uid="D1",
+            layer="ArchitectureIR",
+            topic="clock gating",
+            decision="insert ICGs",
+            rationale="save power",
+        )
+
+        report = generate_constraint_report(
+            entities=[m],
+            feedback=[fb],
+            decisions=[decision],
+            artifacts={"x_check.sv": "assert x > 0;"},
+        )
+
+        assert "# Constraint Traceability & Coverage Report" in report
+        assert "**Entities**: 1" in report
+        assert "**Constraints**: 3" in report
+        assert "**Feedback items**: 1" in report
+        assert "**Decisions**: 1" in report
+        assert "**Artifacts**: 1" in report
+        assert "| H1 | human_req | functional | SpecIR | — | human | — |" in report
+        assert "| x_check.sv | human_req_sva | Verilog |" in report
+        assert "## Coverage Gaps" in report
+        assert "| H2 | unmet_budget | SpecIR | power |" in report
+        assert "| FB-H2 | blocker | H2 | Verilog |" in report
+        assert "### D1: clock gating" in report
 
 
 if __name__ == "__main__":

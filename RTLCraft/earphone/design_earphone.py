@@ -3012,7 +3012,7 @@ if __name__ == "__main__":
     # Phase E: Design Scaffold — standardized agent loop
     # =====================================================================
     from rtlgen.scaffold import DesignScaffold
-    from rtlgen.contracts import DesignDecision
+    from rtlgen.contracts import DesignDecision, ConstraintFeedback, generate_constraint_report
 
     propagator = build_earphone_scaffold_propagator()
     scaffold = DesignScaffold(propagator, EarphoneLayerEmitter(), layers=EARPHONE_LAYERS)
@@ -3071,6 +3071,7 @@ if __name__ == "__main__":
     print("=" * 70)
 
     resolution_log: List[str] = []
+    resolved_feedback: List[ConstraintFeedback] = []
 
     def _scaffold_resolver(fb):
         resolved = resolve_feedback(fb, scaffold.entities)
@@ -3078,6 +3079,7 @@ if __name__ == "__main__":
             resolution_log.append(
                 f"Resolved {fb.uid}: {fb.message} -> applied suggested resolution"
             )
+            resolved_feedback.append(fb)
         return resolved
 
     scaffold_ok, feedback = scaffold.run(resolver=_scaffold_resolver)
@@ -3095,39 +3097,17 @@ if __name__ == "__main__":
             f.write(content)
         print(f"  wrote {path}")
 
-    # ---- traceability report ----------------------------------------------
-    all_constraints = []
-    for entity in scaffold.entities:
-        all_constraints.extend(entity.constraints())
-
-    report_lines = [
-        "# 09 Constraint Traceability Report",
-        "",
-        "## Constraints by Layer",
-        "",
-        "| UID | Name | Category | Layer | Target | Owner | Derived From |",
-        "|-----|------|----------|-------|--------|-------|--------------|",
-    ]
-    for c in sorted(all_constraints, key=lambda x: (x.layer, x.uid)):
-        derived = ", ".join(c.derived_from) if c.derived_from else "—"
-        report_lines.append(
-            f"| {c.uid} | {c.name} | {c.category} | {c.layer} | {c.target or '—'} | {c.owner} | {derived} |"
-        )
-
-    report_lines.extend([
-        "",
-        "## Generated Artifacts",
-        "",
-        "| Artifact | Source Constraint |",
-        "|----------|-------------------|",
-    ])
-    for c in all_constraints:
-        if c.layer == "Verilog" and c.metadata and c.metadata.get("filename"):
-            report_lines.append(f"| {c.metadata['filename']} | {c.name} |")
-
+    # ---- traceability / unified coverage report ---------------------------
     report_path = "earphone/specs/09_constraint_traceability.md"
     with open(report_path, "w") as f:
-        f.write("\n".join(report_lines))
+        f.write(
+            generate_constraint_report(
+                entities=scaffold.entities,
+                feedback=feedback,
+                decisions=scaffold.decisions,
+                artifacts=scaffold.artifacts,
+            )
+        )
     print(f"  wrote {report_path}")
 
     # ---- design issues report ---------------------------------------------
@@ -3143,17 +3123,24 @@ if __name__ == "__main__":
     else:
         issue_lines.append("- No auto-resolutions performed.")
 
+    all_feedback = feedback + resolved_feedback
     issue_lines.extend([
         "",
         "## Feedback Items",
         "",
-        "| UID | Severity | Source Constraint | Detected At | Message |",
-        "|-----|----------|-------------------|-------------|---------|",
     ])
-    for fb in sorted(feedback, key=lambda x: x.severity.value):
-        issue_lines.append(
-            f"| {fb.uid} | {fb.severity.value} | {fb.source_constraint_uid} | {fb.detected_at_layer} | {fb.message} |"
-        )
+    if all_feedback:
+        issue_lines.extend([
+            "| UID | Severity | Source Constraint | Detected At | Message |",
+            "|-----|----------|-------------------|-------------|---------|",
+        ])
+        for fb in sorted(all_feedback, key=lambda x: x.severity.value):
+            issue_lines.append(
+                f"| {fb.uid} | {fb.severity.value} | {fb.source_constraint_uid} | "
+                f"{fb.detected_at_layer} | {fb.message} |"
+            )
+    else:
+        issue_lines.append("- No feedback items.")
 
     issue_lines.extend([
         "",

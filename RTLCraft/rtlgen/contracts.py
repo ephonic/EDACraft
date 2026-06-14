@@ -596,3 +596,163 @@ class LayerEmitter:
 
     def emit(self, entity: IREntity, layer: str) -> Dict[str, str]:
         raise NotImplementedError("Subclasses must implement emit().")
+
+
+def generate_constraint_report(
+    entities: List[IREntity],
+    feedback: Optional[List[ConstraintFeedback]] = None,
+    decisions: Optional[List[DesignDecision]] = None,
+    artifacts: Optional[Dict[str, str]] = None,
+) -> str:
+    """Generate a unified markdown traceability, coverage, and issue report.
+
+    The report is generic: it does not assume Earphone-specific naming or
+    layers. It aggregates constraints attached to ``entities``, maps them to
+    generated ``artifacts``, lists ``feedback`` items, and records ``decisions``.
+    """
+    all_constraints: List[IRConstraint] = []
+    for entity in entities:
+        all_constraints.extend(entity.constraints())
+    all_constraints = sorted(all_constraints, key=lambda c: (c.layer, c.uid))
+
+    feedback = feedback or []
+    decisions = decisions or []
+    artifacts = artifacts or {}
+
+    # Build derivation index: parent uid -> list of child uids
+    uid_to_constraint = {c.uid: c for c in all_constraints}
+    derived_index: Dict[str, List[str]] = {}
+    for c in all_constraints:
+        for parent_uid in c.derived_from:
+            derived_index.setdefault(parent_uid, []).append(c.uid)
+
+    def _collect_descendants(uid: str, visited: Optional[set] = None) -> List[IRConstraint]:
+        if visited is None:
+            visited = set()
+        if uid in visited:
+            return []
+        visited.add(uid)
+        result: List[IRConstraint] = []
+        for child_uid in derived_index.get(uid, []):
+            child = uid_to_constraint.get(child_uid)
+            if child is None:
+                continue
+            result.append(child)
+            result.extend(_collect_descendants(child_uid, visited))
+        return result
+
+    lines = [
+        "# Constraint Traceability & Coverage Report",
+        "",
+        "## Summary",
+        "",
+        f"- **Entities**: {len(entities)}",
+        f"- **Constraints**: {len(all_constraints)}",
+        f"- **Feedback items**: {len(feedback)}",
+        f"- **Decisions**: {len(decisions)}",
+        f"- **Artifacts**: {len(artifacts)}",
+        "",
+    ]
+
+    # Constraints by layer
+    lines.extend([
+        "## Constraints by Layer",
+        "",
+        "| UID | Name | Category | Layer | Target | Owner | Derived From |",
+        "|-----|------|----------|-------|--------|-------|--------------|",
+    ])
+    for c in all_constraints:
+        derived = ", ".join(c.derived_from) if c.derived_from else "—"
+        lines.append(
+            f"| {c.uid} | {c.name} | {c.category} | {c.layer} | "
+            f"{c.target or '—'} | {c.owner} | {derived} |"
+        )
+
+    # Artifact mapping
+    lines.extend([
+        "",
+        "## Generated Artifacts",
+        "",
+        "| Artifact | Source Constraint | Layer |",
+        "|----------|-------------------|-------|",
+    ])
+    for c in all_constraints:
+        filename = c.metadata.get("filename") if c.metadata else None
+        if filename and (c.layer == "Verilog" or c.category == "verification"):
+            lines.append(f"| {filename} | {c.name} | {c.layer} |")
+
+    # Coverage gaps: human constraints without a Verilog descendant carrying an artifact
+    lines.extend([
+        "",
+        "## Coverage Gaps",
+        "",
+        "Human-defined constraints that have no derived Verilog artifact or "
+        "Verilog-layer constraint.",
+        "",
+    ])
+    gaps: List[IRConstraint] = []
+    for c in all_constraints:
+        if c.owner != "human":
+            continue
+        descendants = _collect_descendants(c.uid)
+        verilog_descendants = [d for d in descendants if d.layer == "Verilog"]
+        has_artifact = any(
+            d.metadata and d.metadata.get("filename") for d in verilog_descendants
+        )
+        if not has_artifact:
+            gaps.append(c)
+
+    if gaps:
+        lines.append("| UID | Name | Layer | Category | Target |")
+        lines.append("|-----|------|-------|----------|--------|")
+        for c in gaps:
+            lines.append(
+                f"| {c.uid} | {c.name} | {c.layer} | {c.category} | {c.target or '—'} |"
+            )
+    else:
+        lines.append("- No coverage gaps detected.")
+
+    # Feedback items
+    lines.extend([
+        "",
+        "## Feedback Items",
+        "",
+    ])
+    if feedback:
+        lines.extend([
+            "| UID | Severity | Source Constraint | Detected At | Message |",
+            "|-----|----------|-------------------|-------------|---------|",
+        ])
+        for fb in sorted(feedback, key=lambda x: x.severity.value):
+            lines.append(
+                f"| {fb.uid} | {fb.severity.value} | {fb.source_constraint_uid} | "
+                f"{fb.detected_at_layer} | {fb.message} |"
+            )
+    else:
+        lines.append("- No feedback items.")
+
+    # Design decisions
+    lines.extend([
+        "",
+        "## Design Decisions",
+        "",
+    ])
+    if decisions:
+        for d in decisions:
+            lines.append(f"### {d.uid}: {d.topic}")
+            lines.append(f"- **Layer**: {d.layer}")
+            lines.append(f"- **Decision**: {d.decision}")
+            lines.append(f"- **Rationale**: {d.rationale}")
+            if d.alternatives_considered:
+                lines.append(
+                    f"- **Alternatives**: {', '.join(d.alternatives_considered)}"
+                )
+            if d.impacted_constraints:
+                lines.append(
+                    f"- **Impacted constraints**: {', '.join(d.impacted_constraints)}"
+                )
+            lines.append("")
+    else:
+        lines.append("- No design decisions recorded.")
+
+    return "\n".join(lines)
