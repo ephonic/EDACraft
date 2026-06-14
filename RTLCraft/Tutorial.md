@@ -819,16 +819,30 @@ For industrial SoC projects, RTLCraft uses a **document-driven layered workflow*
 ```
 earphone/
 ├── flow.py              # Orchestration entry point
+├── docgen.py            # Extracts real design data and fills templates
 ├── specs/               # Top-level SoC specs, constraint reports, decision logs
 ├── modules/             # Per-module directories
 │   └── rv32/
-│       ├── specs/       # Module spec, test plan, test report
-│       ├── src/         # L1 behavior, L2 cycle, L5 DSL, Verilog emitter
-│       └── tests/       # Module-level directed/random tests
+│       ├── specs/            # Module spec + aggregated test plan/report
+│       ├── layer_L1_behavior/   # L1 BehaviorIR
+│       ├── layer_L2_cycle/      # L2 CycleIR
+│       ├── layer_L3_architecture/ # L3 ArchitectureIR
+│       ├── layer_L4_structure/  # L4 StructuralIR
+│       ├── layer_L5_dsl/        # L5 DSL
+│       └── layer_L6_verilog/    # L6 Verilog emitter
 ├── integration/         # Multi-module integration tests
 ├── system/              # Full SoC system tests
 ├── top/                 # SoC top-level integration
 └── tb/                  # Shared cocotb / UVM / SVA testbench assets
+```
+
+Every IR layer directory follows the same convention:
+
+```
+layer_L<N>_<name>/
+├── src/                 # Source code for this IR layer
+├── specs/               # Layer spec, test plan, and test report
+└── tests/               # Layer-specific tests (where applicable)
 ```
 
 ### Document Hierarchy
@@ -836,13 +850,29 @@ earphone/
 | IR Layer | Document | Produced By | Consumed By |
 |----------|----------|-------------|-------------|
 | L0 Intent | `specs/00_top_level_spec.md` | User (+ Agent defaults) | L1/L3 architects |
-| L1 Behavior | `modules/<M>/src/behavior.py` + `specs/` | Agent | L2/L3 |
-| L2 Cycle | `modules/<M>/src/cycle.py` + `specs/` | Agent | L3 |
-| L3 Architecture | `modules/<M>/specs/01_architecture_spec.md` | Agent | L4/L5 |
-| L4 Structural | `modules/<M>/src/structure.py` + `specs/` | Agent | L5 |
-| L5 DSL | `modules/<M>/src/dsl.py` + `specs/` | Agent | Verilog emitter |
-| L6 Verilog | `generated/rtl/*.v` + lint reports | Agent | Testbench |
-| Tests | `*_test_plan.md` / `*_test_report.md` | Agent + User | Sign-off |
+| L1 Behavior | `modules/<M>/layer_L1_behavior/src/behavior.py` + `specs/01_behavior_spec.md` | Agent | L2/L3 |
+| L2 Cycle | `modules/<M>/layer_L2_cycle/src/cycle.py` + `specs/02_cycle_spec.md` | Agent | L3 |
+| L3 Architecture | `modules/<M>/layer_L3_architecture/src/arch.py` + `specs/03_architecture_spec.md` | Agent | L4/L5 |
+| L4 Structural | `modules/<M>/layer_L4_structure/src/structure.py` + `specs/04_structural_spec.md` | Agent | L5 |
+| L5 DSL | `modules/<M>/layer_L5_dsl/src/dsl.py` + `specs/05_dsl_spec.md` | Agent | Verilog emitter |
+| L6 Verilog | `modules/<M>/layer_L6_verilog/output/*.v` + lint reports | Agent | Testbench |
+| Tests | `modules/<M>/layer_*/specs/*_test_plan.md` / `*_test_report.md` | Agent + User | Sign-off |
+
+### Filling Templates with Real Data
+
+`earphone/docgen.py` introspects the source code and populates the Markdown templates in `doc_templates/`:
+
+- **L1 behavior spec** lists the supported instructions, register file, memory model, and test cases extracted from `behavior.py` and `test_behavior.py`.
+- **L3 architecture spec** renders the pipeline stages, multiplier/divider choices, and reset values from `arch.py`.
+- **L4 structural spec** renders the sub-block table from `structure.py`.
+- **Per-layer test plans** include the actual pytest test inventory discovered in each layer's `tests/` directory.
+- **Per-layer test reports** run the tests and fill in the real pass/fail/skip counts and duration.
+
+You can regenerate all module documents with:
+
+```bash
+python earphone/docgen.py
+```
 
 ### User Confirmation Loop
 
@@ -861,15 +891,15 @@ python -m earphone.flow
 This will:
 
 1. Validate the new module-level API.
-2. Generate / refresh module documents from templates.
-3. Run module-level tests (e.g., `earphone/modules/rv32/tests/`).
+2. Generate / refresh per-IR-layer documents for the RV32 pilot module.
+3. Run per-layer tests (e.g., `earphone/modules/rv32/layer_L1_behavior/tests/`).
 4. Run the full SoC flow and produce cross-layer reports.
 
 ### Migration Status
 
 - `earphone/modules/rv32/` is the first migrated module.
-- Its L1 behavior model (`RV32IM_ISS`) now lives in `earphone/modules/rv32/src/behavior.py`.
-- Other modules remain in `earphone/design_earphone.py` temporarily and will be migrated module by module.
+- Its L1 behavior model (`RV32IM_ISS`) now lives in `earphone/modules/rv32/layer_L1_behavior/src/behavior.py`.
+- Other modules have the same IR-layer directory scaffold and placeholder `describe()` stubs; their full implementations remain in `earphone/design_earphone.py` and will be migrated module by module.
 
 See `plan0614-doc.md` for the full roadmap.
 

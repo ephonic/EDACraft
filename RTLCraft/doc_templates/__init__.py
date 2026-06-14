@@ -54,6 +54,11 @@ _AVAILABLE_TEMPLATES: Dict[str, TemplateInfo] = {
         path=os.path.join(_TEMPLATE_DIR, "test_report.md"),
         description="Report of verification execution results and sign-off status.",
     ),
+    "layer_spec": TemplateInfo(
+        name="IR Layer Specification",
+        path=os.path.join(_TEMPLATE_DIR, "layer_spec.md"),
+        description="Per-IR-layer design specification used inside module directories.",
+    ),
 }
 
 

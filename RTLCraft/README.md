@@ -1087,12 +1087,25 @@ RTLCraft is evolving from a single-file Spec2RTL script into a **document-driven
 ```
 earphone/
 ├── flow.py                 # New orchestration entry point
+├── docgen.py               # Extracts design data and fills document templates
 ├── specs/                  # Top-level SoC specs and cross-layer reports
+│   ├── 00_top_level_spec.md
+│   ├── 01_architecture_spec.md
+│   ├── 02_behavior_spec.md
+│   ├── 03_cycle_spec.md
+│   ├── 04_structural_spec.md
+│   ├── 05_dsl_spec.md
+│   ├── 06_verification_plan.md
+│   └── 07_test_report.md
 ├── modules/                # Per-module directories
 │   └── rv32/               # Pilot module (migrated first)
-│       ├── specs/          # Module spec, test plan, test report
-│       ├── src/            # behavior.py (L1), cycle.py (L2), dsl.py (L5) ...
-│       └── tests/          # Module-level tests
+│       ├── specs/          # Module spec + aggregated test plan/report
+│       ├── layer_L1_behavior/   # L1 BehaviorIR: behavior.py + spec + tests
+│       ├── layer_L2_cycle/      # L2 CycleIR: cycle.py + spec + tests
+│       ├── layer_L3_architecture/ # L3 ArchitectureIR: arch.py + spec
+│       ├── layer_L4_structure/  # L4 StructuralIR: structure.py + spec
+│       ├── layer_L5_dsl/        # L5 DSL: dsl.py + spec + tests
+│       └── layer_L6_verilog/    # L6 Verilog: emitter.py + spec + output/
 ├── integration/            # Integration tests and docs
 ├── system/                 # System-level tests and docs
 ├── top/                    # SoC top-level
@@ -1101,9 +1114,10 @@ earphone/
 
 Key ideas:
 
-- **One directory per module**: each IP has its own `specs/`, `src/`, and `tests/`.
-- **Documents are first-class inputs**: top-level spec drives module specs; module specs drive implementation and tests.
-- **Templates**: `doc_templates/` provides industrial-pattern Markdown templates for top-level spec, module spec, test plan, and test report.
+- **One directory per module, one directory per IR layer**: each IP is split into `layer_L1_behavior/` … `layer_L6_verilog/`, each with its own `src/`, `specs/`, and (where applicable) `tests/`.
+- **Documents are first-class inputs**: top-level spec drives module specs; per-layer specs drive implementation and tests at that layer.
+- **Templates filled with real data**: `earphone/docgen.py` introspects the source code (instruction lists, architecture tables, test inventory, pytest results) and renders `doc_templates/` with meaningful content instead of placeholders.
+- **Per-layer test plans and reports**: every IR layer has its own test plan and test report; the module-level report rolls them up.
 - **User confirmation loop**: Agent infers defaults for incomplete user specs and asks for confirmation on high-impact fields.
 - **Tests propagate level by level**: L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests → integration → system.
 
@@ -1111,6 +1125,12 @@ Run the new flow:
 
 ```bash
 python -m earphone.flow
+```
+
+Generate documents for all modules directly:
+
+```bash
+python earphone/docgen.py
 ```
 
 See `plan0614-doc.md` for the detailed roadmap.

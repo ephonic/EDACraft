@@ -7,7 +7,7 @@ Public API:
 
 from __future__ import annotations
 
-from earphone.modules.rv32.src.behavior import RV32IM_ISS
-from earphone.modules.rv32.src.dsl import EarphoneRV32
+from earphone.modules.rv32.layer_L1_behavior.src.behavior import RV32IM_ISS
+from earphone.modules.rv32.layer_L5_dsl.src.dsl import EarphoneRV32
 
 __all__ = ["RV32IM_ISS", "EarphoneRV32"]

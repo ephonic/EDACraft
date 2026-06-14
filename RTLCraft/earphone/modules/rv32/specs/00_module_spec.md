@@ -1,12 +1,12 @@
 # EarphoneRV32 — Module Design Specification
 
-| Document ID | DOC-EARPHONE-RV32-001 |
+| Document ID | RV32-MOD-001 |
 |-------------|--------------|
 | Version     | 0.1 |
 | Date        | 2026-06-14 |
 | Author      | RTLCraft Agent |
-| Owner       | Earphone SoC Team |
-| Module ID   | EARPHONE-RV32 |
+| Owner       | Design Team |
+| Module ID   | RV32 |
 | Status      | Draft |
 
 ---
@@ -14,26 +14,26 @@
 ## 1. Overview
 
 ### 1.1 Purpose
-RV32IM 3-stage in-order processor core for the smart earphone SoC. Executes control code, audio DSP helpers, and peripheral configuration.
+RV32IM microcontroller core with iterative multiply/divide unit.
 
 ### 1.2 Features
 | ID | Feature | Description |
 |----|---------|-------------|
-| F-01 | RV32IM instruction set | Full 32-bit RISC-V integer (RV32I) and multiplication/division (M) extension support. |
-| F-02 | 3-stage pipeline | IF → ID/EX → WB with stall clock-gating for low dynamic power. |
+| F-01 | ISA / protocol compliance | Implements the target instruction set or interface protocol. |
+| F-02 | Power/area optimization | Tuned for earphone-class low-power constraints. |
 
 ### 1.3 Use Cases
-{{ use_cases }}
+Used inside the Smart Earphone SoC as the EarphoneRV32 block.
 
 ### 1.4 Block Diagram
 <!-- Insert or describe the internal block diagram. -->
-{{ block_diagram }}
+See layer_L4_structure/specs/04_structural_spec.md for the internal decomposition of EarphoneRV32.
 
 ```text
 +-----------------------------------------------------------+
 |                     EarphoneRV32                        |
 |  +----------------+        +---------------------------+  |
-|  | {{ submod_a }} |------->| {{ submod_b }}            |  |
+|  | Control |------->| Datapath            |  |
 |  +----------------+        +---------------------------+  |
 +-----------------------------------------------------------+
 ```
@@ -63,13 +63,13 @@ RV32IM 3-stage in-order processor core for the smart earphone SoC. Executes cont
 #### Clock and Reset
 | Port Name | Width | Direction | Description |
 |-----------|-------|-----------|-------------|
-| clk | 1 | Input | Core clock, target 160 MHz in 22 nm. |
-| rst_n | 1 | Input | Asynchronous active-low reset, synchronous release. |
+| clk | 1 | Input | System clock |
+| rst_n | 1 | Input | Active-low asynchronous reset, synchronous release |
 
 #### Functional Ports
 | Port Name | Width | Direction | Protocol / Encoding | Description |
 |-----------|-------|-----------|---------------------|-------------|
-| {{ port_name }} | {{ port_width }} | {{ port_dir }} | {{ port_proto }} | {{ port_desc }} |
+| TBD | TBD | TBD | TBD | See per-layer specs for detailed port lists. |
 
 ### 4.2 Interface Timing
 <!-- Describe key timing relationships, handshakes, and latency. -->
@@ -86,14 +86,14 @@ RV32IM 3-stage in-order processor core for the smart earphone SoC. Executes cont
 
 | Parameter Name | Type | Default | Range | Description |
 |----------------|------|---------|-------|-------------|
-| XLEN | int | 32 | 32 | ISA register width. |
+| TBD | TBD | TBD | TBD | See L5 DSL spec for configurable parameters. |
 
 ---
 
 ## 6. Functional Description
 
 ### 6.1 Theory of Operation
-The core fetches instructions from a simple memory bus, decodes and executes in ID/EX, and writes results back in WB. Branches are resolved in ID/EX. Multiplication is single-cycle; division uses a 32-cycle iterative restoring divider.
+EarphoneRV32 operation is described per-IR-layer in the layer_L*/specs/ documents.
 
 ### 6.2 State Machine(s)
 <!-- Describe or provide a state diagram for complex control logic. -->
@@ -102,7 +102,7 @@ The core fetches instructions from a simple memory bus, decodes and executes in 
 | {{ state }} | {{ state_enc }} | {{ state_desc }} | {{ state_exit }} |
 
 ### 6.3 Data Path
-{{ data_path }}
+See L4 StructuralIR spec.
 
 ### 6.4 Error Handling
 | Error Condition | Detection | Response | Reporting |
@@ -133,12 +133,12 @@ The core fetches instructions from a simple memory bus, decodes and executes in 
 ### 8.1 Clocking
 | Clock Name | Frequency | Source | Notes |
 |------------|-----------|--------|-------|
-| {{ mod_clk }} | 160 MHz | {{ mod_clk_src }} | {{ mod_clk_notes }} |
+| {{ mod_clk }} | {{ mod_clk_freq }} | {{ mod_clk_src }} | {{ mod_clk_notes }} |
 
 ### 8.2 Reset
 | Reset Name | Type | Active Level | Description |
 |------------|------|--------------|-------------|
-| {{ mod_rst }} | asynchronous | {{ mod_rst_active }} | {{ mod_rst_desc }} |
+| {{ mod_rst }} | {{ mod_rst_type }} | {{ mod_rst_active }} | {{ mod_rst_desc }} |
 
 ### 8.3 Timing Diagrams
 <!-- Insert timing diagrams for key operations. -->
@@ -182,12 +182,12 @@ The core fetches instructions from a simple memory bus, decodes and executes in 
 ## 11. Verification Considerations
 
 ### 11.1 Verification Strategy
-{{ module_verif_strategy }}
+L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 
 ### 11.2 Key Verification Points
 | ID | Check | Method | Coverage Goal |
 |----|-------|--------|---------------|
-| V-01 | {{ verif_check_01 }} | {{ verif_method_01 }} | {{ verif_cov_01 }} |
+| V-01 | Functional equivalence across layers | Cross-layer verification via LayerVerifier | 100% of ISA/protocol operations |
 
 ### 11.3 Assertions
 | ID | Assertion | Severity | Description |
@@ -215,9 +215,9 @@ The core fetches instructions from a simple memory bus, decodes and executes in 
 ### 13.1 Synthesis Target
 | Item | Target |
 |------|--------|
-| Technology | 22 nm |
+| Technology | {{ tech }} |
 | Frequency | {{ synth_freq }} |
-| Area Goal | < 30 k NAND2 |
+| Area Goal | {{ area_goal }} |
 
 ### 13.2 Tool Settings
 {{ tool_settings }}

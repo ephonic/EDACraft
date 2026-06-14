@@ -641,7 +641,7 @@ def generate_l1_tests_from_constraints(
         _to_u32,
         simd16_int16_functional,
     )
-    from earphone.modules.rv32.src.behavior import RV32IM_ISS
+    from earphone.modules.rv32.layer_L1_behavior.src.behavior import RV32IM_ISS
 
     for c in constraints:
         if c.name == "RV32M_DIV_ZERO_behavior":
@@ -687,7 +687,7 @@ def generate_l3_tests_from_constraints(
     tests = []
 
     from earphone.design_earphone import EarphoneSIMD16, SIMD_OP_VADD, _to_u32
-    from earphone.modules.rv32.src.dsl import EarphoneRV32
+    from earphone.modules.rv32.layer_L5_dsl.src.dsl import EarphoneRV32
     from rtlgen.sim import Simulator
 
     for c in constraints:

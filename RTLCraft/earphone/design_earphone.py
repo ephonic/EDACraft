@@ -86,7 +86,7 @@ print("=" * 70)
 # ----------------------------------------------------------------------------
 # L1 BehaviorIR: RV32IM ISS (migrated to earphone/modules/rv32/src/behavior.py)
 # ----------------------------------------------------------------------------
-from earphone.modules.rv32.src.behavior import (
+from earphone.modules.rv32.layer_L1_behavior.src.behavior import (
     RV32IM_ISS,
     _to_u32,
     _to_s32,
