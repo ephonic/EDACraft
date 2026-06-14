@@ -86,8 +86,14 @@ class DesignScaffold:
         return self
 
     def propagate_forward(self, entity: IREntity) -> List[IRConstraint]:
-        """Propagate constraints down through all configured layers."""
-        return self.propagator.propagate_all(entity, self.layers)
+        """Propagate constraints down through all configured layers and attach them."""
+        existing_uids = {c.uid for c in entity.constraints()}
+        derived = self.propagator.propagate_all(entity, self.layers)
+        for c in derived:
+            if c.uid not in existing_uids:
+                entity.add_constraint(c)
+                existing_uids.add(c.uid)
+        return derived
 
     def validate_backward(self, entity: IREntity) -> List[ConstraintFeedback]:
         """Validate constraints backward (from Verilog toward SpecIR)."""

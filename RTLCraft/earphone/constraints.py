@@ -12,6 +12,7 @@ from rtlgen.contracts import (
     ConstraintPropagator,
     FunctionalConstraint,
     IRConstraint,
+    LayerEmitter,
     PerformanceConstraint,
     PowerConstraint,
     VerificationIntent,
@@ -355,15 +356,15 @@ class rv32m_div_zero_seq extends uvm_sequence #(rv32_transaction);
         // x1 = 7, x2 = 0; DIV x5, x1, x2 -> -1
         req = rv32_transaction::type_id::create("req");
         start_item(req);
-        req.insn      = 32'h0220c2b3;
+        req.insn      = 32'h0220c1b3;
         req.rs1_val   = 32'h00000007;
         req.rs2_val   = 32'h00000000;
         finish_item(req);
 
-        // REM x6, x1, x2 -> 7
+        // REM x4, x1, x2 -> 7
         req = rv32_transaction::type_id::create("req");
         start_item(req);
-        req.insn      = 32'h0220e333;
+        req.insn      = 32'h0220e233;
         req.rs1_val   = 32'h00000007;
         req.rs2_val   = 32'h00000000;
         finish_item(req);
@@ -446,6 +447,19 @@ def generate_constraint_artifacts(constraints: List[IRConstraint]) -> dict:
     return artifacts
 
 
+class EarphoneLayerEmitter(LayerEmitter):
+    """Per-layer artifact emitter for the Earphone SoC.
+
+    Generates verification artifacts (UVM sequences, SVA assertions, power
+    reports) once constraints reach the Verilog layer.
+    """
+
+    def emit(self, entity: IREntity, layer: str) -> dict:
+        if layer != "Verilog":
+            return {}
+        return generate_constraint_artifacts(entity.constraints_by(layer=layer))
+
+
 # ---------------------------------------------------------------------------
 # Backward validation & design gates
 # ---------------------------------------------------------------------------
@@ -525,6 +539,15 @@ def build_backward_validators() -> "ConstraintPropagator":
     return p
 
 
+def build_earphone_scaffold_propagator() -> "ConstraintPropagator":
+    """Return a propagator with forward transforms and backward validators."""
+    p = build_earphone_propagator()
+    for (src, dst), rules in build_backward_validators()._backward_rules.items():
+        for rule in rules:
+            p.register_backward(src, dst, rule)
+    return p
+
+
 def build_design_gates() -> List[DesignGate]:
     """Return the design gates used between Earphone IR layers."""
 
@@ -596,3 +619,213 @@ def resolve_feedback(feedback: ConstraintFeedback, modules: List[Module]) -> boo
             if relax_unachievable_power_budget(mod):
                 return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Intent-driven test generation
+# ---------------------------------------------------------------------------
+
+from typing import Callable, Dict, Tuple
+
+
+def generate_l1_tests_from_constraints(
+    constraints: List[IRConstraint],
+) -> List[Tuple[str, Callable[[], bool]]]:
+    """Generate L1 functional test callables from BehaviorIR/SpecIR constraints."""
+    tests = []
+
+    # Import locally to avoid circular dependency at module load time.
+    from earphone.design_earphone import (
+        RV32IM_ISS,
+        SIMD_OP_VADD,
+        _to_u32,
+        simd16_int16_functional,
+    )
+
+    for c in constraints:
+        if c.name == "RV32M_DIV_ZERO_behavior":
+            def _rv32m_div_zero_test():
+                iss = RV32IM_ISS()
+                prog = [
+                    0x00700093,  # addi x1, x0, 7
+                    0x00000113,  # addi x2, x0, 0
+                    0x0220c1b3,  # div  x3, x1, x2 -> -1
+                    0x0220e233,  # rem  x4, x1, x2 -> 7
+                    0x00100073,  # ebreak
+                ]
+                iss.load_program_words(prog, 0x1000)
+                iss.run(max_cycles=40)
+                return (iss.state.regs[3] == 0xFFFFFFFF and iss.state.regs[4] == 7)
+
+            tests.append(("RV32M DIV by zero (intent-driven)", _rv32m_div_zero_test))
+
+        elif c.name == "SIMD16_VADD_OVERFLOW_behavior":
+            def _simd16_vadd_test():
+                a = 0
+                b = 0
+                for i in range(16):
+                    a |= ((i + 1) & 0xFFFF) << (i * 16)
+                    b |= ((i + 2) & 0xFFFF) << (i * 16)
+                r = simd16_int16_functional(SIMD_OP_VADD, a, b)
+                for i in range(16):
+                    lane = (r >> (i * 16)) & 0xFFFF
+                    expected = ((i + 1) + (i + 2)) & 0xFFFF
+                    if lane != expected:
+                        return False
+                return True
+
+            tests.append(("SIMD16 INT16 vadd (intent-driven)", _simd16_vadd_test))
+
+    return tests
+
+
+def generate_l3_tests_from_constraints(
+    constraints: List[IRConstraint],
+) -> List[Tuple[str, Callable[[], bool]]]:
+    """Generate L3 DSL simulation test callables from Verilog-layer constraints."""
+    tests = []
+
+    from earphone.design_earphone import (
+        EarphoneRV32, EarphoneSIMD16, SIMD_OP_VADD, _to_u32,
+    )
+    from rtlgen.sim import Simulator
+
+    for c in constraints:
+        if c.name == "RV32M_DIV_ZERO_UVM":
+            def _rv32_dsl_div_test():
+                cpu = EarphoneRV32()
+                sim = Simulator(cpu)
+                sim.reset("rst_n", cycles=2)
+                program = {
+                    0x1000: 0x00700093,  # addi x1, x0, 7
+                    0x1004: 0x00000113,  # addi x2, x0, 0
+                    0x1008: 0x0220c1b3,  # div  x3, x1, x2 -> -1
+                    0x100c: 0x00100073,  # ebreak
+                }
+                expected = {3: _to_u32(-1)}
+                retired = {rd: False for rd in expected}
+                for cycle in range(200):
+                    addr = sim.peek("imem_addr")
+                    sim.poke("imem_gnt", 1)
+                    sim.poke("imem_rdata", program.get(addr, 0))
+                    sim.poke("dmem_gnt", 1)
+                    sim.poke("dmem_valid", 1)
+                    sim.poke("dmem_rdata", 0)
+                    sim.step()
+                    if sim.peek("retire_valid"):
+                        rd = sim.peek("retire_rd")
+                        val = sim.peek("retire_result")
+                        if rd in expected and val == expected[rd]:
+                            retired[rd] = True
+                return all(retired.values())
+
+            tests.append(("RV32IM DSL DIV by zero (intent-driven)", _rv32_dsl_div_test))
+
+        elif c.name == "SIMD16_VADD_OVERFLOW_SVA_VERILOG":
+            def _simd16_dsl_vadd_test():
+                simd = EarphoneSIMD16()
+                sim = Simulator(simd)
+                sim.reset("rst_n", cycles=2)
+                a = 0
+                b = 0
+                for i in range(16):
+                    a |= ((i + 1) & 0xFFFF) << (i * 16)
+                    b |= ((i + 2) & 0xFFFF) << (i * 16)
+                sim.poke("vsrc0", a)
+                sim.poke("vsrc1", b)
+                sim.poke("op", SIMD_OP_VADD)
+                sim.poke("mode", 0)
+                sim.poke("pred", 0xFFFF)
+                sim.poke("start", 1)
+                sim.step()
+                r = sim.peek("vdst")
+                done = sim.peek("done")
+                if not done:
+                    return False
+                for i in range(16):
+                    lane = (r >> (i * 16)) & 0xFFFF
+                    expected = ((i + 1) + (i + 2)) & 0xFFFF
+                    if lane != expected:
+                        return False
+                return True
+
+            tests.append(("SIMD16 DSL vadd (intent-driven)", _simd16_dsl_vadd_test))
+
+    return tests
+
+
+def generate_cocotb_test_content(constraints: List[IRConstraint]) -> Dict[str, str]:
+    """Generate cocotb Python test files from Verilog-layer verification intents."""
+    files = {}
+
+    for c in constraints:
+        if c.layer != "Verilog" or c.category != "verification":
+            continue
+        meta = c.metadata or {}
+        if meta.get("kind") == "sequence" and "RV32M_DIV_ZERO" in c.name:
+            content = '''import cocotb
+from cocotb.triggers import ClockCycles
+from cocotb.clock import Clock
+
+
+@cocotb.test()
+async def test_rv32m_div_zero(dut):
+    """Intent-driven cocotb test for RV32M DIV by zero."""
+    cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
+
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 5)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 2)
+
+    # Drive instruction memory: DIV x3, x1, x2 where x2 = 0
+    # This is a simplified stimulus; real test would use memory BFM.
+    for _ in range(50):
+        await ClockCycles(dut.clk, 1)
+
+    # Check retire
+    assert dut.retire_valid.value == 1
+    assert dut.retire_rd.value == 3
+    # DIV by zero result = -1 (0xFFFFFFFF)
+    assert dut.retire_result.value == 0xFFFFFFFF
+'''
+            files["test_rv32m_div_zero.py"] = content
+
+        elif meta.get("kind") == "assertion" and "SIMD16_VADD_OVERFLOW" in c.name:
+            content = '''import cocotb
+from cocotb.triggers import ClockCycles
+from cocotb.clock import Clock
+
+
+@cocotb.test()
+async def test_simd16_vadd_overflow(dut):
+    """Intent-driven cocotb test for SIMD16 vadd 16-bit wrap."""
+    cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
+
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 5)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 2)
+
+    a = sum(((i + 1) & 0xFFFF) << (i * 16) for i in range(16))
+    b = sum(((i + 2) & 0xFFFF) << (i * 16) for i in range(16))
+
+    dut.vsrc0.value = a
+    dut.vsrc1.value = b
+    dut.op.value = 0       # vadd
+    dut.mode.value = 0     # INT16
+    dut.pred.value = 0xFFFF
+    dut.start.value = 1
+    await ClockCycles(dut.clk, 1)
+    dut.start.value = 0
+    await ClockCycles(dut.clk, 2)
+
+    assert dut.done.value == 1
+    for i in range(16):
+        lane = (int(dut.vdst.value) >> (i * 16)) & 0xFFFF
+        expected = ((i + 1) + (i + 2)) & 0xFFFF
+        assert lane == expected, f"lane {i}: {lane} != {expected}"
+'''
+            files["test_simd16_vadd_overflow.py"] = content
+
+    return files

@@ -65,6 +65,11 @@ from earphone.constraints import (
     build_backward_validators,
     build_design_gates,
     resolve_feedback,
+    generate_l1_tests_from_constraints,
+    generate_l3_tests_from_constraints,
+    generate_cocotb_test_content,
+    EarphoneLayerEmitter,
+    build_earphone_scaffold_propagator,
     EARPHONE_LAYERS,
 )
 
@@ -2759,6 +2764,85 @@ def generate_constraint_artifacts_and_report():
     return all_constraints, all_artifacts, feedback_items
 
 
+def generate_cocotb_tests_from_constraints():
+    """Generate cocotb Python test files from Verilog-layer constraints."""
+    print("\n" + "=" * 70)
+    print("cocotb Test Generation (Intent-Driven)")
+    print("=" * 70)
+
+    out_dir = "earphone/tb/cocotb"
+    os.makedirs(out_dir, exist_ok=True)
+
+    propagator = build_earphone_propagator()
+    modules = [
+        ("EarphoneRV32", EarphoneRV32()),
+        ("EarphoneSIMD16", EarphoneSIMD16()),
+    ]
+
+    all_constraints = []
+    for name, mod in modules:
+        all_constraints.extend(propagate_module_constraints(mod, propagator))
+
+    files = generate_cocotb_test_content(all_constraints)
+    for fname, content in files.items():
+        path = os.path.join(out_dir, fname)
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"  wrote {path}")
+
+    return files
+
+
+def run_intent_driven_tests():
+    """Run L1 and L3 tests that are derived from constraints."""
+    print("\n" + "=" * 70)
+    print("Intent-Driven Tests")
+    print("=" * 70)
+
+    propagator = build_earphone_propagator()
+    modules = [
+        ("EarphoneRV32", EarphoneRV32()),
+        ("EarphoneSIMD16", EarphoneSIMD16()),
+    ]
+
+    all_constraints = []
+    for name, mod in modules:
+        all_constraints.extend(propagate_module_constraints(mod, propagator))
+
+    results = []
+
+    # L1 intent-driven tests
+    print("\n[L1 intent-driven tests]")
+    for test_name, test_fn in generate_l1_tests_from_constraints(all_constraints):
+        try:
+            ok = test_fn()
+            results.append((test_name, ok))
+            print(f"  {test_name:40s} {'PASS' if ok else 'FAIL'}")
+        except Exception as e:
+            results.append((test_name, False))
+            print(f"  {test_name:40s} FAIL: {e}")
+
+    # L3 intent-driven tests
+    print("\n[L3 intent-driven tests]")
+    for test_name, test_fn in generate_l3_tests_from_constraints(all_constraints):
+        try:
+            ok = test_fn()
+            results.append((test_name, ok))
+            print(f"  {test_name:40s} {'PASS' if ok else 'FAIL'}")
+        except Exception as e:
+            results.append((test_name, False))
+            print(f"  {test_name:40s} FAIL: {e}")
+
+    print("\n" + "-" * 70)
+    passed = sum(1 for _, ok in results if ok)
+    for name, ok in results:
+        print(f"  {name:40s} {'PASS' if ok else 'FAIL'}")
+    print(f"  Total: {passed}/{len(results)}")
+    print("-" * 70)
+
+    return passed == len(results), results
+
+
 def generate_review_bundle():
     """Emit the 7-stage review bundle markdown files."""
     print("\n" + "=" * 70)
@@ -2924,6 +3008,181 @@ EarphoneTop
 # ============================================================================
 
 if __name__ == "__main__":
+    # =====================================================================
+    # Phase E: Design Scaffold — standardized agent loop
+    # =====================================================================
+    from rtlgen.scaffold import DesignScaffold
+    from rtlgen.contracts import DesignDecision
+
+    propagator = build_earphone_scaffold_propagator()
+    scaffold = DesignScaffold(propagator, EarphoneLayerEmitter(), layers=EARPHONE_LAYERS)
+
+    # Register key design entities (constraints are attached in __init__)
+    rv32_entity = EarphoneRV32()
+    simd16_entity = EarphoneSIMD16()
+    scaffold.register_entity(rv32_entity)
+    scaffold.register_entity(simd16_entity)
+
+    # Register design gates between IR layers
+    for gate in build_design_gates():
+        scaffold.register_gate(gate)
+
+    # Record major architecture decisions
+    scaffold.record_decision(
+        DesignDecision(
+            uid="DEC-RV32-001",
+            layer="ArchitectureIR",
+            topic="Divider implementation",
+            decision="Use 32-cycle iterative restoring divider for DIV/DIVU/REM/REMU",
+            rationale="Reduce divider area vs combinational implementation; acceptable latency for Earphone control code.",
+            alternatives_considered=["Combinational divider", "Radix-4 SRT divider"],
+            impacted_constraints=["EARP-RV32-001", "EARP-RV32-002"],
+            owner="ai",
+        )
+    )
+    scaffold.record_decision(
+        DesignDecision(
+            uid="DEC-RV32-002",
+            layer="ArchitectureIR",
+            topic="Pipeline clock gating",
+            decision="Gate pipeline registers with core_clk_en = ~core_stall & ~muldiv_busy",
+            rationale="Cut dynamic power during memory stalls and divide operations with minimal control overhead.",
+            alternatives_considered=["Per-register fine-grained gating", "Module-level clock gate only"],
+            impacted_constraints=["EARP-RV32-002"],
+            owner="ai",
+        )
+    )
+    scaffold.record_decision(
+        DesignDecision(
+            uid="DEC-SIMD-001",
+            layer="ArchitectureIR",
+            topic="SIMD datapath gating",
+            decision="Independent int_ce and fp_ce clock enables for INT16/FP16 datapaths",
+            rationale="FP16 MAC pipeline toggles only when FP16 workloads are active; INT16 audio path remains active.",
+            alternatives_considered=["Shared SIMD clock enable", "Per-lane clock gating"],
+            impacted_constraints=["EARP-SIMD-001"],
+            owner="ai",
+        )
+    )
+
+    # Run scaffold propagation/validation loop
+    print("\n" + "=" * 70)
+    print("Design Scaffold — Constraint Propagation & Validation")
+    print("=" * 70)
+
+    resolution_log: List[str] = []
+
+    def _scaffold_resolver(fb):
+        resolved = resolve_feedback(fb, scaffold.entities)
+        if resolved:
+            resolution_log.append(
+                f"Resolved {fb.uid}: {fb.message} -> applied suggested resolution"
+            )
+        return resolved
+
+    scaffold_ok, feedback = scaffold.run(resolver=_scaffold_resolver)
+    print(f"  Scaffold propagation/validation: {'PASS' if scaffold_ok else 'BLOCKERS'}")
+    checklist = scaffold.compliance_checklist()
+    for item, ok in checklist.items():
+        print(f"  compliance.{item}: {'OK' if ok else 'MISSING'}")
+
+    # Persist artifacts generated by the scaffold emitter
+    out_dir = "earphone/tb/constraints"
+    os.makedirs(out_dir, exist_ok=True)
+    for artifact_name, content in scaffold.artifacts.items():
+        path = os.path.join(out_dir, artifact_name)
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"  wrote {path}")
+
+    # ---- traceability report ----------------------------------------------
+    all_constraints = []
+    for entity in scaffold.entities:
+        all_constraints.extend(entity.constraints())
+
+    report_lines = [
+        "# 09 Constraint Traceability Report",
+        "",
+        "## Constraints by Layer",
+        "",
+        "| UID | Name | Category | Layer | Target | Owner | Derived From |",
+        "|-----|------|----------|-------|--------|-------|--------------|",
+    ]
+    for c in sorted(all_constraints, key=lambda x: (x.layer, x.uid)):
+        derived = ", ".join(c.derived_from) if c.derived_from else "—"
+        report_lines.append(
+            f"| {c.uid} | {c.name} | {c.category} | {c.layer} | {c.target or '—'} | {c.owner} | {derived} |"
+        )
+
+    report_lines.extend([
+        "",
+        "## Generated Artifacts",
+        "",
+        "| Artifact | Source Constraint |",
+        "|----------|-------------------|",
+    ])
+    for c in all_constraints:
+        if c.layer == "Verilog" and c.metadata and c.metadata.get("filename"):
+            report_lines.append(f"| {c.metadata['filename']} | {c.name} |")
+
+    report_path = "earphone/specs/09_constraint_traceability.md"
+    with open(report_path, "w") as f:
+        f.write("\n".join(report_lines))
+    print(f"  wrote {report_path}")
+
+    # ---- design issues report ---------------------------------------------
+    issue_lines = [
+        "# 10 Design Feedback / Issues Report",
+        "",
+        "## Resolution Log",
+        "",
+    ]
+    if resolution_log:
+        for entry in resolution_log:
+            issue_lines.append(f"- {entry}")
+    else:
+        issue_lines.append("- No auto-resolutions performed.")
+
+    issue_lines.extend([
+        "",
+        "## Feedback Items",
+        "",
+        "| UID | Severity | Source Constraint | Detected At | Message |",
+        "|-----|----------|-------------------|-------------|---------|",
+    ])
+    for fb in sorted(feedback, key=lambda x: x.severity.value):
+        issue_lines.append(
+            f"| {fb.uid} | {fb.severity.value} | {fb.source_constraint_uid} | {fb.detected_at_layer} | {fb.message} |"
+        )
+
+    issue_lines.extend([
+        "",
+        "## Remaining Blockers",
+        "",
+    ])
+    remaining_blockers = [fb for fb in feedback if fb.is_blocking()]
+    if remaining_blockers:
+        for fb in remaining_blockers:
+            issue_lines.append(f"- **{fb.uid}**: {fb.message}")
+            for suggestion in fb.suggested_resolutions:
+                issue_lines.append(f"  - Suggested: {suggestion}")
+    else:
+        issue_lines.append("- None. All blockers resolved or no blockers detected.")
+
+    issue_path = "earphone/specs/10_design_issues.md"
+    with open(issue_path, "w") as f:
+        f.write("\n".join(issue_lines))
+    print(f"  wrote {issue_path}")
+
+    # Persist decision log
+    decision_log_path = "earphone/specs/11_decision_log.md"
+    with open(decision_log_path, "w") as f:
+        f.write(scaffold.generate_decision_log())
+    print(f"  wrote {decision_log_path}")
+
+    # =====================================================================
+    # Standard Spec2RTL flow
+    # =====================================================================
     # Generate FFT twiddle files first
     print("\n[Setup] Generating FFT256 twiddle tables...")
     from design_scripts.design_fft import generate_twiddle_hex
@@ -2945,23 +3204,38 @@ if __name__ == "__main__":
     # Verilog generation
     gen_results = generate_verilog()
 
-    # Cross-layer constraint propagation + artifact generation
-    generate_constraint_artifacts_and_report()
+    # Cross-layer constraint propagation, artifact generation, and backward
+    # validation are now handled by the DesignScaffold above.
+
+    # Intent-driven tests (Phase D)
+    intent_ok, intent_results = run_intent_driven_tests()
+
+    # cocotb test generation (Phase D)
+    generate_cocotb_tests_from_constraints()
 
     # Summary
     print("\n" + "=" * 70)
     print("SMART EARPHONE SoC — DESIGN SUMMARY")
     print("=" * 70)
-    print(f"  L1 functional tests : {sum(1 for _, ok in l1_results if ok)}/{len(l1_results)} PASS")
-    print(f"  L3 DSL sim tests    : {sum(1 for _, ok in l3_results if ok)}/{len(l3_results)} PASS")
-    print(f"  Cross-layer checks  : {sum(1 for _, ok in xlayer_results if ok)}/{len(xlayer_results)} PASS")
-    print(f"  Verilog modules     : {sum(1 for r in gen_results if r[1])}/{len(gen_results)} generated")
+    print(f"  Scaffold compliance   : {sum(checklist.values())}/{len(checklist)} OK")
+    print(f"  L1 functional tests   : {sum(1 for _, ok in l1_results if ok)}/{len(l1_results)} PASS")
+    print(f"  L3 DSL sim tests      : {sum(1 for _, ok in l3_results if ok)}/{len(l3_results)} PASS")
+    print(f"  Cross-layer checks    : {sum(1 for _, ok in xlayer_results if ok)}/{len(xlayer_results)} PASS")
+    print(f"  Intent-driven tests   : {sum(1 for _, ok in intent_results if ok)}/{len(intent_results)} PASS")
+    print(f"  Verilog modules       : {sum(1 for r in gen_results if r[1])}/{len(gen_results)} generated")
     total_lines = sum(r[2] for r in gen_results if r[1])
     total_lint = sum(r[3] for r in gen_results if r[1])
-    print(f"  Total Verilog lines : {total_lines}")
-    print(f"  Total lint issues   : {total_lint}")
+    print(f"  Total Verilog lines   : {total_lines}")
+    print(f"  Total lint issues     : {total_lint}")
     print("=" * 70)
 
-    all_ok = l1_ok and l3_ok and xlayer_ok and all(r[1] for r in gen_results)
+    all_ok = (
+        scaffold_ok
+        and l1_ok
+        and l3_ok
+        and xlayer_ok
+        and intent_ok
+        and all(r[1] for r in gen_results)
+    )
     print(f"\n  Overall: {'PASS' if all_ok else 'FAIL'}")
     sys.exit(0 if all_ok else 1)
