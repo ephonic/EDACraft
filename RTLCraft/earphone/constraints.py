@@ -637,11 +637,11 @@ def generate_l1_tests_from_constraints(
 
     # Import locally to avoid circular dependency at module load time.
     from earphone.design_earphone import (
-        RV32IM_ISS,
         SIMD_OP_VADD,
         _to_u32,
         simd16_int16_functional,
     )
+    from earphone.modules.rv32.src.behavior import RV32IM_ISS
 
     for c in constraints:
         if c.name == "RV32M_DIV_ZERO_behavior":
@@ -686,9 +686,8 @@ def generate_l3_tests_from_constraints(
     """Generate L3 DSL simulation test callables from Verilog-layer constraints."""
     tests = []
 
-    from earphone.design_earphone import (
-        EarphoneRV32, EarphoneSIMD16, SIMD_OP_VADD, _to_u32,
-    )
+    from earphone.design_earphone import EarphoneSIMD16, SIMD_OP_VADD, _to_u32
+    from earphone.modules.rv32.src.dsl import EarphoneRV32
     from rtlgen.sim import Simulator
 
     for c in constraints:

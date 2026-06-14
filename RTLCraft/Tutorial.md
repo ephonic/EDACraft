@@ -30,7 +30,13 @@
    - Backward Validation & Feedback
    - Design Scaffold
    - Usage Example
-6. [Skills Library](#skills-library)
+6. [Document-Driven Layered SoC Design](#document-driven-layered-soc-design)
+   - Directory Layout
+   - Document Hierarchy
+   - User Confirmation Loop
+   - Running the Flow
+   - Migration Status
+7. [Skills Library](#skills-library)
    - Overview
    - DSL Module Inventory (192 modules)
    - Per-Domain Skill Details
@@ -800,7 +806,72 @@ scaffold.register_entity(m)
 ok, feedback = scaffold.run()
 ```
 
-See `earphone/design_earphone.py` for a complete end-to-end example using the Earphone SoC.
+See `earphone/flow.py` (new orchestration entry) and `earphone/design_earphone.py` (legacy monolithic reference) for end-to-end examples using the Earphone SoC.
+
+---
+
+## Document-Driven Layered SoC Design
+
+For industrial SoC projects, RTLCraft uses a **document-driven layered workflow**. The `earphone/` project is the pilot.
+
+### Directory Layout
+
+```
+earphone/
+├── flow.py              # Orchestration entry point
+├── specs/               # Top-level SoC specs, constraint reports, decision logs
+├── modules/             # Per-module directories
+│   └── rv32/
+│       ├── specs/       # Module spec, test plan, test report
+│       ├── src/         # L1 behavior, L2 cycle, L5 DSL, Verilog emitter
+│       └── tests/       # Module-level directed/random tests
+├── integration/         # Multi-module integration tests
+├── system/              # Full SoC system tests
+├── top/                 # SoC top-level integration
+└── tb/                  # Shared cocotb / UVM / SVA testbench assets
+```
+
+### Document Hierarchy
+
+| IR Layer | Document | Produced By | Consumed By |
+|----------|----------|-------------|-------------|
+| L0 Intent | `specs/00_top_level_spec.md` | User (+ Agent defaults) | L1/L3 architects |
+| L1 Behavior | `modules/<M>/src/behavior.py` + `specs/` | Agent | L2/L3 |
+| L2 Cycle | `modules/<M>/src/cycle.py` + `specs/` | Agent | L3 |
+| L3 Architecture | `modules/<M>/specs/01_architecture_spec.md` | Agent | L4/L5 |
+| L4 Structural | `modules/<M>/src/structure.py` + `specs/` | Agent | L5 |
+| L5 DSL | `modules/<M>/src/dsl.py` + `specs/` | Agent | Verilog emitter |
+| L6 Verilog | `generated/rtl/*.v` + lint reports | Agent | Testbench |
+| Tests | `*_test_plan.md` / `*_test_report.md` | Agent + User | Sign-off |
+
+### User Confirmation Loop
+
+1. User provides a partial top-level spec (e.g., module list, target frequency, power budget).
+2. Agent renders `doc_templates/top_level_spec.md` and fills missing fields with sensible defaults.
+3. Agent highlights **high-impact defaults** (power budget, safety level, protocol choices) for explicit confirmation.
+4. User confirms or edits; the spec becomes the authoritative input for module specs.
+5. Module specs inherit constraints from the top-level spec and add module-specific details.
+
+### Running the Flow
+
+```bash
+python -m earphone.flow
+```
+
+This will:
+
+1. Validate the new module-level API.
+2. Generate / refresh module documents from templates.
+3. Run module-level tests (e.g., `earphone/modules/rv32/tests/`).
+4. Run the full SoC flow and produce cross-layer reports.
+
+### Migration Status
+
+- `earphone/modules/rv32/` is the first migrated module.
+- Its L1 behavior model (`RV32IM_ISS`) now lives in `earphone/modules/rv32/src/behavior.py`.
+- Other modules remain in `earphone/design_earphone.py` temporarily and will be migrated module by module.
+
+See `plan0614-doc.md` for the full roadmap.
 
 ---
 

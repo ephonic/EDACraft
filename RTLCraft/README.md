@@ -1080,6 +1080,43 @@ For the full tutorial, see [Tutorial.md](Tutorial.md).
 
 ---
 
+## Document-Driven SoC Design (Earphone Example)
+
+RTLCraft is evolving from a single-file Spec2RTL script into a **document-driven, layered SoC design flow**. The `earphone/` directory is the pilot project:
+
+```
+earphone/
+├── flow.py                 # New orchestration entry point
+├── specs/                  # Top-level SoC specs and cross-layer reports
+├── modules/                # Per-module directories
+│   └── rv32/               # Pilot module (migrated first)
+│       ├── specs/          # Module spec, test plan, test report
+│       ├── src/            # behavior.py (L1), cycle.py (L2), dsl.py (L5) ...
+│       └── tests/          # Module-level tests
+├── integration/            # Integration tests and docs
+├── system/                 # System-level tests and docs
+├── top/                    # SoC top-level
+└── tb/                     # Shared verification platform
+```
+
+Key ideas:
+
+- **One directory per module**: each IP has its own `specs/`, `src/`, and `tests/`.
+- **Documents are first-class inputs**: top-level spec drives module specs; module specs drive implementation and tests.
+- **Templates**: `doc_templates/` provides industrial-pattern Markdown templates for top-level spec, module spec, test plan, and test report.
+- **User confirmation loop**: Agent infers defaults for incomplete user specs and asks for confirmation on high-impact fields.
+- **Tests propagate level by level**: L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests → integration → system.
+
+Run the new flow:
+
+```bash
+python -m earphone.flow
+```
+
+See `plan0614-doc.md` for the detailed roadmap.
+
+---
+
 ## Third-Party Attribution
 
 The `skills/` directory contains Python DSL modules that are re-implementations inspired by third-party open-source Verilog reference designs. **The copyright of the original reference RTL designs belongs to their respective original authors.** When using any skill, you must comply with the license terms of the original project.
