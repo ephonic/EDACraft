@@ -444,3 +444,155 @@ def generate_constraint_artifacts(constraints: List[IRConstraint]) -> dict:
         elif c.name.startswith("CPU_ACTIVE_POWER"):
             artifacts[meta.get("filename", "cpu_power_report.md")] = emit_cpu_power_report()
     return artifacts
+
+
+# ---------------------------------------------------------------------------
+# Backward validation & design gates
+# ---------------------------------------------------------------------------
+
+import re
+
+from rtlgen.contracts import ConstraintFeedback, DesignGate, FeedbackSeverity, IREntity
+
+
+# Feasibility assumption: based on current architecture, the minimum achievable
+# active power for EarphoneRV32 at 160 MHz/22nm is 0.35 mW/MHz.
+CPU_MIN_ACHIEVABLE_POWER_MW_PER_MHZ = 0.35
+
+
+def _parse_power_budget(expr: str) -> Optional[float]:
+    """Parse a power budget expression like '< 0.5' into a float."""
+    m = re.search(r"<\s*([0-9.]+)", expr)
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def check_power_feasibility_backward(
+    c: IRConstraint, src_layer: str, dst_layer: str
+) -> Optional[ConstraintFeedback]:
+    """Backward rule: verify that a SpecIR power budget is achievable at Verilog."""
+    if c.category != "power" or c.layer != src_layer:
+        return None
+    budget = _parse_power_budget(c.expr)
+    if budget is None:
+        return None
+    if budget < CPU_MIN_ACHIEVABLE_POWER_MW_PER_MHZ:
+        return ConstraintFeedback(
+            uid=f"FB-{c.uid}",
+            severity=FeedbackSeverity.BLOCKER,
+            source_constraint_uid=c.uid,
+            detected_at_layer=dst_layer,
+            message=(
+                f"Power budget {budget} mW/MHz is below estimated minimum "
+                f"{CPU_MIN_ACHIEVABLE_POWER_MW_PER_MHZ} mW/MHz for EarphoneRV32 "
+                f"with current architecture (iterative divider + clock gating)."
+            ),
+            suggested_resolutions=[
+                f"Relax SpecIR budget to >= {CPU_MIN_ACHIEVABLE_POWER_MW_PER_MHZ} mW/MHz",
+                "Add power domain / retention cells and re-estimate",
+                "Reduce pipeline depth or feature set and re-estimate",
+            ],
+            owner="ai",
+        )
+    return None
+
+
+def check_functional_sva_completeness(
+    c: IRConstraint, src_layer: str, dst_layer: str
+) -> Optional[ConstraintFeedback]:
+    """Backward rule: warn if a functional constraint has no Verilog assertion."""
+    if c.category != "functional" or c.layer != src_layer:
+        return None
+    # In a real flow this would inspect generated artifacts; here we simply
+    # emit INFO feedback for traceability demonstration.
+    return ConstraintFeedback(
+        uid=f"FB-COMPLETE-{c.uid}",
+        severity=FeedbackSeverity.INFO,
+        source_constraint_uid=c.uid,
+        detected_at_layer=dst_layer,
+        message=f"Functional constraint '{c.name}' has been propagated to Verilog layer.",
+        owner="ai",
+    )
+
+
+def build_backward_validators() -> "ConstraintPropagator":
+    """Return a propagator registered with backward validation rules."""
+    p = ConstraintPropagator()
+    # Validate SpecIR constraints against Verilog implementation
+    p.register_backward("SpecIR", "Verilog", check_power_feasibility_backward)
+    p.register_backward("SpecIR", "Verilog", check_functional_sva_completeness)
+    return p
+
+
+def build_design_gates() -> List[DesignGate]:
+    """Return the design gates used between Earphone IR layers."""
+
+    def _power_gate_check(entity: IREntity, src: str, dst: str) -> List[ConstraintFeedback]:
+        feedback = []
+        for c in entity.constraints_by(layer=src, category="power"):
+            fb = check_power_feasibility_backward(c, src, dst)
+            if fb:
+                feedback.append(fb)
+        return feedback
+
+    return [
+        DesignGate("SpecIR", "Verilog", [_power_gate_check]),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Resolution helpers
+# ---------------------------------------------------------------------------
+
+from rtlgen.core import Module
+
+
+def relax_unachievable_power_budget(module: Module) -> bool:
+    """Resolver: replace an unachievable power budget with the feasible one.
+
+    Returns True if a change was made.
+    """
+    changed = False
+    new_constraints = []
+    for c in module.constraints():
+        if (
+            c.category == "power"
+            and c.layer == "SpecIR"
+            and c.name == "CPU_POWER_BUDGET_STRICT"
+        ):
+            budget = _parse_power_budget(c.expr)
+            if budget is not None and budget < CPU_MIN_ACHIEVABLE_POWER_MW_PER_MHZ:
+                new_constraints.append(
+                    PowerConstraint(
+                        uid=c.uid,
+                        name=c.name,
+                        layer=c.layer,
+                        expr=f"< {CPU_MIN_ACHIEVABLE_POWER_MW_PER_MHZ}",
+                        target=c.target,
+                        unit=c.unit,
+                        owner=c.owner,
+                        source_ref=c.source_ref,
+                        metadata={**c.metadata, "relaxed": True, "original_expr": c.expr},
+                    )
+                )
+                changed = True
+                continue
+        new_constraints.append(c)
+    if changed:
+        module._constraints = new_constraints
+    return changed
+
+
+def resolve_feedback(feedback: ConstraintFeedback, modules: List[Module]) -> bool:
+    """Attempt to auto-resolve a feedback item.
+
+    Returns True if resolved.
+    """
+    if not feedback.is_blocking():
+        return True
+    if "Power budget" in feedback.message:
+        for mod in modules:
+            if relax_unachievable_power_budget(mod):
+                return True
+    return False

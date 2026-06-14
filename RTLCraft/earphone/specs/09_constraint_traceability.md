@@ -18,6 +18,7 @@
 | EARP-SIMD-001_B_C_A_S_D | SIMD16_VADD_OVERFLOW_SVA | verification | DSL | EarphoneSIMD16 | ai | EARP-SIMD-001_B_C_A_S |
 | EARP-RV32-001 | RV32M_DIV_ZERO | functional | SpecIR | EarphoneRV32 | human | — |
 | EARP-RV32-002 | CPU_ACTIVE_POWER | power | SpecIR | EarphoneRV32 | human | — |
+| EARP-RV32-003 | CPU_POWER_BUDGET_STRICT | power | SpecIR | EarphoneRV32 | human | — |
 | EARP-SIMD-001 | SIMD16_VADD_OVERFLOW | functional | SpecIR | EarphoneSIMD16 | human | — |
 | EARP-RV32-001_B_C_A_S | RV32M_DIV_ZERO_STRUCT | functional | StructuralIR | EarphoneRV32.execute_agent | ai | EARP-RV32-001_B_C_A |
 | EARP-RV32-002_B_C_A_S | CPU_ICG_INSERTION | power | StructuralIR | EarphoneRV32 | ai | EARP-RV32-002_B_C_A |

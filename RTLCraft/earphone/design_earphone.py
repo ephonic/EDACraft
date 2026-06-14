@@ -56,12 +56,16 @@ except ImportError:
     VerilogLinter = None
 
 # Cross-layer constraint framework
-from rtlgen import FunctionalConstraint, PowerConstraint
+from rtlgen import FunctionalConstraint, PowerConstraint, IRConstraint, ConstraintFeedback
 from earphone.constraints import (
     attach_earphone_constraints,
     propagate_module_constraints,
     generate_constraint_artifacts,
     build_earphone_propagator,
+    build_backward_validators,
+    build_design_gates,
+    resolve_feedback,
+    EARPHONE_LAYERS,
 )
 
 # Increase recursion limit for deep module hierarchies
@@ -1408,6 +1412,20 @@ class EarphoneRV32(Module):
                 source_ref="earphone/design_spec.md#power",
             ),
         )
+        # Artificially aggressive constraint to demonstrate backward feedback loop.
+        attach_earphone_constraints(
+            self,
+            PowerConstraint(
+                uid="EARP-RV32-003",
+                name="CPU_POWER_BUDGET_STRICT",
+                layer="SpecIR",
+                expr="< 0.1",
+                unit="mW/MHz",
+                target="EarphoneRV32",
+                source_ref="earphone/design_spec.md#power",
+                metadata={"demo": "unachievable_without_power_domain"},
+            ),
+        )
 
 
 print("  - EarphoneRV32 DSL defined")
@@ -2586,24 +2604,28 @@ def generate_verilog():
 
 
 def generate_constraint_artifacts_and_report():
-    """Propagate SpecIR constraints through 6-layer IR and generate artifacts + report."""
+    """Propagate SpecIR constraints through 6-layer IR, validate backward, resolve issues."""
     print("\n" + "=" * 70)
-    print("Constraint Propagation & Artifact Generation")
+    print("Constraint Propagation, Validation & Artifact Generation")
     print("=" * 70)
 
     out_dir = "earphone/tb/constraints"
     os.makedirs(out_dir, exist_ok=True)
 
-    propagator = build_earphone_propagator()
-    modules = [
+    forward_propagator = build_earphone_propagator()
+    backward_propagator = build_backward_validators()
+    gates = build_design_gates()
+
+    module_instances = [
         ("EarphoneRV32", EarphoneRV32()),
         ("EarphoneSIMD16", EarphoneSIMD16()),
     ]
 
-    all_constraints = []
+    # ---- forward propagation + artifact generation -------------------------
+    all_constraints: List[IRConstraint] = []
     all_artifacts = {}
-    for name, mod in modules:
-        derived = propagate_module_constraints(mod, propagator)
+    for name, mod in module_instances:
+        derived = propagate_module_constraints(mod, forward_propagator)
         all_constraints.extend(derived)
         artifacts = generate_constraint_artifacts(derived)
         for fname, content in artifacts.items():
@@ -2613,7 +2635,53 @@ def generate_constraint_artifacts_and_report():
             print(f"  wrote {path}")
         all_artifacts.update(artifacts)
 
-    # Traceability report
+    # ---- backward validation + design gates --------------------------------
+    print("\n  Backward validation...")
+    feedback_items: List[ConstraintFeedback] = []
+
+    # Run registered design gates
+    for gate in gates:
+        for name, mod in module_instances:
+            feedback_items.extend(gate.evaluate(mod))
+
+    # Run backward propagator (SpecIR -> Verilog)
+    for name, mod in module_instances:
+        feedback_items.extend(backward_propagator.validate_all(mod, EARPHONE_LAYERS))
+
+    # ---- resolution loop ---------------------------------------------------
+    max_resolution_iterations = 3
+    resolution_log: List[str] = []
+    for iteration in range(max_resolution_iterations):
+        blockers = [fb for fb in feedback_items if fb.is_blocking()]
+        if not blockers:
+            break
+
+        print(f"  Iteration {iteration + 1}: {len(blockers)} BLOCKER(s) detected")
+        for fb in blockers:
+            print(f"    - {fb.uid}: {fb.message}")
+            resolved = resolve_feedback(fb, [mod for _, mod in module_instances])
+            if resolved:
+                resolution_log.append(
+                    f"Resolved {fb.uid}: {fb.message} -> applied suggested resolution"
+                )
+                print(f"      -> auto-resolved")
+                # Re-propagate after mutation
+                all_constraints = []
+                for name, mod in module_instances:
+                    derived = propagate_module_constraints(mod, forward_propagator)
+                    all_constraints.extend(derived)
+                # Re-validate
+                feedback_items = []
+                for gate in gates:
+                    for name, mod in module_instances:
+                        feedback_items.extend(gate.evaluate(mod))
+                for name, mod in module_instances:
+                    feedback_items.extend(backward_propagator.validate_all(mod, EARPHONE_LAYERS))
+            else:
+                resolution_log.append(f"Unresolved {fb.uid}: {fb.message}")
+                print(f"      -> could not auto-resolve")
+
+    # ---- traceability report ----------------------------------------------
     report_lines = [
         "# 09 Constraint Traceability Report",
         "",
@@ -2644,7 +2712,51 @@ def generate_constraint_artifacts_and_report():
         f.write("\n".join(report_lines))
     print(f"  wrote {report_path}")
 
-    return all_constraints, all_artifacts
+    # ---- design issues report ---------------------------------------------
+    issue_lines = [
+        "# 10 Design Feedback / Issues Report",
+        "",
+        "## Resolution Log",
+        "",
+    ]
+    if resolution_log:
+        for entry in resolution_log:
+            issue_lines.append(f"- {entry}")
+    else:
+        issue_lines.append("- No auto-resolutions performed.")
+
+    issue_lines.extend([
+        "",
+        "## Feedback Items",
+        "",
+        "| UID | Severity | Source Constraint | Detected At | Message |",
+        "|-----|----------|-------------------|-------------|---------|",
+    ])
+    for fb in sorted(feedback_items, key=lambda x: x.severity.value):
+        issue_lines.append(
+            f"| {fb.uid} | {fb.severity.value} | {fb.source_constraint_uid} | {fb.detected_at_layer} | {fb.message} |"
+        )
+
+    issue_lines.extend([
+        "",
+        "## Remaining Blockers",
+        "",
+    ])
+    remaining_blockers = [fb for fb in feedback_items if fb.is_blocking()]
+    if remaining_blockers:
+        for fb in remaining_blockers:
+            issue_lines.append(f"- **{fb.uid}**: {fb.message}")
+            for suggestion in fb.suggested_resolutions:
+                issue_lines.append(f"  - Suggested: {suggestion}")
+    else:
+        issue_lines.append("- None. All blockers resolved or no blockers detected.")
+
+    issue_path = "earphone/specs/10_design_issues.md"
+    with open(issue_path, "w") as f:
+        f.write("\n".join(issue_lines))
+    print(f"  wrote {issue_path}")
+
+    return all_constraints, all_artifacts, feedback_items
 
 
 def generate_review_bundle():
