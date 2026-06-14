@@ -10,6 +10,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
+from rtlgen.contracts import IREntity
+
 # Re-export from rtlgen.logic so DSL files can import everything from core.
 # Deferred to avoid circular import (logic.py imports from core.py).
 # Mux/Cat/Rep/SRA are not defined in core.py (only Mux as Expr class above),
@@ -876,10 +878,11 @@ def _derive_partselect_width(hi_expr: Expr, lo_expr: Expr) -> Optional[int]:
 # Signal
 # ---------------------------------------------------------------------
 
-class Signal:
+class Signal(IREntity):
     """硬件信号基类，支持位宽推导与运算符重载。"""
 
     def __init__(self, width: int = 1, name: str = "", signed: bool = False, init_value: Optional[int] = None):
+        IREntity.__init__(self, name)
         self.width = width
         self.name = name
         self.signed = signed
@@ -1427,13 +1430,14 @@ class Array:
         return f"Array({self.width}x{self.depth})<{self.name}>"
 
 
-class Module(metaclass=ModuleMeta):
+class Module(IREntity, metaclass=ModuleMeta):
     """所有硬件模块的基类。"""
 
     STRICT: bool = False  # 启用严格端口连接检查
 
     def __init__(self, name: Optional[str] = None, param_bindings: Optional[Dict[str, Any]] = None):
         self.name = name or self.__class__.__name__
+        IREntity.__init__(self, self.name)
         self._type_name = self.__class__.__name__
         self._inputs: Dict[str, Input] = {}
         self._outputs: Dict[str, Output] = {}

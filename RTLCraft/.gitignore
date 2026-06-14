@@ -39,7 +39,9 @@ gem5/
 paper/
 slides/
 vscode-extension/
-tests/
+tests/*
+!tests/test_spec_to_dsl_flow.py
+!tests/test_contract_framework.py
 
 # Unpublished root-level files
 RTLGEN.md
@@ -56,7 +58,7 @@ new-plan.md
 skills_add.md
 design_*.py
 design_scripts/
-test_*.py
+/test_*.py
 debug_*.py
 gen_*.py
 fix_design.py

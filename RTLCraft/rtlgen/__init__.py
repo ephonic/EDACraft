@@ -67,6 +67,22 @@ from rtlgen.lint import VerilogLinter, LintResult
 from rtlgen.uvmgen import UVMEmitter
 from rtlgen.regmodel import RegField, Register, RegBlock
 from rtlgen.cocotbgen import CocotbEmitter
+from rtlgen.contracts import (
+    IRConstraint,
+    FunctionalConstraint,
+    PerformanceConstraint,
+    PowerConstraint,
+    TimingConstraint,
+    VerificationIntent,
+    ConstraintFeedback,
+    FeedbackSeverity,
+    ConstraintPropagator,
+    DesignGate,
+    DesignDecision,
+    IREntity,
+    LayerEmitter,
+)
+from rtlgen.scaffold import DesignScaffold, make_scaffold
 from rtlgen.decomposition import (
     BehavioralSpec,
     BoardSpec,
@@ -106,23 +122,53 @@ from rtlgen.ppa import PPAAnalyzer
 from rtlgen.passes import ConstantFoldPass, DeadCodeElimPass, LintPass, PassManager
 from rtlgen.registry import ComponentMeta, ComponentRegistry
 from rtlgen.spec_ir import (
+    AssumptionIR,
     AddOp,
     ArchitectureIR,
+    AssertionIR,
+    BehaviorIR,
+    BehaviorRuleIR,
+    ClockResetDomainIR,
+    ConnectionSpec as IRConnectionSpec,
+    CoverageBinIR,
+    CycleTransactionIR,
+    CycleIR,
+    FSMStateSpec,
     FlowControlSpec,
     FunctionSpec,
+    HandshakeIR,
+    HandshakeRuleIR,
     InterfaceSpec,
+    InvariantIR,
     MulOp,
     OptimizableOp,
+    OperationSpec,
     OperatorImpl,
     PortSpec,
     PPASpec,
+    ProtocolIR,
+    ScoreboardIR,
+    StateIR,
+    StateUpdateIR,
+    RegisterTransferSpec,
     SpecIR,
     StageSpec,
+    SubmoduleInstanceSpec,
+    StructuralIR,
+    TestVectorIR,
     TimingSpec,
+    TraceEventIR,
+    TracepointIR,
+    TransactionEventIR,
+    TransactionIR,
+    VerificationPlanIR,
     VerificationSpec,
 )
 from rtlgen.spec_extractor import SpecCompleter, SpecExtractor
 from rtlgen.arch_planner import ArchitecturePlanner
+from rtlgen.agent_dsl_generator import AgentDSLGenerationResult, AgentDSLGenerator
+from rtlgen.dsl_gen import DSLGenerator
+from rtlgen.dsl_sim import DSLSimReport, DSLSimValidator, ModuleSimResult
 from rtlgen.ppa_optimizer import (
     BitwidthReduction,
     FSMEncodingSelect,
@@ -135,6 +181,7 @@ from rtlgen.ppa_optimizer import (
     PipelineInsertion,
     ResourceSharing,
 )
+from rtlgen.verifier import RepairContext, VerificationResult, Verifier
 from rtlgen.verif_gen import SpecCoverageTracker, ReferenceModel, TestGenerator, VerificationReport, VerificationRunner
 from rtlgen.blifgen import (
     AdderStyle,
@@ -334,6 +381,23 @@ __all__ = [
     "RegBlock",
     # Cocotb
     "CocotbEmitter",
+    # Constraints / Intent Framework
+    "IRConstraint",
+    "FunctionalConstraint",
+    "PerformanceConstraint",
+    "PowerConstraint",
+    "TimingConstraint",
+    "VerificationIntent",
+    "ConstraintFeedback",
+    "FeedbackSeverity",
+    "ConstraintPropagator",
+    "DesignGate",
+    "DesignDecision",
+    "IREntity",
+    "LayerEmitter",
+    # Scaffold
+    "DesignScaffold",
+    "make_scaffold",
     # VIP
     "UVMVIPEmitter",
     # Simulation
@@ -356,10 +420,37 @@ __all__ = [
     "TimingSpec",
     "PPASpec",
     "VerificationSpec",
+    "TestVectorIR",
+    "CoverageBinIR",
+    "CycleTransactionIR",
+    "AssertionIR",
+    "TracepointIR",
+    "ScoreboardIR",
+    "ProtocolIR",
+    "TransactionIR",
+    "VerificationPlanIR",
+    "AssumptionIR",
+    "InvariantIR",
+    "BehaviorRuleIR",
+    "BehaviorIR",
+    "StateIR",
+    "StateUpdateIR",
+    "HandshakeRuleIR",
+    "TraceEventIR",
+    "TransactionEventIR",
+    "CycleIR",
+    "ClockResetDomainIR",
+    "StructuralIR",
     "ArchitectureIR",
     "StageSpec",
+    "OperationSpec",
+    "RegisterTransferSpec",
     "OperatorImpl",
     "FlowControlSpec",
+    "HandshakeIR",
+    "FSMStateSpec",
+    "SubmoduleInstanceSpec",
+    "IRConnectionSpec",
     "OptimizableOp",
     "MulOp",
     "AddOp",
@@ -368,7 +459,16 @@ __all__ = [
     "SpecExtractor",
     # Architecture Planner
     "ArchitecturePlanner",
+    "AgentDSLGenerator",
+    "AgentDSLGenerationResult",
     # DSL Generator
+    "DSLGenerator",
+    "DSLSimValidator",
+    "DSLSimReport",
+    "ModuleSimResult",
+    "Verifier",
+    "VerificationResult",
+    "RepairContext",
     # PPA Optimizer
     "PPAGoal",
     "PPAScore",
