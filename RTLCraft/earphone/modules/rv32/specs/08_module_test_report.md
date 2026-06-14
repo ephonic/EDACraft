@@ -3,7 +3,7 @@
 | Document ID | RV32-L1_BEHAVIOR-TR-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Test Plan Reference | RV32-L1_BEHAVIOR-TP-001 |
@@ -166,7 +166,7 @@ Proceed to next layer
 
 ## 10. Conclusion
 
-Layer L1 behavior tests completed: 5/5 passed in 0.30s.
+Layer L1 behavior tests completed: 5/5 passed in 0.32s.
 
 ---
 
@@ -198,4 +198,4 @@ Layer L1 behavior tests completed: 5/5 passed in 0.30s.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial report. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial report. |

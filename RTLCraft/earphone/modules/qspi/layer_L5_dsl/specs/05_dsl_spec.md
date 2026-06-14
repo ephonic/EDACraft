@@ -1,11 +1,11 @@
-# qspi — L5 dsl Specification
+# EarphoneQSPI — L5 dsl Specification
 
 | Document ID | QSPI-L5_DSL-001 |
 |-------------|--------------|
 | Layer       | L5 dsl |
-| Module      | qspi |
+| Module      | EarphoneQSPI |
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,10 +15,10 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-L5 dsl for qspi.
+Simplified QSPI XIP read controller.
 
 ### 1.2 Scope
-stub
+RTL-ready DSL description of EarphoneQSPI.
 
 ---
 
@@ -38,7 +38,7 @@ See next layer specification for outputs.
 
 | ID | Decision | Rationale | Impact |
 |----|----------|-----------|--------|
-| DEC-01 | Single-cycle scalar with iterative M-extension | Area/power optimized for earphone-class MCU | DIV/REM take variable cycles |
+| DEC-01 | Implement EarphoneQSPI as specified in top-level SoC spec | Matches target application and power/area constraints | Drives downstream implementation and verification |
 
 ---
 
@@ -46,7 +46,33 @@ See next layer specification for outputs.
 
 ### Notes
 
-- Status: stub
+- Status: implemented
+
+### Detailed Table
+
+| Property | Value |
+| --- | --- |
+| Dsl Class | EarphoneQSPI |
+
+### Ports Table
+
+| Port | Type | Width |
+| --- | --- | --- |
+| addr | Input | 32 |
+| addr_reg | Reg | 32 |
+| clk | Input | 1 |
+| counter | Reg | 4 |
+| qspi_cs_n | Output | 1 |
+| qspi_io_i | Input | 4 |
+| qspi_io_o | Output | 4 |
+| qspi_io_oe | Output | 4 |
+| qspi_sck | Output | 1 |
+| rdata | Output | 32 |
+| ready | Output | 1 |
+| req | Input | 1 |
+| rst_n | Input | 1 |
+| shift | Reg | 32 |
+| state | Reg | 3 |
 
 
 ---
@@ -54,12 +80,12 @@ See next layer specification for outputs.
 ## 6. Verification Considerations
 
 ### 6.1 Verification Strategy
-Python unit tests + cross-layer equivalence checks.
+DSL simulation and cross-layer equivalence with L1/L2.
 
 ### 6.2 Key Verification Points
 | ID | Check | Method | Coverage Goal |
 |----|-------|--------|---------------|
-| V-01 | Instruction decode and execution correctness | Directed ISS tests | All RV32IM instructions exercised |
+| V-01 | DSL implementation matches reference model | rtlgen Simulator + LayerVerifier | All functional paths covered |
 
 ---
 
@@ -68,7 +94,7 @@ Python unit tests + cross-layer equivalence checks.
 ### 7.1 Constraints
 | ID | Constraint | Source |
 |----|------------|--------|
-| C-01 | RV32IM ISA compliance | Top-level SoC spec |
+| C-01 | Module specification compliance | Top-level SoC spec |
 
 ### 7.2 Assumptions
 | ID | Assumption | Rationale |
@@ -89,4 +115,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |

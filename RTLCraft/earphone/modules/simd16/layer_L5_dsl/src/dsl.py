@@ -1,18 +1,12 @@
-"""L5 DSL module for the simd16 module.
+"""L5 DSL module for the EarphoneSIMD16 accelerator.
 
-Currently a placeholder.  The real DSL class will be migrated from
-earphone/design_earphone.py in a later phase.
+This module re-exports the RTL-ready DSL class from the legacy monolithic
+entry point.  The long-term goal is to host the full ``EarphoneSIMD16``
+class locally as part of the document-driven refactoring.
 """
 
 from __future__ import annotations
 
+from earphone.design_earphone import EarphoneSIMD16
 
-class Simd16DSL:
-    """Placeholder DSL class for simd16."""
-
-    def __init__(self):
-        self.name = "simd16"
-
-
-def describe() -> dict:
-    return {"name": "simd16", "layer": "L5_dsl", "status": "stub"}
+__all__ = ["EarphoneSIMD16"]

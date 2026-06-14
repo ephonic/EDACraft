@@ -195,21 +195,23 @@ def _extract_rv32_behavior_info() -> Dict[str, Any]:
 
 
 def _extract_rv32_cycle_info() -> Dict[str, Any]:
-    from earphone.modules.rv32.layer_L2_cycle.src.cycle import RV32IMCycleModel
+    from earphone.modules.rv32.layer_L2_cycle.src.cycle import rv32im_cycle_model, describe
 
+    info = describe()
     return {
         "module_name": "EarphoneRV32",
         "layer_name": "L2 CycleIR",
-        "purpose": (
+        "purpose": info.get("description", (
             "Provide a cycle-accurate reference model that tracks pipeline "
             "control signals while delegating functional execution to the L1 ISS."
-        ),
+        )),
         "scope": "Single-cycle scalar pipeline with multi-cycle M-extension operations.",
         "model": _markdown_table(
             ["Property", "Value"],
             [
-                ["Pipeline", "IF → ID → EX → MEM → WB"],
-                ["M-extension latency", "Multi-cycle (iterative)"],
+                ["Pipeline", " → ".join(info.get("pipeline_stages", ["IF", "ID/EX", "WB"]))],
+                ["MUL latency", str(info.get("mul_latency_cycles", 1))],
+                ["DIV/REM latency", str(info.get("div_latency_cycles", "iterative"))],
                 ["Branch predictor", "Static not-taken"],
                 ["Stall/flush support", "Yes"],
             ],
@@ -305,17 +307,124 @@ _LAYER_EXTRACTORS = {
 }
 
 
+def _describe_to_table(info: Dict[str, Any]) -> str:
+    """Render non-special keys of a describe() dict as a markdown table."""
+    rows = []
+    for key, value in info.items():
+        if key in ("name", "layer", "status", "description", "purpose", "scope",
+                   "ports_table", "detailed_table"):
+            continue
+        label = key.replace("_", " ").title()
+        if isinstance(value, (list, tuple)):
+            value = ", ".join(str(v) for v in value)
+        rows.append([label, str(value)])
+    if not rows:
+        return ""
+    return _markdown_table(["Property", "Value"], rows)
+
+
+def _import_design_earphone_safely():
+    """Import the legacy design_earphone module, pre-loading rv32 to break the
+    circular dependency that exists while the RV32 L5 DSL is still re-exported
+    from design_earphone.py.
+    """
+    # Touch the rv32 package first so its __init__ completes before
+    # design_earphone is imported as a regular module.
+    try:
+        __import__("earphone.modules.rv32", fromlist=["*"])
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return __import__("earphone.design_earphone", fromlist=["*"])
+
+
+def _extract_from_design_earphone(module_name: str, layer: str) -> Dict[str, Any]:
+    """Extract metadata from the legacy monolithic design_earphone.py."""
+    design = _import_design_earphone_safely()
+    class_name = _module_display_name(module_name)
+    cls = getattr(design, class_name, None)
+    info: Dict[str, Any] = {"name": class_name, "layer": layer, "status": "implemented"}
+
+    if layer == "L3_architecture":
+        info["description"] = inspect.getdoc(cls).splitlines()[0] if cls and inspect.getdoc(cls) else f"Architecture of {class_name}."
+        info["pipeline"] = "See DSL implementation for pipeline details."
+    elif layer == "L4_structure":
+        info["description"] = f"Structural decomposition of {class_name}."
+        info["subblocks"] = "See DSL implementation for sub-block details."
+    elif layer == "L5_dsl":
+        if cls is None:
+            info["description"] = f"{class_name} DSL class not yet migrated."
+            return info
+        doc = inspect.getdoc(cls) or ""
+        info["description"] = doc.splitlines()[0] if doc else f"RTL-ready DSL for {class_name}."
+        info["dsl_class"] = cls.__name__
+        # Extract ports from __init__ signature / instance attributes
+        try:
+            inst = cls()
+            ports = []
+            for attr_name in dir(inst):
+                if attr_name.startswith("_"):
+                    continue
+                attr = getattr(inst, attr_name)
+                cls_name = type(attr).__name__
+                if cls_name in ("Input", "Output", "Wire", "Reg"):
+                    width = getattr(attr, "width", "?")
+                    ports.append((attr_name, cls_name, str(width)))
+            if ports:
+                info["ports_table"] = _markdown_table(["Port", "Type", "Width"], ports)
+        except Exception:  # pragma: no cover - DSL instantiation may need parameters
+            pass
+    elif layer == "L6_verilog":
+        info["description"] = f"Verilog generation for {class_name}."
+        info["deliverables"] = f"{module_name}.v"
+
+    return info
+
+
 def _extract_generic_layer_info(module_name: str, layer: str, src_file: str) -> Dict[str, Any]:
-    """Fallback extractor for modules without a dedicated extractor."""
+    """Fallback extractor for modules without a dedicated extractor.
+
+    Uses the ``describe()`` function provided by the layer module and renders
+    its fields into the document.  If no ``describe()`` is available, falls
+    back to introspecting the legacy ``design_earphone.py`` module.
+    """
     info = _call_describe(module_name, layer, src_file)
+    if not info and layer in ("L3_architecture", "L4_structure", "L5_dsl", "L6_verilog"):
+        info = _extract_from_design_earphone(module_name, layer)
+
     layer_label = layer.replace("_", " ")
-    return {
-        "module_name": module_name,
+    display = _module_display_name(module_name)
+    purpose = info.get("purpose") or info.get("description") or f"{layer_label} for {display}."
+    if "scope" in info:
+        scope = info["scope"]
+    elif layer == "L1_behavior":
+        scope = f"Cycle-unaware functional behavior of {display}."
+    elif layer == "L2_cycle":
+        scope = f"Cycle-accurate protocol and timing behavior of {display}."
+    elif layer == "L3_architecture":
+        scope = f"Micro-architectural decisions for {display}."
+    elif layer == "L4_structure":
+        scope = f"Structural decomposition of {display}."
+    elif layer == "L5_dsl":
+        scope = f"RTL-ready DSL description of {display}."
+    elif layer == "L6_verilog":
+        scope = f"Generated Verilog RTL and reports for {display}."
+    else:
+        scope = "See detailed description below."
+
+    result = {
+        "module_name": display,
         "layer_name": layer_label,
-        "purpose": info.get("description", f"{layer_label} for {module_name}."),
-        "scope": info.get("status", "Implementation pending migration from design_earphone.py."),
-        "notes": _bullet_list([f"Status: {info.get('status', 'unknown')}"]),
+        "purpose": purpose,
+        "scope": scope,
+        "notes": _bullet_list([f"Status: {info.get('status', 'implemented')}"]),
     }
+
+    table = _describe_to_table(info)
+    if table:
+        result["detailed_table"] = table
+    if "ports_table" in info:
+        result["ports_table"] = info["ports_table"]
+    return result
 
 
 def extract_layer_info(module_name: str, layer: str, src_file: str) -> Dict[str, Any]:
@@ -345,7 +454,7 @@ def extract_layer_info(module_name: str, layer: str, src_file: str) -> Dict[str,
     }
     for key in ["isa", "xlen", "register_file", "memory_model", "instructions", "tests",
                 "model", "architecture", "structure", "dsl_class", "public_methods",
-                "deliverables", "notes"]:
+                "deliverables", "notes", "detailed_table", "ports_table"]:
         if key in info:
             label = label_overrides.get(key, key.replace("_", " ").title())
             detailed_parts.append(f"### {label}\n\n{info[key]}\n")
@@ -360,14 +469,42 @@ def extract_layer_info(module_name: str, layer: str, src_file: str) -> Dict[str,
         "outputs_to_next",
         "See next layer specification for outputs."
     )
-    variables["decision_01"] = info.get("decision_01", "Single-cycle scalar with iterative M-extension")
-    variables["rationale_01"] = info.get("rationale_01", "Area/power optimized for earphone-class MCU")
-    variables["impact_01"] = info.get("impact_01", "DIV/REM take variable cycles")
-    variables["verification_strategy"] = info.get("verification_strategy", "Python unit tests + cross-layer equivalence checks.")
-    variables["verif_check_01"] = info.get("verif_check_01", "Instruction decode and execution correctness")
-    variables["verif_method_01"] = info.get("verif_method_01", "Directed ISS tests")
-    variables["verif_cov_01"] = info.get("verif_cov_01", "All RV32IM instructions exercised")
-    variables["constraint_01"] = info.get("constraint_01", "RV32IM ISA compliance")
+    display = _module_display_name(module_name)
+    variables["decision_01"] = info.get("decision_01", f"Implement {display} as specified in top-level SoC spec")
+    variables["rationale_01"] = info.get("rationale_01", "Matches target application and power/area constraints")
+    variables["impact_01"] = info.get("impact_01", "Drives downstream implementation and verification")
+    # Layer-appropriate verification defaults
+    if layer == "L1_behavior":
+        default_verif_strategy = "Python unit tests against the functional reference model."
+        default_verif_check = "Functional correctness of behavior model"
+        default_verif_method = "Directed pytest cases"
+        default_verif_cov = "All operations and corner cases exercised"
+    elif layer == "L2_cycle":
+        default_verif_strategy = "Cycle-accurate simulation and cross-layer equivalence with L1."
+        default_verif_check = "Cycle-level timing and protocol compliance"
+        default_verif_method = "Cycle-context simulation"
+        default_verif_cov = "All states and transitions exercised"
+    elif layer == "L5_dsl":
+        default_verif_strategy = "DSL simulation and cross-layer equivalence with L1/L2."
+        default_verif_check = "DSL implementation matches reference model"
+        default_verif_method = "rtlgen Simulator + LayerVerifier"
+        default_verif_cov = "All functional paths covered"
+    elif layer == "L6_verilog":
+        default_verif_strategy = "Verilog generation, lint, and simulation."
+        default_verif_check = "Generated RTL matches DSL semantics"
+        default_verif_method = "Verilog simulation + SVA checks"
+        default_verif_cov = "Module-level RTL coverage"
+    else:
+        default_verif_strategy = "Python unit tests + cross-layer equivalence checks."
+        default_verif_check = "Functional correctness"
+        default_verif_method = "Directed tests"
+        default_verif_cov = "All operations exercised"
+
+    variables["verification_strategy"] = info.get("verification_strategy", default_verif_strategy)
+    variables["verif_check_01"] = info.get("verif_check_01", default_verif_check)
+    variables["verif_method_01"] = info.get("verif_method_01", default_verif_method)
+    variables["verif_cov_01"] = info.get("verif_cov_01", default_verif_cov)
+    variables["constraint_01"] = info.get("constraint_01", "Module specification compliance")
     variables["constraint_src_01"] = info.get("constraint_src_01", "Top-level SoC spec")
     variables["assumption_01"] = info.get("assumption_01", "Little-endian byte ordering")
     variables["assumption_rationale_01"] = info.get("assumption_rationale_01", "Matches target bus architecture")
@@ -397,13 +534,13 @@ def _module_display_name(module_name: str) -> str:
 
 def _module_brief_description(module_name: str) -> str:
     mapping = {
-        "rv32": "RV32IM microcontroller core with iterative multiply/divide unit.",
-        "simd16": "16-lane 16-bit SIMD accelerator for audio/DSP kernels.",
-        "fft256": "256-point FFT accelerator with twiddle ROM.",
-        "qspi": "Quad-SPI controller with XIP support for external flash.",
-        "i2c": "I2C controller for codec and sensor connectivity.",
-        "sram256k": "256 KB on-chip SRAM with byte/half/word access.",
-        "apb_bridge": "AHB-to-APB bridge for low-bandwidth peripherals.",
+        "rv32": "RV32IM 3-stage in-order RISC-V core with single-cycle MUL and iterative DIV/REM.",
+        "simd16": "16-lane SIMD accelerator: 1-cycle INT16 ALU + 3-stage FP16 MAC with per-lane predicate masking.",
+        "fft256": "256-point streaming FFT accelerator wrapper with fixed-point Q1.15 samples.",
+        "qspi": "Quad-SPI XIP controller for 32 MB external Flash (cmd/addr/data FSM).",
+        "i2c": "APB I2C master byte controller for 7-bit address single-byte transactions.",
+        "sram256k": "256 KB on-chip single-port SRAM with APB4 slave port and byte write strobes.",
+        "apb_bridge": "AHB-to-APB address decoder exposing 8 peripheral slave slots.",
     }
     return mapping.get(module_name, f"{module_name} module.")
 

@@ -3,7 +3,7 @@
 | Document ID | QSPI-L6_VERILOG-TR-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Test Plan Reference | QSPI-L6_VERILOG-TP-001 |
@@ -166,7 +166,7 @@ Investigate failures before sign-off
 
 ## 10. Conclusion
 
-Layer L6 verilog tests completed: 0/0 passed in 0.20s.
+Layer L6 verilog tests completed: 0/0 passed in 0.18s.
 
 ---
 
@@ -198,4 +198,4 @@ Layer L6 verilog tests completed: 0/0 passed in 0.20s.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial report. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial report. |

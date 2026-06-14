@@ -1,18 +1,10 @@
-"""L5 DSL module for the i2c module.
+"""L5 DSL module for the EarphoneI2C controller.
 
-Currently a placeholder.  The real DSL class will be migrated from
-earphone/design_earphone.py in a later phase.
+Re-exports the RTL-ready DSL class from the legacy monolithic entry point.
 """
 
 from __future__ import annotations
 
+from earphone.design_earphone import EarphoneI2C
 
-class I2cDSL:
-    """Placeholder DSL class for i2c."""
-
-    def __init__(self):
-        self.name = "i2c"
-
-
-def describe() -> dict:
-    return {"name": "i2c", "layer": "L5_dsl", "status": "stub"}
+__all__ = ["EarphoneI2C"]

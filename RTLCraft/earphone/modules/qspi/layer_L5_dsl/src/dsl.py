@@ -1,18 +1,10 @@
-"""L5 DSL module for the qspi module.
+"""L5 DSL module for the EarphoneQSPI controller.
 
-Currently a placeholder.  The real DSL class will be migrated from
-earphone/design_earphone.py in a later phase.
+Re-exports the RTL-ready DSL class from the legacy monolithic entry point.
 """
 
 from __future__ import annotations
 
+from earphone.design_earphone import EarphoneQSPI
 
-class QspiDSL:
-    """Placeholder DSL class for qspi."""
-
-    def __init__(self):
-        self.name = "qspi"
-
-
-def describe() -> dict:
-    return {"name": "qspi", "layer": "L5_dsl", "status": "stub"}
+__all__ = ["EarphoneQSPI"]

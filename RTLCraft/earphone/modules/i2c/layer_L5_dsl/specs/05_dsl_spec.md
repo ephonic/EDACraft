@@ -1,11 +1,11 @@
-# i2c — L5 dsl Specification
+# EarphoneI2C — L5 dsl Specification
 
 | Document ID | I2C-L5_DSL-001 |
 |-------------|--------------|
 | Layer       | L5 dsl |
-| Module      | i2c |
+| Module      | EarphoneI2C |
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,10 +15,10 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-L5 dsl for i2c.
+Simplified APB I2C master controller.
 
 ### 1.2 Scope
-stub
+RTL-ready DSL description of EarphoneI2C.
 
 ---
 
@@ -38,7 +38,7 @@ See next layer specification for outputs.
 
 | ID | Decision | Rationale | Impact |
 |----|----------|-----------|--------|
-| DEC-01 | Single-cycle scalar with iterative M-extension | Area/power optimized for earphone-class MCU | DIV/REM take variable cycles |
+| DEC-01 | Implement EarphoneI2C as specified in top-level SoC spec | Matches target application and power/area constraints | Drives downstream implementation and verification |
 
 ---
 
@@ -46,7 +46,41 @@ See next layer specification for outputs.
 
 ### Notes
 
-- Status: stub
+- Status: implemented
+
+### Detailed Table
+
+| Property | Value |
+| --- | --- |
+| Dsl Class | EarphoneI2C |
+
+### Ports Table
+
+| Port | Type | Width |
+| --- | --- | --- |
+| bit_cnt | Reg | 4 |
+| clk | Input | 1 |
+| ctrl | Reg | 32 |
+| data | Reg | 32 |
+| paddr | Input | 12 |
+| penable | Input | 1 |
+| prdata | Output | 32 |
+| pready | Output | 1 |
+| psel | Input | 1 |
+| pwdata | Input | 32 |
+| pwrite | Input | 1 |
+| rst_n | Input | 1 |
+| scl_i | Input | 1 |
+| scl_o | Output | 1 |
+| scl_oe | Output | 1 |
+| scl_reg | Reg | 1 |
+| sda_i | Input | 1 |
+| sda_o | Output | 1 |
+| sda_oe | Output | 1 |
+| sda_reg | Reg | 1 |
+| shift | Reg | 9 |
+| state | Reg | 4 |
+| status | Reg | 32 |
 
 
 ---
@@ -54,12 +88,12 @@ See next layer specification for outputs.
 ## 6. Verification Considerations
 
 ### 6.1 Verification Strategy
-Python unit tests + cross-layer equivalence checks.
+DSL simulation and cross-layer equivalence with L1/L2.
 
 ### 6.2 Key Verification Points
 | ID | Check | Method | Coverage Goal |
 |----|-------|--------|---------------|
-| V-01 | Instruction decode and execution correctness | Directed ISS tests | All RV32IM instructions exercised |
+| V-01 | DSL implementation matches reference model | rtlgen Simulator + LayerVerifier | All functional paths covered |
 
 ---
 
@@ -68,7 +102,7 @@ Python unit tests + cross-layer equivalence checks.
 ### 7.1 Constraints
 | ID | Constraint | Source |
 |----|------------|--------|
-| C-01 | RV32IM ISA compliance | Top-level SoC spec |
+| C-01 | Module specification compliance | Top-level SoC spec |
 
 ### 7.2 Assumptions
 | ID | Assumption | Rationale |
@@ -89,4 +123,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |

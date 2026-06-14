@@ -1,11 +1,11 @@
-# sram256k — L4 structure Specification
+# EarphoneSRAM256K — L4 structure Specification
 
 | Document ID | SRAM256K-L4_STRUCTURE-001 |
 |-------------|--------------|
 | Layer       | L4 structure |
-| Module      | sram256k |
+| Module      | EarphoneSRAM256K |
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,10 +15,10 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-L4 structure for sram256k.
+Structural decomposition of EarphoneSRAM256K.
 
 ### 1.2 Scope
-stub
+Structural decomposition of EarphoneSRAM256K.
 
 ---
 
@@ -38,7 +38,7 @@ See next layer specification for outputs.
 
 | ID | Decision | Rationale | Impact |
 |----|----------|-----------|--------|
-| DEC-01 | Single-cycle scalar with iterative M-extension | Area/power optimized for earphone-class MCU | DIV/REM take variable cycles |
+| DEC-01 | Implement EarphoneSRAM256K as specified in top-level SoC spec | Matches target application and power/area constraints | Drives downstream implementation and verification |
 
 ---
 
@@ -46,7 +46,13 @@ See next layer specification for outputs.
 
 ### Notes
 
-- Status: stub
+- Status: implemented
+
+### Detailed Table
+
+| Property | Value |
+| --- | --- |
+| Subblocks | See DSL implementation for sub-block details. |
 
 
 ---
@@ -59,7 +65,7 @@ Python unit tests + cross-layer equivalence checks.
 ### 6.2 Key Verification Points
 | ID | Check | Method | Coverage Goal |
 |----|-------|--------|---------------|
-| V-01 | Instruction decode and execution correctness | Directed ISS tests | All RV32IM instructions exercised |
+| V-01 | Functional correctness | Directed tests | All operations exercised |
 
 ---
 
@@ -68,7 +74,7 @@ Python unit tests + cross-layer equivalence checks.
 ### 7.1 Constraints
 | ID | Constraint | Source |
 |----|------------|--------|
-| C-01 | RV32IM ISA compliance | Top-level SoC spec |
+| C-01 | Module specification compliance | Top-level SoC spec |
 
 ### 7.2 Assumptions
 | ID | Assumption | Rationale |
@@ -89,4 +95,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |

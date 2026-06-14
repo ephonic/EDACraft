@@ -3,7 +3,7 @@
 | Document ID | APB_BRIDGE-MOD-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Module ID   | APB_BRIDGE |
@@ -14,7 +14,7 @@
 ## 1. Overview
 
 ### 1.1 Purpose
-AHB-to-APB bridge for low-bandwidth peripherals.
+AHB-to-APB address decoder exposing 8 peripheral slave slots.
 
 ### 1.2 Features
 | ID | Feature | Description |
@@ -236,4 +236,4 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |

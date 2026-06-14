@@ -1,18 +1,10 @@
-"""L5 DSL module for the fft256 module.
+"""L5 DSL module for the EarphoneFFT256 accelerator.
 
-Currently a placeholder.  The real DSL class will be migrated from
-earphone/design_earphone.py in a later phase.
+Re-exports the RTL-ready DSL class from the legacy monolithic entry point.
 """
 
 from __future__ import annotations
 
+from earphone.design_earphone import EarphoneFFT256
 
-class Fft256DSL:
-    """Placeholder DSL class for fft256."""
-
-    def __init__(self):
-        self.name = "fft256"
-
-
-def describe() -> dict:
-    return {"name": "fft256", "layer": "L5_dsl", "status": "stub"}
+__all__ = ["EarphoneFFT256"]

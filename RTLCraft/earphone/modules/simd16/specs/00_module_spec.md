@@ -3,7 +3,7 @@
 | Document ID | SIMD16-MOD-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Module ID   | SIMD16 |
@@ -14,7 +14,7 @@
 ## 1. Overview
 
 ### 1.1 Purpose
-16-lane 16-bit SIMD accelerator for audio/DSP kernels.
+16-lane SIMD accelerator: 1-cycle INT16 ALU + 3-stage FP16 MAC with per-lane predicate masking.
 
 ### 1.2 Features
 | ID | Feature | Description |
@@ -236,4 +236,4 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |

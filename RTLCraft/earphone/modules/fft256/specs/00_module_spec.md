@@ -3,7 +3,7 @@
 | Document ID | FFT256-MOD-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Module ID   | FFT256 |
@@ -14,7 +14,7 @@
 ## 1. Overview
 
 ### 1.1 Purpose
-256-point FFT accelerator with twiddle ROM.
+256-point streaming FFT accelerator wrapper with fixed-point Q1.15 samples.
 
 ### 1.2 Features
 | ID | Feature | Description |
@@ -236,4 +236,4 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
