@@ -42,6 +42,7 @@ vscode-extension/
 tests/*
 !tests/test_spec_to_dsl_flow.py
 !tests/test_contract_framework.py
+!tests/test_doc_templates.py
 
 # Unpublished root-level files
 RTLGEN.md
