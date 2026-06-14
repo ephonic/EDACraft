@@ -1074,6 +1074,7 @@ class EarphoneRV32(Module):
 
         # Iterative divider state (area-optimized DIV/DIVU/REM/REMU)
         self.div_dividend = Reg(XLEN, "div_dividend", init_value=0)
+        self.div_dividend_orig = Reg(XLEN, "div_dividend_orig", init_value=0)
         self.div_divisor = Reg(XLEN, "div_divisor", init_value=0)
         self.div_quotient = Reg(XLEN, "div_quotient", init_value=0)
         self.div_remainder = Reg(XLEN, "div_remainder", init_value=0)
@@ -1248,6 +1249,7 @@ class EarphoneRV32(Module):
                 self.muldiv_rd <<= 0
                 self.muldiv_wb_en <<= 0
                 self.div_dividend <<= 0
+                self.div_dividend_orig <<= 0
                 self.div_divisor <<= 0
                 self.div_quotient <<= 0
                 self.div_remainder <<= 0
@@ -1272,6 +1274,8 @@ class EarphoneRV32(Module):
                         is_signed = (funct3 == Const(4, 3)) | (funct3 == Const(6, 3))
                         self.div_dividend_sign <<= is_signed & ra[XLEN - 1]
                         self.div_divisor_sign <<= is_signed & rb[XLEN - 1]
+                        # Keep original dividend for REM/REMU by-zero result.
+                        self.div_dividend_orig <<= ra
                         # Absolute values for signed inputs
                         with If(is_signed & ra[XLEN - 1]):
                             self.div_dividend <<= (~ra + 1).as_uint()[XLEN - 1:0]
@@ -1330,7 +1334,7 @@ class EarphoneRV32(Module):
                                  self.div_remainder)
 
             self.div_result <<= Mux(div_by_zero,
-                                    Mux(self.div_is_rem, self.div_dividend, Const(0xFFFFFFFF, XLEN)),
+                                    Mux(self.div_is_rem, self.div_dividend_orig, Const(0xFFFFFFFF, XLEN)),
                               Mux(div_overflow & ~self.div_is_rem,
                                     Const(0x80000000, XLEN),
                                     Mux(self.div_is_rem, rem_res_signed, div_res_signed)))

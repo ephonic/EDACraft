@@ -353,7 +353,7 @@ class rv32m_div_zero_seq extends uvm_sequence #(rv32_transaction);
 
     virtual task body();
         rv32_transaction req;
-        // x1 = 7, x2 = 0; DIV x5, x1, x2 -> -1
+        // x1 = 7, x2 = 0; DIV x3, x1, x2 -> -1
         req = rv32_transaction::type_id::create("req");
         start_item(req);
         req.insn      = 32'h0220c1b3;
@@ -700,9 +700,10 @@ def generate_l3_tests_from_constraints(
                     0x1000: 0x00700093,  # addi x1, x0, 7
                     0x1004: 0x00000113,  # addi x2, x0, 0
                     0x1008: 0x0220c1b3,  # div  x3, x1, x2 -> -1
-                    0x100c: 0x00100073,  # ebreak
+                    0x100c: 0x0220e233,  # rem  x4, x1, x2 -> 7
+                    0x1010: 0x00100073,  # ebreak
                 }
-                expected = {3: _to_u32(-1)}
+                expected = {3: _to_u32(-1), 4: 7}
                 retired = {rd: False for rd in expected}
                 for cycle in range(200):
                     addr = sim.peek("imem_addr")
@@ -719,7 +720,7 @@ def generate_l3_tests_from_constraints(
                             retired[rd] = True
                 return all(retired.values())
 
-            tests.append(("RV32IM DSL DIV by zero (intent-driven)", _rv32_dsl_div_test))
+            tests.append(("RV32IM DSL DIV/REM by zero (intent-driven)", _rv32_dsl_div_test))
 
         elif c.name == "SIMD16_VADD_OVERFLOW_SVA_VERILOG":
             def _simd16_dsl_vadd_test():
