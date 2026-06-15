@@ -1,0 +1,63 @@
+{
+  "blocker_count": 8,
+  "generated_at": "2026-06-15T16:01:23.700321+00:00",
+  "items": [
+    {
+      "detected_at_layer": "CP0_MODULE",
+      "feedback_target_layer": "SpecIR",
+      "message": "CP0_MODULE approval is required for module apb_bridge: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.apb_bridge.json; approval file not found: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.apb_bridge.json",
+      "severity": "blocker",
+      "uid": "FB-APPROVAL-CP0_MODULE-apb_bridge"
+    },
+    {
+      "detected_at_layer": "CP0_MODULE",
+      "feedback_target_layer": "SpecIR",
+      "message": "CP0_MODULE approval is required for module fft256: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.fft256.json; approval file not found: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.fft256.json",
+      "severity": "blocker",
+      "uid": "FB-APPROVAL-CP0_MODULE-fft256"
+    },
+    {
+      "detected_at_layer": "CP0_MODULE",
+      "feedback_target_layer": "SpecIR",
+      "message": "CP0_MODULE approval is required for module i2c: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.i2c.json; approval file not found: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.i2c.json",
+      "severity": "blocker",
+      "uid": "FB-APPROVAL-CP0_MODULE-i2c"
+    },
+    {
+      "detected_at_layer": "CP0_MODULE",
+      "feedback_target_layer": "SpecIR",
+      "message": "CP0_MODULE approval is required for module qspi: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.qspi.json; approval file not found: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.qspi.json",
+      "severity": "blocker",
+      "uid": "FB-APPROVAL-CP0_MODULE-qspi"
+    },
+    {
+      "detected_at_layer": "CP0_MODULE",
+      "feedback_target_layer": "SpecIR",
+      "message": "CP0_MODULE approval is required for module rv32: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.rv32.json; approval file not found: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.rv32.json",
+      "severity": "blocker",
+      "uid": "FB-APPROVAL-CP0_MODULE-rv32"
+    },
+    {
+      "detected_at_layer": "CP0_MODULE",
+      "feedback_target_layer": "SpecIR",
+      "message": "CP0_MODULE approval is required for module simd16: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.simd16.json; approval file not found: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.simd16.json",
+      "severity": "blocker",
+      "uid": "FB-APPROVAL-CP0_MODULE-simd16"
+    },
+    {
+      "detected_at_layer": "CP0_MODULE",
+      "feedback_target_layer": "SpecIR",
+      "message": "CP0_MODULE approval is required for module sram256k: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.sram256k.json; approval file not found: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP0_MODULE.sram256k.json",
+      "severity": "blocker",
+      "uid": "FB-APPROVAL-CP0_MODULE-sram256k"
+    },
+    {
+      "detected_at_layer": "CP1_SOC",
+      "feedback_target_layer": "SpecIR",
+      "message": "CP1_SOC approval is required for top-level SoC: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP1_SOC.json; approval file not found: /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/specs/approvals/CP1_SOC.json",
+      "severity": "blocker",
+      "uid": "FB-APPROVAL-CP1_SOC-soc"
+    }
+  ],
+  "status": "blocked"
+}

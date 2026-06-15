@@ -1,4 +1,12 @@
-# 09 Constraint Traceability Report
+# Constraint Traceability & Coverage Report
+
+## Summary
+
+- **Entities**: 2
+- **Constraints**: 22
+- **Feedback items**: 0
+- **Decisions**: 3
+- **Artifacts**: 3
 
 ## Constraints by Layer
 
@@ -29,8 +37,43 @@
 
 ## Generated Artifacts
 
-| Artifact | Source Constraint |
-|----------|-------------------|
-| rv32_div_zero_seq.sv | RV32M_DIV_ZERO_UVM |
-| cpu_power_report.md | CPU_ACTIVE_POWER_REPORT |
-| simd16_vadd_overflow_sva.sv | SIMD16_VADD_OVERFLOW_SVA_VERILOG |
+| Artifact | Source Constraint | Layer |
+|----------|-------------------|-------|
+| rv32_div_zero_seq.sv | RV32M_DIV_ZERO_UVM | Verilog |
+| cpu_power_report.md | CPU_ACTIVE_POWER_REPORT | Verilog |
+| simd16_vadd_overflow_sva.sv | SIMD16_VADD_OVERFLOW_SVA_VERILOG | Verilog |
+
+## Coverage Gaps
+
+Human-defined constraints that have no derived Verilog artifact or Verilog-layer constraint.
+
+| UID | Name | Layer | Category | Target |
+|-----|------|-------|----------|--------|
+| EARP-RV32-003 | CPU_POWER_BUDGET_STRICT | SpecIR | power | EarphoneRV32 |
+
+## Feedback Items
+
+- No feedback items.
+
+## Design Decisions
+
+### DEC-RV32-001: Divider implementation
+- **Layer**: ArchitectureIR
+- **Decision**: Use 32-cycle iterative restoring divider for DIV/DIVU/REM/REMU
+- **Rationale**: Reduce divider area vs combinational implementation; acceptable latency for Earphone control code.
+- **Alternatives**: Combinational divider, Radix-4 SRT divider
+- **Impacted constraints**: EARP-RV32-001, EARP-RV32-002
+
+### DEC-RV32-002: Pipeline clock gating
+- **Layer**: ArchitectureIR
+- **Decision**: Gate pipeline registers with core_clk_en = ~core_stall & ~muldiv_busy
+- **Rationale**: Cut dynamic power during memory stalls and divide operations with minimal control overhead.
+- **Alternatives**: Per-register fine-grained gating, Module-level clock gate only
+- **Impacted constraints**: EARP-RV32-002
+
+### DEC-SIMD-001: SIMD datapath gating
+- **Layer**: ArchitectureIR
+- **Decision**: Independent int_ce and fp_ce clock enables for INT16/FP16 datapaths
+- **Rationale**: FP16 MAC pipeline toggles only when FP16 workloads are active; INT16 audio path remains active.
+- **Alternatives**: Shared SIMD clock enable, Per-lane clock gating
+- **Impacted constraints**: EARP-SIMD-001

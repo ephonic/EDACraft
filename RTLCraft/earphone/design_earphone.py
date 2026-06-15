@@ -181,6 +181,9 @@ from earphone.modules.qspi.layer_L2_cycle.src.cycle import qspi_cycle_model
 # ----------------------------------------------------------------------------
 from earphone.modules.i2c.layer_L1_behavior.src.behavior import I2CBusFunctional
 from earphone.modules.i2c.layer_L2_cycle.src.cycle import i2c_master_cycle_model
+from earphone.modules.apb_bridge.layer_L1_behavior.src.behavior import apb_decode
+from earphone.modules.apb_bridge.layer_L5_dsl.src.dsl import EarphoneAPBBridge
+from earphone.modules.sram256k.layer_L5_dsl.src.dsl import EarphoneSRAM256K
 
 
 print("  - Layer 1 functional models defined")
@@ -204,1073 +207,20 @@ print("  - Layer 2 cycle-level models defined")
 # ============================================================================
 
 # ----------------------------------------------------------------------------
-# EarphoneRV32 — RV32IM 3-stage in-order core
-# ----------------------------------------------------------------------------
-
-class EarphoneRV32(Module):
-    """3-stage RV32IM core for the smart earphone SoC.
-
-    Stages: IF → ID/EX → WB
-    Interfaces: simple memory bus (no cache), byte write enable.
-    M-extension multiplier/divider is multi-cycle (iterative divider).
-    """
-
-    def __init__(self):
-        super().__init__("earphone_rv32")
-        XLEN = 32
-
-        self.clk = Input(1, "clk")
-        self.rst_n = Input(1, "rst_n")
-
-        # Instruction memory interface
-        self.imem_addr = Output(XLEN, "imem_addr")
-        self.imem_rdata = Input(XLEN, "imem_rdata")
-        self.imem_req = Output(1, "imem_req")
-        self.imem_gnt = Input(1, "imem_gnt")
-
-        # Data memory interface
-        self.dmem_addr = Output(XLEN, "dmem_addr")
-        self.dmem_wdata = Output(XLEN, "dmem_wdata")
-        self.dmem_rdata = Input(XLEN, "dmem_rdata")
-        self.dmem_we = Output(4, "dmem_we")
-        self.dmem_req = Output(1, "dmem_req")
-        self.dmem_gnt = Input(1, "dmem_gnt")
-        self.dmem_valid = Input(1, "dmem_valid")
-
-        # Status
-        self.retire_valid = Output(1, "retire_valid")
-        self.retire_rd = Output(5, "retire_rd")
-        self.retire_result = Output(XLEN, "retire_result")
-
-        # Pipeline registers
-        self.pc_reg = Reg(XLEN, "pc_reg", init_value=0x1000)
-        self.fetch_valid = Reg(1, "fetch_valid", init_value=0)
-        self.fetch_instr = Reg(XLEN, "fetch_instr", init_value=0)
-        self.exec_valid = Reg(1, "exec_valid", init_value=0)
-        self.exec_instr = Reg(XLEN, "exec_instr", init_value=0)
-        self.exec_pc = Reg(XLEN, "exec_pc", init_value=0)
-        self.wb_valid = Reg(1, "wb_valid", init_value=0)
-        self.wb_wb_en = Reg(1, "wb_wb_en", init_value=0)
-        self.wb_rd = Reg(5, "wb_rd", init_value=0)
-        self.wb_result = Reg(XLEN, "wb_result", init_value=0)
-
-        # Register file
-        self.rf = Array(XLEN, 32, "rf")
-
-        # M-extension state
-        self.muldiv_busy = Reg(1, "muldiv_busy", init_value=0)
-        self.muldiv_count = Reg(6, "muldiv_count", init_value=0)
-        self.muldiv_result = Wire(XLEN, "muldiv_result")
-        self.muldiv_rd = Reg(5, "muldiv_rd", init_value=0)
-        self.muldiv_wb_en = Reg(1, "muldiv_wb_en", init_value=0)
-
-        # Iterative divider state (area-optimized DIV/DIVU/REM/REMU)
-        self.div_dividend = Reg(XLEN, "div_dividend", init_value=0)
-        self.div_dividend_orig = Reg(XLEN, "div_dividend_orig", init_value=0)
-        self.div_divisor = Reg(XLEN, "div_divisor", init_value=0)
-        self.div_quotient = Reg(XLEN, "div_quotient", init_value=0)
-        self.div_remainder = Reg(XLEN, "div_remainder", init_value=0)
-        self.div_dividend_sign = Reg(1, "div_dividend_sign", init_value=0)
-        self.div_divisor_sign = Reg(1, "div_divisor_sign", init_value=0)
-        self.div_is_rem = Reg(1, "div_is_rem", init_value=0)
-        self.div_result = Wire(XLEN, "div_result")
-        self.div_done = Reg(1, "div_done", init_value=0)
-        self.div_restart_block = Reg(1, "div_restart_block", init_value=0)
-
-        # Combinational decode wires (declared first so seq can reference)
-        exec_alu_result = Wire(XLEN, "exec_alu_result")
-        exec_wb_en = Wire(1, "exec_wb_en")
-        exec_rd = Wire(5, "exec_rd")
-        exec_mem_read = Wire(1, "exec_mem_read")
-        exec_mem_write = Wire(1, "exec_mem_write")
-        exec_mem_addr = Wire(XLEN, "exec_mem_addr")
-        exec_mem_wdata = Wire(XLEN, "exec_mem_wdata")
-        branch_taken = Wire(1, "branch_taken")
-        branch_target = Wire(XLEN, "branch_target")
-        core_stall = Wire(1, "core_stall")
-        is_divrem = Wire(1, "is_divrem")
-        is_mul_only = Wire(1, "is_mul_only")
-
-        # Decode current execute instruction
-        instr = self.exec_instr
-        opcode = instr[6:0]
-        funct3 = instr[14:12]
-        funct7 = instr[31:25]
-        rs1 = instr[19:15]
-        rs2 = instr[24:20]
-        rd_d = instr[11:7]
-
-        # Immediates
-        imm_i = Cat(Rep(instr[31], XLEN - 12), instr[31:20])
-        imm_s = Cat(Rep(instr[31], XLEN - 12), instr[31:25], instr[11:7])
-        imm_b = Cat(Rep(instr[31], XLEN - 13), instr[31], instr[7], instr[30:25], instr[11:8], Const(0, 1))
-        imm_u = Cat(instr[31:12], Const(0, 12))
-        imm_j = Cat(Rep(instr[31], XLEN - 21), instr[31], instr[19:12], instr[20], instr[30:21], Const(0, 1))
-
-        with self.comb:
-            # Forwarding from writeback stage
-            wb_fwd_valid = self.wb_valid & self.wb_wb_en
-            wb_fwd_result = self.wb_result
-            wb_fwd_rd = self.wb_rd
-            ra = Mux((rs1 == wb_fwd_rd) & wb_fwd_valid, wb_fwd_result, self.rf[rs1])
-            rb = Mux((rs2 == wb_fwd_rd) & wb_fwd_valid, wb_fwd_result, self.rf[rs2])
-
-            # Control signals
-            is_op_imm = (opcode == Const(OPCODE_IMM, 7))
-            is_op = (opcode == Const(OPCODE_REG, 7))
-            is_muldiv = is_op & (funct7 == Const(FUNCT7_MULDIV, 7))
-            is_divrem <<= is_muldiv & (funct3[2] == 1)
-            is_mul_only <<= is_muldiv & (funct3[2] == 0)
-            is_load = (opcode == Const(OPCODE_LOAD, 7))
-            is_store = (opcode == Const(OPCODE_STORE, 7))
-            is_lui = (opcode == Const(OPCODE_LUI, 7))
-            is_auipc = (opcode == Const(OPCODE_AUIPC, 7))
-            is_jal = (opcode == Const(OPCODE_JAL, 7))
-            is_jalr = (opcode == Const(OPCODE_JALR, 7))
-            is_branch = (opcode == Const(OPCODE_BRANCH, 7))
-
-            # ALU op decode
-            add_sel = (funct3 == Const(FUNCT3_ADD, 3)) & (is_op_imm | (is_op & (funct7 == Const(FUNCT7_DEFAULT, 7))))
-            sub_sel = (funct3 == Const(FUNCT3_SUB, 3)) & is_op & (funct7 == Const(FUNCT7_SUB, 7))
-            xor_sel = (funct3 == Const(FUNCT3_XOR, 3)) & (is_op_imm | is_op)
-            or_sel = (funct3 == Const(FUNCT3_OR, 3)) & (is_op_imm | is_op)
-            and_sel = (funct3 == Const(FUNCT3_AND, 3)) & (is_op_imm | is_op)
-            sll_sel = (funct3 == Const(FUNCT3_SLL, 3)) & (is_op_imm | is_op)
-            srl_sel = (funct3 == Const(FUNCT3_SRL, 3)) & (is_op_imm | is_op) & (funct7 == Const(FUNCT7_DEFAULT, 7))
-            sra_sel = (funct3 == Const(FUNCT3_SRA, 3)) & (is_op_imm | is_op) & (funct7 == Const(FUNCT7_SRA, 7))
-            slt_sel = (funct3 == Const(FUNCT3_SLT, 3)) & (is_op_imm | is_op)
-            sltu_sel = (funct3 == Const(FUNCT3_SLTU, 3)) & (is_op_imm | is_op)
-
-            imm_shamt = imm_i[4:0]
-            rb_shamt = rb[4:0]
-
-            # R-type / I-type ALU result
-            alu_in2 = Mux(is_op_imm, imm_i, rb)
-            shamt = Mux(is_op_imm, imm_shamt, rb_shamt)
-
-            alu_result = Mux(add_sel | sub_sel, Mux(sub_sel, ra - rb, ra + alu_in2),
-                     Mux(xor_sel, ra ^ alu_in2,
-                     Mux(or_sel, ra | alu_in2,
-                     Mux(and_sel, ra & alu_in2,
-                     Mux(sll_sel, ra << shamt,
-                     Mux(srl_sel, ra >> shamt,
-                     Mux(sra_sel, SRA(ra, shamt),
-                     Mux(slt_sel, Mux(SRA(ra - alu_in2, XLEN - 1), Const(1, XLEN), Const(0, XLEN)),
-                     Mux(sltu_sel, Mux((ra < alu_in2), Const(1, XLEN), Const(0, XLEN)),
-                     Const(0, XLEN))))))))))
-
-            exec_alu_result <<= Mux(is_lui, imm_u,
-                            Mux(is_auipc, self.exec_pc + imm_u,
-                            Mux(is_jal, self.exec_pc + Const(4, XLEN),
-                            Mux(is_jalr, ra + imm_i,
-                            Mux(is_branch, self.exec_pc + imm_b,
-                            Mux(is_load | is_store, exec_mem_addr,
-                            Mux(is_muldiv, self.muldiv_result,
-                            alu_result)))))))
-
-            # Memory address / data
-            exec_mem_addr <<= Mux(is_store, ra + imm_s, ra + imm_i)
-            exec_mem_wdata <<= rb
-            exec_mem_read <<= is_load
-            exec_mem_write <<= is_store
-
-            # Branch resolution (use wire for diff to avoid slice-on-binop)
-            diff = Wire(XLEN, "diff")
-            diff <<= ra - rb
-            sign_diff = diff[XLEN - 1]
-            beq_taken = is_branch & (funct3 == Const(FUNCT3_BEQ, 3)) & (ra == rb)
-            bne_taken = is_branch & (funct3 == Const(FUNCT3_BNE, 3)) & (ra != rb)
-            blt_taken = is_branch & (funct3 == Const(FUNCT3_BLT, 3)) & sign_diff
-            bge_taken = is_branch & (funct3 == Const(FUNCT3_BGE, 3)) & ~sign_diff
-            bltu_taken = is_branch & (funct3 == Const(FUNCT3_BLTU, 3)) & (ra < rb)
-            bgeu_taken = is_branch & (funct3 == Const(FUNCT3_BGEU, 3)) & (ra >= rb)
-
-            branch_taken <<= is_jal | is_jalr | beq_taken | bne_taken | blt_taken | bge_taken | bltu_taken | bgeu_taken
-            branch_target <<= Mux(is_jalr, (ra + imm_i) & ~Const(1, XLEN),
-                           Mux(is_branch, self.exec_pc + imm_b,
-                           self.exec_pc + imm_j))
-
-            # Writeback enable / destination
-            exec_wb_en <<= (is_op_imm | (is_op & ~is_divrem) | is_load | is_lui | is_auipc | is_jal | is_jalr) & self.exec_valid
-            exec_rd <<= rd_d
-
-            # Stall on memory not ready, on muldiv, and while DIV/REM is in EX.
-            # div_done temporarily releases the stall so the pipeline can advance.
-            imem_stall = self.fetch_valid & ~self.imem_gnt
-            dmem_stall = self.exec_valid & (exec_mem_read | exec_mem_write) & ~self.dmem_valid
-            div_stall = self.exec_valid & is_divrem & ~self.div_done
-            core_stall <<= imem_stall | dmem_stall | self.muldiv_busy | div_stall
-
-            # Outputs
-            self.imem_req <<= ~self.fetch_valid
-            self.imem_addr <<= self.pc_reg
-            self.dmem_req <<= self.exec_valid & (exec_mem_read | exec_mem_write) & ~dmem_stall
-            self.dmem_addr <<= exec_mem_addr
-            self.dmem_wdata <<= exec_mem_wdata
-            self.dmem_we <<= Mux(exec_mem_write,
-                                 Mux(funct3 == Const(FUNCT3_SB, 3), Const(0b0001, 4),
-                                 Mux(funct3 == Const(FUNCT3_SH, 3), Const(0b0011, 4),
-                                 Const(0b1111, 4))),
-                                 Const(0, 4))
-            self.retire_valid <<= (self.wb_valid & self.wb_wb_en) | self.div_done
-            self.retire_rd <<= Mux(self.div_done, self.muldiv_rd, self.wb_rd)
-            self.retire_result <<= Mux(self.div_done, self.div_result, self.wb_result)
-
-        # core_clk_en disables pipeline register updates during stalls -> dynamic power reduction.
-        # Declared here so the divider FSM can reference it for restart blocking.
-        self.core_clk_en = Wire(1, "core_clk_en")
-        with self.comb:
-            self.core_clk_en <<= ~core_stall & ~self.muldiv_busy
-
-        # Iterative divider FSM (area-optimized DIV/DIVU/REM/REMU)
-        div_overflow = Wire(1, "div_overflow")
-        div_by_zero = Wire(1, "div_by_zero")
-        shifted_rem = Wire(XLEN + 1, "shifted_rem")
-        with self.comb:
-            div_by_zero <<= (self.div_divisor == 0)
-            # Signed overflow: MIN / -1
-            div_overflow <<= self.div_dividend_sign & self.div_divisor_sign & \
-                             (self.div_dividend == Const(0x80000000, XLEN)) & \
-                             (self.div_divisor == Const(0xFFFFFFFF, XLEN))
-            shifted_rem <<= (self.div_remainder << 1) | self.div_dividend[XLEN - 1]
-
-        with self.seq(self.clk, ~self.rst_n):
-            with If(~self.rst_n):
-                self.muldiv_busy <<= 0
-                self.muldiv_count <<= 0
-                self.muldiv_rd <<= 0
-                self.muldiv_wb_en <<= 0
-                self.div_dividend <<= 0
-                self.div_dividend_orig <<= 0
-                self.div_divisor <<= 0
-                self.div_quotient <<= 0
-                self.div_remainder <<= 0
-                self.div_dividend_sign <<= 0
-                self.div_divisor_sign <<= 0
-                self.div_is_rem <<= 0
-                self.div_done <<= 0
-                self.div_restart_block <<= 0
-            with Else():
-                self.div_done <<= 0
-                with If(self.muldiv_busy == 0):
-                    with If(self.div_restart_block):
-                        # Hold block until pipeline can advance (avoids re-starting same DIV)
-                        self.div_restart_block <<= ~self.core_clk_en
-                    with Elif(self.exec_valid & is_divrem):
-                        # Capture operands and start iterative division
-                        self.muldiv_busy <<= 1
-                        self.muldiv_count <<= Const(31, 6)
-                        self.muldiv_rd <<= rd_d
-                        self.muldiv_wb_en <<= 1
-                        self.div_is_rem <<= (funct3 == Const(6, 3)) | (funct3 == Const(7, 3))
-                        is_signed = (funct3 == Const(4, 3)) | (funct3 == Const(6, 3))
-                        self.div_dividend_sign <<= is_signed & ra[XLEN - 1]
-                        self.div_divisor_sign <<= is_signed & rb[XLEN - 1]
-                        # Keep original dividend for REM/REMU by-zero result.
-                        self.div_dividend_orig <<= ra
-                        # Absolute values for signed inputs
-                        with If(is_signed & ra[XLEN - 1]):
-                            self.div_dividend <<= (~ra + 1).as_uint()[XLEN - 1:0]
-                        with Else():
-                            self.div_dividend <<= ra
-                        with If(is_signed & rb[XLEN - 1]):
-                            self.div_divisor <<= (~rb + 1).as_uint()[XLEN - 1:0]
-                        with Else():
-                            self.div_divisor <<= rb
-                        self.div_quotient <<= 0
-                        self.div_remainder <<= 0
-                with Else():
-                    # Restoring division step (shifted_rem computed combinationally)
-                    with If(shifted_rem >= self.div_divisor):
-                        self.div_remainder <<= (shifted_rem - self.div_divisor)[XLEN - 1:0]
-                        self.div_quotient <<= Cat(self.div_quotient[XLEN - 2:0], Const(1, 1))
-                    with Else():
-                        self.div_remainder <<= shifted_rem[XLEN - 1:0]
-                        self.div_quotient <<= Cat(self.div_quotient[XLEN - 2:0], Const(0, 1))
-                    self.div_dividend <<= self.div_dividend << 1
-                    self.muldiv_count <<= self.muldiv_count - Const(1, 6)
-                    with If(self.muldiv_count == 0):
-                        self.muldiv_busy <<= 0
-                        self.div_done <<= 1
-                        self.div_restart_block <<= 1
-                        # Direct RF writeback for divide instructions
-                        with If(self.muldiv_rd != 0):
-                            self.rf[self.muldiv_rd] <<= self.div_result
-
-        # RV32M multiply/divide result
-        # MUL* is combinational single-cycle; DIV/REM is iterative for area.
-        # Operand isolation on multiplier when not executing M-extension.
-        with self.comb:
-            mul_full = Wire(XLEN * 2, "mul_full")
-            mul_hsu_full = Wire(XLEN * 2, "mul_hsu_full")
-            mul_hu_full = Wire(XLEN * 2, "mul_hu_full")
-            with If(is_muldiv):
-                mul_full <<= ra * rb
-                mul_hsu_full <<= ra.as_sint() * rb.as_uint()
-                mul_hu_full <<= ra.as_uint() * rb.as_uint()
-            with Else():
-                mul_full <<= Const(0, XLEN * 2)
-                mul_hsu_full <<= Const(0, XLEN * 2)
-                mul_hu_full <<= Const(0, XLEN * 2)
-
-            mul_lo = mul_full[XLEN - 1:0]
-            mul_hi = mul_full[XLEN * 2 - 1:XLEN]
-            mul_hsu = mul_hsu_full[XLEN * 2 - 1:XLEN]
-            mul_hu = mul_hu_full[XLEN * 2 - 1:XLEN]
-
-            div_res_signed = Mux(self.div_dividend_sign ^ self.div_divisor_sign,
-                                 (~self.div_quotient + 1).as_uint()[XLEN - 1:0],
-                                 self.div_quotient)
-            rem_res_signed = Mux(self.div_dividend_sign,
-                                 (~self.div_remainder + 1).as_uint()[XLEN - 1:0],
-                                 self.div_remainder)
-
-            self.div_result <<= Mux(div_by_zero,
-                                    Mux(self.div_is_rem, self.div_dividend_orig, Const(0xFFFFFFFF, XLEN)),
-                              Mux(div_overflow & ~self.div_is_rem,
-                                    Const(0x80000000, XLEN),
-                                    Mux(self.div_is_rem, rem_res_signed, div_res_signed)))
-
-            muldiv_res = Mux(funct3 == Const(0, 3), mul_lo,
-                       Mux(funct3 == Const(1, 3), mul_hi,
-                       Mux(funct3 == Const(2, 3), mul_hsu,
-                       Mux(funct3 == Const(3, 3), mul_hu,
-                       Mux(self.div_is_rem, rem_res_signed, div_res_signed)))))
-            self.muldiv_result <<= muldiv_res
-
-        # Main pipeline sequential logic with clock-gating on stall
-        with self.seq(self.clk, ~self.rst_n):
-            with If(~self.rst_n):
-                self.pc_reg <<= Const(0x1000, XLEN)
-                self.fetch_valid <<= 0
-                self.fetch_instr <<= 0
-                self.exec_valid <<= 0
-                self.exec_instr <<= 0
-                self.exec_pc <<= 0
-                self.wb_valid <<= 0
-                self.wb_wb_en <<= 0
-                self.wb_rd <<= 0
-                self.wb_result <<= 0
-            with Else():
-                with If(self.core_clk_en):
-                    with If(branch_taken & self.exec_valid):
-                        self.pc_reg <<= branch_target
-                        self.fetch_valid <<= 0
-                        self.exec_valid <<= 0
-                        self.wb_valid <<= 0
-                    with Else():
-                        self.pc_reg <<= self.pc_reg + Const(4, XLEN)
-                        self.fetch_valid <<= self.imem_gnt
-                        with If(self.imem_gnt):
-                            self.fetch_instr <<= self.imem_rdata
-                        self.exec_valid <<= self.fetch_valid
-                        with If(self.fetch_valid):
-                            self.exec_instr <<= self.fetch_instr
-                            self.exec_pc <<= self.pc_reg
-                        self.wb_valid <<= self.exec_valid
-                        with If(self.exec_valid):
-                            # DIV/REM write back later from divider FSM
-                            self.wb_wb_en <<= exec_wb_en & ~is_divrem
-                            self.wb_rd <<= exec_rd
-                            self.wb_result <<= exec_alu_result
-                with Else():
-                    # During stalls, clear wb_valid so retire_valid remains a one-cycle pulse
-                    self.wb_valid <<= 0
-
-                # Register file writeback (non-DIV/REM instructions)
-                with If(self.wb_valid & self.wb_wb_en & (self.wb_rd != 0)):
-                    self.rf[self.wb_rd] <<= self.wb_result
-
-        tpl = ModuleDocTemplate(
-            source="earphone/design_earphone.py",
-            description="RV32IM 3-stage in-order core for smart earphone SoC.",
-            author="RTLCraft Agent", version="0.1",
-            timing="3-stage pipeline with stall clock-gating; MUL* single-cycle, DIV/REM 32-cycle iterative.",
-        )
-        fill_doc_template(tpl, self)
-
-        # Attach cross-layer constraints (SpecIR layer)
-        attach_earphone_constraints(
-            self,
-            FunctionalConstraint(
-                uid="EARP-RV32-001",
-                name="RV32M_DIV_ZERO",
-                layer="SpecIR",
-                expr="DIV/REM by zero -> -1; DIVU/REMU by zero -> MAX/dvd",
-                target="EarphoneRV32",
-                source_ref="earphone/design_spec.md#RV32M",
-            ),
-        )
-        attach_earphone_constraints(
-            self,
-            PowerConstraint(
-                uid="EARP-RV32-002",
-                name="CPU_ACTIVE_POWER",
-                layer="SpecIR",
-                expr="< 0.5",
-                unit="mW/MHz",
-                target="EarphoneRV32",
-                source_ref="earphone/design_spec.md#power",
-            ),
-        )
-        # Artificially aggressive constraint to demonstrate backward feedback loop.
-        attach_earphone_constraints(
-            self,
-            PowerConstraint(
-                uid="EARP-RV32-003",
-                name="CPU_POWER_BUDGET_STRICT",
-                layer="SpecIR",
-                expr="< 0.1",
-                unit="mW/MHz",
-                target="EarphoneRV32",
-                source_ref="earphone/design_spec.md#power",
-                metadata={"demo": "unachievable_without_power_domain"},
-            ),
-        )
-
+# Module DSL classes are now hosted in their respective module directories to
+# avoid a monolithic design file and circular imports.
+from earphone.modules.rv32.layer_L5_dsl.src.dsl import EarphoneRV32
+from earphone.modules.simd16.layer_L5_dsl.src.dsl import EarphoneSIMD16
+from earphone.modules.fft256.layer_L5_dsl.src.dsl import EarphoneFFT256
+from earphone.modules.qspi.layer_L5_dsl.src.dsl import EarphoneQSPI
+from earphone.modules.i2c.layer_L5_dsl.src.dsl import EarphoneI2C
 
 print("  - EarphoneRV32 DSL defined")
-
-
-# ----------------------------------------------------------------------------
-# EarphoneSIMD16 — 16-lane SIMD ALU (INT16 full + FP16 MAC)
-# ----------------------------------------------------------------------------
-
-class EarphoneSIMD16(Module):
-    """16-lane SIMD accelerator.
-
-    INT16 ops complete in 1 cycle. FP16 MAC is 3-stage pipelined.
-    Per-lane predicate mask for conditional execution.
-    """
-
-    def __init__(self):
-        super().__init__("earphone_simd16")
-        XLEN = 256
-        ELEN = 16
-
-        self.clk = Input(1, "clk")
-        self.rst_n = Input(1, "rst_n")
-
-        self.vsrc0 = Input(XLEN, "vsrc0")
-        self.vsrc1 = Input(XLEN, "vsrc1")
-        self.vsrc2 = Input(XLEN, "vsrc2")
-        self.vdst = Output(XLEN, "vdst")
-        self.op = Input(5, "op")
-        self.mode = Input(1, "mode")   # 0=INT16, 1=FP16
-        self.pred = Input(16, "pred")
-        self.start = Input(1, "start")
-        self.done = Output(1, "done")
-
-        # INT16 pipeline registers (1 cycle)
-        self.int_result = Reg(XLEN, "int_result", init_value=0)
-        self.int_valid = Reg(1, "int_valid", init_value=0)
-
-        # FP16 pipeline registers (3 cycles)
-        self.fp_s0_a = Reg(XLEN, "fp_s0_a", init_value=0)
-        self.fp_s0_b = Reg(XLEN, "fp_s0_b", init_value=0)
-        self.fp_s0_c = Reg(XLEN, "fp_s0_c", init_value=0)
-        self.fp_s0_pred = Reg(16, "fp_s0_pred", init_value=0)
-        self.fp_s0_valid = Reg(1, "fp_s0_valid", init_value=0)
-
-        self.fp_s1_a = Reg(XLEN, "fp_s1_a", init_value=0)
-        self.fp_s1_b = Reg(XLEN, "fp_s1_b", init_value=0)
-        self.fp_s1_c = Reg(XLEN, "fp_s1_c", init_value=0)
-        self.fp_s1_pred = Reg(16, "fp_s1_pred", init_value=0)
-        self.fp_s1_valid = Reg(1, "fp_s1_valid", init_value=0)
-
-        self.fp_s2_result = Reg(XLEN, "fp_s2_result", init_value=0)
-        self.fp_s2_valid = Reg(1, "fp_s2_valid", init_value=0)
-
-        # Per-lane wires for combinational INT16 ALU
-        lane_results = []
-        for lane in range(16):
-            lo = lane * ELEN
-            av = self.vsrc0[lo + ELEN - 1:lo]
-            bv = self.vsrc1[lo + ELEN - 1:lo]
-            cv = self.vsrc2[lo + ELEN - 1:lo]
-            pred_bit = self.pred[lane]
-
-            # INT16 operations
-            add_r = (av.as_sint() + bv.as_sint()).as_uint()[ELEN - 1:0]
-            sub_r = (av.as_sint() - bv.as_sint()).as_uint()[ELEN - 1:0]
-            mul_r = (av.as_sint() * bv.as_sint()).as_uint()[ELEN - 1:0]
-            and_r = av & bv
-            or_r = av | bv
-            xor_r = av ^ bv
-            sll_r = (av << bv[3:0])[ELEN - 1:0]
-            srl_r = av >> bv[3:0]
-            sra_r = SRA(av.as_sint(), bv[3:0]).as_uint()[ELEN - 1:0]
-            cmpeq_r = Mux(av == bv, Const(0xFFFF, ELEN), Const(0, ELEN))
-            cmplt_r = Mux(av.as_sint() < bv.as_sint(), Const(0xFFFF, ELEN), Const(0, ELEN))
-
-            int_r = Mux(self.op == Const(SIMD_OP_VADD, 5), add_r,
-                  Mux(self.op == Const(SIMD_OP_VSUB, 5), sub_r,
-                  Mux(self.op == Const(SIMD_OP_VMUL, 5), mul_r,
-                  Mux(self.op == Const(SIMD_OP_VAND, 5), and_r,
-                  Mux(self.op == Const(SIMD_OP_VOR, 5), or_r,
-                  Mux(self.op == Const(SIMD_OP_VXOR, 5), xor_r,
-                  Mux(self.op == Const(SIMD_OP_VSLL, 5), sll_r,
-                  Mux(self.op == Const(SIMD_OP_VSRL, 5), srl_r,
-                  Mux(self.op == Const(SIMD_OP_VSRA, 5), sra_r,
-                  Mux(self.op == Const(SIMD_OP_VCMP_EQ, 5), cmpeq_r,
-                  Mux(self.op == Const(SIMD_OP_VCMP_LT, 5), cmplt_r,
-                  Const(0, ELEN))))))))))))
-
-            final_r = Mux(pred_bit, int_r, Const(0, ELEN))
-            lane_results.append(final_r)
-
-        int16_result = Cat(*reversed(lane_results))
-
-        # FP16 MAC is modeled as a black-box combinational function in DSL
-        # (actual FP16 add/mul logic would be expanded per-lane)
-        fp16_result = self._fp16_mac_comb(self.fp_s1_a, self.fp_s1_b, self.fp_s1_c, self.fp_s1_pred)
-
-        with self.comb:
-            self.vdst <<= Mux(self.fp_s2_valid, self.fp_s2_result,
-                        Mux(self.int_valid, self.int_result, Const(0, XLEN)))
-            self.done <<= self.fp_s2_valid | self.int_valid
-
-        # Per-path clock enables: gate SIMD datapath when idle to cut dynamic power.
-        int_ce = Wire(1, "int_ce")
-        fp_ce = Wire(1, "fp_ce")
-        with self.comb:
-            int_ce <<= self.start & (self.mode == 0)
-            fp_ce <<= (self.start & (self.mode == 1)) | self.fp_s0_valid | self.fp_s1_valid | self.fp_s2_valid
-
-        with self.seq(self.clk, ~self.rst_n):
-            with If(~self.rst_n):
-                self.int_result <<= 0
-                self.int_valid <<= 0
-                self.fp_s0_a <<= 0; self.fp_s0_b <<= 0; self.fp_s0_c <<= 0
-                self.fp_s0_pred <<= 0; self.fp_s0_valid <<= 0
-                self.fp_s1_a <<= 0; self.fp_s1_b <<= 0; self.fp_s1_c <<= 0
-                self.fp_s1_pred <<= 0; self.fp_s1_valid <<= 0
-                self.fp_s2_result <<= 0; self.fp_s2_valid <<= 0
-            with Else():
-                # INT16 path: update only when a new INT16 op starts
-                with If(int_ce):
-                    self.int_valid <<= 1
-                    self.int_result <<= int16_result
-                with Else():
-                    self.int_valid <<= 0
-
-                # FP16 MAC pipeline: advance only when occupied or starting
-                with If(fp_ce):
-                    self.fp_s0_valid <<= self.start & (self.mode == 1)
-                    self.fp_s0_a <<= self.vsrc0
-                    self.fp_s0_b <<= self.vsrc1
-                    self.fp_s0_c <<= self.vsrc2
-                    self.fp_s0_pred <<= self.pred
-
-                    self.fp_s1_valid <<= self.fp_s0_valid
-                    self.fp_s1_a <<= self.fp_s0_a
-                    self.fp_s1_b <<= self.fp_s0_b
-                    self.fp_s1_c <<= self.fp_s0_c
-                    self.fp_s1_pred <<= self.fp_s0_pred
-
-                    self.fp_s2_valid <<= self.fp_s1_valid
-                    self.fp_s2_result <<= fp16_result
-
-        tpl = ModuleDocTemplate(
-            source="earphone/design_earphone.py",
-            description="16-lane SIMD: INT16 full ALU + FP16 MAC with per-path clock gating.",
-            author="RTLCraft Agent", version="0.1",
-            timing="INT16: 1 cycle; FP16 MAC: 3 cycles; datapath clock-gated when idle.",
-        )
-        fill_doc_template(tpl, self)
-
-        # Attach cross-layer constraints (SpecIR layer)
-        attach_earphone_constraints(
-            self,
-            FunctionalConstraint(
-                uid="EARP-SIMD-001",
-                name="SIMD16_VADD_OVERFLOW",
-                layer="SpecIR",
-                expr="INT16 vadd wraps on overflow (modulo 2^16)",
-                target="EarphoneSIMD16",
-                source_ref="earphone/design_spec.md#SIMD16",
-            ),
-        )
-
-    def _fp16_mac_comb(self, a: "Signal", b: "Signal", c: "Signal", pred: "Signal") -> "Signal":
-        """Build a 16-lane FP16 MAC using per-lane Python-generated logic.
-
-        For v0.1 we approximate with a Mux-based look-up on a small set of
-        patterns.  A production implementation would instantiate 16 IEEE-754
-        half-precision multiply-add units.
-        """
-        ELEN = 16
-        lane_results = []
-        for lane in range(16):
-            lo = lane * ELEN
-            av = a[lo + ELEN - 1:lo]
-            bv = b[lo + ELEN - 1:lo]
-            cv = c[lo + ELEN - 1:lo]
-            pred_bit = pred[lane]
-            # Placeholder: implement FP16 MAC as (a*b + c) with saturation to 0
-            # Real implementation would expand FP16 add/mul here.
-            mac_approx = (av.as_sint() * bv.as_sint() + cv.as_sint()).as_uint()[ELEN - 1:0]
-            lane_results.append(Mux(pred_bit, mac_approx, Const(0, ELEN)))
-        return Cat(*reversed(lane_results))
-
-
 print("  - EarphoneSIMD16 DSL defined")
-
-
-# ----------------------------------------------------------------------------
-# EarphoneFFT256 — 256-point FFT wrapper around skills.fft.FFTController
-# ----------------------------------------------------------------------------
-
-class EarphoneFFT256(Module):
-    """256-point streaming FFT accelerator wrapper."""
-
-    def __init__(self):
-        super().__init__("earphone_fft256")
-        # Import existing FFT controller
-        from design_scripts.design_fft import FFTController
-
-        self.clk = Input(1, "clk")
-        self.rst = Input(1, "rst")
-        self.di_en = Input(1, "di_en")
-        self.di_re = Input(16, "di_re", signed=True)
-        self.di_im = Input(16, "di_im", signed=True)
-        self.do_en = Output(1, "do_en")
-        self.do_re = Output(16, "do_re", signed=True)
-        self.do_im = Output(16, "do_im", signed=True)
-
-        fft = FFTController(N=256, width=16, name="FFT256Core")
-        self.instantiate(fft, "fft256_core", port_map={
-            "clk": self.clk,
-            "rst": self.rst,
-            "di_en": self.di_en,
-            "di_re": self.di_re,
-            "di_im": self.di_im,
-            "do_en": self.do_en,
-            "do_re": self.do_re,
-            "do_im": self.do_im,
-        })
-
-        tpl = ModuleDocTemplate(
-            source="earphone/design_earphone.py",
-            description="256-point streaming FFT wrapper (R2^2SDF, Q1.15).",
-            author="RTLCraft Agent", version="0.1",
-            timing="Streaming, 1 sample/cycle, bit-reversed output.",
-        )
-        fill_doc_template(tpl, self)
-
-
 print("  - EarphoneFFT256 DSL defined")
-
-
-# ----------------------------------------------------------------------------
-# EarphoneQSPI — QSPI XIP controller for 32 MB external Flash
-# ----------------------------------------------------------------------------
-
-class EarphoneQSPI(Module):
-    """Simplified QSPI XIP read controller.
-
-    Supports memory-mapped XIP reads via APB-like req/ready handshake.
-    Command/address/dummy/data phases are modeled with a small FSM.
-    """
-
-    def __init__(self, addr_width: int = 32):
-        super().__init__("earphone_qspi")
-
-        self.clk = Input(1, "clk")
-        self.rst_n = Input(1, "rst_n")
-
-        # Host read interface
-        self.req = Input(1, "req")
-        self.addr = Input(addr_width, "addr")
-        self.rdata = Output(32, "rdata")
-        self.ready = Output(1, "ready")
-
-        # QSPI pins (tri-state modeled as separate in/out/oe)
-        self.qspi_sck = Output(1, "qspi_sck")
-        self.qspi_cs_n = Output(1, "qspi_cs_n")
-        self.qspi_io_o = Output(4, "qspi_io_o")
-        self.qspi_io_i = Input(4, "qspi_io_i")
-        self.qspi_io_oe = Output(4, "qspi_io_oe")
-
-        # State machine: 0=idle,1=cmd,2=addr,3=dummy,4=data
-        self.state = Reg(3, "state", init_value=0)
-        self.counter = Reg(4, "counter", init_value=0)
-        self.shift = Reg(32, "shift", init_value=0)
-        self.addr_reg = Reg(addr_width, "addr_reg", init_value=0)
-
-        qspi_ce = Wire(1, "qspi_ce")
-
-        with self.comb:
-            qspi_ce <<= self.req | (self.state != 0)
-            self.ready <<= (self.state == Const(4, 3)) & (self.counter == 0)
-            self.rdata <<= self.shift
-            self.qspi_cs_n <<= ~(self.state != 0)
-            self.qspi_sck <<= self.clk & (self.state != 0)
-            self.qspi_io_oe <<= Mux(self.state == Const(4, 3), Const(0, 4), Const(0b1111, 4))
-            self.qspi_io_o <<= self.shift[31:28]
-
-        with self.seq(self.clk, ~self.rst_n):
-            with If(~self.rst_n):
-                self.state <<= 0
-                self.counter <<= 0
-                self.shift <<= 0
-                self.addr_reg <<= 0
-            with Else():
-                with If(qspi_ce):
-                    with If(self.state == 0):
-                        with If(self.req):
-                            self.state <<= 1
-                            self.counter <<= 1
-                            self.addr_reg <<= self.addr
-                            self.shift <<= Const(0xEB, 32)  # Fast Read Quad I/O command
-                    with Elif(self.state == 1):
-                        # Command phase: 2 cycles of 4-bit transfers = 8 bits
-                        with If(self.counter > 0):
-                            self.shift <<= Cat(self.shift[27:0], Const(0, 4))
-                            self.counter <<= self.counter - 1
-                        with Else():
-                            self.state <<= 2
-                            self.counter <<= 7  # 24-bit address + 4-bit mode = 7 nibble cycles
-                            self.shift <<= Cat(self.addr_reg[23:0], Const(0xA0, 8))
-                    with Elif(self.state == 2):
-                        with If(self.counter > 0):
-                            self.shift <<= Cat(self.shift[27:0], Const(0, 4))
-                            self.counter <<= self.counter - 1
-                        with Else():
-                            self.state <<= 3
-                            self.counter <<= 3  # dummy cycles
-                    with Elif(self.state == 3):
-                        with If(self.counter > 0):
-                            self.counter <<= self.counter - 1
-                        with Else():
-                            self.state <<= 4
-                            self.counter <<= 7  # 32-bit data = 8 nibbles, last cycle output ready
-                            self.shift <<= 0
-                    with Elif(self.state == 4):
-                        with If(self.counter > 0):
-                            self.shift <<= Cat(self.shift[27:0], self.qspi_io_i)
-                            self.counter <<= self.counter - 1
-                        with Else():
-                            self.state <<= 0
-
-        tpl = ModuleDocTemplate(
-            source="earphone/design_earphone.py",
-            description="QSPI XIP read controller for external 32MB Flash with idle clock gating.",
-            author="RTLCraft Agent", version="0.1",
-            timing="~15-cycle latency for first word; continuous stream after; clock gated when idle.",
-        )
-        fill_doc_template(tpl, self)
-
-
 print("  - EarphoneQSPI DSL defined")
-
-
-# ----------------------------------------------------------------------------
-# EarphoneI2C — APB I2C master byte controller
-# ----------------------------------------------------------------------------
-
-class EarphoneI2C(Module):
-    """Simplified APB I2C master controller.
-
-    Supports single-byte write/read transactions with 7-bit slave address.
-    """
-
-    def __init__(self):
-        super().__init__("earphone_i2c")
-
-        self.clk = Input(1, "clk")
-        self.rst_n = Input(1, "rst_n")
-
-        # APB slave interface
-        self.paddr = Input(12, "paddr")
-        self.pwdata = Input(32, "pwdata")
-        self.prdata = Output(32, "prdata")
-        self.pwrite = Input(1, "pwrite")
-        self.psel = Input(1, "psel")
-        self.penable = Input(1, "penable")
-        self.pready = Output(1, "pready")
-
-        # I2C pins (open-drain, oe active low)
-        self.scl_i = Input(1, "scl_i")
-        self.scl_o = Output(1, "scl_o")
-        self.scl_oe = Output(1, "scl_oe")
-        self.sda_i = Input(1, "sda_i")
-        self.sda_o = Output(1, "sda_o")
-        self.sda_oe = Output(1, "sda_oe")
-
-        # Registers
-        self.ctrl = Reg(32, "ctrl", init_value=0)      # start, addr, rw
-        self.data = Reg(32, "data", init_value=0)      # tx/rx byte
-        self.status = Reg(32, "status", init_value=0)  # busy, done, ack
-
-        # Bit-level FSM
-        self.state = Reg(4, "state", init_value=0)
-        self.bit_cnt = Reg(4, "bit_cnt", init_value=0)
-        self.shift = Reg(9, "shift", init_value=0)
-        self.scl_reg = Reg(1, "scl_reg", init_value=1)
-        self.sda_reg = Reg(1, "sda_reg", init_value=1)
-
-        i2c_ce = Wire(1, "i2c_ce")
-
-        with self.comb:
-            i2c_ce <<= (self.state != 0) | (self.psel & self.penable)
-            self.prdata <<= Mux(self.paddr[3:0] == 0, self.ctrl,
-                          Mux(self.paddr[3:0] == 4, self.data,
-                          self.status))
-            self.pready <<= self.psel & self.penable
-            self.scl_o <<= self.scl_reg
-            self.scl_oe <<= ~((self.state != 0) | (self.ctrl[0] == 1))
-            self.sda_o <<= self.sda_reg
-            self.sda_oe <<= ~((self.state != 0) & (self.state != 11))  # high-z during ack/read
-
-        with self.seq(self.clk, ~self.rst_n):
-            with If(~self.rst_n):
-                self.ctrl <<= 0
-                self.data <<= 0
-                self.status <<= 0
-                self.state <<= 0
-                self.bit_cnt <<= 0
-                self.shift <<= 0
-                self.scl_reg <<= 1
-                self.sda_reg <<= 1
-            with Else():
-                with If(i2c_ce):
-                    # APB register writes
-                    with If(self.psel & self.penable & self.pwrite):
-                        with If(self.paddr[3:0] == 0):
-                            self.ctrl <<= self.pwdata
-                        with Elif(self.paddr[3:0] == 4):
-                            self.data <<= self.pwdata
-
-                    # State machine
-                    with If(self.state == 0):
-                        self.status <<= 0
-                        with If(self.ctrl[0]):
-                            self.state <<= 1
-                            self.ctrl[0] <<= 0
-                            self.bit_cnt <<= 8
-                            addr = (self.ctrl[15:8] << 1) | self.ctrl[1]
-                            self.shift <<= Cat(addr, Const(1, 1))
-                    with Elif(self.state == 1):
-                        # START condition
-                        self.sda_reg <<= 0
-                        self.state <<= 2
-                    with Elif(self.state == 2):
-                        # Shift out address+R/W
-                        self.scl_reg <<= 0
-                        self.sda_reg <<= self.shift[8]
-                        self.state <<= 3
-                    with Elif(self.state == 3):
-                        self.scl_reg <<= 1
-                        self.state <<= 4
-                    with Elif(self.state == 4):
-                        self.shift <<= Cat(self.shift[7:0], Const(0, 1))
-                        self.scl_reg <<= 0
-                        with If(self.bit_cnt > 0):
-                            self.bit_cnt <<= self.bit_cnt - 1
-                            self.state <<= 3
-                        with Else():
-                            self.state <<= 5
-                            self.bit_cnt <<= 8
-                    with Elif(self.state == 5):
-                        # ACK bit
-                        self.scl_reg <<= 1
-                        self.state <<= 6
-                    with Elif(self.state == 6):
-                        self.status[2] <<= self.sda_i  # ack status
-                        self.scl_reg <<= 0
-                        with If(self.ctrl[1] == 0):
-                            # Write data byte
-                            self.shift <<= Cat(self.data[7:0], Const(1, 1))
-                            self.state <<= 7
-                        with Else():
-                            # Read byte
-                            self.shift <<= 0
-                            self.state <<= 9
-                    with Elif(self.state == 7):
-                        # Write byte
-                        self.sda_reg <<= self.shift[8]
-                        self.state <<= 8
-                    with Elif(self.state == 8):
-                        self.scl_reg <<= 1
-                        self.state <<= 4
-                    with Elif(self.state == 9):
-                        # Read byte
-                        self.sda_reg <<= 1
-                        self.state <<= 10
-                    with Elif(self.state == 10):
-                        self.scl_reg <<= 1
-                        self.state <<= 11
-                    with Elif(self.state == 11):
-                        self.shift <<= Cat(self.shift[7:0], self.sda_i)
-                        self.scl_reg <<= 0
-                        with If(self.bit_cnt > 0):
-                            self.bit_cnt <<= self.bit_cnt - 1
-                            self.state <<= 10
-                        with Else():
-                            self.data[7:0] <<= self.shift[8:1]
-                            self.state <<= 12
-                    with Elif(self.state == 12):
-                        # STOP condition
-                        self.sda_reg <<= 0
-                        self.scl_reg <<= 1
-                        self.state <<= 13
-                    with Elif(self.state == 13):
-                        self.sda_reg <<= 1
-                        self.status[0] <<= 1  # done
-                        self.state <<= 0
-
-        tpl = ModuleDocTemplate(
-            source="earphone/design_earphone.py",
-            description="APB I2C master byte controller with idle clock gating.",
-            author="RTLCraft Agent", version="0.1",
-            timing="~36 cycles per byte write; clock gated between transactions.",
-        )
-        fill_doc_template(tpl, self)
-
-
 print("  - EarphoneI2C DSL defined")
 
-
-# ----------------------------------------------------------------------------
-# EarphoneSRAM256K — 256 KB on-chip SRAM with APB interface
-# ----------------------------------------------------------------------------
-
-class EarphoneSRAM256K(Module):
-    """256 KB on-chip SRAM, APB4 slave, byte write enable."""
-
-    def __init__(self):
-        super().__init__("earphone_sram256k")
-
-        self.clk = Input(1, "clk")
-        self.rst_n = Input(1, "rst_n")
-
-        # APB slave
-        self.paddr = Input(32, "paddr")
-        self.pwdata = Input(32, "pwdata")
-        self.prdata = Output(32, "prdata")
-        self.pwrite = Input(1, "pwrite")
-        self.psel = Input(1, "psel")
-        self.penable = Input(1, "penable")
-        self.pready = Output(1, "pready")
-        self.pslverr = Output(1, "pslverr")
-        self.pstrb = Input(4, "pstrb")
-
-        # Memory: 64K x 32 = 256 KB
-        self.mem = Memory(32, 64 * 1024, "mem", init_zero=True)
-        self.rdata_reg = Reg(32, "rdata_reg", init_value=0)
-
-        addr_word = self.paddr[17:2]
-        mem_rdata = Wire(32, "mem_rdata")
-        mem_wdata = Wire(32, "mem_wdata")
-        sram_ce = Wire(1, "sram_ce")
-
-        with self.comb:
-            self.prdata <<= self.rdata_reg
-            self.pready <<= self.psel & self.penable
-            self.pslverr <<= 0
-            sram_ce <<= self.psel & self.penable
-            mem_rdata <<= self.mem[addr_word]
-            mem_wdata <<= Cat(
-                Mux(self.pstrb[3], self.pwdata[31:24], mem_rdata[31:24]),
-                Mux(self.pstrb[2], self.pwdata[23:16], mem_rdata[23:16]),
-                Mux(self.pstrb[1], self.pwdata[15:8], mem_rdata[15:8]),
-                Mux(self.pstrb[0], self.pwdata[7:0], mem_rdata[7:0]),
-            )
-
-        with self.seq(self.clk, ~self.rst_n):
-            with If(~self.rst_n):
-                self.rdata_reg <<= 0
-            with Else():
-                # Clock-gated SRAM access: only update on active APB transfers
-                with If(sram_ce):
-                    with If(self.pwrite):
-                        self.mem[addr_word] <<= mem_wdata
-                    with Else():
-                        self.rdata_reg <<= mem_rdata
-
-        tpl = ModuleDocTemplate(
-            source="earphone/design_earphone.py",
-            description="256 KB on-chip SRAM with APB4 slave port and transfer-gated clock.",
-            author="RTLCraft Agent", version="0.1",
-            timing="Single-cycle read/write; memory clock gated between APB transfers.",
-        )
-        fill_doc_template(tpl, self)
-
-
-print("  - EarphoneSRAM256K DSL defined")
-
-
-# ----------------------------------------------------------------------------
-# EarphoneAPBBridge — simple APB4 slave multiplexer
-# ----------------------------------------------------------------------------
-
-class EarphoneAPBBridge(Module):
-    """Simple APB4 address decoder for 8 slave slots.
-
-    Each slot occupies a 1 MB region starting at base 0x4000_0000.
-    Slot 0: QSPI, 1: SRAM, 2: SPI, 3: UART, 4: I2C, 5: I2S, 6: BTLE, 7: SIMD16
-    """
-
-    def __init__(self):
-        super().__init__("earphone_apb_bridge")
-
-        self.clk = Input(1, "clk")
-        self.rst_n = Input(1, "rst_n")
-
-        # Master APB
-        self.m_paddr = Input(32, "m_paddr")
-        self.m_pwdata = Input(32, "m_pwdata")
-        self.m_prdata = Output(32, "m_prdata")
-        self.m_pwrite = Input(1, "m_pwrite")
-        self.m_psel = Input(1, "m_psel")
-        self.m_penable = Input(1, "m_penable")
-        self.m_pready = Output(1, "m_pready")
-        self.m_pslverr = Output(1, "m_pslverr")
-        self.m_pstrb = Input(4, "m_pstrb")
-
-        # Slave APBs (8 slots)
-        self.s_paddr = Output(32, "s_paddr")
-        self.s_pwdata = Output(32, "s_pwdata")
-        self.s_prdata = Input(32, "s_prdata")
-        self.s_pwrite = Output(1, "s_pwrite")
-        self.s_psel = Output(8, "s_psel")
-        self.s_penable = Output(1, "s_penable")
-        self.s_pready = Input(8, "s_pready")
-        self.s_pslverr = Input(8, "s_pslverr")
-        self.s_pstrb = Output(4, "s_pstrb")
-
-        with self.comb:
-            region = self.m_paddr[29:22]  # 1 MB regions
-            sel_onehot = Const(0, 8)
-            for i in range(8):
-                sel_onehot |= Mux(region == Const(i, 8), Const(1 << i, 8), Const(0, 8))
-
-            self.s_paddr <<= self.m_paddr
-            self.s_pwdata <<= self.m_pwdata
-            self.s_pwrite <<= self.m_pwrite
-            self.s_psel <<= sel_onehot
-            self.s_penable <<= self.m_penable
-            self.s_pstrb <<= self.m_pstrb
-
-            # Mux slave responses back to master
-            self.m_prdata <<= self.s_prdata
-            self.m_pready <<= (self.s_pready & sel_onehot) != 0
-            self.m_pslverr <<= (self.s_pslverr & sel_onehot) != 0
-
-        tpl = ModuleDocTemplate(
-            source="earphone/design_earphone.py",
-            description="APB4 address decoder for smart earphone peripherals.",
-            author="RTLCraft Agent", version="0.1",
-            timing="Combinational decode; slave determines pready.",
-        )
-        fill_doc_template(tpl, self)
-
-
-print("  - EarphoneAPBBridge DSL defined")
-
-
-# ----------------------------------------------------------------------------
 # EarphoneTop — Smart Earphone SoC top-level integration
 # ----------------------------------------------------------------------------
 
@@ -1313,6 +263,17 @@ class EarphoneTop(Module):
         self.dmem_gnt = Input(1, "dmem_gnt")
         self.dmem_valid = Input(1, "dmem_valid")
 
+        # External APB4 master port for test/debug access to on-chip peripherals
+        self.apb_paddr = Input(32, "apb_paddr")
+        self.apb_penable = Input(1, "apb_penable")
+        self.apb_pwrite = Input(1, "apb_pwrite")
+        self.apb_psel = Input(1, "apb_psel")
+        self.apb_pstrb = Input(4, "apb_pstrb")
+        self.apb_pwdata = Input(32, "apb_pwdata")
+        self.apb_prdata = Output(32, "apb_prdata")
+        self.apb_pready = Output(1, "apb_pready")
+        self.apb_pslverr = Output(1, "apb_pslverr")
+
         # CPU
         cpu = EarphoneRV32()
         self.instantiate(cpu, "cpu", port_map={
@@ -1328,7 +289,7 @@ class EarphoneTop(Module):
             "retire_result": Wire(32, "cpu_retire_result"),
         })
 
-        # SIMD16 (stubbed control wires — connected to dummy APB registers)
+        # SIMD16 (stubbed control wires — driven from external APB in slot 7)
         simd = EarphoneSIMD16()
         simd_vsrc0 = Wire(256, "simd_vsrc0")
         simd_vsrc1 = Wire(256, "simd_vsrc1")
@@ -1354,7 +315,7 @@ class EarphoneTop(Module):
             "do_re": Wire(16, "fft_do_re"), "do_im": Wire(16, "fft_do_im"),
         })
 
-        # QSPI
+        # QSPI (APB slot 0 is reserved for XIP; keep independent req/ready here)
         qspi = EarphoneQSPI()
         qspi_req = Wire(1, "qspi_req")
         qspi_addr = Wire(32, "qspi_addr")
@@ -1369,48 +330,76 @@ class EarphoneTop(Module):
             "qspi_io_oe": self.qspi_io_oe,
         })
 
-        # I2C
+        # APB bridge: 8 slave slots, 4 MB each.
+        s_paddr = Wire(32, "s_paddr")
+        s_penable = Wire(1, "s_penable")
+        s_pwdata = Wire(32, "s_pwdata")
+        s_pwrite = Wire(1, "s_pwrite")
+        s_psel = Wire(8, "s_psel")
+        s_pstrb = Wire(4, "s_pstrb")
+
+        sram_prdata = Wire(32, "sram_prdata")
+        sram_pready = Wire(1, "sram_pready")
+        sram_pslverr = Wire(1, "sram_pslverr")
+        i2c_prdata = Wire(32, "i2c_prdata")
+        i2c_pready = Wire(1, "i2c_pready")
+
+        # SRAM (APB slot 1)
+        sram = EarphoneSRAM256K()
+        self.instantiate(sram, "sram", port_map={
+            "clk": self.clk, "rst_n": self.rst_n,
+            "paddr": s_paddr, "pwdata": s_pwdata,
+            "prdata": sram_prdata, "pwrite": s_pwrite,
+            "psel": s_psel[1], "penable": s_penable,
+            "pready": sram_pready, "pslverr": sram_pslverr,
+            "pstrb": s_pstrb,
+        })
+
+        # I2C (APB slot 4)
         i2c = EarphoneI2C()
         self.instantiate(i2c, "i2c", port_map={
             "clk": self.clk, "rst_n": self.rst_n,
-            "paddr": Wire(12, "i2c_paddr"), "pwdata": Wire(32, "i2c_pwdata"),
-            "prdata": Wire(32, "i2c_prdata"), "pwrite": Wire(1, "i2c_pwrite"),
-            "psel": Wire(1, "i2c_psel"), "penable": Wire(1, "i2c_penable"),
-            "pready": Wire(1, "i2c_pready"),
+            "paddr": s_paddr[11:0], "pwdata": s_pwdata,
+            "prdata": i2c_prdata, "pwrite": s_pwrite,
+            "psel": s_psel[4], "penable": s_penable,
+            "pready": i2c_pready,
             "scl_i": self.scl_i, "scl_o": self.scl_o, "scl_oe": self.scl_oe,
             "sda_i": self.sda_i, "sda_o": self.sda_o, "sda_oe": self.sda_oe,
         })
 
-        # SRAM
-        sram = EarphoneSRAM256K()
-        self.instantiate(sram, "sram", port_map={
-            "clk": self.clk, "rst_n": self.rst_n,
-            "paddr": Wire(32, "sram_paddr"), "pwdata": Wire(32, "sram_pwdata"),
-            "prdata": Wire(32, "sram_prdata"), "pwrite": Wire(1, "sram_pwrite"),
-            "psel": Wire(1, "sram_psel"), "penable": Wire(1, "sram_penable"),
-            "pready": Wire(1, "sram_pready"), "pslverr": Wire(1, "sram_pslverr"),
-            "pstrb": Wire(4, "sram_pstrb"),
-        })
+        # Response mux back to APB master
+        s_prdata = Mux(s_psel[1], sram_prdata,
+                   Mux(s_psel[4], i2c_prdata,
+                   Const(0, 32)))
+        s_pready = Cat(Const(0, 1), sram_pready, Const(0, 2), i2c_pready, Const(0, 3))
+        s_pslverr = Cat(Const(0, 1), sram_pslverr, Const(0, 6))
 
-        # APB bridge
         bridge = EarphoneAPBBridge()
+        apb_prdata_w = Wire(32, "apb_prdata_w")
+        apb_pready_w = Wire(1, "apb_pready_w")
+        apb_pslverr_w = Wire(1, "apb_pslverr_w")
         self.instantiate(bridge, "apb_bridge", port_map={
             "clk": self.clk, "rst_n": self.rst_n,
-            "m_paddr": Wire(32, "apb_paddr"), "m_pwdata": Wire(32, "apb_pwdata"),
-            "m_prdata": Wire(32, "apb_prdata"), "m_pwrite": Wire(1, "apb_pwrite"),
-            "m_psel": Wire(1, "apb_psel"), "m_penable": Wire(1, "apb_penable"),
-            "m_pready": Wire(1, "apb_pready"), "m_pslverr": Wire(1, "apb_pslverr"),
-            "m_pstrb": Wire(4, "apb_pstrb"),
-            "s_paddr": Wire(32, "s_paddr"), "s_pwdata": Wire(32, "s_pwdata"),
-            "s_prdata": Wire(32, "s_prdata"), "s_pwrite": Wire(1, "s_pwrite"),
-            "s_psel": Wire(8, "s_psel"), "s_penable": Wire(1, "s_penable"),
-            "s_pready": Wire(8, "s_pready"), "s_pslverr": Wire(8, "s_pslverr"),
-            "s_pstrb": Wire(4, "s_pstrb"),
+            "m_paddr": self.apb_paddr, "m_pwdata": self.apb_pwdata,
+            "m_prdata": apb_prdata_w, "m_pwrite": self.apb_pwrite,
+            "m_psel": self.apb_psel, "m_penable": self.apb_penable,
+            "m_pready": apb_pready_w, "m_pslverr": apb_pslverr_w,
+            "m_pstrb": self.apb_pstrb,
+            "s_paddr": s_paddr, "s_pwdata": s_pwdata,
+            "s_prdata": s_prdata, "s_pwrite": s_pwrite,
+            "s_psel": s_psel, "s_penable": s_penable,
+            "s_pready": s_pready, "s_pslverr": s_pslverr,
+            "s_pstrb": s_pstrb,
         })
+
+        with self.comb:
+            self.apb_prdata <<= apb_prdata_w
+            self.apb_pready <<= apb_pready_w
+            self.apb_pslverr <<= apb_pslverr_w
 
         tpl = ModuleDocTemplate(
             source="earphone/design_earphone.py",
-            description="Smart Earphone SoC top-level integration.",
+            description="Smart Earphone SoC top-level integration with APB test port.",
             author="RTLCraft Agent", version="0.1",
             timing="Refer to submodule specs.",
         )
@@ -1742,6 +731,267 @@ def run_layer_verification():
         results.append(("SIMD16 cross-layer", False))
         print(f"  FAIL: {e}")
 
+    # SIMD16 vsub cross-layer
+    print("\n[VERIFY] SIMD16 INT16 vsub: L1 == L2 == L3...")
+    try:
+        a = 0; b = 0
+        for i in range(16):
+            a |= ((i + 9) & 0xFFFF) << (i * 16)
+            b |= ((i + 3) & 0xFFFF) << (i * 16)
+        expected = simd16_int16_functional(SIMD_OP_VSUB, a, b)
+
+        from rtlgen.arch_def import CycleContext
+        ctx = CycleContext(inputs={"rst_n": 1, "start": 1, "op": SIMD_OP_VSUB,
+                                   "mode": 0, "vsrc0": a, "vsrc1": b, "vsrc2": 0, "pred": 0xFFFF})
+        l2_model = simd16_cycle_model()
+        l2_model(ctx)
+        l2_ok = ctx.outputs.get("done", 0) == 1 and ctx.outputs.get("vdst", 0) == expected
+
+        simd = EarphoneSIMD16()
+        sim = Simulator(simd)
+        sim.reset("rst_n", cycles=2)
+        sim.poke("vsrc0", a)
+        sim.poke("vsrc1", b)
+        sim.poke("op", SIMD_OP_VSUB)
+        sim.poke("mode", 0)
+        sim.poke("pred", 0xFFFF)
+        sim.poke("start", 1)
+        sim.step()
+        l3_ok = sim.peek("vdst") == expected and sim.peek("done") == 1
+
+        ok = expected != 0 and l2_ok and l3_ok
+        results.append(("SIMD16 vsub cross-layer", ok))
+        print(f"  L1={expected != 0}, L2={l2_ok}, L3={l3_ok}  {'PASS' if ok else 'FAIL'}")
+    except Exception as e:
+        results.append(("SIMD16 vsub cross-layer", False))
+        print(f"  FAIL: {e}")
+
+    # SRAM256K cross-layer (L1 functional vs L3 DSL; L2 is metadata-only)
+    print("\n[VERIFY] SRAM256K read/write: L1 == L3...")
+    try:
+        from earphone.modules.sram256k.layer_L1_behavior.src.behavior import SRAM256KFunctional
+        from earphone.modules.sram256k.layer_L2_cycle.src.cycle import describe as sram_l2_describe
+
+        l1_sram = SRAM256KFunctional()
+        l1_sram.write(0x40, 0xDEADBEEF)
+        l1_expected = l1_sram.read(0x40)
+        l2_ok = sram_l2_describe()["status"] == "implemented"
+
+        sram = EarphoneSRAM256K()
+        sim = Simulator(sram)
+        sim.reset("rst_n", cycles=2)
+        # APB write
+        sim.poke("paddr", 0x40)
+        sim.poke("pwdata", 0xDEADBEEF)
+        sim.poke("pwrite", 1)
+        sim.poke("psel", 1)
+        sim.poke("penable", 1)
+        sim.poke("pstrb", 0b1111)
+        sim.step()
+        # APB read
+        sim.poke("pwrite", 0)
+        sim.step()
+        l3_ok = sim.peek("prdata") == l1_expected
+
+        ok = l2_ok and l3_ok
+        results.append(("SRAM256K cross-layer", ok))
+        print(f"  L1={l1_expected == 0xDEADBEEF}, L2={l2_ok}, L3={l3_ok}  {'PASS' if ok else 'FAIL'}")
+    except Exception as e:
+        results.append(("SRAM256K cross-layer", False))
+        print(f"  FAIL: {e}")
+
+    # APB Bridge cross-layer (L1 decode vs L3 DSL one-hot select)
+    print("\n[VERIFY] APB Bridge address decode: L1 == L3...")
+    try:
+        from earphone.modules.apb_bridge.layer_L1_behavior.src.behavior import APB_SLAVE_SLOTS
+        base = 0x4000_0000
+        l1_ok = True
+        l3_ok = True
+        bridge = EarphoneAPBBridge()
+        sim = Simulator(bridge)
+        sim.reset("rst_n", cycles=1)
+        for i, (name, _, _) in enumerate(APB_SLAVE_SLOTS):
+            addr = base + (i << 22)
+            l1_idx, l1_name = apb_decode(addr - base)
+            if l1_idx != i or l1_name != name:
+                l1_ok = False
+            sim.poke("m_paddr", addr)
+            sim.poke("m_psel", 1)
+            sim.step()
+            if sim.peek("s_psel") != (1 << i):
+                l3_ok = False
+        ok = l1_ok and l3_ok
+        results.append(("APB Bridge cross-layer", ok))
+        print(f"  L1={l1_ok}, L3={l3_ok}  {'PASS' if ok else 'FAIL'}")
+    except Exception as e:
+        results.append(("APB Bridge cross-layer", False))
+        print(f"  FAIL: {e}")
+
+    # RV32 cross-layer (L1 ISS vs L3 DSL retire values)
+    print("\n[VERIFY] RV32IM MUL/DIV program: L1 == L3...")
+    try:
+        program = [
+            0x00700093,  # addi x1, x0, 7
+            0x00300113,  # addi x2, x0, 3
+            0x022081b3,  # mul  x3, x1, x2 -> 21
+            0x0220c2b3,  # div  x5, x1, x2 -> 2
+            0x0220d333,  # divu x6, x1, x2 -> 2
+            0x0220e3b3,  # rem  x7, x1, x2 -> 1
+            0x0220f433,  # remu x8, x1, x2 -> 1
+            0x00100073,  # ebreak
+        ]
+        expected = {3: 21, 5: 2, 6: 2, 7: 1, 8: 1}
+
+        iss = RV32IM_ISS()
+        iss.load_program_words(program, entry_point=0x1000)
+        iss.run(max_cycles=100)
+
+        cpu = EarphoneRV32()
+        sim = Simulator(cpu)
+        sim.reset("rst_n", cycles=2)
+        prog_dict = {0x1000 + i * 4: w for i, w in enumerate(program)}
+        retired = {}
+        dmem = {}
+        for _ in range(200):
+            addr = sim.peek("imem_addr")
+            sim.poke("imem_gnt", 1)
+            sim.poke("imem_rdata", prog_dict.get(addr, 0))
+
+            daddr = sim.peek("dmem_addr")
+            sim.poke("dmem_gnt", 1)
+            sim.poke("dmem_valid", 1)
+            sim.poke("dmem_rdata", dmem.get(daddr, 0))
+
+            sim.step()
+            if sim.peek("retire_valid"):
+                rd = sim.peek("retire_rd")
+                retired[rd] = sim.peek("retire_result")
+
+        l1_ok = all(iss.state.regs[rd] == val for rd, val in expected.items())
+        l3_ok = all(retired.get(rd) == val for rd, val in expected.items())
+        ok = l1_ok and l3_ok
+        results.append(("RV32IM cross-layer", ok))
+        print(f"  L1={l1_ok}, L3={l3_ok}  {'PASS' if ok else 'FAIL'}")
+    except Exception as e:
+        results.append(("RV32IM cross-layer", False))
+        print(f"  FAIL: {e}")
+
+    # QSPI cross-layer (L1 flash model vs L2 cycle model)
+    print("\n[VERIFY] QSPI XIP read: L1 == L2...")
+    try:
+        from earphone.modules.qspi.layer_L1_behavior.src.behavior import QSPIFlashFunctional
+        from earphone.modules.qspi.layer_L2_cycle.src.cycle import qspi_cycle_model
+        from rtlgen.arch_def import CycleContext
+
+        flash = QSPIFlashFunctional()
+        flash.load_data(0x1000, b"\x78\x56\x34\x12")
+        l1_expected = flash.xip_read(0x1000)
+
+        ctx = CycleContext(inputs={"rst_n": 1, "req": 1, "addr": 0x1000})
+        ctx.state["flash"] = flash
+        model = qspi_cycle_model()
+        model(ctx)
+        ctx.inputs["req"] = 0
+        l2_rdata = 0
+        l2_ready = 0
+        for _ in range(100):
+            model(ctx)
+            if ctx.outputs.get("ready"):
+                l2_ready = 1
+                l2_rdata = ctx.outputs.get("rdata", 0)
+                break
+
+        l1_ok = l1_expected == 0x12345678
+        l2_ok = l2_ready == 1 and l2_rdata == l1_expected
+        ok = l1_ok and l2_ok
+        results.append(("QSPI cross-layer", ok))
+        print(f"  L1={l1_ok}, L2={l2_ok}  {'PASS' if ok else 'FAIL'}")
+    except Exception as e:
+        results.append(("QSPI cross-layer", False))
+        print(f"  FAIL: {e}")
+
+    # I2C cross-layer (L1 transaction log vs L2 cycle model completion)
+    print("\n[VERIFY] I2C master write: L1 == L2...")
+    try:
+        from earphone.modules.i2c.layer_L1_behavior.src.behavior import I2CBusFunctional
+        from earphone.modules.i2c.layer_L2_cycle.src.cycle import i2c_master_cycle_model
+        from rtlgen.arch_def import CycleContext
+
+        bus = I2CBusFunctional()
+        bus.write(0x50, [0xAB])
+
+        ctx = CycleContext(inputs={"rst_n": 1, "start": 1, "addr": 0x50, "data": 0xAB, "rw": 0})
+        model = i2c_master_cycle_model()
+        model(ctx)
+        ctx.inputs["start"] = 0
+        done = 0
+        for _ in range(100):
+            model(ctx)
+            if ctx.outputs.get("done"):
+                done = 1
+                break
+
+        l1_ok = (len(bus.transactions) == 1 and
+                 bus.transactions[0][0] == 0x50 and
+                 bus.transactions[0][1] == [0xAB] and
+                 bus.transactions[0][2] is False)
+        l2_ok = done == 1
+        ok = l1_ok and l2_ok
+        results.append(("I2C cross-layer", ok))
+        print(f"  L1={l1_ok}, L2={l2_ok}  {'PASS' if ok else 'FAIL'}")
+    except Exception as e:
+        results.append(("I2C cross-layer", False))
+        print(f"  FAIL: {e}")
+
+    # FFT256 cross-layer (L1 NumPy reference vs L3 fixed-point DSL with tolerance)
+    print("\n[VERIFY] FFT256 impulse: L1 == L3 (within fixed-point tolerance)...")
+    try:
+        def _bit_reverse(x, bits):
+            r = 0
+            for _ in range(bits):
+                r = (r << 1) | (x & 1)
+                x >>= 1
+            return r
+
+        def _to_s16(v):
+            return v if v < 32768 else v - 65536
+
+        samples_re = [32767 if i == 0 else 0 for i in range(256)]
+        samples_im = [0] * 256
+        l1_re, l1_im = fft256_functional(samples_re, samples_im)
+        l1_ok = all(120 < v < 135 for v in l1_re) and all(v == 0 for v in l1_im)
+
+        fft = EarphoneFFT256()
+        sim = Simulator(fft)
+        sim.reset("rst", cycles=2)
+        for v in samples_re:
+            sim.poke("di_en", 1)
+            sim.poke("di_re", v)
+            sim.poke("di_im", 0)
+            sim.step()
+        sim.poke("di_en", 0)
+        hw_re = []
+        hw_im = []
+        for _ in range(700):
+            sim.step()
+            if sim.peek("do_en"):
+                hw_re.append(_to_s16(sim.peek("do_re")))
+                hw_im.append(_to_s16(sim.peek("do_im")))
+        # Output is bit-reversed; unshuffle before comparison.
+        hw_re_nat = [hw_re[_bit_reverse(i, 8)] for i in range(256)]
+        hw_im_nat = [hw_im[_bit_reverse(i, 8)] for i in range(256)]
+        max_diff = max(
+            max(abs(hw_re_nat[i] - l1_re[i]), abs(hw_im_nat[i] - l1_im[i]))
+            for i in range(256)
+        )
+        l3_ok = len(hw_re) == 256 and max_diff <= 1
+        ok = l1_ok and l3_ok
+        results.append(("FFT256 cross-layer", ok))
+        print(f"  L1={l1_ok}, L3={l3_ok}, max_diff={max_diff}  {'PASS' if ok else 'FAIL'}")
+    except Exception as e:
+        results.append(("FFT256 cross-layer", False))
+        print(f"  FAIL: {e}")
+
     print("\n" + "-" * 70)
     passed = sum(1 for _, ok in results if ok)
     for name, ok in results:
@@ -2043,11 +1293,8 @@ EarphoneTop
     print("  Wrote 01_spec_review.md .. 08_ppa_review.md")
 
 
-# ============================================================================
-# Main entry point
-# ============================================================================
-
-if __name__ == "__main__":
+def run_legacy_full_soc_flow() -> int:
+    """Run the legacy full SoC flow and return an exit code."""
     # =====================================================================
     # Phase E: Design Scaffold — standardized agent loop
     # =====================================================================
@@ -2264,4 +1511,57 @@ if __name__ == "__main__":
         and all(r[1] for r in gen_results)
     )
     print(f"\n  Overall: {'PASS' if all_ok else 'FAIL'}")
-    sys.exit(0 if all_ok else 1)
+    return 0 if all_ok else 1
+
+
+def _legacy_entrypoint_approval_ok() -> bool:
+    """Keep the compatibility entry point behind the same human gates."""
+    from earphone.approval import DEFAULT_APPROVAL_GATES, approval_path, validate_approval
+    from earphone.docgen import discover_modules
+
+    gate_by_id = {gate.gate_id: gate for gate in DEFAULT_APPROVAL_GATES}
+    blockers: List[str] = []
+
+    module_gate = gate_by_id["CP0_MODULE"]
+    for module in discover_modules():
+        ok, reasons = validate_approval(
+            module_gate.gate_id,
+            module=module,
+            required_artifacts=module_gate.artifacts,
+        )
+        if not ok:
+            blockers.append(
+                f"CP0_MODULE ({module}) missing or stale: "
+                f"{approval_path(module_gate.gate_id, module=module)}; "
+                + "; ".join(reasons)
+            )
+
+    soc_gate = gate_by_id["CP1_SOC"]
+    ok, reasons = validate_approval(soc_gate.gate_id, required_artifacts=soc_gate.artifacts)
+    if not ok:
+        blockers.append(
+            f"CP1_SOC missing or stale: {approval_path(soc_gate.gate_id)}; "
+            + "; ".join(reasons)
+        )
+
+    if blockers:
+        print("\n[Approval] Legacy full-SoC entry point blocked")
+        for blocker in blockers:
+            print(f"  - {blocker}")
+        print("  Use `python -m earphone.flow --module all --check` to refresh evidence before approval.")
+        return False
+    return True
+
+
+def main() -> int:
+    if not _legacy_entrypoint_approval_ok():
+        return 3
+    return run_legacy_full_soc_flow()
+
+
+# ============================================================================
+# Main entry point
+# ============================================================================
+
+if __name__ == "__main__":
+    sys.exit(main())

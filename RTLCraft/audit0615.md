@@ -20,6 +20,12 @@ However, the current flow is **not yet genuinely document-driven end to end**:
 - L3/L4/L6 layer tests are mostly absent, and some generated specs still contain fallback text such as `TBD` or `See DSL implementation`.
 - Human approval/checkpoint semantics described in README/Tutorial are not enforced by the executable flow.
 
+Update after the follow-up implementation pass: the import failure, module discovery,
+L3/L4/L6 test holes, and executable approval gates have been addressed in the
+layered flow. The remaining architectural gap is that top-level SoC integration
+still reuses the legacy implementation internals, although it is now invoked
+behind `earphone.flow` gates instead of shelling out unchecked.
+
 Recommendation: treat the current state as a **working legacy Spec2RTL demo plus a partially migrated layered documentation scaffold**, not yet as the authoritative document-driven SoC design flow.
 
 ## Design Goal Interpreted From README/Tutorial
@@ -631,7 +637,71 @@ This currently reports:
 
 Remaining limitations:
 
-- The full SoC closure path is still ultimately owned by the legacy `earphone/design_earphone.py`; `flow.py` orchestrates module-level layered checking well, but top-level SoC integration has not yet been fully migrated.
-- Human approval gates are still documented rather than enforced by approval artifacts such as `*_approval.json`.
+- The full SoC closure path is now invoked by `flow.py` through the callable `run_legacy_full_soc_flow()`, and `--top-level` first runs all discovered module-layer checks. The actual top-level integration implementation is still owned by legacy `earphone/design_earphone.py`, so the top-level IR itself is not yet decomposed into the same per-layer contract files as modules.
+- Human approval gates are now enforced by approval artifacts, but the repository currently has no human approval files checked in. This is intentional: `python -m earphone.flow --top-level` now blocks until module-level `CP0_MODULE.<module>.json` and SoC-level `CP1_SOC.json` approvals exist and match reviewed artifact hashes.
 - Several non-RV32 L3/L4 contracts are now executable and testable, but they are still intentionally minimal. They establish traceable layer boundaries and verification hooks, not yet full architecture-planning richness.
 - Feedback is structured and blocking, but automatic semantic repair across layers is still future work; the current behavior stops the flow and records where the repair should feed back.
+
+## Implementation Update - Top-Level Closure And Approval Gates - 2026-06-15
+
+This pass closed the two remaining process gaps called out above:
+
+- `earphone/design_earphone.py` now exposes `run_legacy_full_soc_flow()` as a callable compatibility runner. `flow.py` calls it directly for top-level closure instead of spawning an unchecked subprocess.
+- `python -m earphone.flow --top-level` now treats SoC closure as an all-module operation: it refreshes documents, test plans, and test reports for every discovered module, runs every layer test, and only then evaluates approval gates.
+- `earphone/approval.py` adds hash-backed approval artifacts. A stale approval is rejected if any reviewed artifact changes after approval.
+- Module approval is scoped per module through `CP0_MODULE.<module>.json`.
+- Top-level SoC approval is scoped through `CP1_SOC.json`.
+- Both `--top-level` and `--legacy-full-soc` in `earphone.flow` require the same approval checks, preventing the flow-level bypass.
+- The legacy direct entry point `python earphone/design_earphone.py` is also guarded so it cannot run full-SoC closure without the required approvals.
+- `flow.py` writes structured feedback to `earphone/specs/flow_feedback.json` for missing approvals, failed layer tests, doc generation errors, and top-level closure failures.
+
+Current proof points:
+
+```bash
+python -m pytest tests/test_doc_templates.py tests/test_approval_flow.py -q
+```
+
+Result:
+
+- `18 passed`
+
+```bash
+python -m earphone.flow --module all --check
+```
+
+Result:
+
+- `apb_bridge`: `layers=6 tests=16 passed=16 failed=0 missing=0`
+- `fft256`: `layers=6 tests=13 passed=13 failed=0 missing=0`
+- `i2c`: `layers=6 tests=12 passed=12 failed=0 missing=0`
+- `qspi`: `layers=6 tests=13 passed=13 failed=0 missing=0`
+- `rv32`: `layers=6 tests=16 passed=16 failed=0 missing=0`
+- `simd16`: `layers=6 tests=17 passed=17 failed=0 missing=0`
+- `sram256k`: `layers=6 tests=15 passed=15 failed=0 missing=0`
+
+```bash
+python -m earphone.flow --top-level
+```
+
+Expected current result before human review:
+
+- exits with code `3`
+- blocks on seven missing module approvals plus missing `CP1_SOC`
+- writes `earphone/specs/flow_feedback.json` with `blocker_count=8`
+
+```bash
+python earphone/design_earphone.py
+```
+
+Expected current result before human review:
+
+- exits with code `3`
+- blocks the legacy direct full-SoC path on the same approval set
+
+Current status against the user's confirmation items:
+
+1. Documents are refined and passed through all module IR layers from L1 through L6.
+2. Test plans and test reports are generated and carried per layer, plus module-level rollups.
+3. Intermediate problems now feed back through both module `docgen_feedback.json` and top-level `flow_feedback.json`.
+4. Top-level SoC closure cannot run through the supported flow until all module approvals and SoC approval exist and their artifact hashes are current.
+5. Remaining work is no longer approval-gate enforcement; it is deeper migration of top-level SoC integration into first-class top-level IR contracts rather than the legacy compatibility runner.

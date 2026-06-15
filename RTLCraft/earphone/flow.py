@@ -9,9 +9,10 @@ per-module, per-IR-layer package structure as the migration pilot.
 from __future__ import annotations
 
 import argparse
+import json
 import os
-import subprocess
 import sys
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 # Ensure project root on path
@@ -27,6 +28,11 @@ from earphone.docgen import (
     discover_modules,
     generate_module_docs,
     run_layer_tests,
+)
+from earphone.approval import (
+    DEFAULT_APPROVAL_GATES,
+    approval_path,
+    validate_approval,
 )
 
 
@@ -117,17 +123,138 @@ def _module_blocker_summary(module: str, layer_results: List[Tuple[str, dict]]) 
     return blockers
 
 
+def _flow_feedback_path() -> str:
+    return os.path.join(os.path.dirname(__file__), "specs", "flow_feedback.json")
+
+
+def _feedback_item(
+    uid: str,
+    message: str,
+    *,
+    detected_at_layer: str,
+    feedback_target_layer: str,
+    severity: str = "blocker",
+) -> Dict[str, str]:
+    return {
+        "uid": uid,
+        "severity": severity,
+        "message": message,
+        "detected_at_layer": detected_at_layer,
+        "feedback_target_layer": feedback_target_layer,
+    }
+
+
+def _write_flow_feedback(status: str, items: List[Dict[str, str]]) -> str:
+    path = _flow_feedback_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": status,
+        "blocker_count": len([item for item in items if item.get("severity") == "blocker"]),
+        "items": items,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return path
+
+
 def _run_legacy_full_soc() -> int:
     print("\n[Legacy] Run full SoC flow")
     sys.stdout.flush()
-    result = subprocess.run(
-        [sys.executable, "-m", "earphone.design_earphone"],
-        cwd=_PROJECT_ROOT,
-        text=True,
-    )
-    if result.returncode != 0:
+    from earphone.design_earphone import run_legacy_full_soc_flow
+
+    result = run_legacy_full_soc_flow()
+    if result != 0:
         print("  Full SoC flow FAILED")
-    return result.returncode
+    return result
+
+
+def _approval_requirement(gate_id: str):
+    for gate in DEFAULT_APPROVAL_GATES:
+        if gate.gate_id == gate_id:
+            return gate
+    raise KeyError(f"unknown approval gate: {gate_id}")
+
+
+def _approval_gate_status(module: str) -> List[str]:
+    missing: List[str] = []
+    for gate in DEFAULT_APPROVAL_GATES:
+        gate_module = module if gate.scope == "module" else None
+        ok, _ = validate_approval(
+            gate.gate_id,
+            module=gate_module,
+            required_artifacts=gate.artifacts,
+        )
+        if not ok:
+            missing.append(gate.gate_id)
+    return missing
+
+
+def _approval_blockers(gate_id: str, module: Optional[str] = None) -> List[Dict[str, str]]:
+    gate = _approval_requirement(gate_id)
+    gate_module = module if gate.scope == "module" else None
+    ok, reasons = validate_approval(
+        gate_id,
+        module=gate_module,
+        required_artifacts=gate.artifacts,
+    )
+    if ok:
+        return []
+
+    scope = f"module {module}" if gate.scope == "module" else "top-level SoC"
+    approval_file = approval_path(gate_id, module=gate_module)
+    message = f"{gate_id} approval is required for {scope}: {approval_file}"
+    if reasons:
+        message = f"{message}; " + "; ".join(reasons)
+    return [
+        _feedback_item(
+            f"FB-APPROVAL-{gate_id}-{module or 'soc'}",
+            message,
+            detected_at_layer=gate_id,
+            feedback_target_layer="SpecIR",
+        )
+    ]
+
+
+def _ensure_module_approval(module: str) -> bool:
+    blockers = _approval_blockers("CP0_MODULE", module=module)
+    if not blockers:
+        return True
+    print(f"  approval gate missing: CP0_MODULE (module={module})")
+    for blocker in blockers:
+        print(f"    {blocker['message']}")
+    return False
+
+
+def _ensure_soc_approval() -> bool:
+    blockers = _approval_blockers("CP1_SOC")
+    if not blockers:
+        return True
+    print("  approval gate missing: CP1_SOC (top-level SoC)")
+    for blocker in blockers:
+        print(f"    {blocker['message']}")
+    return False
+
+
+def _ensure_module_approvals(modules: List[str]) -> Tuple[bool, List[Dict[str, str]]]:
+    blockers: List[Dict[str, str]] = []
+    for module in modules:
+        module_blockers = _approval_blockers("CP0_MODULE", module=module)
+        if module_blockers:
+            print(f"  approval gate missing: CP0_MODULE (module={module})")
+            for blocker in module_blockers:
+                print(f"    {blocker['message']}")
+            blockers.extend(module_blockers)
+    return len(blockers) == 0, blockers
+
+
+def _run_top_level_soc_flow(require_approval: bool = True) -> int:
+    print("\n[Top-Level] Run SoC closure flow")
+    if require_approval:
+        if not _ensure_soc_approval():
+            return 3
+    return _run_legacy_full_soc()
 
 
 def main() -> int:
@@ -135,6 +262,7 @@ def main() -> int:
     parser.add_argument("--module", default="rv32", help="'rv32' or 'all'")
     parser.add_argument("--check", action="store_true", help="Run docs/tests without legacy full SoC flow")
     parser.add_argument("--legacy-full-soc", action="store_true", help="Run legacy full SoC flow after module checks")
+    parser.add_argument("--top-level", action="store_true", help="Run top-level SoC closure after module checks")
     args = parser.parse_args()
 
     print("=" * 70)
@@ -145,21 +273,34 @@ def main() -> int:
     print(f"  EarphoneRV32: {EarphoneRV32}")
 
     discovered = discover_modules()
-    modules = discovered if args.module == "all" else [args.module]
+    full_soc_requested = args.top_level or args.legacy_full_soc
+    if full_soc_requested and args.module != "all":
+        print("  Full-SoC closure checks all discovered modules.")
+    module_selection = "all" if full_soc_requested else args.module
+    modules = discovered if module_selection == "all" else [module_selection]
     unknown = [module for module in modules if module not in discovered]
     if unknown:
         print(f"Unknown module(s): {', '.join(unknown)}")
         return 2
     results: Dict[str, Dict[str, object]] = {}
     overall_pass = True
+    feedback_items: List[Dict[str, str]] = []
 
     for module in modules:
         print(f"\n[Step 2] Generate {module} per-IR-layer documents")
         try:
-            module_result = run_module(module, strict=(module == "rv32") or args.check or args.module == "all")
+            module_result = run_module(module, strict=(module == "rv32") or args.check or module_selection == "all")
         except Exception as exc:
             print(f"  {module}: FAILED to generate or validate docs ({exc})")
             overall_pass = False
+            feedback_items.append(
+                _feedback_item(
+                    f"FB-{module.upper()}-DOCGEN",
+                    f"{module}: failed to generate or validate docs ({exc})",
+                    detected_at_layer="docgen",
+                    feedback_target_layer="SpecIR",
+                )
+            )
             continue
 
         results[module] = module_result
@@ -172,10 +313,19 @@ def main() -> int:
             overall_pass = False
             for blocker in _module_blocker_summary(module, module_result["layers"]):
                 print(f"  blocker: {blocker}")
+                feedback_items.append(
+                    _feedback_item(
+                        f"FB-{module.upper()}-TEST-{len(feedback_items) + 1}",
+                        blocker,
+                        detected_at_layer="layer_tests",
+                        feedback_target_layer="previous_layer_contract",
+                    )
+                )
         else:
             print("  Layer tests PASSED")
 
     if args.check:
+        feedback_path = _write_flow_feedback("pass" if overall_pass else "blocked", feedback_items)
         print("\n" + "=" * 70)
         for module, module_result in results.items():
             summary = module_result["summary"]
@@ -183,19 +333,49 @@ def main() -> int:
                 f"  {module}: layers={summary['layers']} tests={summary['total']} "
                 f"passed={summary['passed']} failed={summary['failed']} missing={summary['missing_tests']}"
             )
+        print(f"  feedback={feedback_path}")
         print("Document-driven check completed." if overall_pass else "Document-driven check found blockers.")
         print("=" * 70)
         return 0 if overall_pass else 1
 
-    if args.legacy_full_soc or args.module == "rv32":
-        rc = _run_legacy_full_soc()
-        if rc != 0:
-            return rc
-    elif not overall_pass:
+    if not overall_pass:
+        feedback_path = _write_flow_feedback("blocked", feedback_items)
+        print(f"\nFlow feedback written to {feedback_path}")
         return 1
+
+    if full_soc_requested:
+        _, module_approval_blockers = _ensure_module_approvals(modules)
+        soc_approval_blockers = _approval_blockers("CP1_SOC")
+        if soc_approval_blockers:
+            print("  approval gate missing: CP1_SOC (top-level SoC)")
+            for blocker in soc_approval_blockers:
+                print(f"    {blocker['message']}")
+        approval_blockers = module_approval_blockers + soc_approval_blockers
+        if approval_blockers:
+            feedback_path = _write_flow_feedback("blocked", approval_blockers)
+            print(f"\nFlow feedback written to {feedback_path}")
+            return 3
+        rc = _run_top_level_soc_flow(require_approval=False)
+        if rc != 0:
+            feedback_path = _write_flow_feedback(
+                "blocked",
+                [
+                    _feedback_item(
+                        "FB-SOC-CLOSURE",
+                        f"top-level SoC closure failed with exit code {rc}",
+                        detected_at_layer="top_level_soc",
+                        feedback_target_layer="SoC integration",
+                    )
+                ],
+            )
+            print(f"\nFlow feedback written to {feedback_path}")
+        return rc
+
+    feedback_path = _write_flow_feedback("pass", feedback_items)
 
     print("\n" + "=" * 70)
     print("Document-driven flow completed successfully.")
+    print(f"  feedback={feedback_path}")
     print("=" * 70)
     return 0
 

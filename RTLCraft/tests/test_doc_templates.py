@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -127,6 +128,32 @@ class TestDocTemplates:
         assert "rv32" in modules
         assert "simd16" in modules
         assert "common" not in modules
+
+    def test_approval_helpers_round_trip(self):
+        from earphone import approval
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_dir = approval.APPROVAL_DIR
+            approval.APPROVAL_DIR = os.path.join(tmpdir, "approvals")
+            try:
+                path = approval.write_approval(
+                    "CP0_MODULE",
+                    reviewer="tester",
+                    artifacts=["earphone/modules/rv32/specs/00_module_spec.md"],
+                    notes="ok",
+                )
+                assert Path(path).exists()
+                loaded = approval.load_approval("CP0_MODULE")
+                assert loaded is not None
+                assert loaded["reviewer"] == "tester"
+                assert approval.has_approval("CP0_MODULE") is True
+            finally:
+                approval.APPROVAL_DIR = original_dir
+
+    def test_design_earphone_exposes_callable_full_soc_runner(self):
+        design = importlib.import_module("earphone.design_earphone")
+        assert hasattr(design, "run_legacy_full_soc_flow")
+        assert hasattr(design, "main")
 
 
 if __name__ == "__main__":
