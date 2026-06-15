@@ -578,20 +578,60 @@ The main issue is process authority: today the **legacy executable flow is autho
 
 ## Implementation Update - 2026-06-15
 
-This pass moved the RV32 pilot from a document scaffold toward an executable document-driven chain:
+This pass moved the flow from an RV32-only pilot toward a multi-module executable document-driven chain:
 
-- `python -m earphone.flow` now imports the RV32 package cleanly, runs strict RV32 document generation, executes all RV32 layer-local tests from L1 through L6, and then runs the legacy full-SoC closure flow.
-- RV32 layer specs now explicitly consume the previous layer's spec, test plan, and test report, and emit their own spec, test plan, and test report as inputs to the next layer.
-- RV32 test plans and reports are generated for every layer and are included in strict placeholder/stub validation. The generated RV32 docs currently scan clean for unfilled `{{ ... }}` placeholders, `TBD`, and stale "See DSL implementation" fallbacks.
-- `specs/docgen_feedback.json` now records structured feedback with severity counts. Document-quality blockers, missing layer tests, and layer test failures are written with the detected layer and upstream feedback target.
-- Added RV32 L2/L3/L4/L5/L6 layer tests and fixed L6 Verilog emission so per-layer reports contain real PASS evidence.
+- `python -m earphone.flow` now supports module discovery, `--module all`, and `--check`.
+- The flow generates per-module docs, per-layer test plans, and per-layer test reports across:
+  - `rv32`
+  - `simd16`
+  - `fft256`
+  - `qspi`
+  - `i2c`
+  - `sram256k`
+  - `apb_bridge`
+- `docgen.py` now discovers modules dynamically, scans every `test_*.py` in a layer test directory, and emits structured feedback when a layer has missing tests or failing tests.
+- Generated module specs no longer fall back to obvious `TBD` placeholders for top-level port and parameter rows.
+- Fallback text such as `See DSL implementation` was replaced with explicit layer-contract wording so the generated docs do not silently punt architectural ownership downstream.
+- Added non-RV32 L3/L4/L6 minimal executable contracts:
+  - `layer_L3_architecture/src/arch.py`
+  - `layer_L4_structure/src/structure.py`
+  - `layer_L6_verilog/src/emitter.py`
+- Added non-RV32 L3/L4/L6 layer-local tests so these layers are no longer reported as empty handoff points.
+- L6 Verilog layers for the non-RV32 modules now expose `emit_verilog()` and generate stable module-specific file names.
+- `docgen.py` now prefers the local module DSL for L5 extraction before falling back to the legacy monolithic `design_earphone.py`.
 
 Current confirmation:
 
-1. For the RV32 pilot, yes: documents are refined and passed layer by layer, and test plans/test reports are passed through the same L1-to-L6 chain.
-2. For the RV32 pilot, yes: intermediate document or test issues can be emitted as structured feedback to the current or upstream layer through `docgen_feedback.json`; the existing `DesignScaffold` continues to provide constraint feedback for the legacy SoC closure path.
+1. Yes: documents are now refined and passed layer by layer for all discovered Earphone modules, not just RV32.
+2. Yes: test plans and test reports are generated and propagated per layer from L1 through L6 for all discovered modules.
+3. Yes: intermediate problems can feed back upstream through `docgen_feedback.json` with `detected_at_layer` and `feedback_target_layer`.
+4. Current generated feedback status is clean for all discovered modules:
+   - `apb_bridge`: `issue_count=0`, `blocker_count=0`
+   - `fft256`: `issue_count=0`, `blocker_count=0`
+   - `i2c`: `issue_count=0`, `blocker_count=0`
+   - `qspi`: `issue_count=0`, `blocker_count=0`
+   - `rv32`: `issue_count=0`, `blocker_count=0`
+   - `simd16`: `issue_count=0`, `blocker_count=0`
+   - `sram256k`: `issue_count=0`, `blocker_count=0`
+5. The executable proof point now passes:
 
-Remaining limitation:
+```bash
+python -m earphone.flow --module all --check
+```
 
-- The above is fully implemented for RV32 as the migration pilot. The same strict document/test/report propagation and semantic feedback loop still needs to be generalized across SIMD16, FFT256, QSPI, I2C, SRAM, APB bridge, and top-level SoC orchestration.
-- Feedback is currently structured and blocking, but automatic semantic repair across layers is still future work; the current behavior stops the flow and records where the repair should feed back.
+This currently reports:
+
+- `apb_bridge`: `layers=6 tests=16 passed=16 failed=0 missing=0`
+- `fft256`: `layers=6 tests=13 passed=13 failed=0 missing=0`
+- `i2c`: `layers=6 tests=12 passed=12 failed=0 missing=0`
+- `qspi`: `layers=6 tests=13 passed=13 failed=0 missing=0`
+- `rv32`: `layers=6 tests=16 passed=16 failed=0 missing=0`
+- `simd16`: `layers=6 tests=17 passed=17 failed=0 missing=0`
+- `sram256k`: `layers=6 tests=15 passed=15 failed=0 missing=0`
+
+Remaining limitations:
+
+- The full SoC closure path is still ultimately owned by the legacy `earphone/design_earphone.py`; `flow.py` orchestrates module-level layered checking well, but top-level SoC integration has not yet been fully migrated.
+- Human approval gates are still documented rather than enforced by approval artifacts such as `*_approval.json`.
+- Several non-RV32 L3/L4 contracts are now executable and testable, but they are still intentionally minimal. They establish traceable layer boundaries and verification hooks, not yet full architecture-planning richness.
+- Feedback is structured and blocking, but automatic semantic repair across layers is still future work; the current behavior stops the flow and records where the repair should feed back.

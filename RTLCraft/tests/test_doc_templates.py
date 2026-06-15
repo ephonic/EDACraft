@@ -86,6 +86,7 @@ class TestDocTemplates:
         flow = importlib.import_module("earphone.flow")
         assert hasattr(flow, "main")
         assert hasattr(flow, "run_module_layer_tests")
+        assert hasattr(flow, "run_module")
 
     def test_rv32_package_exports_behavior_and_dsl(self):
         from earphone.modules.rv32 import EarphoneRV32, RV32IM_ISS
@@ -118,6 +119,14 @@ class TestDocTemplates:
             assert "RV32-L2_CYCLE-001" in markdown
             assert "RV32-L2_CYCLE-TP-001" in markdown
             assert "RV32-L2_CYCLE-TR-001" in markdown
+
+    def test_docgen_discovers_earphone_modules(self):
+        from earphone.docgen import discover_modules
+
+        modules = discover_modules()
+        assert "rv32" in modules
+        assert "simd16" in modules
+        assert "common" not in modules
 
 
 if __name__ == "__main__":

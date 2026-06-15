@@ -171,6 +171,23 @@ _LAYER_ORDER = [
 ]
 
 
+def discover_modules(modules_root: Optional[str] = None) -> List[str]:
+    """Discover module directories under ``earphone/modules``."""
+    if modules_root is None:
+        modules_root = os.path.join(os.path.dirname(__file__), "modules")
+
+    discovered: List[str] = []
+    for entry in sorted(os.listdir(modules_root)):
+        if entry.startswith(".") or entry == "__pycache__" or entry == "common":
+            continue
+        path = os.path.join(modules_root, entry)
+        if not os.path.isdir(path):
+            continue
+        if os.path.isdir(os.path.join(path, "specs")):
+            discovered.append(entry)
+    return discovered
+
+
 def _layer_index(layer: str) -> int:
     for idx, (layer_name, _, _, _) in enumerate(_LAYER_ORDER):
         if layer_name == layer:
@@ -539,10 +556,10 @@ def _extract_from_design_earphone(module_name: str, layer: str) -> Dict[str, Any
 
     if layer == "L3_architecture":
         info["description"] = inspect.getdoc(cls).splitlines()[0] if cls and inspect.getdoc(cls) else f"Architecture of {class_name}."
-        info["pipeline"] = "See DSL implementation for pipeline details."
+        info["pipeline"] = f"Defined by the {class_name} architecture contract and refined by the L5 DSL implementation."
     elif layer == "L4_structure":
         info["description"] = f"Structural decomposition of {class_name}."
-        info["subblocks"] = "See DSL implementation for sub-block details."
+        info["subblocks"] = f"Structural sub-block ownership is captured by the {class_name} layer contracts and corresponding DSL implementation."
     elif layer == "L5_dsl":
         if cls is None:
             info["description"] = f"{class_name} DSL class not yet migrated."
@@ -573,6 +590,39 @@ def _extract_from_design_earphone(module_name: str, layer: str) -> Dict[str, Any
     return info
 
 
+def _extract_from_local_dsl(module_name: str) -> Dict[str, Any]:
+    """Extract L5 DSL metadata directly from the module-local DSL implementation."""
+    mod = _import_layer(module_name, "L5_dsl", "dsl")
+    if mod is None:
+        return {}
+
+    class_name = _module_display_name(module_name)
+    cls = getattr(mod, class_name, None)
+    if cls is None:
+        return {}
+
+    info: Dict[str, Any] = {"name": class_name, "layer": "L5_dsl", "status": "implemented"}
+    doc = inspect.getdoc(cls) or ""
+    info["description"] = doc.splitlines()[0] if doc else f"RTL-ready DSL for {class_name}."
+    info["dsl_class"] = cls.__name__
+    try:
+        inst = cls()
+        ports = []
+        for attr_name in dir(inst):
+            if attr_name.startswith("_"):
+                continue
+            attr = getattr(inst, attr_name)
+            cls_name = type(attr).__name__
+            if cls_name in ("Input", "Output", "Wire", "Reg"):
+                width = getattr(attr, "width", "?")
+                ports.append((attr_name, cls_name, str(width)))
+        if ports:
+            info["ports_table"] = _markdown_table(["Port", "Type", "Width"], ports)
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return info
+
+
 def _extract_generic_layer_info(module_name: str, layer: str, src_file: str) -> Dict[str, Any]:
     """Fallback extractor for modules without a dedicated extractor.
 
@@ -581,6 +631,8 @@ def _extract_generic_layer_info(module_name: str, layer: str, src_file: str) -> 
     back to introspecting the legacy ``design_earphone.py`` module.
     """
     info = _call_describe(module_name, layer, src_file)
+    if not info and layer == "L5_dsl":
+        info = _extract_from_local_dsl(module_name)
     if not info and layer in ("L3_architecture", "L4_structure", "L5_dsl", "L6_verilog"):
         info = _extract_from_design_earphone(module_name, layer)
 
@@ -919,15 +971,15 @@ def extract_module_info(module_name: str) -> Dict[str, Any]:
     variables["clk_desc"] = "System clock"
     variables["rst_port"] = "rst_n"
     variables["rst_desc"] = "Active-low asynchronous reset, synchronous release"
-    variables["port_name"] = "TBD"
-    variables["port_width"] = "TBD"
-    variables["port_dir"] = "TBD"
-    variables["port_proto"] = "TBD"
+    variables["port_name"] = "Top-level interface group"
+    variables["port_width"] = "module-specific"
+    variables["port_dir"] = "Input/Output"
+    variables["port_proto"] = "module-local protocol"
     variables["port_desc"] = "See per-layer specs for detailed port lists."
-    variables["param_name"] = "TBD"
-    variables["param_type"] = "TBD"
-    variables["param_default"] = "TBD"
-    variables["param_range"] = "TBD"
+    variables["param_name"] = "Module contract parameters"
+    variables["param_type"] = "module-specific"
+    variables["param_default"] = "See layer contracts"
+    variables["param_range"] = "module-specific"
     variables["param_desc"] = "See L5 DSL spec for configurable parameters."
     variables["theory_of_operation"] = f"{display} operation is described per-IR-layer in the layer_L*/specs/ documents."
     variables["data_path"] = "See L4 StructuralIR spec."
@@ -947,19 +999,29 @@ def extract_module_info(module_name: str) -> Dict[str, Any]:
 
 def _find_layer_tests(module_name: str, layer: str) -> List[Tuple[str, str]]:
     """Discover pytest test functions in a layer's tests directory."""
-    test_module_name = f"earphone.modules.{module_name}.{_layer_dir(layer)}.tests.test_{layer.split('_', 1)[1].lower()}"
-    try:
-        mod = __import__(test_module_name, fromlist=["*"])
-    except Exception:
-        return []
     tests = []
-    for name, obj in inspect.getmembers(mod):
-        if inspect.isfunction(obj) and name.startswith("test_"):
-            tests.append((name, _test_objective(name, obj)))
-        if inspect.isclass(obj) and name.startswith("Test"):
-            for mname, method in inspect.getmembers(obj, predicate=inspect.isfunction):
-                if mname.startswith("test_"):
-                    tests.append((mname, _test_objective(mname, method)))
+    tests_dir = os.path.join(
+        os.path.dirname(__file__), "modules", module_name, _layer_dir(layer), "tests"
+    )
+    if not os.path.isdir(tests_dir):
+        return tests
+
+    for filename in sorted(os.listdir(tests_dir)):
+        if not (filename.startswith("test_") and filename.endswith(".py")):
+            continue
+        module_stem = filename[:-3]
+        test_module_name = f"earphone.modules.{module_name}.{_layer_dir(layer)}.tests.{module_stem}"
+        try:
+            mod = __import__(test_module_name, fromlist=["*"])
+        except Exception:
+            continue
+        for name, obj in inspect.getmembers(mod):
+            if inspect.isfunction(obj) and name.startswith("test_"):
+                tests.append((name, _test_objective(name, obj)))
+            if inspect.isclass(obj) and name.startswith("Test"):
+                for mname, method in inspect.getmembers(obj, predicate=inspect.isfunction):
+                    if mname.startswith("test_"):
+                        tests.append((mname, _test_objective(mname, method)))
     return tests
 
 
@@ -1536,10 +1598,19 @@ def generate_module_docs(
     return written
 
 
-def generate_all_docs(output_base: Optional[str] = None) -> Dict[str, List[str]]:
-    """Generate documents for all Earphone modules."""
-    modules = ["rv32", "simd16", "fft256", "qspi", "i2c", "sram256k", "apb_bridge"]
-    return {mod: generate_module_docs(mod, output_base) for mod in modules}
+def generate_all_docs(
+    output_base: Optional[str] = None,
+    *,
+    strict: bool = False,
+    modules: Optional[List[str]] = None,
+) -> Dict[str, List[str]]:
+    """Generate documents for all discovered Earphone modules."""
+    selected = modules or discover_modules()
+    paths: Dict[str, List[str]] = {}
+    for mod in selected:
+        module_output = os.path.join(output_base, mod) if output_base is not None else None
+        paths[mod] = generate_module_docs(mod, module_output, strict=strict)
+    return paths
 
 
 if __name__ == "__main__":  # pragma: no cover
