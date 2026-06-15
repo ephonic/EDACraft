@@ -125,6 +125,7 @@ def render_template(name: str, variables: Optional[Dict[str, Any]] = None) -> st
         r"{{ \1 }}",
         content,
     )
+    content = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
     return content
 
 

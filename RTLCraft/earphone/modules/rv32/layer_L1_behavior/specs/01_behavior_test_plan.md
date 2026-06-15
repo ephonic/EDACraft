@@ -16,7 +16,7 @@
 Verification test plan for the L1 behavior of EarphoneRV32.
 
 ### 1.2 Scope
-<!-- Define the DUT(s), features, and verification levels covered. -->
+
 Covers directed and cross-layer tests executed at L1 behavior.
 
 ### 1.3 Out of Scope
@@ -28,7 +28,7 @@ Full SoC integration tests; see integration/ specs.
 
 | Document ID | Title | Version |
 |-------------|-------|---------|
-| {{ ref_id }} | {{ ref_title }} | {{ ref_version }} |
+| RV32-L1_BEHAVIOR-001 | EarphoneRV32 L1 behavior specification | 0.1 |
 
 ---
 
@@ -36,7 +36,7 @@ Full SoC integration tests; see integration/ specs.
 
 | Term | Definition |
 |------|------------|
-| {{ term }} | {{ definition }} |
+| Layer contract | Machine-generated Markdown contract that is consumed by the next IR layer. |
 
 ---
 
@@ -46,15 +46,15 @@ Full SoC integration tests; see integration/ specs.
 |-----------|-------|
 | DUT Name | EarphoneRV32 |
 | DUT Version | 0.1 |
-| Hierarchy Path | {{ dut_hier }} |
-| Specification Reference | {{ spec_ref }} |
+| Hierarchy Path | earphone.modules.rv32.layer_L1_behavior |
+| Specification Reference | layer_L1_behavior/specs/01_behavior_spec.md |
 
 ---
 
 ## 5. Verification Strategy
 
 ### 5.1 Verification Approach
-Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/tests and verify functional equivalence with adjacent layers where applicable.
+Run the pytest cases listed in `layer_L1_behavior/specs/01_behavior_test_plan.md` under `earphone/modules/rv32/layer_L1_behavior/tests`, then publish PASS/FAIL evidence in `layer_L1_behavior/specs/01_behavior_test_report.md`. Test intent: Consumes the module contract `RV32-MOD-001` and top-level SoC requirements as the seed SpecIR.
 
 ### 5.2 Verification Levels
 | Level | Objective | Method | Responsibility |
@@ -66,23 +66,23 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 ### 5.3 Testbench Architecture
 ```text
 +----------------+      +----------------+      +----------------+
-|   {{ tb_agent_a }}    |<---->|      DUT       |<---->|   {{ tb_agent_b }}    |
+|   Previous-layer contract    |<---->|      DUT       |<---->|   Next-layer checker    |
 +----------------+      +----------------+      +----------------+
          ^                       ^
          |                       |
          v                       v
 +-----------------------------------------------------------+
-|                    {{ tb_scoreboard }}                     |
+|                    Layer pytest assertions and cross-layer equivalence checks                     |
 +-----------------------------------------------------------+
 ```
 
 ### 5.4 Verification Methodology
 | Method | Usage | Tools |
 |--------|-------|-------|
-| Constrained-random simulation | Future work | - |
+| Constrained-random simulation | Not enabled until directed layer handoff is stable | Not enabled in current pilot |
 | Directed tests | Core directed tests from test_*.py | pytest |
 | Formal verification | SVA assertions generated from constraints | Verilog formal tools (future) |
-| Emulation / FPGA prototyping | {{ emu_usage }} | {{ emu_tools }} |
+| Emulation / FPGA prototyping | Not used in the Python-layer regression | None |
 
 ---
 
@@ -93,17 +93,17 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 |---------------|------|------|
 | Line coverage | 80% | pytest-cov |
 | Branch coverage | 70% | pytest-cov |
-| FSM coverage | {{ fsm_cov_goal }} | {{ fsm_cov_tool }} |
-| Toggle coverage | {{ toggle_cov_goal }} | {{ toggle_cov_tool }} |
-| Expression coverage | {{ expr_cov_goal }} | {{ expr_cov_tool }} |
+| FSM coverage | Covered by directed state-transition assertions where the layer has FSM state | pytest assertions |
+| Toggle coverage | Covered at L6 Verilog when signal-level RTL is emitted | RTL simulator or formal tool |
+| Expression coverage | Covered by directed branch and expression tests | pytest and downstream RTL coverage |
 
 ### 6.2 Functional Coverage
 | Coverage Point | Description | Goal |
 |----------------|-------------|------|
-| {{ fc_point }} | {{ fc_desc }} | {{ fc_goal }} |
+| L1 behavior contract coverage | Checks that L1 behavior preserves required inputs, outputs, and invariants. | All discovered directed tests pass |
 
 ### 6.3 Coverage Closure Criteria
-{{ coverage_closure }}
+Close L1 behavior when `layer_L1_behavior/specs/01_behavior_test_plan.md` has corresponding PASS evidence in `layer_L1_behavior/specs/01_behavior_test_report.md` and no blocker feedback remains.
 
 ---
 
@@ -112,14 +112,14 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 ### 7.1 Test Case Summary
 | TC ID | Name | Type | Priority | Objective | Status |
 |-------|------|------|----------|-----------|--------|
-| TC-001 | test_add_sub | Directed | P1 | - | Not run |
+| TC-001 | test_add_sub | Directed | P1 | Validate add sub. | Planned |
 
 ### 7.2 Detailed Test Cases
 
 #### TC-001: test_add_sub
 | Attribute | Description |
 |-----------|-------------|
-| Objective | - |
+| Objective | Validate add sub. |
 | Preconditions | Layer model initialized |
 | Input stimulus | Run pytest test case |
 | Expected result | Test passes with no assertion failures |
@@ -133,7 +133,7 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 
 | TC ID | Scenario | Input | Expected Output | Priority |
 |-------|----------|-------|-----------------|----------|
-| D-01 | {{ dir_scenario_01 }} | {{ dir_input_01 }} | {{ dir_exp_01 }} | {{ dir_prio_01 }} |
+| D-01 | L1 behavior directed regression | Layer source, generated spec, and adjacent-layer contract artifacts | Layer-local behavior matches the contract and produces PASS evidence | P1 |
 
 ---
 
@@ -141,7 +141,7 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 
 | Test Name | Constraint Focus | Iterations | Seed Strategy | Regression Count |
 |-----------|------------------|------------|---------------|------------------|
-| {{ rand_test }} | {{ rand_focus }} | {{ rand_iter }} | {{ rand_seed }} | {{ rand_regress }} |
+| L1 behavior randomized smoke vectors | Future randomized contract perturbations | 0 in current pilot | record seed when enabled | 0 in current pilot |
 
 ---
 
@@ -149,7 +149,7 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 
 | TC ID | Scenario | Rationale |
 |-------|----------|-----------|
-| C-01 | {{ corner_scenario_01 }} | {{ corner_rationale_01 }} |
+| C-01 | Reset, idle, and boundary protocol behavior | These states commonly reveal broken layer refinement. |
 
 ---
 
@@ -158,10 +158,10 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 ### 11.1 Regression Environments
 | Environment | Tool | Frequency | Scope |
 |-------------|------|-----------|-------|
-| {{ regress_env }} | {{ regress_tool }} | {{ regress_freq }} | {{ regress_scope }} |
+| local-pytest | pytest | per flow run | EarphoneRV32 L1 behavior |
 
 ### 11.2 Regression Pass Criteria
-{{ regress_pass_criteria }}
+All layer tests pass and strict document feedback has zero blockers.
 
 ---
 
@@ -170,13 +170,13 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 ### 12.1 Severity Definitions
 | Severity | Definition | Response Time |
 |----------|------------|---------------|
-| S0 - Blocker | {{ s0_def }} | {{ s0_time }} |
-| S1 - Critical | {{ s1_def }} | {{ s1_time }} |
-| S2 - Major | {{ s2_def }} | {{ s2_time }} |
-| S3 - Minor | {{ s3_def }} | {{ s3_time }} |
+| S0 - Blocker | Blocks layer handoff or invalidates an upstream contract. | Immediate repair before next layer generation |
+| S1 - Critical | Breaks required behavior but has a bounded workaround. | Repair before sign-off |
+| S2 - Major | Reduces coverage or traceability without breaking execution. | Repair before milestone closure |
+| S3 - Minor | Documentation or polish issue without behavioral impact. | Repair during cleanup |
 
 ### 12.2 Bug Tracking Process
-{{ bug_tracking }}
+Issues are emitted into docgen_feedback.json with detected layer and upstream target layer.
 
 ---
 
@@ -184,7 +184,7 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 
 | Milestone | Target Date | Deliverable | Owner |
 |-----------|-------------|-------------|-------|
-| {{ milestone }} | {{ milestone_date }} | {{ milestone_deliverable }} | {{ milestone_owner }} |
+| L1 behavior handoff | 2026-06-15 | layer_L1_behavior/specs/01_behavior_spec.md, layer_L1_behavior/specs/01_behavior_test_plan.md, layer_L1_behavior/specs/01_behavior_test_report.md | RTLCraft Agent |
 
 ---
 
@@ -192,7 +192,7 @@ Run the layer-specific pytest suite under earphone/modules/rv32/L1_behavior/test
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
-| {{ risk }} | {{ risk_impact }} | {{ risk_likelihood }} | {{ risk_mitigation }} |
+| Layer contract drift | Downstream code may satisfy stale or incomplete intent | Medium during migration | Strict placeholder checks, layer tests, and upstream feedback blockers |
 
 ---
 

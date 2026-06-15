@@ -24,13 +24,13 @@ Covers RV32I base integer instructions plus RV32M multiply/divide extensions. Me
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes the module contract `RV32-MOD-001` and top-level SoC requirements as the seed SpecIR.
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `RV32-L1_BEHAVIOR-001` (`layer_L1_behavior/specs/01_behavior_spec.md`), `RV32-L1_BEHAVIOR-TP-001` (`layer_L1_behavior/specs/01_behavior_test_plan.md`), and `RV32-L1_BEHAVIOR-TR-001` (`layer_L1_behavior/specs/01_behavior_test_report.md`) as inputs to `RV32-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`).
 
 ---
 
@@ -125,11 +125,11 @@ RV32IM
 
 | Test Name | Description |
 | --- | --- |
-| test_add_sub | - |
-| test_branch | - |
-| test_div_by_zero | - |
-| test_load_store | - |
-| test_mul | - |
+| test_add_sub | Validate add sub. |
+| test_branch | Validate branch. |
+| test_div_by_zero | Validate div by zero. |
+| test_load_store | Validate load store. |
+| test_mul | Validate mul. |
 
 
 ---

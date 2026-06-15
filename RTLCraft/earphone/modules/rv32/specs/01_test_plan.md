@@ -1,11 +1,11 @@
-# EarphoneRV32 — Verification Test Plan
+# EarphoneRV32 — L1 behavior — Verification Test Plan
 
-| Document ID | TP-EARPHONE-RV32-001 |
+| Document ID | RV32-L1_BEHAVIOR-TP-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-14 |
+| Date        | 2026-06-15 |
 | Author      | RTLCraft Agent |
-| Owner       | Earphone SoC Team |
+| Owner       | Design Team |
 | Status      | Draft |
 
 ---
@@ -13,14 +13,14 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL implementation, and generated Verilog.
+Verification test plan for the L1 behavior of EarphoneRV32.
 
 ### 1.2 Scope
-<!-- Define the DUT(s), features, and verification levels covered. -->
-{{ scope }}
+
+Covers directed and cross-layer tests executed at L1 behavior.
 
 ### 1.3 Out of Scope
-{{ out_of_scope }}
+Full SoC integration tests; see integration/ specs.
 
 ---
 
@@ -28,7 +28,7 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 
 | Document ID | Title | Version |
 |-------------|-------|---------|
-| {{ ref_id }} | {{ ref_title }} | {{ ref_version }} |
+| RV32-L1_BEHAVIOR-001 | EarphoneRV32 L1 behavior specification | 0.1 |
 
 ---
 
@@ -36,7 +36,7 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 
 | Term | Definition |
 |------|------------|
-| {{ term }} | {{ definition }} |
+| Layer contract | Machine-generated Markdown contract that is consumed by the next IR layer. |
 
 ---
 
@@ -46,43 +46,43 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 |-----------|-------|
 | DUT Name | EarphoneRV32 |
 | DUT Version | 0.1 |
-| Hierarchy Path | earphone.modules.rv32.src.dsl.EarphoneRV32 |
-| Specification Reference | earphone/modules/rv32/specs/00_module_spec.md |
+| Hierarchy Path | earphone.modules.rv32.layer_L1_behavior |
+| Specification Reference | layer_L1_behavior/specs/01_behavior_spec.md |
 
 ---
 
 ## 5. Verification Strategy
 
 ### 5.1 Verification Approach
-{{ verification_approach }}
+Run the pytest cases listed in `layer_L1_behavior/specs/01_behavior_test_plan.md` under `earphone/modules/rv32/layer_L1_behavior/tests`, then publish PASS/FAIL evidence in `layer_L1_behavior/specs/01_behavior_test_report.md`. Test intent: Consumes the module contract `RV32-MOD-001` and top-level SoC requirements as the seed SpecIR.
 
 ### 5.2 Verification Levels
 | Level | Objective | Method | Responsibility |
 |-------|-----------|--------|----------------|
-| Unit | {{ unit_objective }} | {{ unit_method }} | {{ unit_owner }} |
-| Integration | {{ int_objective }} | {{ int_method }} | {{ int_owner }} |
-| System | {{ sys_objective }} | {{ sys_method }} | {{ sys_owner }} |
+| Unit | Validate layer-local functional correctness | Python pytest + model simulation | RTLCraft Agent |
+| Integration | Validate interaction with adjacent layers | Cross-layer equivalence checks | RTLCraft Agent |
+| System | Validate SoC-level behavior | Full flow regression | System Architect |
 
 ### 5.3 Testbench Architecture
 ```text
 +----------------+      +----------------+      +----------------+
-|   {{ tb_agent_a }}    |<---->|      DUT       |<---->|   {{ tb_agent_b }}    |
+|   Previous-layer contract    |<---->|      DUT       |<---->|   Next-layer checker    |
 +----------------+      +----------------+      +----------------+
          ^                       ^
          |                       |
          v                       v
 +-----------------------------------------------------------+
-|                    {{ tb_scoreboard }}                     |
+|                    Layer pytest assertions and cross-layer equivalence checks                     |
 +-----------------------------------------------------------+
 ```
 
 ### 5.4 Verification Methodology
 | Method | Usage | Tools |
 |--------|-------|-------|
-| Constrained-random simulation | {{ cr_usage }} | {{ cr_tools }} |
-| Directed tests | {{ dir_usage }} | {{ dir_tools }} |
-| Formal verification | {{ formal_usage }} | {{ formal_tools }} |
-| Emulation / FPGA prototyping | {{ emu_usage }} | {{ emu_tools }} |
+| Constrained-random simulation | Not enabled until directed layer handoff is stable | Not enabled in current pilot |
+| Directed tests | Core directed tests from test_*.py | pytest |
+| Formal verification | SVA assertions generated from constraints | Verilog formal tools (future) |
+| Emulation / FPGA prototyping | Not used in the Python-layer regression | None |
 
 ---
 
@@ -91,19 +91,19 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 ### 6.1 Code Coverage
 | Coverage Type | Goal | Tool |
 |---------------|------|------|
-| Line coverage | {{ line_cov_goal }} | {{ line_cov_tool }} |
-| Branch coverage | {{ branch_cov_goal }} | {{ branch_cov_tool }} |
-| FSM coverage | {{ fsm_cov_goal }} | {{ fsm_cov_tool }} |
-| Toggle coverage | {{ toggle_cov_goal }} | {{ toggle_cov_tool }} |
-| Expression coverage | {{ expr_cov_goal }} | {{ expr_cov_tool }} |
+| Line coverage | 80% | pytest-cov |
+| Branch coverage | 70% | pytest-cov |
+| FSM coverage | Covered by directed state-transition assertions where the layer has FSM state | pytest assertions |
+| Toggle coverage | Covered at L6 Verilog when signal-level RTL is emitted | RTL simulator or formal tool |
+| Expression coverage | Covered by directed branch and expression tests | pytest and downstream RTL coverage |
 
 ### 6.2 Functional Coverage
 | Coverage Point | Description | Goal |
 |----------------|-------------|------|
-| {{ fc_point }} | {{ fc_desc }} | {{ fc_goal }} |
+| L1 behavior contract coverage | Checks that L1 behavior preserves required inputs, outputs, and invariants. | All discovered directed tests pass |
 
 ### 6.3 Coverage Closure Criteria
-{{ coverage_closure }}
+Close L1 behavior when `layer_L1_behavior/specs/01_behavior_test_plan.md` has corresponding PASS evidence in `layer_L1_behavior/specs/01_behavior_test_report.md` and no blocker feedback remains.
 
 ---
 
@@ -112,20 +112,20 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 ### 7.1 Test Case Summary
 | TC ID | Name | Type | Priority | Objective | Status |
 |-------|------|------|----------|-----------|--------|
-| TC-001 | RV32IM behavior parity | Directed | P0 | L1 ISS produces same architectural result as reference RISC-V execution for add/sub/load/store/branch/M-ext programs. | {{ tc_status_01 }} |
+| TC-001 | test_add_sub | Directed | P1 | Validate add sub. | Planned |
 
 ### 7.2 Detailed Test Cases
 
-#### TC-001: RV32IM behavior parity
+#### TC-001: test_add_sub
 | Attribute | Description |
 |-----------|-------------|
-| Objective | L1 ISS produces same architectural result as reference RISC-V execution for add/sub/load/store/branch/M-ext programs. |
-| Preconditions | {{ tc_pre_01 }} |
-| Input stimulus | {{ tc_stim_01 }} |
-| Expected result | {{ tc_exp_01 }} |
-| Pass/Fail criteria | {{ tc_pass_01 }} |
-| Coverage targeted | {{ tc_cov_01 }} |
-| Dependencies | {{ tc_dep_01 }} |
+| Objective | Validate add sub. |
+| Preconditions | Layer model initialized |
+| Input stimulus | Run pytest test case |
+| Expected result | Test passes with no assertion failures |
+| Pass/Fail criteria | Assertion passes |
+| Coverage targeted | Functional coverage of the exercised feature |
+| Dependencies | None |
 
 ---
 
@@ -133,7 +133,7 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 
 | TC ID | Scenario | Input | Expected Output | Priority |
 |-------|----------|-------|-----------------|----------|
-| D-01 | {{ dir_scenario_01 }} | {{ dir_input_01 }} | {{ dir_exp_01 }} | {{ dir_prio_01 }} |
+| D-01 | L1 behavior directed regression | Layer source, generated spec, and adjacent-layer contract artifacts | Layer-local behavior matches the contract and produces PASS evidence | P1 |
 
 ---
 
@@ -141,7 +141,7 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 
 | Test Name | Constraint Focus | Iterations | Seed Strategy | Regression Count |
 |-----------|------------------|------------|---------------|------------------|
-| {{ rand_test }} | {{ rand_focus }} | {{ rand_iter }} | {{ rand_seed }} | {{ rand_regress }} |
+| L1 behavior randomized smoke vectors | Future randomized contract perturbations | 0 in current pilot | record seed when enabled | 0 in current pilot |
 
 ---
 
@@ -149,7 +149,7 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 
 | TC ID | Scenario | Rationale |
 |-------|----------|-----------|
-| C-01 | {{ corner_scenario_01 }} | {{ corner_rationale_01 }} |
+| C-01 | Reset, idle, and boundary protocol behavior | These states commonly reveal broken layer refinement. |
 
 ---
 
@@ -158,10 +158,10 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 ### 11.1 Regression Environments
 | Environment | Tool | Frequency | Scope |
 |-------------|------|-----------|-------|
-| {{ regress_env }} | {{ regress_tool }} | {{ regress_freq }} | {{ regress_scope }} |
+| local-pytest | pytest | per flow run | EarphoneRV32 L1 behavior |
 
 ### 11.2 Regression Pass Criteria
-{{ regress_pass_criteria }}
+All layer tests pass and strict document feedback has zero blockers.
 
 ---
 
@@ -170,13 +170,13 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 ### 12.1 Severity Definitions
 | Severity | Definition | Response Time |
 |----------|------------|---------------|
-| S0 - Blocker | {{ s0_def }} | {{ s0_time }} |
-| S1 - Critical | {{ s1_def }} | {{ s1_time }} |
-| S2 - Major | {{ s2_def }} | {{ s2_time }} |
-| S3 - Minor | {{ s3_def }} | {{ s3_time }} |
+| S0 - Blocker | Blocks layer handoff or invalidates an upstream contract. | Immediate repair before next layer generation |
+| S1 - Critical | Breaks required behavior but has a bounded workaround. | Repair before sign-off |
+| S2 - Major | Reduces coverage or traceability without breaking execution. | Repair before milestone closure |
+| S3 - Minor | Documentation or polish issue without behavioral impact. | Repair during cleanup |
 
 ### 12.2 Bug Tracking Process
-{{ bug_tracking }}
+Issues are emitted into docgen_feedback.json with detected layer and upstream target layer.
 
 ---
 
@@ -184,7 +184,7 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 
 | Milestone | Target Date | Deliverable | Owner |
 |-----------|-------------|-------------|-------|
-| {{ milestone }} | {{ milestone_date }} | {{ milestone_deliverable }} | {{ milestone_owner }} |
+| L1 behavior handoff | 2026-06-15 | layer_L1_behavior/specs/01_behavior_spec.md, layer_L1_behavior/specs/01_behavior_test_plan.md, layer_L1_behavior/specs/01_behavior_test_report.md | RTLCraft Agent |
 
 ---
 
@@ -192,7 +192,7 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
-| {{ risk }} | {{ risk_impact }} | {{ risk_likelihood }} | {{ risk_mitigation }} |
+| Layer contract drift | Downstream code may satisfy stale or incomplete intent | Medium during migration | Strict placeholder checks, layer tests, and upstream feedback blockers |
 
 ---
 
@@ -200,11 +200,11 @@ Verify the EarphoneRV32 RV32IM core against its L1 ISS golden model, L3 DSL impl
 
 The verification phase is considered complete when:
 
-1. All priority-1 test cases pass: {{ p1_pass_criteria }}
-2. Code coverage goals are met: {{ code_cov_criteria }}
-3. Functional coverage goals are met: {{ func_cov_criteria }}
-4. No open S0/S1 bugs: {{ bug_criteria }}
-5. Regression is green for {{ regress_green_count }} consecutive runs.
+1. All priority-1 test cases pass: 100%
+2. Code coverage goals are met: Line coverage ≥ 80%
+3. Functional coverage goals are met: All directed tests pass
+4. No open S0/S1 bugs: No open S0/S1 bugs
+5. Regression is green for 3 consecutive runs.
 
 ---
 
@@ -212,4 +212,4 @@ The verification phase is considered complete when:
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-14 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |

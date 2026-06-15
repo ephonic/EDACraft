@@ -19,21 +19,21 @@ RV32IM 3-stage in-order RISC-V core with single-cycle MUL and iterative DIV/REM.
 ### 1.2 Features
 | ID | Feature | Description |
 |----|---------|-------------|
-| F-01 | ISA / protocol compliance | Implements the target instruction set or interface protocol. |
-| F-02 | Power/area optimization | Tuned for earphone-class low-power constraints. |
+| F-01 | RV32IM ISA coverage | Implements RV32I base integer operations plus RV32M multiply/divide/remainder instructions. |
+| F-02 | Low-power in-order microarchitecture | Uses a simple scalar pipeline, operand isolation, and iterative divide to reduce area and switching. |
 
 ### 1.3 Use Cases
-Used inside the Smart Earphone SoC as the EarphoneRV32 block.
+Runs control firmware for the Smart Earphone SoC and services accelerator/peripheral orchestration.
 
 ### 1.4 Block Diagram
-<!-- Insert or describe the internal block diagram. -->
-See layer_L4_structure/specs/04_structural_spec.md for the internal decomposition of EarphoneRV32.
+
+PC/fetch drives decode/execute, register-file read, ALU/branch/load-store logic, and an iterative M-extension unit before writeback and retire tracing.
 
 ```text
 +-----------------------------------------------------------+
 |                     EarphoneRV32                        |
 |  +----------------+        +---------------------------+  |
-|  | Control |------->| Datapath            |  |
+|  | Fetch + Decode |------->| Execute + Writeback            |  |
 |  +----------------+        +---------------------------+  |
 +-----------------------------------------------------------+
 ```
@@ -44,7 +44,7 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 
 | Document ID | Title | Version | Description |
 |-------------|-------|---------|-------------|
-| {{ ref_id }} | {{ ref_title }} | {{ ref_version }} | {{ ref_desc }} |
+| EARPHONE-SOC-SPEC | Smart Earphone SoC Design Specification | 0.1 | Top-level requirements, architecture, PPA targets, and roadmap. |
 
 ---
 
@@ -52,7 +52,7 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 
 | Term | Definition |
 |------|------------|
-| {{ term }} | {{ definition }} |
+| IR | Intermediate representation used for staged Spec2RTL lowering. |
 
 ---
 
@@ -63,22 +63,22 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 #### Clock and Reset
 | Port Name | Width | Direction | Description |
 |-----------|-------|-----------|-------------|
-| clk | 1 | Input | System clock |
-| rst_n | 1 | Input | Active-low asynchronous reset, synchronous release |
+| clk | 1 | Input | System clock for fetch, execute, register file, and memory interface state. |
+| rst_n | 1 | Input | Active-low reset; reset PC is 0x00001000. |
 
 #### Functional Ports
 | Port Name | Width | Direction | Protocol / Encoding | Description |
 |-----------|-------|-----------|---------------------|-------------|
-| TBD | TBD | TBD | TBD | See per-layer specs for detailed port lists. |
+| imem_*, dmem_*, irq, retire_* | 1-32 | Input/Output | Harvard memory buses + retire trace | Instruction fetch, data memory request/response, local interrupt input, and verification retire outputs. |
 
 ### 4.2 Interface Timing
-<!-- Describe key timing relationships, handshakes, and latency. -->
-{{ interface_timing }}
+
+Instruction fetch requests are issued from the current PC. Data memory handshakes use request/grant/valid. M-extension divide/remainder operations stall the core until the iterative unit completes.
 
 ### 4.3 Protocol Compliance
 | Protocol | Version | Compliance Level | Notes |
 |----------|---------|------------------|-------|
-| {{ proto_name }} | {{ proto_version }} | {{ proto_level }} | {{ proto_notes }} |
+| RV32IM + simple memory bus | RV32I/RV32M unprivileged subset | Project subset | No MMU/FPU; physical addressing only. FP16 work is delegated to SIMD16. |
 
 ---
 
@@ -86,28 +86,28 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 
 | Parameter Name | Type | Default | Range | Description |
 |----------------|------|---------|-------|-------------|
-| TBD | TBD | TBD | TBD | See L5 DSL spec for configurable parameters. |
+| XLEN / RESET_PC / DIV_ITERATIONS | integer constants | 32 / 0x1000 / 32 | fixed in v0.1 | Core width, reset entry point, and iterative divider latency. |
 
 ---
 
 ## 6. Functional Description
 
 ### 6.1 Theory of Operation
-EarphoneRV32 operation is described per-IR-layer in the layer_L*/specs/ documents.
+The core fetches 32-bit instructions, decodes operands and immediates, executes ALU/branch/load/store/M-extension operations, writes architectural results back to x1-x31, and keeps x0 hardwired to zero.
 
 ### 6.2 State Machine(s)
-<!-- Describe or provide a state diagram for complex control logic. -->
+
 | State | Encoding | Description | Exit Conditions |
 |-------|----------|-------------|-----------------|
-| {{ state }} | {{ state_enc }} | {{ state_desc }} | {{ state_exit }} |
+| RESET / RUN / MULDIV_WAIT | implicit control state | Reset initializes PC/register state; RUN retires ordinary instructions; MULDIV_WAIT holds the pipeline for divide/remainder. | Reset release, instruction completion, or M-extension done. |
 
 ### 6.3 Data Path
-See L4 StructuralIR spec.
+PC -> instruction memory -> decode/register file -> ALU/LSU/muldiv -> writeback -> retire trace.
 
 ### 6.4 Error Handling
 | Error Condition | Detection | Response | Reporting |
 |-----------------|-----------|----------|-----------|
-| {{ err_cond }} | {{ err_detect }} | {{ err_response }} | {{ err_report }} |
+| Unsupported or unimplemented instruction encoding | Decode opcode/funct mismatch | Treat as safe no-op or halt for EBREAK depending on decoded instruction | Retire trace and L1/L5 tests. |
 
 ---
 
@@ -116,15 +116,15 @@ See L4 StructuralIR spec.
 ### 7.1 Major Sub-blocks
 | Sub-block | Description | Interface |
 |-----------|-------------|-----------|
-| {{ subblock }} | {{ subblock_desc }} | {{ subblock_if }} |
+| pc_unit, regfile, decoder, alu, muldiv_unit, load_store_unit | Major internal blocks declared in L4 StructuralIR. | PC, register operands, ALU controls, memory request/response, muldiv start/done/result. |
 
 ### 7.2 Pipeline Stages
 | Stage | Latency | Description |
 |-------|---------|-------------|
-| {{ stage }} | {{ stage_lat }} | {{ stage_desc }} |
+| IF / ID-EX / WB plus MULDIV_WAIT | 1 cycle for scalar ALU/MUL, 32 cycles for DIV/REM | Three-stage in-order control with multi-cycle hold during divide/remainder. |
 
 ### 7.3 Critical Path Considerations
-{{ critical_path }}
+ALU compare/add path and decode-to-writeback muxing; divider is iterative to avoid a long combinational path.
 
 ---
 
@@ -133,16 +133,16 @@ See L4 StructuralIR spec.
 ### 8.1 Clocking
 | Clock Name | Frequency | Source | Notes |
 |------------|-----------|--------|-------|
-| {{ mod_clk }} | {{ mod_clk_freq }} | {{ mod_clk_src }} | {{ mod_clk_notes }} |
+| clk | 48-160 MHz target | clk_sys | Earphone-class low-power system clock domain. |
 
 ### 8.2 Reset
 | Reset Name | Type | Active Level | Description |
 |------------|------|--------------|-------------|
-| {{ mod_rst }} | {{ mod_rst_type }} | {{ mod_rst_active }} | {{ mod_rst_desc }} |
+| rst_n | asynchronous assert, synchronous release | active low | Resets architectural and control state to layer-specified defaults. |
 
 ### 8.3 Timing Diagrams
-<!-- Insert timing diagrams for key operations. -->
-{{ timing_diagrams }}
+
+See L2 CycleIR test plan and cross-layer traces.
 
 ---
 
@@ -151,31 +151,31 @@ See L4 StructuralIR spec.
 ### 9.1 Register Summary
 | Address Offset | Register Name | Width | Access | Reset Value | Description |
 |----------------|---------------|-------|--------|-------------|-------------|
-| {{ reg_offset }} | {{ reg_name }} | {{ reg_width }} | {{ reg_access }} | {{ reg_reset }} | {{ reg_desc }} |
+| N/A | pc, regs[32], pipeline control, muldiv state | 32-bit architectural state plus control bits | internal | pc=0x1000, x0-x31=0, control idle | Architectural register file, program counter, and M-extension state. |
 
 ### 9.2 Register Detail
 
-#### {{ reg_name }}
+#### pc, regs[32], pipeline control, muldiv state
 | Bit | Field | Access | Reset | Description |
 |-----|-------|--------|-------|-------------|
-| {{ bit_range }} | {{ field_name }} | {{ field_access }} | {{ field_reset }} | {{ field_desc }} |
+| N/A | N/A | N/A | N/A | No externally visible register field described at this level. |
 
 ---
 
 ## 10. Power Management
 
 ### 10.1 Power Domain
-{{ power_domain }}
+clk_sys CPU domain with stall-based clock-enable gating.
 
 ### 10.2 Clock Gating
 | Clock Enable Signal | Controlled Logic | Idle Behavior |
 |---------------------|------------------|---------------|
-| {{ ce_signal }} | {{ ce_logic }} | {{ ce_idle }} |
+| core_clk_en | pipeline registers, writeback state, and operand isolation controls | held low during memory stalls and multi-cycle divide/remainder. |
 
 ### 10.3 Low-Power Modes
 | Mode | Entry | Exit | Impact |
 |------|-------|------|--------|
-| {{ lp_mode }} | {{ lp_entry }} | {{ lp_exit }} | {{ lp_impact }} |
+| idle | no active request or divide stall | new fetch, interrupt, or multicycle completion | reduced dynamic switching |
 
 ---
 
@@ -192,7 +192,7 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 ### 11.3 Assertions
 | ID | Assertion | Severity | Description |
 |----|-----------|----------|-------------|
-| A-01 | {{ assertion_01 }} | {{ assertion_sev_01 }} | {{ assertion_desc_01 }} |
+| A-01 | x0 remains zero and DIV/REM by zero follows RV32M rules | error | Intent-driven tests and generated UVM/SVA artifacts cover RV32M divide-by-zero behavior. |
 
 ---
 
@@ -201,12 +201,12 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 ### 12.1 Constraints
 | ID | Constraint | Source |
 |----|------------|--------|
-| C-01 | {{ constraint_01 }} | {{ constraint_src_01 }} |
+| C-01 | RV32M divide-by-zero result and CPU active-power intent | EARP-RV32 constraints propagated through DesignScaffold |
 
 ### 12.2 Assumptions
 | ID | Assumption | Rationale |
 |----|------------|-----------|
-| A-01 | {{ assumption_01 }} | {{ assumption_rationale_01 }} |
+| A-01 | Little-endian data representation unless specified otherwise | Matches RV32/APB memory semantics in the Earphone SoC. |
 
 ---
 
@@ -215,12 +215,12 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 ### 13.1 Synthesis Target
 | Item | Target |
 |------|--------|
-| Technology | {{ tech }} |
-| Frequency | {{ synth_freq }} |
-| Area Goal | {{ area_goal }} |
+| Technology | 22nm / 28nm low-power CMOS target |
+| Frequency | 48-160 MHz |
+| Area Goal | <30k NAND2 equivalent for CPU core target |
 
 ### 13.2 Tool Settings
-{{ tool_settings }}
+rtlgen VerilogEmitter, VerilogLinter, and optional downstream synthesis feedback.
 
 ---
 
@@ -228,7 +228,7 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 
 | ID | Deliverable | Format | Owner |
 |----|-------------|--------|-------|
-| D-01 | {{ mod_deliverable_01 }} | {{ mod_deliverable_fmt_01 }} | {{ mod_deliverable_owner_01 }} |
+| D-01 | behavior.py, cycle.py, arch.py, structure.py, dsl.py, emitter.py, tests, specs, earphone_rv32.v | Markdown, JSON, Python, Verilog | RTLCraft Agent |
 
 ---
 

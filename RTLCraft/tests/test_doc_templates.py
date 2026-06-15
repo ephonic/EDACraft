@@ -1,5 +1,7 @@
 """Unit tests for doc_templates package."""
 
+import importlib
+import json
 import os
 import tempfile
 
@@ -79,6 +81,43 @@ class TestDocTemplates:
     def test_unknown_template_raises(self):
         with pytest.raises(KeyError):
             get_template_info("no_such_template")
+
+    def test_earphone_flow_imports_without_entrypoint_failure(self):
+        flow = importlib.import_module("earphone.flow")
+        assert hasattr(flow, "main")
+        assert hasattr(flow, "run_module_layer_tests")
+
+    def test_rv32_package_exports_behavior_and_dsl(self):
+        from earphone.modules.rv32 import EarphoneRV32, RV32IM_ISS
+
+        assert RV32IM_ISS.__name__ == "RV32IM_ISS"
+        assert EarphoneRV32.__name__ == "EarphoneRV32"
+
+    def test_rv32_module_docs_generate_without_stub_feedback(self):
+        from earphone.docgen import generate_module_docs
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_base = os.path.join(tmpdir, "rv32")
+            written = generate_module_docs("rv32", output_base=output_base, strict=True)
+
+            feedback_path = os.path.join(output_base, "specs", "docgen_feedback.json")
+            with open(feedback_path, "r", encoding="utf-8") as f:
+                feedback = json.load(f)
+            markdown = ""
+            for path in written:
+                if path.endswith(".md"):
+                    with open(path, "r", encoding="utf-8") as f:
+                        markdown += f.read()
+
+            assert feedback_path in written
+            assert feedback["issue_count"] == 0
+            assert feedback["blocker_count"] == 0
+            assert "TBD" not in markdown
+            assert "{{" not in markdown
+            assert "See DSL implementation" not in markdown
+            assert "RV32-L2_CYCLE-001" in markdown
+            assert "RV32-L2_CYCLE-TP-001" in markdown
+            assert "RV32-L2_CYCLE-TR-001" in markdown
 
 
 if __name__ == "__main__":

@@ -24,13 +24,13 @@ Single-cycle scalar pipeline with multi-cycle M-extension operations.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `RV32-L1_BEHAVIOR-001` (`layer_L1_behavior/specs/01_behavior_spec.md`), plus verification intent `RV32-L1_BEHAVIOR-TP-001` (`layer_L1_behavior/specs/01_behavior_test_plan.md`) and latest evidence `RV32-L1_BEHAVIOR-TR-001` (`layer_L1_behavior/specs/01_behavior_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `RV32-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`), `RV32-L2_CYCLE-TP-001` (`layer_L2_cycle/specs/02_cycle_test_plan.md`), and `RV32-L2_CYCLE-TR-001` (`layer_L2_cycle/specs/02_cycle_test_report.md`) as inputs to `RV32-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`).
 
 ---
 
@@ -46,7 +46,7 @@ See next layer specification for outputs.
 
 ### Tests
 
-No dedicated L2 tests yet; cross-layer equivalence covers this layer.
+Dedicated L2 tests cover describe() metadata, reset initialization, and fetch/PC advance behavior.
 
 ### Model
 

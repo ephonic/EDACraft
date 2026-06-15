@@ -64,7 +64,7 @@ def main() -> int:
 
     # 2. Generate / refresh per-layer documents for the RV32 pilot module
     print("\n[Step 2] Generate RV32 per-IR-layer documents")
-    written = generate_module_docs("rv32")
+    written = generate_module_docs("rv32", strict=True)
     for path in written:
         print(f"  wrote {path}")
 
@@ -89,6 +89,7 @@ def main() -> int:
 
     # 4. Delegate to legacy monolithic flow for full SoC verification
     print("\n[Step 4] Run full SoC flow (legacy entry point)")
+    sys.stdout.flush()
     result = subprocess.run(
         [sys.executable, "-m", "earphone.design_earphone"],
         cwd=_PROJECT_ROOT,

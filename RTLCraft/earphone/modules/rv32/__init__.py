@@ -2,7 +2,7 @@
 
 Public API:
     - RV32IM_ISS: L1 cycle-unaware instruction-set simulator.
-    - EarphoneRV32: L5 DSL / Verilog-ready RV32IM core.
+    - EarphoneRV32: L5 rtlgen DSL implementation.
 """
 
 from __future__ import annotations

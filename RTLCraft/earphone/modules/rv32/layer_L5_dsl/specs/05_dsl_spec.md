@@ -24,13 +24,13 @@ RTL-ready DSL description of the EarphoneRV32 core.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `RV32-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`), plus verification intent `RV32-L4_STRUCTURE-TP-001` (`layer_L4_structure/specs/04_structural_test_plan.md`) and latest evidence `RV32-L4_STRUCTURE-TR-001` (`layer_L4_structure/specs/04_structural_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `RV32-L5_DSL-001` (`layer_L5_dsl/specs/05_dsl_spec.md`), `RV32-L5_DSL-TP-001` (`layer_L5_dsl/specs/05_dsl_test_plan.md`), and `RV32-L5_DSL-TR-001` (`layer_L5_dsl/specs/05_dsl_test_report.md`) as inputs to `RV32-L6_VERILOG-001` (`layer_L6_verilog/specs/06_verilog_spec.md`).
 
 ---
 

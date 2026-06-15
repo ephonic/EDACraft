@@ -24,13 +24,13 @@ Pipeline organization, execution units, and reset behavior.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `RV32-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`), plus verification intent `RV32-L2_CYCLE-TP-001` (`layer_L2_cycle/specs/02_cycle_test_plan.md`) and latest evidence `RV32-L2_CYCLE-TR-001` (`layer_L2_cycle/specs/02_cycle_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `RV32-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`), `RV32-L3_ARCHITECTURE-TP-001` (`layer_L3_architecture/specs/03_architecture_test_plan.md`), and `RV32-L3_ARCHITECTURE-TR-001` (`layer_L3_architecture/specs/03_architecture_test_report.md`) as inputs to `RV32-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`).
 
 ---
 

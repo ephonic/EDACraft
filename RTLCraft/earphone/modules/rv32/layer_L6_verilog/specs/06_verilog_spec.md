@@ -24,13 +24,13 @@ Generated RTL from the L5 DSL via rtlgen VerilogEmitter.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `RV32-L5_DSL-001` (`layer_L5_dsl/specs/05_dsl_spec.md`), plus verification intent `RV32-L5_DSL-TP-001` (`layer_L5_dsl/specs/05_dsl_test_plan.md`) and latest evidence `RV32-L5_DSL-TR-001` (`layer_L5_dsl/specs/05_dsl_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits the final RTL-generation contract `RV32-L6_VERILOG-001` (`layer_L6_verilog/specs/06_verilog_spec.md`), verification plan `RV32-L6_VERILOG-TP-001` (`layer_L6_verilog/specs/06_verilog_test_plan.md`), and execution evidence `RV32-L6_VERILOG-TR-001` (`layer_L6_verilog/specs/06_verilog_test_report.md`) for module-level sign-off.
 
 ---
 
