@@ -637,7 +637,7 @@ This currently reports:
 
 Remaining limitations:
 
-- The full SoC closure path is now invoked by `flow.py` through the callable `run_legacy_full_soc_flow()`, and `--top-level` first runs all discovered module-layer checks. The actual top-level integration implementation is still owned by legacy `earphone/design_earphone.py`, so the top-level IR itself is not yet decomposed into the same per-layer contract files as modules.
+- The full SoC closure path is now invoked by `flow.py` through the callable `run_legacy_full_soc_flow()`, and `--top-level` first runs all discovered module-layer checks plus top-level SoC contract tests. The top-level SoC now has first-class L0/L3/L4/L5/L6 contract files under `earphone/top/`; the remaining implementation gap is that L5 still wraps legacy `EarphoneTop` rather than owning a fully migrated top-level DSL implementation.
 - Human approval gates are now enforced by approval artifacts, but the repository currently has no human approval files checked in. This is intentional: `python -m earphone.flow --top-level` now blocks until module-level `CP0_MODULE.<module>.json` and SoC-level `CP1_SOC.json` approvals exist and match reviewed artifact hashes.
 - Several non-RV32 L3/L4 contracts are now executable and testable, but they are still intentionally minimal. They establish traceable layer boundaries and verification hooks, not yet full architecture-planning richness.
 - Feedback is structured and blocking, but automatic semantic repair across layers is still future work; the current behavior stops the flow and records where the repair should feed back.
@@ -704,4 +704,64 @@ Current status against the user's confirmation items:
 2. Test plans and test reports are generated and carried per layer, plus module-level rollups.
 3. Intermediate problems now feed back through both module `docgen_feedback.json` and top-level `flow_feedback.json`.
 4. Top-level SoC closure cannot run through the supported flow until all module approvals and SoC approval exist and their artifact hashes are current.
-5. Remaining work is no longer approval-gate enforcement; it is deeper migration of top-level SoC integration into first-class top-level IR contracts rather than the legacy compatibility runner.
+5. Remaining work is no longer approval-gate enforcement; it is replacing the top-level L5 compatibility wrapper with a fully migrated top-level DSL implementation.
+
+## Implementation Update - First-Class Top-Level SoC Contracts - 2026-06-16
+
+This pass moved top-level SoC integration from a documented directory placeholder
+to executable contract layers:
+
+- Added `earphone/top/specs/00_top_level_spec.md` as the L0 top-level contract.
+- Added `earphone/top/specs/07_top_level_test_plan.md` and `08_top_level_test_report.md`.
+- Added `earphone/top/layer_L3_architecture/src/arch.py` with machine-readable module ownership, APB slot map, external interfaces, and invariants.
+- Added `earphone/top/layer_L4_structure/src/structure.py` with top-level subblocks and APB/QSPI/I2C connection contracts.
+- Added `earphone/top/layer_L5_dsl/src/dsl.py` as an explicit compatibility wrapper around `earphone.design_earphone.EarphoneTop`.
+- Added `earphone/top/layer_L6_verilog/src/emitter.py` to emit top-level Verilog through the document-driven top package.
+- Added top-level contract tests across L3/L4/L5/L6.
+- Updated `flow.py` so `python -m earphone.flow --top-level` runs `earphone/top` tests before approval gates.
+- Extended `CP1_SOC` approval inputs to include the top-level spec, top-level test plan/report, and top-level L3/L4/L5/L6 specs.
+
+Current proof points:
+
+```bash
+python -m pytest earphone/top -q
+```
+
+Result:
+
+- `11 passed`
+
+```bash
+python -m pytest tests/test_doc_templates.py tests/test_approval_flow.py -q
+```
+
+Result:
+
+- `18 passed`
+
+```bash
+python -m earphone.flow --top-level --check
+```
+
+Result:
+
+- all seven module layer chains pass
+- top-level contracts: `11/11 passed`
+
+```bash
+python -m earphone.flow --top-level
+```
+
+Expected current result before human review:
+
+- module layer checks pass
+- top-level contract checks pass
+- exits with code `3`
+- blocks on seven missing module approvals plus missing `CP1_SOC`
+
+Current status:
+
+1. Top-level SoC now has its own document-driven contract surface.
+2. Top-level tests run before approval and before legacy SoC closure.
+3. `CP1_SOC` approval now covers top-level documents, top-level layer specs, constraint traceability, and decision log.
+4. The remaining migration task is to move `EarphoneTop` implementation ownership out of `design_earphone.py` and into `earphone/top/layer_L5_dsl/src/dsl.py`.

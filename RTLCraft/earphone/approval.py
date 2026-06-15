@@ -37,7 +37,17 @@ DEFAULT_APPROVAL_GATES = [
     ApprovalRequirement(
         gate_id="CP1_SOC",
         label="Top-level SoC approval",
-        artifacts=["earphone/specs/09_constraint_traceability.md", "earphone/specs/11_decision_log.md"],
+        artifacts=[
+            "earphone/top/specs/00_top_level_spec.md",
+            "earphone/top/specs/07_top_level_test_plan.md",
+            "earphone/top/specs/08_top_level_test_report.md",
+            "earphone/top/layer_L3_architecture/specs/03_architecture_spec.md",
+            "earphone/top/layer_L4_structure/specs/04_structural_spec.md",
+            "earphone/top/layer_L5_dsl/specs/05_dsl_spec.md",
+            "earphone/top/layer_L6_verilog/specs/06_verilog_spec.md",
+            "earphone/specs/09_constraint_traceability.md",
+            "earphone/specs/11_decision_log.md",
+        ],
         scope="soc",
     ),
 ]

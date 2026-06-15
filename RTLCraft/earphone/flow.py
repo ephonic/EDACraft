@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -121,6 +122,70 @@ def _module_blocker_summary(module: str, layer_results: List[Tuple[str, dict]]) 
         if result.get("total", 0) == 0:
             blockers.append(f"{module}/{layer}: no discovered tests")
     return blockers
+
+
+def _run_pytest_dir(path: str, timeout: int = 120) -> Dict[str, object]:
+    if not os.path.isdir(path):
+        return {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "duration": 0.0, "cmd": ""}
+
+    cmd = [sys.executable, "-m", "pytest", path, "-q", "--tb=short"]
+    start = __import__("time").time()
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except Exception as exc:  # pragma: no cover - defensive
+        return {
+            "total": 0,
+            "passed": 0,
+            "failed": 1,
+            "skipped": 0,
+            "duration": 0.0,
+            "cmd": " ".join(cmd),
+            "error": str(exc),
+        }
+    duration = __import__("time").time() - start
+
+    summary: Dict[str, object] = {
+        "total": 0,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "duration": duration,
+        "cmd": " ".join(cmd),
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
+    for line in result.stdout.splitlines() + result.stderr.splitlines():
+        parts = line.strip().split()
+        for i, part in enumerate(parts):
+            if i == 0:
+                continue
+            if part == "passed":
+                summary["passed"] = int(parts[i - 1])
+            elif part == "failed":
+                summary["failed"] = int(parts[i - 1])
+            elif part == "skipped":
+                summary["skipped"] = int(parts[i - 1])
+            elif part == "error":
+                summary["failed"] = int(summary["failed"]) + int(parts[i - 1])
+    summary["total"] = int(summary["passed"]) + int(summary["failed"]) + int(summary["skipped"])
+    return summary
+
+
+def run_top_level_contract_tests() -> Dict[str, object]:
+    """Run top-level SoC contract tests."""
+    tests_root = os.path.join(os.path.dirname(__file__), "top")
+    return _run_pytest_dir(tests_root)
+
+
+def _print_top_level_result(result: Dict[str, object]) -> bool:
+    total = int(result.get("total", 0))
+    passed = int(result.get("passed", 0))
+    failed = int(result.get("failed", 0))
+    skipped = int(result.get("skipped", 0))
+    status = "PASS" if failed == 0 and total > 0 else "FAIL" if failed > 0 else "NO TESTS"
+    print(f"  top-level contracts: {passed}/{total} passed, {failed} failed, {skipped} skipped — {status}")
+    return failed == 0 and total > 0
 
 
 def _flow_feedback_path() -> str:
@@ -285,6 +350,7 @@ def main() -> int:
     results: Dict[str, Dict[str, object]] = {}
     overall_pass = True
     feedback_items: List[Dict[str, str]] = []
+    top_result: Optional[Dict[str, object]] = None
 
     for module in modules:
         print(f"\n[Step 2] Generate {module} per-IR-layer documents")
@@ -324,6 +390,21 @@ def main() -> int:
         else:
             print("  Layer tests PASSED")
 
+    if full_soc_requested:
+        print("\n[Step 4] Run top-level SoC contract tests")
+        top_result = run_top_level_contract_tests()
+        top_ok = _print_top_level_result(top_result)
+        if not top_ok:
+            overall_pass = False
+            feedback_items.append(
+                _feedback_item(
+                    "FB-TOP-CONTRACT-TEST",
+                    "top-level SoC contract tests failed or were not discovered",
+                    detected_at_layer="top_level_contract",
+                    feedback_target_layer="top_level_spec",
+                )
+            )
+
     if args.check:
         feedback_path = _write_flow_feedback("pass" if overall_pass else "blocked", feedback_items)
         print("\n" + "=" * 70)
@@ -332,6 +413,11 @@ def main() -> int:
             print(
                 f"  {module}: layers={summary['layers']} tests={summary['total']} "
                 f"passed={summary['passed']} failed={summary['failed']} missing={summary['missing_tests']}"
+            )
+        if top_result is not None:
+            print(
+                f"  top: tests={top_result['total']} passed={top_result['passed']} "
+                f"failed={top_result['failed']}"
             )
         print(f"  feedback={feedback_path}")
         print("Document-driven check completed." if overall_pass else "Document-driven check found blockers.")
