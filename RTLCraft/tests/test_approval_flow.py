@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from earphone import approval
-from earphone.flow import _ensure_soc_approval, _ensure_module_approval
+from earphone.flow import _ensure_soc_approval, _ensure_module_approval, _run_legacy_full_soc
 
 
 def test_soc_approval_gate_blocks_without_artifact():
@@ -53,3 +54,22 @@ def test_approval_hash_mismatch_invalidates_gate():
             assert approval.has_approval("CP1_SOC") is False
         finally:
             approval.APPROVAL_DIR = original_dir
+
+
+def test_flow_legacy_runner_uses_top_level_closure_orchestrator():
+    with patch("earphone.flow.run_top_level_closure", return_value=0) as closure:
+        with patch(
+            "earphone.design_earphone.build_legacy_top_level_closure_context",
+            return_value={
+                "review_bundle_fn": lambda: None,
+                "l1_tests_fn": lambda: (True, []),
+                "l3_tests_fn": lambda: (True, []),
+                "cross_layer_fn": lambda: (True, []),
+                "verilog_fn": lambda: [],
+                "intent_tests_fn": lambda: (True, []),
+                "cocotb_gen_fn": lambda: None,
+                "scaffold_fn": lambda: (True, {}, [], []),
+            },
+        ):
+            assert _run_legacy_full_soc() == 0
+    closure.assert_called_once()

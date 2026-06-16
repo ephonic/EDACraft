@@ -28,9 +28,9 @@ layer chains, top-level contract tests, and hash-backed approval checks before
 SoC closure. It intentionally blocks until human approval artifacts exist.
 
 Recommendation: treat the current state as a **document-driven layered flow with
-enforced approval gates and a legacy compatibility closure runner**. The next
-improvement should reduce the remaining legacy orchestration surface, not bypass
-the human approval stop.
+enforced approval gates and a top-level closure orchestrator under
+`earphone/top/`**. The next improvement should reduce the remaining legacy
+helper surface, not bypass the human approval stop.
 
 ## Design Goal Interpreted From README/Tutorial
 
@@ -641,7 +641,7 @@ This currently reports:
 
 Remaining limitations:
 
-- The full SoC closure path is now invoked by `flow.py` through the callable `run_legacy_full_soc_flow()`, and `--top-level` first runs all discovered module-layer checks plus top-level SoC contract tests. The top-level SoC now has first-class L0/L3/L4/L5/L6 contract files under `earphone/top/`, and L5 owns the `EarphoneTop` implementation. The remaining compatibility surface is orchestration: legacy full-SoC generation still runs through `design_earphone.py` after approvals.
+- The full SoC closure path is now invoked by `flow.py` through a top-level closure orchestrator under `earphone/top/src/closure.py`, and `--top-level` first runs all discovered module-layer checks plus top-level SoC contract tests. The top-level SoC now has first-class L0/L3/L4/L5/L6 contract files under `earphone/top/`, and L5 owns the `EarphoneTop` implementation. The remaining compatibility surface is implementation detail reuse: the closure context still delegates several concrete helper steps from `design_earphone.py`.
 - Human approval gates are now enforced by approval artifacts, but the repository currently has no human approval files checked in. This is intentional: `python -m earphone.flow --top-level` now blocks until module-level `CP0_MODULE.<module>.json` and SoC-level `CP1_SOC.json` approvals exist and match reviewed artifact hashes.
 - Several non-RV32 L3/L4 contracts are now executable and testable, but they are still intentionally minimal. They establish traceable layer boundaries and verification hooks, not yet full architecture-planning richness.
 - Feedback is structured and blocking, but automatic semantic repair across layers is still future work; the current behavior stops the flow and records where the repair should feed back.
@@ -708,7 +708,7 @@ Current status against the user's confirmation items:
 2. Test plans and test reports are generated and carried per layer, plus module-level rollups.
 3. Intermediate problems now feed back through both module `docgen_feedback.json` and top-level `flow_feedback.json`.
 4. Top-level SoC closure cannot run through the supported flow until all module approvals and SoC approval exist and their artifact hashes are current.
-5. Remaining work is no longer approval-gate enforcement or top-level L5 ownership; it is shrinking the legacy full-SoC orchestration surface once the approved closure runner can be replaced.
+5. Remaining work is no longer approval-gate enforcement, top-level L5 ownership, or top-level closure orchestration location; it is shrinking the remaining legacy helper surface behind the approved closure runner.
 
 ## Implementation Update - First-Class Top-Level SoC Contracts - 2026-06-16
 
@@ -733,7 +733,7 @@ python -m pytest earphone/top -q
 
 Result:
 
-- `11 passed`
+- `13 passed`
 
 ```bash
 python -m pytest tests/test_doc_templates.py tests/test_approval_flow.py -q
@@ -741,7 +741,7 @@ python -m pytest tests/test_doc_templates.py tests/test_approval_flow.py -q
 
 Result:
 
-- `18 passed`
+- `21 passed`
 
 ```bash
 python -m earphone.flow --top-level --check
@@ -750,7 +750,7 @@ python -m earphone.flow --top-level --check
 Result:
 
 - all seven module layer chains pass
-- top-level contracts: `11/11 passed`
+- top-level contracts: `13/13 passed`
 
 ```bash
 python -m earphone.flow --top-level
@@ -784,4 +784,20 @@ Current status after this migration:
 1. Documents, test plans, and test reports are still refined and passed through module IR layers and top-level SoC contracts.
 2. Intermediate failures can still feed back through module `docgen_feedback.json` and top-level `flow_feedback.json`.
 3. The supported top-level flow still blocks on missing human approval artifacts before full SoC closure.
-4. The remaining legacy boundary is `run_legacy_full_soc_flow()` orchestration, which should be retired only after equivalent top-level generation/review bundle behavior exists in `earphone.flow`.
+4. The remaining legacy boundary is no longer orchestration ownership. It is the reuse of concrete helper implementations from `design_earphone.py`, which should be retired step-by-step only after equivalent top-level layer-local helpers exist.
+
+## Implementation Update - Top-Level Closure Orchestrator Migration - 2026-06-16
+
+This pass moved supported top-level closure orchestration out of the monolithic
+design file and into the document-driven top package:
+
+- Added `earphone/top/src/closure.py` as the canonical top-level closure orchestrator.
+- Updated `earphone/flow.py` so the supported `--top-level` path calls that orchestrator directly.
+- Updated `design_earphone.py` so `run_legacy_full_soc_flow()` now delegates to the same orchestrator through a compatibility context builder.
+- Added top-level orchestration tests, increasing top-level contract coverage from `11` to `13` tests.
+
+Current status after this migration:
+
+1. `earphone.flow` owns the supported top-level closure entrypoint and the orchestration sequence.
+2. `design_earphone.py` still provides several concrete closure helper implementations, but no longer owns the closure sequence itself.
+3. Approval behavior is unchanged: `python -m earphone.flow --top-level` still stops at missing `CP0_MODULE.*` and `CP1_SOC` artifacts until human review is recorded.

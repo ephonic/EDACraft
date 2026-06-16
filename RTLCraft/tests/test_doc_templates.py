@@ -153,6 +153,8 @@ class TestDocTemplates:
     def test_design_earphone_exposes_callable_full_soc_runner(self):
         design = importlib.import_module("earphone.design_earphone")
         assert hasattr(design, "run_legacy_full_soc_flow")
+        assert hasattr(design, "build_legacy_top_level_closure_context")
+        assert hasattr(design, "run_design_scaffold_phase")
         assert hasattr(design, "main")
 
 

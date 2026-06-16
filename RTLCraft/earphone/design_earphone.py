@@ -70,6 +70,7 @@ from earphone.constraints import (
     build_earphone_scaffold_propagator,
     EARPHONE_LAYERS,
 )
+from earphone.top.src.closure import run_top_level_closure
 
 # Increase recursion limit for deep module hierarchies
 sys.setrecursionlimit(10000)
@@ -1113,11 +1114,8 @@ EarphoneTop
     print("  Wrote 01_spec_review.md .. 08_ppa_review.md")
 
 
-def run_legacy_full_soc_flow() -> int:
-    """Run the legacy full SoC flow and return an exit code."""
-    # =====================================================================
-    # Phase E: Design Scaffold — standardized agent loop
-    # =====================================================================
+def run_design_scaffold_phase() -> tuple[bool, dict, list, list]:
+    """Run the design scaffold phase and persist traceability artifacts."""
     from rtlgen import DesignScaffold, DesignDecision, ConstraintFeedback, generate_constraint_report
 
     propagator = build_earphone_scaffold_propagator()
@@ -1273,65 +1271,32 @@ def run_legacy_full_soc_flow() -> int:
         f.write(scaffold.generate_decision_log())
     print(f"  wrote {decision_log_path}")
 
-    # =====================================================================
-    # Standard Spec2RTL flow
-    # =====================================================================
+    return scaffold_ok, checklist, feedback, resolved_feedback
+
+
+def build_legacy_top_level_closure_context() -> dict:
+    """Return the current top-level closure steps for the shared orchestrator."""
     # Generate FFT twiddle files first
     print("\n[Setup] Generating FFT256 twiddle tables...")
     from design_scripts.design_fft import generate_twiddle_hex
     re_path, im_path = generate_twiddle_hex(256, 16, out_dir="earphone/twiddle")
     print(f"  {re_path}\n  {im_path}")
 
-    # Review bundle
-    generate_review_bundle()
+    return {
+        "review_bundle_fn": generate_review_bundle,
+        "l1_tests_fn": run_functional_tests,
+        "l3_tests_fn": run_dsl_sim_tests,
+        "cross_layer_fn": run_layer_verification,
+        "verilog_fn": generate_verilog,
+        "intent_tests_fn": run_intent_driven_tests,
+        "cocotb_gen_fn": generate_cocotb_tests_from_constraints,
+        "scaffold_fn": run_design_scaffold_phase,
+    }
 
-    # Layer 1 tests
-    l1_ok, l1_results = run_functional_tests()
 
-    # Layer 3 tests
-    l3_ok, l3_results = run_dsl_sim_tests()
-
-    # Cross-layer
-    xlayer_ok, xlayer_results = run_layer_verification()
-
-    # Verilog generation
-    gen_results = generate_verilog()
-
-    # Cross-layer constraint propagation, artifact generation, and backward
-    # validation are now handled by the DesignScaffold above.
-
-    # Intent-driven tests (Phase D)
-    intent_ok, intent_results = run_intent_driven_tests()
-
-    # cocotb test generation (Phase D)
-    generate_cocotb_tests_from_constraints()
-
-    # Summary
-    print("\n" + "=" * 70)
-    print("SMART EARPHONE SoC — DESIGN SUMMARY")
-    print("=" * 70)
-    print(f"  Scaffold compliance   : {sum(checklist.values())}/{len(checklist)} OK")
-    print(f"  L1 functional tests   : {sum(1 for _, ok in l1_results if ok)}/{len(l1_results)} PASS")
-    print(f"  L3 DSL sim tests      : {sum(1 for _, ok in l3_results if ok)}/{len(l3_results)} PASS")
-    print(f"  Cross-layer checks    : {sum(1 for _, ok in xlayer_results if ok)}/{len(xlayer_results)} PASS")
-    print(f"  Intent-driven tests   : {sum(1 for _, ok in intent_results if ok)}/{len(intent_results)} PASS")
-    print(f"  Verilog modules       : {sum(1 for r in gen_results if r[1])}/{len(gen_results)} generated")
-    total_lines = sum(r[2] for r in gen_results if r[1])
-    total_lint = sum(r[3] for r in gen_results if r[1])
-    print(f"  Total Verilog lines   : {total_lines}")
-    print(f"  Total lint issues     : {total_lint}")
-    print("=" * 70)
-
-    all_ok = (
-        scaffold_ok
-        and l1_ok
-        and l3_ok
-        and xlayer_ok
-        and intent_ok
-        and all(r[1] for r in gen_results)
-    )
-    print(f"\n  Overall: {'PASS' if all_ok else 'FAIL'}")
-    return 0 if all_ok else 1
+def run_legacy_full_soc_flow() -> int:
+    """Run the legacy full SoC flow and return an exit code."""
+    return run_top_level_closure(**build_legacy_top_level_closure_context())
 
 
 def _legacy_entrypoint_approval_ok() -> bool:

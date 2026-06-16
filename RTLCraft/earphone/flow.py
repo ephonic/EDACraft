@@ -35,6 +35,7 @@ from earphone.approval import (
     approval_path,
     validate_approval,
 )
+from earphone.top.src.closure import run_top_level_closure
 
 
 _LAYER_ORDER = [
@@ -227,9 +228,9 @@ def _write_flow_feedback(status: str, items: List[Dict[str, str]]) -> str:
 def _run_legacy_full_soc() -> int:
     print("\n[Legacy] Run full SoC flow")
     sys.stdout.flush()
-    from earphone.design_earphone import run_legacy_full_soc_flow
+    from earphone.design_earphone import build_legacy_top_level_closure_context
 
-    result = run_legacy_full_soc_flow()
+    result = run_top_level_closure(**build_legacy_top_level_closure_context())
     if result != 0:
         print("  Full SoC flow FAILED")
     return result
