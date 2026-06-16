@@ -1,15 +1,15 @@
-"""Tests for the EarphoneTop L5 DSL wrapper."""
+"""Tests for the EarphoneTop L5 DSL implementation."""
 
 from earphone.top.layer_L5_dsl.src.dsl import build_top, describe
 
 
-def test_top_dsl_wrapper_builds_earphone_top():
+def test_top_dsl_builds_earphone_top():
     top = build_top()
     assert top.name == "earphone_top"
     assert type(top).__name__ == "EarphoneTop"
 
 
-def test_top_dsl_wrapper_exposes_required_ports():
+def test_top_dsl_exposes_required_ports():
     top = build_top()
     required_ports = {
         "clk": 1,
@@ -26,9 +26,10 @@ def test_top_dsl_wrapper_exposes_required_ports():
         assert getattr(getattr(top, port), "width") == width
 
 
-def test_top_dsl_describe_records_compatibility_status():
+def test_top_dsl_describe_records_implementation_status():
     info = describe()
-    assert info["status"] == "compatibility_wrapper"
+    assert info["status"] == "implemented"
     assert info["dsl_object_name"] == "earphone_top"
     assert info["verilog_module_name"] == "EarphoneTop"
+    assert info["source"] == "earphone.top.layer_L5_dsl.src.dsl.EarphoneTop"
     assert "apb_paddr" in info["external_ports"]
