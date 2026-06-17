@@ -799,5 +799,5 @@ design file and into the document-driven top package:
 Current status after this migration:
 
 1. `earphone.flow` owns the supported top-level closure entrypoint and the orchestration sequence.
-2. `design_earphone.py` still provides several concrete closure helper implementations, but no longer owns the closure sequence itself.
+2. `design_earphone.py` no longer owns the review-bundle helper, Verilog bundle helper, intent/cocotb artifact helpers, scaffold runner, or verification runners; those now live under `earphone/top/src/`. The legacy file is now primarily a compatibility entrypoint and dependency wiring surface for the migrated top package.
 3. Approval behavior is unchanged: `python -m earphone.flow --top-level` still stops at missing `CP0_MODULE.*` and `CP1_SOC` artifacts until human review is recorded.
