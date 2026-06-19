@@ -1,5 +1,11 @@
 from rtlgen_x.archsim import (
     ArchitectureModel,
+    build_all_reference_scenarios,
+    build_controller_scenario,
+    build_cpu_in_order_scenario,
+    build_gpu_throughput_scenario,
+    build_npu_systolic_scenario,
+    build_streaming_datapath_scenario,
     BehaviorSimulator,
     CycleSimulator,
     FlowSpec,
@@ -86,3 +92,70 @@ def test_cycle_level_handles_shared_resources_for_cpu_and_gpu_style_flows():
     assert report.flow_metrics["cpu_ctrl"].completed_tokens == 3
     assert report.flow_metrics["gpu_wave"].completed_tokens == 5
     assert report.stage_metrics["shared_mem"].max_ready_depth >= 1
+
+
+def test_archsim_reference_presets_cover_all_target_domains():
+    scenario_names = [scenario.name for scenario in build_all_reference_scenarios()]
+    assert scenario_names == [
+        "cpu_in_order",
+        "gpu_throughput",
+        "npu_systolic",
+        "controller",
+        "streaming_datapath",
+    ]
+
+
+def test_cpu_preset_exposes_memory_contention_and_loads():
+    scenario = build_cpu_in_order_scenario(alu_tokens=10, load_tokens=4)
+
+    behavior = BehaviorSimulator().run(scenario.model, scenario.workload)
+    cycle = CycleSimulator().run(scenario.model, scenario.workload)
+
+    assert behavior.flow_metrics["load_ops"].bottleneck_stage == "lsu"
+    assert cycle.flow_metrics["load_ops"].completed_tokens == 4
+    assert cycle.stage_metrics["lsu"].started_tokens == 4
+
+
+def test_gpu_preset_moves_bytes_through_compute_and_memory_paths():
+    scenario = build_gpu_throughput_scenario(warp_tokens=12, memory_tokens=6)
+
+    behavior = BehaviorSimulator().run(scenario.model, scenario.workload)
+    cycle = CycleSimulator().run(scenario.model, scenario.workload)
+
+    assert behavior.stage_metrics["coalescer"].bytes_moved > 0
+    assert behavior.stage_metrics["shared_mem"].tokens == 6
+    assert cycle.flow_metrics["warp_compute"].completed_tokens == 12
+    assert cycle.flow_metrics["warp_memory"].completed_tokens == 6
+
+
+def test_npu_preset_models_activation_and_weight_feeds():
+    scenario = build_npu_systolic_scenario(tiles=8, bytes_per_tile=128)
+
+    behavior = BehaviorSimulator().run(scenario.model, scenario.workload)
+    cycle = CycleSimulator().run(scenario.model, scenario.workload)
+
+    assert behavior.stage_metrics["mac_array"].tokens == 16
+    assert behavior.flow_metrics["activation_tiles"].bytes_moved == 8 * 128 * 3
+    assert cycle.stage_metrics["mac_array"].started_tokens == 16
+
+
+def test_controller_preset_stays_control_dominated():
+    scenario = build_controller_scenario(transactions=9)
+
+    behavior = BehaviorSimulator().run(scenario.model, scenario.workload)
+    cycle = CycleSimulator().run(scenario.model, scenario.workload)
+
+    assert behavior.stage_metrics["fsm"].kind == "control"
+    assert cycle.flow_metrics["control_path"].completed_tokens == 9
+    assert cycle.stage_metrics["arbiter"].max_ready_depth >= 1
+
+
+def test_streaming_datapath_preset_finishes_full_burst():
+    scenario = build_streaming_datapath_scenario(tokens=20, bytes_per_token=24)
+
+    behavior = BehaviorSimulator().run(scenario.model, scenario.workload)
+    cycle = CycleSimulator().run(scenario.model, scenario.workload)
+
+    assert behavior.flow_metrics["stream_burst"].bytes_moved == 20 * 24 * 4
+    assert cycle.flow_metrics["stream_burst"].completed_tokens == 20
+    assert cycle.stage_metrics["egress_link"].busy_token_cycles >= 20

@@ -15,6 +15,12 @@ _ALLOWED_STAGE_KINDS = {
     "custom",
 }
 
+_BANDWIDTH_LIMITED_STAGE_KINDS = {
+    "memory",
+    "interconnect",
+    "datapath",
+}
+
 
 @dataclass(frozen=True)
 class StageSpec:
@@ -126,6 +132,23 @@ class ArchitectureModel:
         stage = self.stage(stage_name)
         return stage.queue_depth if stage.queue_depth > 0 else stage.capacity
 
+    def stage_service_initiation_interval(self, stage_name: str, flow: FlowSpec) -> int:
+        """Return the effective service II for one flow at one stage."""
+
+        self.validate_flow(flow)
+        stage = self.stage(stage_name)
+        service_ii = stage.initiation_interval
+        if (
+            flow.bytes_per_token > 0
+            and stage.bandwidth_bytes_per_cycle > 0
+            and stage.kind in _BANDWIDTH_LIMITED_STAGE_KINDS
+        ):
+            bandwidth_ii = (
+                flow.bytes_per_token + stage.bandwidth_bytes_per_cycle - 1
+            ) // stage.bandwidth_bytes_per_cycle
+            service_ii = max(service_ii, bandwidth_ii)
+        return service_ii
+
     def path_latency(self, flow: FlowSpec) -> int:
         self.validate_flow(flow)
         return sum(self.stage(stage_name).latency for stage_name in flow.path)
@@ -136,7 +159,7 @@ class ArchitectureModel:
         worst_ii = -1.0
         for stage_name in flow.path:
             stage = self.stage(stage_name)
-            service_ii = stage.initiation_interval / stage.capacity
+            service_ii = self.stage_service_initiation_interval(stage_name, flow) / stage.capacity
             if service_ii > worst_ii:
                 worst_ii = service_ii
                 worst_name = stage_name

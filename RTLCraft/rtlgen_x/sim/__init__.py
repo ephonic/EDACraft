@@ -10,6 +10,7 @@ from rtlgen_x.sim.benchmark import (
     generate_stress_inputs,
     iter_stress_input_rows,
 )
+from rtlgen_x.sim.cosim import CosimMismatch, LegacyRtlCosimReport, run_legacy_rtl_cosim
 from rtlgen_x.sim.cpp_backend import (
     Assignment,
     BinaryExpr,
@@ -56,8 +57,11 @@ __all__ = [
     "benchmark_compiled_speedup",
     "benchmark_streaming_capacity",
     "build_stress_module",
+    "CosimMismatch",
     "generate_stress_input_buffer",
     "generate_stress_inputs",
     "iter_stress_input_rows",
+    "LegacyRtlCosimReport",
     "pack_u64_words",
+    "run_legacy_rtl_cosim",
 ]

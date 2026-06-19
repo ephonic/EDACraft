@@ -167,7 +167,8 @@ class CycleSimulator:
                     if lane_ready_cycle > cycle or not runtime.ready:
                         continue
                     token = runtime.ready.popleft()
-                    runtime.lane_ready_times[lane_idx] = cycle + stage.initiation_interval
+                    flow = flow_by_name[token.flow_name]
+                    runtime.lane_ready_times[lane_idx] = cycle + model.stage_service_initiation_interval(stage_name, flow)
                     runtime.active.append((cycle + stage.latency, lane_idx, token))
                     stage_stats[stage_name]["started_tokens"] += 1
                 stage_stats[stage_name]["busy_token_cycles"] += len(runtime.active)
