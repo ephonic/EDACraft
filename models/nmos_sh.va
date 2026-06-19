@@ -1,0 +1,45 @@
+// Shichman-Hodges Level-1 NMOS Verilog-A model (square-law, 4-terminal)
+// Simplest MOSFET model for OSDI integration testing.
+`include "disciplines.vams"
+
+module nmos_sh(d, g, s, b);
+    inout d, g, s, b;
+    electrical d, g, s, b;
+
+    parameter real vth0 = 0.7;      // threshold voltage (V)
+    parameter real kp = 50e-6;      // transconductance param (A/V^2), = mu*Cox*W/(2*L)
+    parameter real gamma = 0.0;     // body effect coefficient
+    parameter real phi = 0.6;       // surface potential (V)
+    parameter real lambda = 0.05;   // channel-length modulation (1/V)
+
+    real vgs, vds, vbs, vth, vgsat, id, beta;
+
+    analog begin
+        vgs = V(g) - V(s);
+        vds = V(d) - V(s);
+        vbs = V(b) - V(s);
+
+        // Threshold with body effect
+        vth = vth0 + gamma*(tanh(sqrt(phi - vbs)) - tanh(sqrt(phi)));
+        beta = kp;
+
+        if (vgs <= vth) begin
+            // Cutoff
+            id = 0;
+        end else begin
+            vgsat = vgs - vth;
+            if (vds >= vgsat) begin
+                // Saturation: Id = (beta/2) * Vgsat^2 * (1 + lambda*Vds)
+                id = 0.5 * beta * vgsat*vgsat * (1.0 + lambda*vds);
+            end else begin
+                // Linear/Triode: Id = beta * ((Vgsat - Vds/2) * Vds)
+                id = beta * ((vgsat - 0.5*vds) * vds) * (1.0 + lambda*vds);
+            end
+        end
+
+        // Drain current flows d -> s
+        I(d) <+ id;
+        I(s) <+ -id;
+        // Gate and body currents ~0 (quasi-static ideal)
+    end
+endmodule

@@ -1,0 +1,28 @@
+# Build outputs
+/build/
+/out/
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.exe
+*.exp
+*.pdb
+*.ilk
+
+# Generated / downloaded tools and model binaries
+/tools/openvaf.exe
+/tools/openvaf.tar.gz
+/models/*.dll
+/models/*.lib
+/models/*.exp
+/models/*.so
+
+# IDE
+/.vscode/
+/.idea/
+
+# OS
+.DS_Store
+Thumbs.db
