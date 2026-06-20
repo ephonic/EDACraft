@@ -60,6 +60,23 @@ class Axi4Transfer:
     label: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class CsrTransfer:
+    addr: int
+    write: bool
+    wdata: int = 0
+    expected_rdata: Optional[int] = None
+    label: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class InterruptEvent:
+    irq_mask: int
+    cycles: int = 1
+    expected_pending: Optional[int] = None
+    label: Optional[str] = None
+
+
 def apb_sequence(
     transfers: Sequence[ApbTransfer],
     *,
@@ -217,6 +234,61 @@ def register_reference_model(
             return tuple(self.predict(inputs) for inputs in inputs_list)
 
     return _RegisterReferenceModel()
+
+
+def csr_reference_model(
+    *,
+    storage: Optional[Mapping[int, int]] = None,
+    read_output_name: str = "rdata",
+) -> object:
+    class _CsrReferenceModel:
+        def __init__(self) -> None:
+            self._initial = dict(storage or {})
+            self._storage = dict(self._initial)
+
+        def reset(self) -> None:
+            self._storage = dict(self._initial)
+
+        def predict(self, inputs: Mapping[str, int]) -> Dict[str, int]:
+            outputs = {read_output_name: 0}
+            if inputs.get("csr_valid", 0):
+                addr = int(inputs.get("csr_addr", 0))
+                if inputs.get("csr_write", 0):
+                    self._storage[addr] = int(inputs.get("csr_wdata", 0))
+                else:
+                    outputs[read_output_name] = int(self._storage.get(addr, 0))
+            return outputs
+
+        def predict_batch(self, inputs_list: Sequence[Mapping[str, int]]) -> Tuple[Dict[str, int], ...]:
+            return tuple(self.predict(inputs) for inputs in inputs_list)
+
+    return _CsrReferenceModel()
+
+
+def interrupt_reference_model(
+    *,
+    initial_pending: int = 0,
+    pending_output_name: str = "irq_pending",
+) -> object:
+    class _InterruptReferenceModel:
+        def __init__(self) -> None:
+            self._initial_pending = int(initial_pending)
+            self._pending = self._initial_pending
+
+        def reset(self) -> None:
+            self._pending = self._initial_pending
+
+        def predict(self, inputs: Mapping[str, int]) -> Dict[str, int]:
+            if inputs.get("irq_set", 0):
+                self._pending |= int(inputs.get("irq_mask", 0))
+            if inputs.get("irq_clear", 0):
+                self._pending &= ~int(inputs.get("irq_mask", 0))
+            return {pending_output_name: self._pending}
+
+        def predict_batch(self, inputs_list: Sequence[Mapping[str, int]]) -> Tuple[Dict[str, int], ...]:
+            return tuple(self.predict(inputs) for inputs in inputs_list)
+
+    return _InterruptReferenceModel()
 
 
 def axi_memory_reference_model(
@@ -427,6 +499,89 @@ def axi4_sequence(
                 )
         for _ in range(idle_cycles_between):
             items.append(PythonUvmSequenceItem(inputs={**base}, label=f"{transfer.label}_idle" if transfer.label else None))
+    return tuple(items)
+
+
+def csr_sequence(
+    transfers: Sequence[CsrTransfer],
+    *,
+    addr_name: str = "csr_addr",
+    valid_name: str = "csr_valid",
+    write_name: str = "csr_write",
+    wdata_name: str = "csr_wdata",
+    read_output_name: str = "rdata",
+    idle_cycles_between: int = 0,
+    extra_inputs: Optional[Mapping[str, int]] = None,
+) -> Tuple[PythonUvmSequenceItem, ...]:
+    items = []
+    base = dict(extra_inputs or {})
+    for transfer in transfers:
+        expected = (
+            {read_output_name: int(transfer.expected_rdata)}
+            if (not transfer.write and transfer.expected_rdata is not None)
+            else None
+        )
+        items.append(
+            PythonUvmSequenceItem(
+                inputs={
+                    **base,
+                    addr_name: int(transfer.addr),
+                    valid_name: 1,
+                    write_name: int(transfer.write),
+                    wdata_name: int(transfer.wdata),
+                },
+                expected=expected,
+                label=transfer.label,
+            )
+        )
+        for _ in range(idle_cycles_between):
+            items.append(
+                PythonUvmSequenceItem(
+                    inputs={**base, valid_name: 0, write_name: 0, wdata_name: 0, addr_name: 0},
+                    label=f"{transfer.label}_idle" if transfer.label else None,
+                )
+            )
+    return tuple(items)
+
+
+def interrupt_sequence(
+    events: Sequence[InterruptEvent],
+    *,
+    set_name: str = "irq_set",
+    clear_name: str = "irq_clear",
+    mask_name: str = "irq_mask",
+    pending_output_name: str = "irq_pending",
+    clear_between: bool = False,
+    extra_inputs: Optional[Mapping[str, int]] = None,
+) -> Tuple[PythonUvmSequenceItem, ...]:
+    items = []
+    base = dict(extra_inputs or {})
+    for event in events:
+        for cycle in range(event.cycles):
+            expected = (
+                {pending_output_name: int(event.expected_pending)}
+                if event.expected_pending is not None and cycle == event.cycles - 1
+                else None
+            )
+            items.append(
+                PythonUvmSequenceItem(
+                    inputs={
+                        **base,
+                        set_name: 1 if cycle == 0 else 0,
+                        clear_name: 0,
+                        mask_name: int(event.irq_mask),
+                    },
+                    expected=expected,
+                    label=event.label,
+                )
+            )
+        if clear_between:
+            items.append(
+                PythonUvmSequenceItem(
+                    inputs={**base, set_name: 0, clear_name: 1, mask_name: int(event.irq_mask)},
+                    label=f"{event.label}_clear" if event.label else None,
+                )
+            )
     return tuple(items)
 
 

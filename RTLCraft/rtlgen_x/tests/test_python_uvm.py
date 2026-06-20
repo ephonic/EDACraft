@@ -3,11 +3,26 @@ import json
 from pathlib import Path
 
 from rtlgen_x.dsl import Else, If, Input, Module, Output, Reg, build_compiled_simulator_from_legacy
-from rtlgen_x.sim import Assignment, BinaryExpr, ConstExpr, CppBackendScaffold, Signal, SignalRef, SimModule
+from rtlgen_x.sim import (
+    Assignment,
+    BinaryExpr,
+    ConstExpr,
+    CppBackendScaffold,
+    Memory,
+    MemoryReadExpr,
+    MemoryWrite,
+    MuxExpr,
+    Signal,
+    SignalRef,
+    SimModule,
+    UnaryExpr,
+)
 from rtlgen_x.verify import (
     ApbTransfer,
     Axi4Transfer,
     AxiStreamTransfer,
+    CsrTransfer,
+    InterruptEvent,
     PythonUvmCoverage,
     PythonUvmSequenceItem,
     PythonUvmSequenceLibrary,
@@ -16,7 +31,11 @@ from rtlgen_x.verify import (
     axi4_sequence,
     axi_memory_reference_model,
     axistream_sequence,
+    csr_reference_model,
+    csr_sequence,
     dump_python_uvm_triage,
+    interrupt_reference_model,
+    interrupt_sequence,
     register_reference_model,
     run_python_uvm_test,
     wishbone_sequence,
@@ -67,6 +86,190 @@ def _load_external_module(rel_path: str, class_name: str):
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return getattr(module, class_name)()
+
+
+def _stimulus_only(sequence):
+    return tuple(
+        PythonUvmSequenceItem(
+            inputs=dict(item.inputs),
+            label=item.label,
+        )
+        for item in sequence
+    )
+
+
+def _csr_storage_module() -> SimModule:
+    return SimModule(
+        name="csr_storage",
+        signals=(
+            Signal("csr_addr", width=8, kind="input"),
+            Signal("csr_valid", width=1, kind="input"),
+            Signal("csr_write", width=1, kind="input"),
+            Signal("csr_wdata", width=32, kind="input"),
+            Signal("rdata", width=32, kind="output"),
+        ),
+        assignments=(
+            Assignment(
+                "rdata",
+                MuxExpr(
+                    SignalRef("csr_valid"),
+                    MuxExpr(
+                        SignalRef("csr_write"),
+                        ConstExpr(0, 32),
+                        MemoryReadExpr("csr_mem", SignalRef("csr_addr")),
+                    ),
+                    ConstExpr(0, 32),
+                ),
+            ),
+        ),
+        outputs=("rdata",),
+        memories=(Memory("csr_mem", width=32, depth=256),),
+        memory_writes=(
+            MemoryWrite(
+                "csr_mem",
+                SignalRef("csr_addr"),
+                SignalRef("csr_wdata"),
+                enable=BinaryExpr("&", SignalRef("csr_valid"), SignalRef("csr_write")),
+            ),
+        ),
+    )
+
+
+def _interrupt_controller_module() -> SimModule:
+    return SimModule(
+        name="irq_controller",
+        signals=(
+            Signal("irq_set", width=1, kind="input"),
+            Signal("irq_clear", width=1, kind="input"),
+            Signal("irq_mask", width=8, kind="input"),
+            Signal("pending", width=8, kind="state"),
+            Signal("irq_pending", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("irq_pending", SignalRef("pending")),
+            Assignment(
+                "pending",
+                MuxExpr(
+                    SignalRef("irq_clear"),
+                    BinaryExpr("&", SignalRef("pending"), UnaryExpr("~", SignalRef("irq_mask"))),
+                    MuxExpr(
+                        SignalRef("irq_set"),
+                        BinaryExpr("|", SignalRef("pending"), SignalRef("irq_mask")),
+                        SignalRef("pending"),
+                    ),
+                ),
+                phase="seq",
+            ),
+        ),
+        outputs=("irq_pending",),
+        outputs_post_state=True,
+    )
+
+
+def _axi4_memory_module() -> SimModule:
+    word_addr = BinaryExpr(">>", SignalRef("awaddr"), ConstExpr(2, 32))
+    read_addr = BinaryExpr(">>", SignalRef("araddr"), ConstExpr(2, 32))
+    read_active = BinaryExpr("!=", SignalRef("rd_rem"), ConstExpr(0, 8))
+    last_read = BinaryExpr("==", SignalRef("rd_rem"), ConstExpr(1, 8))
+    return SimModule(
+        name="axi_mem_model",
+        signals=(
+            Signal("awaddr", width=32, kind="input"),
+            Signal("awvalid", width=1, kind="input"),
+            Signal("awlen", width=8, kind="input"),
+            Signal("awsize", width=3, kind="input"),
+            Signal("awburst", width=2, kind="input"),
+            Signal("awid", width=4, kind="input"),
+            Signal("wdata", width=32, kind="input"),
+            Signal("wvalid", width=1, kind="input"),
+            Signal("wlast", width=1, kind="input"),
+            Signal("araddr", width=32, kind="input"),
+            Signal("arvalid", width=1, kind="input"),
+            Signal("arlen", width=8, kind="input"),
+            Signal("arsize", width=3, kind="input"),
+            Signal("arburst", width=2, kind="input"),
+            Signal("arid", width=4, kind="input"),
+            Signal("wr_addr", width=8, kind="state"),
+            Signal("rd_addr", width=8, kind="state"),
+            Signal("rd_rem", width=8, kind="state"),
+            Signal("bvalid_state", width=1, kind="state"),
+            Signal("bvalid", width=1, kind="output"),
+            Signal("rdata", width=32, kind="output"),
+            Signal("rvalid", width=1, kind="output"),
+            Signal("rlast", width=1, kind="output"),
+        ),
+        assignments=(
+            Assignment("bvalid", SignalRef("bvalid_state")),
+            Assignment(
+                "rdata",
+                MuxExpr(
+                    read_active,
+                    MemoryReadExpr("mem", SignalRef("rd_addr")),
+                    ConstExpr(0, 32),
+                ),
+            ),
+            Assignment("rvalid", read_active),
+            Assignment("rlast", last_read),
+            Assignment(
+                "wr_addr",
+                MuxExpr(
+                    SignalRef("awvalid"),
+                    MuxExpr(
+                        SignalRef("wvalid"),
+                        BinaryExpr("+", word_addr, ConstExpr(1, 32)),
+                        word_addr,
+                    ),
+                    MuxExpr(
+                        SignalRef("wvalid"),
+                        BinaryExpr("+", SignalRef("wr_addr"), ConstExpr(1, 8)),
+                        SignalRef("wr_addr"),
+                    ),
+                ),
+                phase="seq",
+            ),
+            Assignment(
+                "bvalid_state",
+                BinaryExpr("&", SignalRef("wvalid"), SignalRef("wlast")),
+                phase="seq",
+            ),
+            Assignment(
+                "rd_addr",
+                MuxExpr(
+                    SignalRef("arvalid"),
+                    read_addr,
+                    MuxExpr(
+                        read_active,
+                        BinaryExpr("+", SignalRef("rd_addr"), ConstExpr(1, 8)),
+                        SignalRef("rd_addr"),
+                    ),
+                ),
+                phase="seq",
+            ),
+            Assignment(
+                "rd_rem",
+                MuxExpr(
+                    SignalRef("arvalid"),
+                    BinaryExpr("+", SignalRef("arlen"), ConstExpr(1, 8)),
+                    MuxExpr(
+                        read_active,
+                        BinaryExpr("-", SignalRef("rd_rem"), ConstExpr(1, 8)),
+                        SignalRef("rd_rem"),
+                    ),
+                ),
+                phase="seq",
+            ),
+        ),
+        outputs=("bvalid", "rdata", "rvalid", "rlast"),
+        memories=(Memory("mem", width=32, depth=256),),
+        memory_writes=(
+            MemoryWrite(
+                "mem",
+                MuxExpr(SignalRef("awvalid"), word_addr, SignalRef("wr_addr")),
+                SignalRef("wdata"),
+                enable=SignalRef("wvalid"),
+            ),
+        ),
+    )
 
 
 def test_python_uvm_uses_reference_model_by_default():
@@ -379,56 +582,100 @@ def test_python_uvm_supports_axistream_sequences():
 
 
 def test_python_uvm_supports_axi4_burst_sequences_with_memory_reference_model():
-    module = SimModule(
-        name="axi_mem",
-        signals=(
-            Signal("awaddr", width=32, kind="input"),
-            Signal("awvalid", width=1, kind="input"),
-            Signal("awlen", width=8, kind="input"),
-            Signal("awsize", width=3, kind="input"),
-            Signal("awburst", width=2, kind="input"),
-            Signal("awid", width=4, kind="input"),
-            Signal("wdata", width=32, kind="input"),
-            Signal("wvalid", width=1, kind="input"),
-            Signal("wlast", width=1, kind="input"),
-            Signal("araddr", width=32, kind="input"),
-            Signal("arvalid", width=1, kind="input"),
-            Signal("arlen", width=8, kind="input"),
-            Signal("arsize", width=3, kind="input"),
-            Signal("arburst", width=2, kind="input"),
-            Signal("arid", width=4, kind="input"),
-            Signal("bvalid", width=1, kind="output"),
-            Signal("rdata", width=32, kind="output"),
-            Signal("rvalid", width=1, kind="output"),
-            Signal("rlast", width=1, kind="output"),
-        ),
-        assignments=(
-            Assignment("bvalid", ConstExpr(0, 1)),
-            Assignment("rdata", ConstExpr(0, 32)),
-            Assignment("rvalid", ConstExpr(0, 1)),
-            Assignment("rlast", ConstExpr(0, 1)),
-        ),
-        outputs=("bvalid", "rdata", "rvalid", "rlast"),
-    )
-    sequence = axi4_sequence(
-        (
-            Axi4Transfer(addr=0x10, write=True, beats=(0x11111111, 0x22222222), burst_len=2, label="wr"),
-            Axi4Transfer(addr=0x10, write=False, expected_rdata=(0x11111111, 0x22222222), burst_len=2, label="rd"),
+    module = _axi4_memory_module()
+    sequence = _stimulus_only(
+        axi4_sequence(
+            (
+                Axi4Transfer(addr=0x10, write=True, beats=(0x11111111, 0x22222222), burst_len=2, label="wr"),
+                Axi4Transfer(addr=0x10, write=False, burst_len=2, label="rd"),
+            )
         )
     )
     ref_model = axi_memory_reference_model(storage={}, read_data_name="rdata")
 
-    def expected_fn(cycle, inputs):
-        return ref_model.predict(inputs)
-
     report = run_python_uvm_test(
         module,
-        sequence,
-        expected_fn=expected_fn,
+        (
+            *sequence,
+            PythonUvmSequenceItem(inputs={}),
+        ),
+        reference_model=ref_model,
         name="python_uvm_axi4_burst",
     )
 
-    assert report.passed is False
+    read_beats = [trace for trace in report.traces if trace.expected.get("rvalid") == 1]
+    assert report.passed is True
     assert report.coverage["labels_seen"]["wr"] >= 2
-    assert report.traces[-1].expected["rlast"] == 1
-    assert report.traces[-1].expected["rdata"] == 0x22222222
+    assert read_beats[-1].expected["rlast"] == 1
+    assert read_beats[-1].expected["rdata"] == 0x22222222
+
+
+def test_python_uvm_supports_csr_sequences():
+    module = _csr_storage_module()
+    ref_model = csr_reference_model(storage={})
+    report = run_python_uvm_test(
+        module,
+        csr_sequence(
+            (
+                CsrTransfer(addr=8, write=True, wdata=0x55AA55AA, label="csr_wr"),
+                CsrTransfer(addr=8, write=False, label="csr_rd"),
+            )
+        ),
+        reference_model=ref_model,
+        name="python_uvm_csr",
+    )
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["csr_wr"] == 1
+    assert report.traces[-1].expected["rdata"] == 0x55AA55AA
+
+
+def test_python_uvm_supports_interrupt_sequences():
+    module = _interrupt_controller_module()
+    ref_model = interrupt_reference_model()
+    report = run_python_uvm_test(
+        module,
+        interrupt_sequence(
+            (
+                InterruptEvent(irq_mask=0x3, cycles=2, label="irq0"),
+            ),
+            clear_between=True,
+        ),
+        reference_model=ref_model,
+        name="python_uvm_irq",
+    )
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["irq0"] == 2
+    assert report.traces[1].expected["irq_pending"] == 0x3
+
+
+def test_python_uvm_protocol_reference_models_run_on_compiled_simulator(tmp_path):
+    builder = CppBackendScaffold()
+    sequence = _stimulus_only(
+        axi4_sequence(
+            (
+                Axi4Transfer(addr=0x20, write=True, beats=(0x33333333, 0x44444444), burst_len=2, label="wr"),
+                Axi4Transfer(addr=0x20, write=False, burst_len=2, label="rd"),
+            )
+        )
+    )
+    ref_model = axi_memory_reference_model(storage={}, read_data_name="rdata")
+
+    with builder.build(_axi4_memory_module(), tmp_path / "compiled_axi4_uvm") as simulator:
+        report = run_python_uvm_test(
+            _axi4_memory_module(),
+            (
+                *sequence,
+                PythonUvmSequenceItem(inputs={}),
+            ),
+            simulator=simulator,
+            reference_model=ref_model,
+            name="python_uvm_axi4_compiled",
+            batch_cycles=3,
+        )
+
+    read_beats = [trace for trace in report.traces if trace.expected.get("rvalid") == 1]
+    assert report.passed is True
+    assert report.used_batch_mode is True
+    assert read_beats[-1].expected["rdata"] == 0x44444444

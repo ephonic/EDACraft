@@ -157,6 +157,24 @@ class InitBlockState(Module):
             self.out <<= self.acc + self.rf[self.addr]
 
 
+class InitBlockDynamicSliceState(Module):
+    def __init__(self):
+        super().__init__("InitBlockDynamicSliceState")
+        self.sel = Input(2, "sel")
+        self.out = Output(4, "out")
+        self.acc = Reg(8, "acc")
+        self.idx = Reg(2, "idx")
+
+        with self.init:
+            self.acc <<= 0
+            self.idx <<= 1
+            self.acc[self.idx + 3 : self.idx] <<= 0xA
+
+        @self.comb
+        def _comb():
+            self.out <<= self.acc[self.sel + 3 : self.sel]
+
+
 class TinyMem(Module):
     def __init__(self):
         super().__init__("TinyMem")
@@ -419,6 +437,22 @@ def test_legacy_dsl_lowering_applies_initial_block_state_and_array_values(tmp_pa
             assert sim.step({"addr": addr}) == observed
             compiled.reset()
             assert compiled.step({"addr": addr}) == observed
+    finally:
+        compiled.close()
+
+
+def test_legacy_dsl_initial_block_supports_dynamic_slice_expression(tmp_path):
+    lowered = lower_legacy_module_to_sim(InitBlockDynamicSliceState())
+    sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_legacy(
+        InitBlockDynamicSliceState(),
+        build_dir=tmp_path / "initial_dynamic_slice",
+    )
+    try:
+        for sel in (0, 1, 2):
+            expected = sim.step({"sel": sel})
+            compiled.reset()
+            assert compiled.step({"sel": sel}) == expected
     finally:
         compiled.close()
 

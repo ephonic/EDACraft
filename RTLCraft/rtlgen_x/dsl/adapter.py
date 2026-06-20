@@ -544,9 +544,10 @@ def _eval_initial_expr(
         return _eval_initial_expr(branch, signal_defs, signal_values, memory_defs, memory_values)
     if isinstance(expr, _SLICE_TYPES):
         operand = _eval_initial_expr(expr.operand, signal_defs, signal_values, memory_defs, memory_values)
-        if not isinstance(expr.lo, int) or not isinstance(expr.hi, int):
-            raise LegacyLoweringError("dynamic slice expression is not yet supported in initial blocks")
-        return (operand >> expr.lo) & _mask_for_width(expr.hi - expr.lo + 1)
+        if isinstance(expr.lo, int) and isinstance(expr.hi, int):
+            return (operand >> expr.lo) & _mask_for_width(expr.hi - expr.lo + 1)
+        lo = _eval_initial_expr(expr.lo, signal_defs, signal_values, memory_defs, memory_values)
+        return (operand >> int(lo)) & _mask_for_width(expr.width)
     if isinstance(expr, _PARTSELECT_TYPES):
         operand = _eval_initial_expr(expr.operand, signal_defs, signal_values, memory_defs, memory_values)
         offset = _eval_initial_expr(expr.offset, signal_defs, signal_values, memory_defs, memory_values)
