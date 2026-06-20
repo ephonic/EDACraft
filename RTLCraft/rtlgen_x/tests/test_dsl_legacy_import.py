@@ -175,6 +175,23 @@ class InitBlockDynamicSliceState(Module):
             self.out <<= self.acc[self.sel + 3 : self.sel]
 
 
+class LatchPass(Module):
+    def __init__(self):
+        super().__init__("LatchPass")
+        self.en = Input(1, "en")
+        self.d = Input(8, "d")
+        self.out = Output(8, "out")
+        self.state = Reg(8, "state")
+
+        with self.latch:
+            with If(self.en == 1):
+                self.state <<= self.d
+
+        @self.comb
+        def _comb():
+            self.out <<= self.state
+
+
 class TinyMem(Module):
     def __init__(self):
         super().__init__("TinyMem")
@@ -455,6 +472,36 @@ def test_legacy_dsl_initial_block_supports_dynamic_slice_expression(tmp_path):
             assert compiled.step({"sel": sel}) == expected
     finally:
         compiled.close()
+
+
+def test_legacy_dsl_latch_blocks_round_trip_to_lowered_simulator_and_verilog(tmp_path):
+    module = LatchPass()
+    assert len(module._latch_blocks) == 1
+    assert len(module._comb_blocks) == 1
+
+    lowered = lower_legacy_module_to_sim(module)
+    assert any(assignment.phase == "latch" for assignment in lowered.module.assignments)
+
+    sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_legacy(
+        LatchPass(),
+        build_dir=tmp_path / "latch_pass",
+    )
+    try:
+        vectors = (
+            ({"en": 0, "d": 0x12}, {"out": 0x00}),
+            ({"en": 1, "d": 0x34}, {"out": 0x34}),
+            ({"en": 0, "d": 0x56}, {"out": 0x34}),
+            ({"en": 1, "d": 0x78}, {"out": 0x78}),
+        )
+        for inputs, expected in vectors:
+            assert sim.step(inputs) == expected
+            assert compiled.step(inputs) == expected
+    finally:
+        compiled.close()
+
+    emitted = VerilogEmitter(use_sv_always=True).emit(LatchPass())
+    assert "always_latch begin" in emitted
 
 
 def test_legacy_lowering_preserves_slice_width_for_signed_arithmetic():

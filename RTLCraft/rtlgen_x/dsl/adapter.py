@@ -206,6 +206,11 @@ def lower_legacy_module_to_sim(
         _lower_stmt_list(body, phase="comb", env=env)
         assignments.extend(env.finalize_phase())
         memory_writes.extend(env.finalize_memory_writes())
+    for body in lowered_source._latch_blocks:
+        env = _LoweringEnv(signal_map, memory_names)
+        _lower_stmt_list(body, phase="latch", env=env)
+        assignments.extend(env.finalize_phase())
+        memory_writes.extend(env.finalize_memory_writes())
 
     for index, seq_item in enumerate(lowered_source._seq_blocks):
         clk, rst, reset_async, reset_active_low, body = seq_item
@@ -620,8 +625,6 @@ def _reject_unsupported_module_features(module) -> None:
     if unsupported_top:
         kinds = ", ".join(sorted(set(unsupported_top)))
         raise LegacyLoweringError(f"unsupported top-level statement types: {kinds}")
-    if module._latch_blocks:
-        raise LegacyLoweringError("latch blocks are not yet supported")
 
 
 class _LoweringEnv:
@@ -636,6 +639,8 @@ class _LoweringEnv:
     def read(self, signal_name: str):
         signal = self._signal_map[signal_name]
         if self._phase == "comb" and signal.kind in {"wire", "output"} and signal_name in self._assigned:
+            return self._assigned[signal_name]
+        if self._phase == "latch" and signal.kind == "state" and signal_name in self._assigned:
             return self._assigned[signal_name]
         return SignalRef(signal_name)
 
@@ -652,6 +657,10 @@ class _LoweringEnv:
         if phase == "comb" and signal.kind not in {"wire", "output"}:
             raise LegacyLoweringError(
                 f"combinational lowering only supports wire/output targets, got '{target.name}'"
+            )
+        if phase == "latch" and signal.kind != "state":
+            raise LegacyLoweringError(
+                f"latch lowering only supports reg targets, got '{target.name}'"
             )
         if phase == "seq" and signal.kind != "state":
             raise LegacyLoweringError(

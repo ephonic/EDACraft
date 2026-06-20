@@ -1280,10 +1280,14 @@ class _CombContext:
 
     def __init__(self, module: "Module", always_latch: bool = False):
         self._module = module
+        self._always_latch = always_latch
 
     def __enter__(self):
         body: List[Any] = []
-        self._module._comb_blocks.append(body)
+        if self._always_latch:
+            self._module._latch_blocks.append(body)
+        else:
+            self._module._comb_blocks.append(body)
         Context.push(Context(module=self._module, stmt_container=body))
         return self
 
@@ -3128,6 +3132,10 @@ def flatten_module(module: "Module") -> "Module":
         for clk, rst, reset_async, reset_active_low, body in sub_copy._seq_blocks:
             seq.append((clk, rst, reset_async, reset_active_low, [_rename_stmt(s, mapping, mem_rename, arr_rename) for s in body]))
 
+        latch = []
+        for body in sub_copy._latch_blocks:
+            latch.append([_rename_stmt(s, mapping, mem_rename, arr_rename) for s in body])
+
         for port_name, expr in stmt.port_map.items():
             port_sig = sub_copy._inputs.get(port_name) or sub_copy._outputs.get(port_name) or sub_copy._wires.get(port_name)
             if port_sig is None:
@@ -3138,42 +3146,50 @@ def flatten_module(module: "Module") -> "Module":
             else:
                 top_stmts.append(Assign(expr, new_sig, blocking=True))
 
-        return top_stmts, comb, seq
+        return top_stmts, comb, latch, seq
 
     def _process_stmts(stmts, prefix="", mode="top"):
         """mode: 'top' | 'comb' | 'seq'"""
         top_stmts = []
         new_body = []
         extra_comb = []
+        extra_latch = []
         extra_seq = []
         for stmt in stmts:
             if isinstance(stmt, SubmoduleInst):
-                ts, cb, sb = _inline_submodule(stmt, f"{prefix}{stmt.name}_")
+                ts, cb, lb, sb = _inline_submodule(stmt, f"{prefix}{stmt.name}_")
                 top_stmts.extend(ts)
                 extra_comb.extend(cb)
+                extra_latch.extend(lb)
                 extra_seq.extend(sb)
             elif isinstance(stmt, ForGenNode):
                 for i in range(stmt.start, stmt.end, stmt.step):
                     unrolled = [_subst_genvar_in_stmt(s, stmt.var_name, i) for s in stmt.body]
-                    t, b, c, s2 = _process_stmts(unrolled, f"{prefix}{stmt.var_name}{i}_", mode=mode)
+                    t, b, c, l, s2 = _process_stmts(unrolled, f"{prefix}{stmt.var_name}{i}_", mode=mode)
                     top_stmts.extend(t)
                     new_body.extend(b)
                     extra_comb.extend(c)
+                    extra_latch.extend(l)
                     extra_seq.extend(s2)
             elif isinstance(stmt, IfNode):
                 n = IfNode(stmt.cond)
-                t1, b1, c1, s1 = _process_stmts(stmt.then_body, prefix, mode)
+                t1, b1, c1, l1, s1 = _process_stmts(stmt.then_body, prefix, mode)
                 top_stmts.extend(t1)
                 n.then_body = b1
                 for cond, body in stmt.elif_bodies:
-                    t_e, b_e, c_e, s_e = _process_stmts(body, prefix, mode)
+                    t_e, b_e, c_e, l_e, s_e = _process_stmts(body, prefix, mode)
                     top_stmts.extend(t_e)
                     n.elif_bodies.append((cond, b_e))
-                t2, b2, c2, s2 = _process_stmts(stmt.else_body, prefix, mode)
+                    extra_comb.extend(c_e)
+                    extra_latch.extend(l_e)
+                    extra_seq.extend(s_e)
+                t2, b2, c2, l2, s2 = _process_stmts(stmt.else_body, prefix, mode)
                 top_stmts.extend(t2)
                 n.else_body = b2
                 extra_comb.extend(c1)
                 extra_comb.extend(c2)
+                extra_latch.extend(l1)
+                extra_latch.extend(l2)
                 extra_seq.extend(s1)
                 extra_seq.extend(s2)
                 new_body.append(n)
@@ -3181,16 +3197,18 @@ def flatten_module(module: "Module") -> "Module":
                 n = SwitchNode(stmt.expr)
                 case_bodies = []
                 for v, body in stmt.cases:
-                    t, b, c, s2 = _process_stmts(body, prefix, mode)
+                    t, b, c, l, s2 = _process_stmts(body, prefix, mode)
                     top_stmts.extend(t)
                     case_bodies.append((v, b))
                     extra_comb.extend(c)
+                    extra_latch.extend(l)
                     extra_seq.extend(s2)
-                t, b, c, s2 = _process_stmts(stmt.default_body, prefix, mode)
+                t, b, c, l, s2 = _process_stmts(stmt.default_body, prefix, mode)
                 top_stmts.extend(t)
                 n.cases = case_bodies
                 n.default_body = b
                 extra_comb.extend(c)
+                extra_latch.extend(l)
                 extra_seq.extend(s2)
                 new_body.append(n)
             elif isinstance(stmt, GenIfNode):
@@ -3198,47 +3216,62 @@ def flatten_module(module: "Module") -> "Module":
                     new_body.append(stmt)
                 else:
                     n = IfNode(stmt.cond)
-                    t1, b1, c1, s1 = _process_stmts(stmt.then_body, prefix, mode)
+                    t1, b1, c1, l1, s1 = _process_stmts(stmt.then_body, prefix, mode)
                     top_stmts.extend(t1)
                     n.then_body = b1
                     extra_comb.extend(c1)
+                    extra_latch.extend(l1)
                     extra_seq.extend(s1)
                     for cond, body in stmt.elif_bodies:
-                        t_e, b_e, c_e, s_e = _process_stmts(body, prefix, mode)
+                        t_e, b_e, c_e, l_e, s_e = _process_stmts(body, prefix, mode)
                         top_stmts.extend(t_e)
                         n.elif_bodies.append((cond, b_e))
                         extra_comb.extend(c_e)
+                        extra_latch.extend(l_e)
                         extra_seq.extend(s_e)
-                    t2, b2, c2, s2 = _process_stmts(stmt.else_body, prefix, mode)
+                    t2, b2, c2, l2, s2 = _process_stmts(stmt.else_body, prefix, mode)
                     top_stmts.extend(t2)
                     n.else_body = b2
                     extra_comb.extend(c2)
+                    extra_latch.extend(l2)
                     extra_seq.extend(s2)
                     new_body.append(n)
             else:
                 new_body.append(stmt)
-        return top_stmts, new_body, extra_comb, extra_seq
+        return top_stmts, new_body, extra_comb, extra_latch, extra_seq
 
-    t, b, c, s = _process_stmts(module._top_level, mode="top")
+    t, b, c, l, s = _process_stmts(module._top_level, mode="top")
     flat._top_level.extend(t)
     flat._top_level.extend(b)
     flat._comb_blocks.extend(c)
+    flat._latch_blocks.extend(l)
     flat._seq_blocks.extend(s)
 
     for body in module._comb_blocks:
-        t, b, c, s = _process_stmts(body, mode="comb")
+        t, b, c, l, s = _process_stmts(body, mode="comb")
         flat._top_level.extend(t)
         if b:
             flat._comb_blocks.append(b)
         flat._comb_blocks.extend(c)
+        flat._latch_blocks.extend(l)
+        flat._seq_blocks.extend(s)
+
+    for body in module._latch_blocks:
+        t, b, c, l, s = _process_stmts(body, mode="latch")
+        flat._top_level.extend(t)
+        if b:
+            flat._latch_blocks.append(b)
+        flat._comb_blocks.extend(c)
+        flat._latch_blocks.extend(l)
         flat._seq_blocks.extend(s)
 
     for clk, rst, reset_async, reset_active_low, body in module._seq_blocks:
-        t, b, c, s = _process_stmts(body, mode="seq")
+        t, b, c, l, s = _process_stmts(body, mode="seq")
         flat._top_level.extend(t)
         if b:
             flat._seq_blocks.append((clk, rst, reset_async, reset_active_low, b))
         flat._comb_blocks.extend(c)
+        flat._latch_blocks.extend(l)
         flat._seq_blocks.extend(s)
 
     return flat

@@ -437,10 +437,6 @@ def generate_uvm_runtime_bundle(
         clock_name=clock_name,
         directed_sequence=directed_sequence,
     )
-    input_names = {port.name for port in collateral.interface.inputs}
-    if clock_name not in input_names:
-        raise ValueError(f"clock signal '{clock_name}' not found in module inputs")
-
     stem = _snake_name(executable.name)
     interface_name = next(
         artifact.path[:-3]
@@ -1436,7 +1432,14 @@ def _emit_legacy_dut_sv(module: Any) -> str:
         emitter_cls = RtlgenXVerilogEmitter
         profile_cls = RtlgenXEmitProfile
 
-    emitter = emitter_cls(profile=profile_cls(language="systemverilog"))
+    emitter = emitter_cls(
+        use_sv_always=True,
+        profile=profile_cls(
+            language="systemverilog",
+            always_comb=True,
+            always_ff=True,
+        ),
+    )
     return emitter.emit_design(module)
 
 

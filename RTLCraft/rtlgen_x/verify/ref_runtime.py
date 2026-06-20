@@ -134,8 +134,8 @@ class Assignment:
     phase: str = "comb"
 
     def __post_init__(self) -> None:
-        if self.phase not in {"comb", "seq"}:
-            raise ValueError("assignment phase must be 'comb' or 'seq'")
+        if self.phase not in {"comb", "latch", "seq"}:
+            raise ValueError("assignment phase must be 'comb', 'latch', or 'seq'")
 
 
 @dataclass(frozen=True)
@@ -196,6 +196,8 @@ class SimModule:
                 raise ValueError("sequential assignments may only target state signals")
             if assignment.phase == "comb" and target.kind == "state":
                 raise ValueError("combinational assignments may not target state signals")
+            if assignment.phase == "latch" and target.kind != "state":
+                raise ValueError("latch assignments may only target state signals")
             self._validate_expr(assignment.expr, signal_map, memory_map)
         for write in self.memory_writes:
             memory = memory_map.get(write.memory)
@@ -262,6 +264,9 @@ class PythonSimulator:
         self._comb_assignments = tuple(
             assignment for assignment in self.module.assignments if assignment.phase == "comb"
         )
+        self._latch_assignments = tuple(
+            assignment for assignment in self.module.assignments if assignment.phase == "latch"
+        )
         self._seq_assignments = tuple(
             assignment for assignment in self.module.assignments if assignment.phase == "seq"
         )
@@ -315,6 +320,11 @@ class PythonSimulator:
 
         next_state = dict(self._state)
         pending_writes: Tuple[Tuple[str, int, int], ...] = ()
+        for assignment in self._latch_assignments:
+            signal = self._signal_map[assignment.target]
+            latched_value = self._eval_expr(assignment.expr, values) & signal.mask
+            next_state[assignment.target] = latched_value
+            self._state[assignment.target] = latched_value
         reset_active = False
         if self.module.reset_signal is not None:
             reset_active = bool(values[self.module.reset_signal])

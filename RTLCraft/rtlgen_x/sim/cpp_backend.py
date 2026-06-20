@@ -151,8 +151,8 @@ class Assignment:
     phase: str = "comb"
 
     def __post_init__(self) -> None:
-        if self.phase not in {"comb", "seq"}:
-            raise ValueError("assignment phase must be 'comb' or 'seq'")
+        if self.phase not in {"comb", "latch", "seq"}:
+            raise ValueError("assignment phase must be 'comb', 'latch', or 'seq'")
 
 
 @dataclass(frozen=True)
@@ -215,6 +215,8 @@ class SimModule:
                 raise ValueError("sequential assignments may only target state signals")
             if assignment.phase == "comb" and target.kind == "state":
                 raise ValueError("combinational assignments may not target state signals")
+            if assignment.phase == "latch" and target.kind != "state":
+                raise ValueError("latch assignments may only target state signals")
             self._validate_expr(assignment.expr, signal_map, memory_map)
         for write in self.memory_writes:
             memory = memory_map.get(write.memory)
@@ -781,6 +783,7 @@ class CppBackendScaffold:
             signal for signal in module.signals if signal.kind in {"wire", "output"}
         ]
         comb_assignments = [a for a in module.assignments if a.phase == "comb"]
+        latch_assignments = [a for a in module.assignments if a.phase == "latch"]
         seq_assignments = [a for a in module.assignments if a.phase == "seq"]
         memory_writes = list(module.memory_writes)
 
@@ -859,6 +862,17 @@ class CppBackendScaffold:
             f"    {module_ident}State next_state = state_;",
         ])
         lines.extend(emit_comb("    ", declare=True))
+        if latch_assignments:
+            lines.append("")
+            for assignment in latch_assignments:
+                target = signal_map[assignment.target]
+                lines.append(
+                    f"    next_state.{_cpp_ident(assignment.target)} = "
+                    f"({self._emit_expr(assignment.expr, signal_map, memory_map)}) & {_mask_expr(target.width)};"
+                )
+                lines.append(
+                    f"    state_.{_cpp_ident(assignment.target)} = next_state.{_cpp_ident(assignment.target)};"
+                )
         if seq_assignments or memory_writes:
             lines.append("")
             if module.reset_signal is not None:
@@ -1127,6 +1141,7 @@ class CppBackendScaffold:
             signal for signal in module.signals if signal.kind in {"wire", "output"}
         ]
         comb_assignments = [a for a in module.assignments if a.phase == "comb"]
+        latch_assignments = [a for a in module.assignments if a.phase == "latch"]
         seq_assignments = [a for a in module.assignments if a.phase == "seq"]
         memory_writes = list(module.memory_writes)
 
@@ -1503,6 +1518,17 @@ class CppBackendScaffold:
             f"    {module_ident}State next_state = state_;",
         ])
         lines.extend(emit_comb("    ", declare=True))
+        if latch_assignments:
+            lines.append("")
+            for assignment in latch_assignments:
+                target = signal_map[assignment.target]
+                lines.append(
+                    f"    next_state.{_cpp_ident(assignment.target)} = "
+                    f"value_mask({self._emit_wide_expr(assignment.expr, signal_map, memory_map)}, {target.width}u);"
+                )
+                lines.append(
+                    f"    state_.{_cpp_ident(assignment.target)} = next_state.{_cpp_ident(assignment.target)};"
+                )
         if seq_assignments or memory_writes:
             lines.append("")
             if module.reset_signal is not None:

@@ -8,6 +8,7 @@ from rtlgen_x.sim import (
     Memory,
     MemoryReadExpr,
     MemoryWrite,
+    MuxExpr,
     Signal,
     SignalRef,
     SimModule,
@@ -284,6 +285,31 @@ def test_generate_uvm_runtime_bundle_accepts_legacy_dsl_module():
     assert "req.randomize() with { rst == 1'b0; }" in artifact_map["legacy_uvm_accum_smoke_seq.sv"]
 
 
+def test_generate_uvm_runtime_bundle_accepts_legacy_latch_module(tmp_path):
+    from rtlgen_x.tests.test_dsl_legacy_import import LatchPass
+
+    bundle = generate_uvm_runtime_bundle(LatchPass(), clock_name="clk")
+    artifact_map = bundle.artifact_map()
+
+    assert bundle.module_name == "LatchPass"
+    assert bundle.dut_module_name == "LatchPass"
+    assert "latchpass_dut.sv" in artifact_map
+    assert "latchpass_top.sv" in artifact_map
+    assert "module LatchPass" in artifact_map["latchpass_dut.sv"]
+    assert "always_latch begin" in artifact_map["latchpass_dut.sv"]
+    assert "logic clk;" in artifact_map["latchpass_top.sv"]
+    assert ".en(vif.en)" in artifact_map["latchpass_top.sv"]
+    assert ".d(vif.d)" in artifact_map["latchpass_top.sv"]
+    assert 'rtlgen_x_predict("latchpass_ref_model.py"' in artifact_map["latchpass_scoreboard.sv"]
+
+    write_uvm_runtime_bundle(bundle, tmp_path / "latch_pass_runtime", include_runtime_package=False)
+    report = smoke_test_generated_reference_model(
+        tmp_path / "latch_pass_runtime" / "latchpass_ref_model.py",
+        inputs={"en": 1, "d": 0x34},
+    )
+    assert report.predicted == {"out": 0x34}
+
+
 def test_generate_uvm_runtime_bundle_accepts_real_sram256k_module(tmp_path):
     module = _load_external_module(
         "earphone/modules/sram256k/layer_L5_dsl/src/dsl.py",
@@ -468,6 +494,42 @@ def test_emit_python_reference_model_renders_memory_support():
     source = emit_python_reference_model(module)
     assert "MemoryReadExpr('mem', SignalRef('addr'))" in source
     assert "MemoryWrite('mem', SignalRef('addr'), SignalRef('din'), enable=SignalRef('we'))" in source
+
+
+def test_generated_reference_model_supports_latch_phase(tmp_path):
+    module = SimModule(
+        name="uvm_latch",
+        signals=(
+            Signal("en", width=1, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("state", width=8, kind="state", init=0),
+            Signal("out", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment(
+                "state",
+                MuxExpr(SignalRef("en"), SignalRef("din"), SignalRef("state")),
+                phase="latch",
+            ),
+            Assignment("out", SignalRef("state")),
+        ),
+        outputs=("out",),
+        outputs_post_state=True,
+    )
+
+    collateral = generate_uvm_collateral(
+        module,
+        interface_name="uvm_latch_if",
+        clock_name="en",
+    )
+    write_uvm_collateral(collateral, tmp_path / "uvm_latch_out")
+    ref_model_path = tmp_path / "uvm_latch_out" / "uvm_latch_ref_model.py"
+
+    model = load_generated_reference_model(ref_model_path)
+    model.reset()
+    assert model.predict({"en": 0, "din": 0x12}) == {"out": 0x00}
+    assert model.predict({"en": 1, "din": 0x34}) == {"out": 0x34}
+    assert model.predict({"en": 0, "din": 0x56}) == {"out": 0x34}
 
 
 def test_verification_collateral_accepts_legacy_storage_module():

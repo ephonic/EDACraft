@@ -184,6 +184,33 @@ def test_compiled_simulator_can_recompute_outputs_after_state_commit(tmp_path):
         assert sim.step({"inp": 2}) == {"out": 7}
 
 
+def test_compiled_simulator_supports_latch_phase_state_holding(tmp_path):
+    module = SimModule(
+        name="latch_runtime",
+        signals=(
+            Signal("en", width=1, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("state", width=8, kind="state", init=0),
+            Signal("out", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment(
+                "state",
+                MuxExpr(SignalRef("en"), SignalRef("din"), SignalRef("state")),
+                phase="latch",
+            ),
+            Assignment("out", SignalRef("state")),
+        ),
+        outputs=("out",),
+        outputs_post_state=True,
+    )
+
+    with CppBackendScaffold(namespace="testlatch").build(module, tmp_path) as sim:
+        assert sim.step({"en": 0, "din": 0x12}) == {"out": 0x00}
+        assert sim.step({"en": 1, "din": 0x34}) == {"out": 0x34}
+        assert sim.step({"en": 0, "din": 0x56}) == {"out": 0x34}
+
+
 def test_compiled_backend_supports_wide_signal_modules(tmp_path):
     module = SimModule(
         name="wide_runtime",

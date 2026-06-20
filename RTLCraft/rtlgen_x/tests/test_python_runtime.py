@@ -6,6 +6,7 @@ from rtlgen_x.sim import (
     Memory,
     MemoryReadExpr,
     MemoryWrite,
+    MuxExpr,
     PythonSimulator,
     pack_signal_values_u64_words,
     pack_u64_words,
@@ -88,6 +89,33 @@ def test_python_reference_supports_post_state_outputs():
     python_sim = PythonSimulator(module)
     assert python_sim.step({"inp": 5}) == {"out": 5}
     assert python_sim.step({"inp": 2}) == {"out": 7}
+
+
+def test_python_reference_supports_latch_phase_state_holding():
+    module = SimModule(
+        name="python_latch_state",
+        signals=(
+            Signal("en", width=1, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("state", width=8, kind="state", init=0),
+            Signal("out", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment(
+                "state",
+                MuxExpr(SignalRef("en"), SignalRef("din"), SignalRef("state")),
+                phase="latch",
+            ),
+            Assignment("out", SignalRef("state")),
+        ),
+        outputs=("out",),
+        outputs_post_state=True,
+    )
+
+    python_sim = PythonSimulator(module)
+    assert python_sim.step({"en": 0, "din": 0x12}) == {"out": 0x00}
+    assert python_sim.step({"en": 1, "din": 0x34}) == {"out": 0x34}
+    assert python_sim.step({"en": 0, "din": 0x56}) == {"out": 0x34}
 
 
 def test_python_reference_supports_comb_read_seq_write_memory():
