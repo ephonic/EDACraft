@@ -6,10 +6,13 @@ from rtlgen_x.sim import (
     build_stress_module,
     iter_stress_input_rows,
     generate_stress_input_buffer,
+    run_stress_sweep,
+    write_stress_sweep_report,
     Signal,
     SignalRef,
     SimModule,
 )
+import json
 
 
 def test_benchmark_report_has_positive_timings(tmp_path):
@@ -96,3 +99,28 @@ def test_wide_streaming_benchmark_handles_multiword_buffers(tmp_path):
     assert report.chunk_output_bytes == 16 * 2 * 8
     assert report.cpp_stream_seconds > 0.0
     assert report.stream_speedup > 0.0
+
+
+def test_stress_sweep_reports_capacity_summary(tmp_path):
+    report = run_stress_sweep(
+        widths=(16, 32),
+        cycles_list=(32, 64),
+        chunk_cycles=16,
+        repeats=1,
+        warmup=0,
+        build_root=str(tmp_path / "stress_sweep"),
+    )
+
+    assert len(report.points) == 4
+    assert report.widths == (16, 32)
+    assert report.max_cycles == 64
+    assert report.max_step_speedup > 0.0
+    assert report.max_batch_speedup > 0.0
+    assert report.max_stream_speedup > 0.0
+    assert all(point.simulator.cycles == point.cycles for point in report.points)
+    assert all(point.streaming.cycles == point.cycles for point in report.points)
+
+    out_path = write_stress_sweep_report(report, tmp_path / "stress_sweep.json")
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["point_count"] == 4
+    assert payload["widths"] == [16, 32]

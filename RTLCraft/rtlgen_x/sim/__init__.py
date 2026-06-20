@@ -2,6 +2,8 @@
 
 from rtlgen_x.sim.benchmark import (
     SimulatorBenchmarkReport,
+    StressSweepPoint,
+    StressSweepReport,
     StreamingBenchmarkReport,
     benchmark_compiled_speedup,
     benchmark_streaming_capacity,
@@ -9,6 +11,8 @@ from rtlgen_x.sim.benchmark import (
     generate_stress_input_buffer,
     generate_stress_inputs,
     iter_stress_input_rows,
+    run_stress_sweep,
+    write_stress_sweep_report,
 )
 from rtlgen_x.sim.cosim import CosimMismatch, LegacyRtlCosimReport, run_legacy_rtl_cosim
 from rtlgen_x.sim.cpp_backend import (
@@ -70,6 +74,8 @@ __all__ = [
     "SignalRef",
     "SimulatorParityReport",
     "SimulatorBenchmarkReport",
+    "StressSweepPoint",
+    "StressSweepReport",
     "StreamingBenchmarkReport",
     "SimModule",
     "TraceMismatch",
@@ -86,6 +92,8 @@ __all__ = [
     "generate_stress_input_buffer",
     "generate_stress_inputs",
     "iter_stress_input_rows",
+    "run_stress_sweep",
+    "write_stress_sweep_report",
     "LegacyRtlCosimReport",
     "pack_u64_words",
     "unpack_signal_values_u64_words",

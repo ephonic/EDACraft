@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from rtlgen_x.verify.remote_uvm import (
     RemoteUvmRegressionEntry,
@@ -6,6 +7,7 @@ from rtlgen_x.verify.remote_uvm import (
     RemoteUvmTarget,
     default_remote_dir,
     summarize_uvm_output,
+    write_remote_uvm_regression_report,
 )
 
 
@@ -58,3 +60,21 @@ def test_remote_uvm_regression_report_splits_pass_and_fail_entries():
 
     assert [entry.target.name for entry in report.passed] == ["foo"]
     assert [entry.target.name for entry in report.failed] == ["bar"]
+
+
+def test_remote_uvm_regression_report_can_be_written_as_json(tmp_path):
+    target = RemoteUvmTarget(name="foo", module_file=Path("foo.py"), module_class="Foo")
+    report = RemoteUvmRegressionReport(
+        entries=(
+            RemoteUvmRegressionEntry(target=target, status="local_error", error="boom"),
+        )
+    )
+
+    out_path = write_remote_uvm_regression_report(report, tmp_path / "remote_uvm.json")
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+
+    assert payload["total"] == 1
+    assert payload["passed"] == 0
+    assert payload["failed"] == 1
+    assert payload["entries"][0]["target"]["module_class"] == "Foo"
+    assert payload["entries"][0]["error"] == "boom"

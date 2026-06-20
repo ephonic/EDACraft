@@ -47,6 +47,7 @@ from rtlgen_x.verify.remote_uvm import (
     run_remote_uvm_probe,
     run_remote_uvm_regression,
     summarize_uvm_output,
+    write_remote_uvm_regression_report,
 )
 from rtlgen_x.verify.uvm import (
     GeneratedArtifact,
@@ -120,6 +121,7 @@ __all__ = [
     "wishbone_sequence",
     "smoke_test_generated_reference_model",
     "summarize_uvm_output",
+    "write_remote_uvm_regression_report",
     "run_streaming_check_adaptive",
     "run_streaming_check",
     "run_directed_test",

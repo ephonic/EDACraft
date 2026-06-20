@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import time
 from array import array
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
+from pathlib import Path
 from typing import Callable, Iterable, Iterator, Optional, Sequence, Tuple
 
 from rtlgen_x.sim.cpp_backend import (
@@ -52,6 +54,54 @@ class StreamingBenchmarkReport:
     cpp_stream_seconds: float
     stream_speedup: float
     checksum: int
+
+
+@dataclass(frozen=True)
+class StressSweepPoint:
+    """One benchmark point in a stress sweep."""
+
+    width: int
+    cycles: int
+    simulator: SimulatorBenchmarkReport
+    streaming: StreamingBenchmarkReport
+
+
+@dataclass(frozen=True)
+class StressSweepReport:
+    """Batch benchmark summary across multiple widths and cycle counts."""
+
+    points: Tuple[StressSweepPoint, ...]
+
+    @property
+    def max_step_speedup(self) -> float:
+        return max((point.simulator.step_speedup for point in self.points), default=0.0)
+
+    @property
+    def max_batch_speedup(self) -> float:
+        return max((point.simulator.batch_speedup for point in self.points), default=0.0)
+
+    @property
+    def max_stream_speedup(self) -> float:
+        return max((point.streaming.stream_speedup for point in self.points), default=0.0)
+
+    @property
+    def max_cycles(self) -> int:
+        return max((point.cycles for point in self.points), default=0)
+
+    @property
+    def widths(self) -> Tuple[int, ...]:
+        return tuple(sorted({point.width for point in self.points}))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "point_count": len(self.points),
+            "widths": list(self.widths),
+            "max_cycles": self.max_cycles,
+            "max_step_speedup": self.max_step_speedup,
+            "max_batch_speedup": self.max_batch_speedup,
+            "max_stream_speedup": self.max_stream_speedup,
+            "points": [asdict(point) for point in self.points],
+        }
 
 
 def build_stress_module(width: int = 32) -> SimModule:
@@ -325,6 +375,75 @@ def benchmark_streaming_capacity(
         stream_speedup=python_stream_seconds / cpp_stream_seconds,
         checksum=python_checksum,
     )
+
+
+def run_stress_sweep(
+    *,
+    widths: Sequence[int] = (32, 64),
+    cycles_list: Sequence[int] = (256, 4096),
+    chunk_cycles: int = 1024,
+    repeats: int = 3,
+    warmup: int = 1,
+    build_root: Optional[str] = None,
+    builder: Optional[CppBackendScaffold] = None,
+) -> StressSweepReport:
+    """Run a benchmark sweep over multiple stress-module sizes."""
+
+    if not widths:
+        raise ValueError("widths must not be empty")
+    if not cycles_list:
+        raise ValueError("cycles_list must not be empty")
+
+    sweep_points = []
+    for width in widths:
+        module = build_stress_module(width)
+        for cycles in cycles_list:
+            inputs = generate_stress_input_buffer(module, cycles, seed=width + cycles)
+            point_root = None if build_root is None else f"{build_root}/w{width}_c{cycles}"
+            simulator = benchmark_compiled_speedup(
+                module,
+                inputs,
+                cycles,
+                repeats=repeats,
+                warmup=warmup,
+                build_dir=None if point_root is None else f"{point_root}/batch",
+                builder=builder,
+            )
+            streaming = benchmark_streaming_capacity(
+                module,
+                lambda module=module, cycles=cycles, width=width: iter_stress_input_rows(
+                    module,
+                    cycles,
+                    seed=width + cycles,
+                ),
+                cycles,
+                chunk_cycles=min(chunk_cycles, cycles),
+                repeats=repeats,
+                warmup=warmup,
+                build_dir=None if point_root is None else f"{point_root}/stream",
+                builder=builder,
+            )
+            sweep_points.append(
+                StressSweepPoint(
+                    width=width,
+                    cycles=cycles,
+                    simulator=simulator,
+                    streaming=streaming,
+                )
+            )
+    return StressSweepReport(points=tuple(sweep_points))
+
+
+def write_stress_sweep_report(
+    report: StressSweepReport,
+    path: str | Path,
+) -> Path:
+    """Persist one stress sweep report as JSON."""
+
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+    return output_path
 
 
 def _measure_min(repeats: int, run: Callable[[], None]) -> float:

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
 import importlib.util
 import io
 from pathlib import Path
@@ -70,6 +71,26 @@ class RemoteUvmRegressionReport:
     @property
     def failed(self) -> tuple[RemoteUvmRegressionEntry, ...]:
         return tuple(entry for entry in self.entries if not entry.passed)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "total": len(self.entries),
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "entries": [_entry_to_dict(entry) for entry in self.entries],
+        }
+
+
+def write_remote_uvm_regression_report(
+    report: RemoteUvmRegressionReport,
+    path: Path | str,
+) -> Path:
+    """Persist a remote UVM regression report as JSON."""
+
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+    return output_path
 
 
 def load_module_instance(module_file: Path | str, class_name: str) -> Any:
@@ -228,3 +249,28 @@ def _tar_directory(path: Path) -> bytes:
         for child in sorted(path.iterdir()):
             archive.add(child, arcname=child.name)
     return buffer.getvalue()
+
+
+def _entry_to_dict(entry: RemoteUvmRegressionEntry) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "target": {
+            "name": entry.target.name,
+            "module_file": str(entry.target.module_file),
+            "module_class": entry.target.module_class,
+            "clock_name": entry.target.clock_name,
+        },
+        "status": entry.status,
+        "passed": entry.passed,
+        "error": entry.error,
+    }
+    if entry.result is not None:
+        payload["result"] = {
+            "host": entry.result.host,
+            "remote_dir": entry.result.remote_dir,
+            "local_bundle_dir": str(entry.result.local_bundle_dir),
+            "returncode": entry.result.returncode,
+            "summary": asdict(entry.result.summary),
+            "stdout": entry.result.stdout,
+            "stderr": entry.result.stderr,
+        }
+    return payload
