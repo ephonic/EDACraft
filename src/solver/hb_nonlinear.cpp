@@ -373,6 +373,11 @@ HbNlResult solveHbNonlinear(uint32_t numNodes,
         return r;
     }
 
+    // 跨 HB 求解前重置 OSDI limiting 状态，避免上一次 continuation/DC 的记忆污染
+    for (const auto& d : devices)
+        if (auto* o = dynamic_cast<OsdiModel*>(d.get()))
+            o->resetLimiting();
+
     uint32_t NH = config.numHarmonics;
 
     // 收集电压源

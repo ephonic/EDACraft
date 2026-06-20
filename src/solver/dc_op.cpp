@@ -158,6 +158,11 @@ DcOpResult solveDcOp(uint32_t numNodes,
         if(auto* o=dynamic_cast<OsdiModel*>(d.get()))
             if(!o->is_linear()&&o->ready()) hasNonlinear=true;
 
+    // 跨 DC 求解前重置 limiting 状态，避免前一次求解的 limiting 记忆污染新工作点
+    for(const auto& d:devices)
+        if(auto* o=dynamic_cast<OsdiModel*>(d.get()))
+            o->resetLimiting();
+
     std::vector<double> nodeV(numNodes+1,0.0);
 
     std::vector<double> gminSched;

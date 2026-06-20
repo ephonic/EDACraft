@@ -139,10 +139,12 @@ void OsdiModel::evalTimeSamples(const std::vector<std::vector<double>>& timeVolt
             // 模型拒绝该工作点：返回零电流，避免后续崩溃
             continue;
         }
-        std::vector<double> resid;
+        std::vector<double> resid, limRhs;
         client_->loadResidualResist(resid);
+        client_->loadLimitRhsResist(limRhs);
         for (uint32_t k = 0; k < nNodes && k < resid.size(); ++k) {
             outCurrents[s][k] = resid[k];
+            if (k < limRhs.size()) outCurrents[s][k] += limRhs[k];
         }
     }
 }
@@ -184,6 +186,45 @@ void OsdiModel::evalTimeJacobians(const std::vector<std::vector<double>>& timeVo
     }
 }
 
+void OsdiModel::evalTimeJacobiansReact(
+    const std::vector<std::vector<double>>& timeVoltages,
+    const std::vector<uint32_t>& nodeMap,
+    std::vector<std::vector<double>>& outJacReact) const {
+    if (!client_ || !client_->ready() || !descriptor_) {
+        outJacReact.assign(timeVoltages.size(),
+                           std::vector<double>(descriptor_ ? descriptor_->num_jacobian_entries : 0, 0.0));
+        return;
+    }
+    uint32_t nE = descriptor_->num_jacobian_entries;
+    uint32_t nNodes = descriptor_->num_nodes;
+    outJacReact.assign(timeVoltages.size(), std::vector<double>(nE, 0.0));
+    NodeId maxId = 0;
+    for (NodeId g : nodes_) if (g > maxId) maxId = g;
+    for (size_t s = 0; s < timeVoltages.size(); ++s) {
+        const_cast<OsdiClient*>(client_.get())->setNodeMapping(nodeMap);
+        std::vector<double> globalV(maxId + 1, 0.0);
+        bool bad = false;
+        for (uint32_t i = 0; i < nNodes && i < timeVoltages[s].size() && i < nodes_.size(); ++i) {
+            if (nodes_[i] <= maxId) {
+                double vv = timeVoltages[s][i];
+                if (std::isnan(vv) || std::isinf(vv) || std::abs(vv) > 100.0) bad = true;
+                globalV[nodes_[i]] = vv;
+            }
+        }
+        if (bad) continue;
+        uint32_t ret = const_cast<OsdiClient*>(client_.get())
+                           ->evalDC(globalV, CALC_REACT_JACOBIAN, true);
+        if (ret & EVAL_RET_FLAG_FATAL) continue;
+        std::vector<double*> tgt(nE, nullptr);
+        for (uint32_t e = 0; e < nE; ++e) tgt[e] = &outJacReact[s][e];
+        const_cast<OsdiClient*>(client_.get())->loadJacobianReactWith(tgt.data(), nodeMap, 1.0);
+    }
+}
+
+void OsdiModel::resetLimiting() {
+    if (client_) client_->resetLimiting();
+}
+
 void OsdiModel::stamp_pattern(StampPattern& out) const {
     // OSDI 的 jacobian_entries 描述实际非零位置。
     // stamp 时按这些 entry 的 (node1, node2) 登记（映射到全局 NodeId）。
@@ -221,10 +262,15 @@ void OsdiModel::eval(const OperatingPoint& op, DeviceContribution& out) const {
     uint32_t ret = const_cast<OsdiClient*>(client_.get())->evalDC(nodeV);
     (void)ret;
 
-    // 取回电阻性残差
-    std::vector<double> resid;
+    // 取回电阻性残差与 limiting RHS，合并为器件残差
+    std::vector<double> resid, limRhs;
     client_->loadResidualResist(resid);
-    out.f = std::move(resid);
+    client_->loadLimitRhsResist(limRhs);
+    out.f.assign(resid.size(), 0.0);
+    for (size_t i = 0; i < out.f.size(); ++i) {
+        out.f[i] = resid[i];
+        if (i < limRhs.size()) out.f[i] += limRhs[i];
+    }
 
     // 雅可比由调用方通过 loadJacobianInto 单独加载（需要目标指针）
     out.jac.assign(descriptor_ ? descriptor_->num_jacobian_entries : 0, 0.0);

@@ -44,6 +44,9 @@ public:
     bool is_linear() const override { return false; }
     std::string name() const override { return name_; }
 
+    // 重置模型内部 limiting 状态（跨 Newton 迭代前调用）
+    void resetLimiting();
+
     // 瞬态状态管理
     [[nodiscard]] bool hasTransientState() const override {
         return client_ && client_->hasTransientState();
@@ -77,6 +80,11 @@ public:
     void evalTimeJacobians(const std::vector<std::vector<double>>& timeVoltages,
                            const std::vector<uint32_t>& nodeMap,
                            std::vector<std::vector<double>>& outJac) const;
+
+    // 时域批量电荷雅可比评估：取回 ∂Q/∂V（alpha=1.0），用于 HB 电纳块。
+    void evalTimeJacobiansReact(const std::vector<std::vector<double>>& timeVoltages,
+                                const std::vector<uint32_t>& nodeMap,
+                                std::vector<std::vector<double>>& outJacReact) const;
 
     [[nodiscard]] const std::string& modelName() const {
         return descriptor_ && descriptor_->name ? modelName_ : fallbackTypeName_;

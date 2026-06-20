@@ -236,6 +236,9 @@ uint32_t OsdiClient::evalDC(const std::vector<double>& nodeVoltages, uint32_t ex
     info.next_state = desc_->num_states > 0 ? dcNextState_.data() : nullptr;
     uint32_t flags = CALC_RESIST_RESIDUAL | ANALYSIS_DC | extraFlags;
     if (calcJacobian) flags |= CALC_RESIST_JACOBIAN;
+    // 默认启用 limiting 并计算 lim_rhs；装配层可选择是否使用。
+    flags |= CALC_RESIST_LIM_RHS | ENABLE_LIM;
+    if (!limitingInitialized_) flags |= INIT_LIM;
     info.flags = flags;
 
     // eval 前把 jacobian 指针数组指向安全 scratch，避免写入已释放的调用方缓冲区
@@ -384,6 +387,65 @@ void OsdiClient::loadJacobianTranWith(double** targets, const std::vector<uint32
     } else if (desc_->load_jacobian_resist) {
         desc_->load_jacobian_resist(instData_, modelBlock_->modelData);
     }
+}
+
+void OsdiClient::loadJacobianReactWith(double** targets, const std::vector<uint32_t>& nodeMap,
+                                       double alpha) {
+    if (!desc_ || !instData_ || !targets) return;
+
+    if (desc_->node_mapping_offset != 0) {
+        uint32_t* nm = reinterpret_cast<uint32_t*>(
+            reinterpret_cast<char*>(instData_) + desc_->node_mapping_offset);
+        for (uint32_t i = 0; i < desc_->num_nodes && i < nodeMap.size(); ++i) nm[i] = nodeMap[i];
+    }
+
+    // reactive Jacobian 使用每个 entry 独立的 react_ptr_off 指针槽
+    for (uint32_t e = 0; e < desc_->num_jacobian_entries; ++e) {
+        uint32_t off = desc_->jacobian_entries[e].react_ptr_off;
+        if (off == 0 || off + sizeof(void*) > desc_->instance_size) continue;
+        *reinterpret_cast<void**>(reinterpret_cast<char*>(instData_) + off) = targets[e];
+    }
+
+    if (desc_->load_jacobian_react) {
+        desc_->load_jacobian_react(instData_, modelBlock_->modelData, alpha);
+        return;
+    }
+
+    // 回退：tran - resist 近似电荷 Jacobian（使用电阻性指针数组）
+    if (!desc_->load_jacobian_tran || !desc_->load_jacobian_resist) return;
+
+    uint32_t off = desc_->jacobian_ptr_resist_offset;
+    if (off == 0 || off + sizeof(void*) * desc_->num_jacobian_entries > desc_->instance_size) return;
+    void** slot = reinterpret_cast<void**>(reinterpret_cast<char*>(instData_) + off);
+    for (uint32_t e = 0; e < desc_->num_jacobian_entries; ++e) slot[e] = targets[e];
+
+    uint32_t nE = desc_->num_jacobian_entries;
+    std::vector<double> tranVal(nE, 0.0);
+    desc_->load_jacobian_tran(instData_, modelBlock_->modelData, alpha);
+    for (uint32_t e = 0; e < nE; ++e) tranVal[e] = *targets[e];
+    for (uint32_t e = 0; e < nE; ++e) *targets[e] = 0.0;
+    desc_->load_jacobian_resist(instData_, modelBlock_->modelData);
+    for (uint32_t e = 0; e < nE; ++e) {
+        *targets[e] = tranVal[e] - *targets[e];
+    }
+}
+
+void OsdiClient::loadLimitRhsResist(std::vector<double>& dst) const {
+    if (!desc_ || !instData_ || !desc_->load_limit_rhs_resist) {
+        dst.assign(desc_ ? desc_->num_nodes : 0, 0.0);
+        return;
+    }
+    dst.assign(desc_->num_nodes, 0.0);
+    desc_->load_limit_rhs_resist(instData_, modelBlock_->modelData, dst.data());
+}
+
+void OsdiClient::loadLimitRhsReact(std::vector<double>& dst) const {
+    if (!desc_ || !instData_ || !desc_->load_limit_rhs_react) {
+        dst.assign(desc_ ? desc_->num_nodes : 0, 0.0);
+        return;
+    }
+    dst.assign(desc_->num_nodes, 0.0);
+    desc_->load_limit_rhs_react(instData_, modelBlock_->modelData, dst.data());
 }
 
 void OsdiClient::swapState() {

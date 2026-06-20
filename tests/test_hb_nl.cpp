@@ -181,8 +181,8 @@ TEST(HbNonlinear, Bsim4CommonSourceConverges) {
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.0));
     // Load resistor
     devs.push_back(std::make_unique<Resistor>("rd", 1, 2, 1000.0));
-    // Gate bias + small signal：偏置接近阈值，保持弱非线性以确保 Newton 收敛。
-    // 强驱动/深导通需要电荷项 Jacobian，留待 Stage 2/后续改进。
+    // Gate bias + small信号：偏置接近阈值，保持弱非线性以确保 Newton 收敛。
+    // 强非线性（深导通、大信号）仍需要更精确的瞬态残差与更鲁棒的 continuation。
     auto vg = std::make_unique<VoltageSource>("vg", 3, 0, 0.55);
     vg->setAcMag(Complex(0.1, 0.0));
     devs.push_back(std::move(vg));
@@ -206,7 +206,6 @@ TEST(HbNonlinear, Bsim4CommonSourceConverges) {
     auto r = solveHbNonlinear(3, devs, cfg, nullptr, opts);
     EXPECT_TRUE(r.converged);
     ASSERT_GT(r.nodeVoltages.size(), 2u);
-    // 弱非线性下输出基频可能很小，先保证返回有效复数
     EXPECT_TRUE(std::isfinite(r.nodeVoltages[2].v[1].real()))
         << "node 2 fundamental real part is not finite";
     EXPECT_TRUE(std::isfinite(r.nodeVoltages[2].v[1].imag()))

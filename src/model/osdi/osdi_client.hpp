@@ -89,6 +89,10 @@ public:
                           const std::vector<double>& prevSolve,
                           double alpha) const;
 
+    // 取回 limiting RHS（电阻性 / 反应性）。若模型未提供则 dst 填零。
+    void loadLimitRhsResist(std::vector<double>& dst) const;
+    void loadLimitRhsReact(std::vector<double>& dst) const;
+
     // OSDI 的 jacobian_entries 描述对矩阵的贡献位置与实例块偏移。
     [[nodiscard]] const OsdiJacobianEntry* jacobianEntries() const noexcept {
         return desc_ ? desc_->jacobian_entries : nullptr;
@@ -110,6 +114,11 @@ public:
     // 瞬态雅可比加载。alpha 含义同上。未提供则回退到 load_jacobian_resist。
     void loadJacobianTranWith(double** targets, const std::vector<uint32_t>& nodeMap,
                               double alpha);
+
+    // 反应性（电荷/电容）雅可比加载。优先 load_jacobian_react；
+    // 若不存在则用 load_jacobian_tran - load_jacobian_resist 近似。
+    void loadJacobianReactWith(double** targets, const std::vector<uint32_t>& nodeMap,
+                               double alpha);
 
     // 读取第 entryIdx 个雅可比 entry 的贡献值（需先 loadJacobianResist）
     [[nodiscard]] double readJacobianEntryResist(uint32_t entryIdx) const;

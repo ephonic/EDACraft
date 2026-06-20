@@ -126,6 +126,22 @@ void addComplexResidual(std::vector<double>& F, uint32_t perEntity,
 // sign = -1 用于非线性器件（F = -I）；sign = +1 用于线性器件（F = +Y V）
 void addConductanceBlock(std::vector<double>& J, uint32_t dim, uint32_t perEntity,
                          uint32_t rowEntity, uint32_t colEntity,
+                         const std::vector<Complex>& G, uint32_t NH, double sign);
+
+// 将电荷 Jacobian g_Q(t) 的 FFT 系数转电纳块：Y_Q[l] = j l w0 G_Q[l]，再加到全局矩阵
+void addSusceptanceBlock(std::vector<double>& J, uint32_t dim, uint32_t perEntity,
+                         uint32_t rowEntity, uint32_t colEntity,
+                         const std::vector<Complex>& G, uint32_t NH, double w0, double sign) {
+    std::vector<Complex> Y(NH + 1, Complex(0, 0));
+    for (uint32_t l = 0; l <= NH; ++l) {
+        // j * l * w0 * G
+        Y[l] = Complex(-l * w0 * G[l].imag(), l * w0 * G[l].real());
+    }
+    addConductanceBlock(J, dim, perEntity, rowEntity, colEntity, Y, NH, sign);
+}
+
+void addConductanceBlock(std::vector<double>& J, uint32_t dim, uint32_t perEntity,
+                         uint32_t rowEntity, uint32_t colEntity,
                          const std::vector<Complex>& G, uint32_t NH, double sign) {
     auto Gval = [&G, NH](int32_t l) -> Complex {
         if (l < 0) {
@@ -362,9 +378,17 @@ bool assembleHarmonicBalanceReal(
             }
         }
 
-        // 时域电流 -> 频域残差
+        // 时域电流采样（阻性 + limiting）
         std::vector<std::vector<double>> timeCurrents;
         osdi->evalTimeSamples(timeVoltages, nodeMap, timeCurrents);
+
+        // 电荷 Jacobian 采样（∂Q/∂V），用于频域电纳 Jacobian 块。
+        // 电容电流残差暂通过阻性电流近似；精确的 dQ/dt 需要周期瞬态积分（TODO）。
+        uint32_t nE = desc->num_jacobian_entries;
+        std::vector<std::vector<double>> timeJacReact;
+        osdi->evalTimeJacobiansReact(timeVoltages, nodeMap, timeJacReact);
+
+        // 时域电流 -> 频域残差
         for (uint32_t i = 0; i < dn; ++i) {
             NodeId g = (i < dnodes.size()) ? dnodes[i] : 0;
             if (g == 0 || g > numNodes) continue;
@@ -377,10 +401,9 @@ bool assembleHarmonicBalanceReal(
             }
         }
 
-        // 时域雅可比 -> 频域卷积块
+        // 时域雅可比 -> 频域卷积块（阻性）
         std::vector<std::vector<double>> timeJac;
         osdi->evalTimeJacobians(timeVoltages, nodeMap, timeJac);
-        uint32_t nE = desc->num_jacobian_entries;
         for (uint32_t e = 0; e < nE; ++e) {
             const OsdiJacobianEntry& je = desc->jacobian_entries[e];
             uint32_t localA = std::min(je.nodes.node_1, dn - 1);
@@ -395,6 +418,24 @@ bool assembleHarmonicBalanceReal(
             uint32_t entA = nodeEntity(gA);
             uint32_t entB = nodeEntity(gB);
             addConductanceBlock(sys.J, dim, perEntity, entA, entB, G, NH, -1.0);
+        }
+
+        // 时域电荷雅可比 -> 频域电纳卷积块（反应性）
+        for (uint32_t e = 0; e < nE; ++e) {
+            const OsdiJacobianEntry& je = desc->jacobian_entries[e];
+            if (je.react_ptr_off == 0) continue;
+            uint32_t localA = std::min(je.nodes.node_1, dn - 1);
+            uint32_t localB = std::min(je.nodes.node_2, dn - 1);
+            NodeId gA = (localA < dnodes.size()) ? dnodes[localA] : 0;
+            NodeId gB = (localB < dnodes.size()) ? dnodes[localB] : 0;
+            if (gA == 0 || gA > numNodes || gB == 0 || gB > numNodes) continue;
+
+            std::vector<double> gQTime(N, 0.0);
+            for (uint32_t s = 0; s < N; ++s) gQTime[s] = timeJacReact[s][e];
+            std::vector<Complex> GQ = conductanceFft(gQTime, NH);
+            uint32_t entA = nodeEntity(gA);
+            uint32_t entB = nodeEntity(gB);
+            addSusceptanceBlock(sys.J, dim, perEntity, entA, entB, GQ, NH, w0, -1.0);
         }
     }
 
