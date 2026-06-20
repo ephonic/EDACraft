@@ -304,6 +304,24 @@ def test_compiled_simulator_supports_signed_unsigned_and_arithmetic_shift(tmp_pa
         }
 
 
+def test_compiled_simulator_wide_logical_shift_zero_fills_unsigned_values(tmp_path):
+    module = SimModule(
+        name="cpp_wide_shift",
+        signals=(
+            Signal("inp", width=80, kind="input"),
+            Signal("out", width=80, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", MaskExpr(BinaryExpr(">>", SignalRef("inp"), ConstExpr(4, 3)), 80)),
+        ),
+        outputs=("out",),
+    )
+
+    with CppBackendScaffold(namespace="testwideshift").build(module, tmp_path) as sim:
+        value = (1 << 79) | 0x1234
+        assert sim.step({"inp": value}) == {"out": value >> 4}
+
+
 def test_compiled_simulator_randomized_python_parity(tmp_path):
     module = SimModule(
         name="cpp_random_parity",

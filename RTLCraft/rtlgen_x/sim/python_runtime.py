@@ -309,7 +309,13 @@ class PythonSimulator:
             if expr.op == "<<":
                 return lhs << rhs
             if expr.op == ">>":
-                return lhs >> rhs
+                lhs_width = self._expr_width(expr.lhs)
+                masked_lhs = lhs & ((1 << lhs_width) - 1)
+                if self._expr_is_signed(expr.lhs):
+                    sign_bit = 1 << (lhs_width - 1)
+                    signed_lhs = masked_lhs - (1 << lhs_width) if masked_lhs & sign_bit else masked_lhs
+                    return signed_lhs >> rhs
+                return masked_lhs >> rhs
             if expr.op == ">>>":
                 lhs_width = self._expr_width(expr.lhs)
                 masked_lhs = lhs & ((1 << lhs_width) - 1)

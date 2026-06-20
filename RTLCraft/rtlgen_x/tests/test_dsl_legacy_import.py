@@ -64,6 +64,17 @@ class BitUpdate(Module):
                 self.state[2] <<= self.flag
 
 
+class NamedByString(Module):
+    def __init__(self):
+        super().__init__("named_by_string")
+        self.inp = Input(8, "inp")
+        self.out = Output(8, "out")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.inp
+
+
 class SliceUpdate(Module):
     def __init__(self):
         super().__init__("SliceUpdate")
@@ -293,6 +304,13 @@ def test_legacy_dsl_emits_verilog():
     assert "module Accum" in text
     assert "input [7:0] inp" in text
     assert "output [7:0] out" in text
+
+
+def test_legacy_dsl_emit_prefers_explicit_module_name():
+    text = VerilogEmitter().emit(NamedByString())
+
+    assert "module named_by_string" in text
+    assert "module NamedByString" not in text
 
 
 def test_legacy_dsl_simulates():

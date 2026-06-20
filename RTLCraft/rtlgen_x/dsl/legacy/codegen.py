@@ -186,16 +186,16 @@ class VerilogEmitter:
             fp = _fingerprint(mod)
             if fp in fingerprint_to_canonical:
                 canonical = fingerprint_to_canonical[fp]
-                canonical_name = getattr(canonical, '_type_name', getattr(canonical, 'name', mod.name))
+                canonical_name = self._preferred_sv_module_name(canonical)
                 name_remap[mod.name] = canonical_name
                 id_remap[id(mod)] = canonical_name
             else:
                 fingerprint_to_canonical[fp] = mod
-                tname = getattr(mod, '_type_name', mod.name)
-                unique_name = tname
+                base_name = self._preferred_sv_module_name(mod)
+                unique_name = base_name
                 suffix = 1
                 while unique_name in used_names:
-                    unique_name = f"{tname}_{suffix}"
+                    unique_name = f"{base_name}_{suffix}"
                     suffix += 1
                 used_names.add(unique_name)
                 name_remap[mod.name] = unique_name
@@ -249,6 +249,18 @@ class VerilogEmitter:
         finally:
             self.emit_source_map = old_source_map
 
+    def _preferred_sv_module_name(self, module: Module) -> str:
+        """Return the user-authored HDL name for a module."""
+        return getattr(module, "name", None) or getattr(module, "_type_name", "module")
+
+    def _emitted_sv_module_name(self, module: Module) -> str:
+        """Return the actual emitted HDL declaration name for a module."""
+        id_remap = getattr(self, "_module_id_remap", {})
+        if id(module) in id_remap:
+            return id_remap[id(module)]
+        preferred = self._preferred_sv_module_name(module)
+        return getattr(self, "_module_name_remap", {}).get(preferred, preferred)
+
     # -----------------------------------------------------------------
     # Module header emission (from ModuleDoc)
     # -----------------------------------------------------------------
@@ -266,12 +278,12 @@ class VerilogEmitter:
         if doc is None:
             # Fallback: emit minimal header with module name
             self.lines.append(f"// ==========================================================")
-            self.lines.append(f"// Module: {getattr(module, '_type_name', module.name)}")
+            self.lines.append(f"// Module: {self._emitted_sv_module_name(module)}")
             self.lines.append(f"// ==========================================================")
             self.lines.append("")
             return
 
-        mod_name = getattr(module, '_type_name', module.name)
+        mod_name = self._emitted_sv_module_name(module)
         sep = "// " + "=" * 56
 
         self.lines.append(sep)
@@ -353,9 +365,7 @@ class VerilogEmitter:
         # 参数声明：区分可配置的 parameter 和局部的 localparam
         params = list(module._params.values())
         module_params = [p for p in params if not isinstance(p, LocalParam)]
-        mod_name = getattr(module, '_type_name', module.name)
-        id_remap = getattr(self, "_module_id_remap", {})
-        mod_name = id_remap.get(id(module), mod_name)
+        mod_name = self._emitted_sv_module_name(module)
         if module_params:
             def _fmt_param_val(v):
                 if isinstance(v, str):
@@ -1465,9 +1475,7 @@ class VerilogEmitter:
         prefix = self.indent * indent_level
         inner = self.indent * (indent_level + 1)
         mod = stmt.module
-        type_name = getattr(mod, '_type_name', mod.name)
-        id_remap = getattr(self, "_module_id_remap", {})
-        mod_name = id_remap.get(id(mod), getattr(self, "_module_name_remap", {}).get(mod.name, type_name))
+        mod_name = self._emitted_sv_module_name(mod)
         params = stmt.params
         if params:
             plist = ", ".join(f".{k}({self._emit_param_override(v)})" for k, v in params.items())
@@ -1860,9 +1868,14 @@ class VerilogEmitter:
             new_op = self._extract_sub_exprs(target_name, expr.operand, body, wire_counter)
             if new_op is expr.operand:
                 return expr
-            return type(expr)(new_op, *(
-                getattr(expr, a) for a in ('hi', 'lo', 'offset', 'width') if hasattr(expr, a)
-            ))
+            # Reconstruct with the exact constructor signature of each type.
+            # (A prior getattr-based reconstruction passed the inherited `width`
+            # attribute to Slice and dropped BitSelect.index, crashing both.)
+            if isinstance(expr, Slice):
+                return Slice(new_op, expr.hi, expr.lo)
+            if isinstance(expr, PartSelect):
+                return PartSelect(new_op, expr.offset, expr.width)
+            return BitSelect(new_op, expr.index)
         if isinstance(expr, Concat):
             new_ops = [self._extract_sub_exprs(target_name, op, body, wire_counter) for op in expr.operands]
             if all(n is o for n, o in zip(new_ops, expr.operands)):

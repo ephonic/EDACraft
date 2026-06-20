@@ -196,8 +196,10 @@ def _run_iverilog_trace(
 
     emitter = VerilogEmitter()
     dut_src = emitter.emit_design(module)
+    module_name = _infer_top_sv_module_name(dut_src, module)
     tb_sv = _generate_sv_tb(
         module,
+        module_name,
         [dict(vector) for vector in vectors],
         mode,
         clock_period_ns,
@@ -237,6 +239,7 @@ def _collect_mismatches(
 
 def _generate_sv_tb(
     module,
+    module_name: str,
     vectors: Sequence[Mapping[str, int]],
     mode: str,
     clock_period_ns: int,
@@ -258,8 +261,7 @@ def _generate_sv_tb(
         width = f"[{sig.width - 1}:0] " if sig.width > 1 else ""
         lines.append(f"    wire {width}{sig.name};")
     lines.append("")
-    mod_name = getattr(module, "_type_name", module.name)
-    lines.append(f"    {mod_name} u_dut (")
+    lines.append(f"    {module_name} u_dut (")
     port_items = [f"        .{sig.name}({sig.name})" for sig in inputs + outputs]
     for idx, item in enumerate(port_items):
         suffix = "," if idx < len(port_items) - 1 else ""
@@ -314,3 +316,21 @@ def _generate_sv_tb(
     lines.append("    end")
     lines.append("endmodule")
     return "\n".join(lines)
+
+
+def _infer_top_sv_module_name(source: str, module) -> str:
+    module_names = [
+        line.strip()[len("module ") :].strip().split("(", 1)[0].strip()
+        for line in source.splitlines()
+        if line.strip().startswith("module ")
+    ]
+    for candidate in (
+        getattr(module, "name", None),
+        getattr(module, "_type_name", None),
+        module.__class__.__name__,
+    ):
+        if candidate and candidate in module_names:
+            return candidate
+    if module_names:
+        return module_names[-1]
+    return getattr(module, "name", None) or getattr(module, "_type_name", "dut")

@@ -277,10 +277,10 @@ def test_generate_uvm_runtime_bundle_accepts_legacy_dsl_module():
     bundle = generate_uvm_runtime_bundle(LegacyAccum(), clock_name="clk")
     artifact_map = bundle.artifact_map()
 
-    assert bundle.dut_module_name == "LegacyAccum"
+    assert bundle.dut_module_name == "legacy_uvm_accum"
     assert "legacy_uvm_accum_dut.sv" in artifact_map
     assert "legacy_uvm_accum_top.sv" in artifact_map
-    assert "module LegacyAccum" in artifact_map["legacy_uvm_accum_dut.sv"]
+    assert "module legacy_uvm_accum" in artifact_map["legacy_uvm_accum_dut.sv"]
     assert "req.randomize() with { rst == 1'b1; }" in artifact_map["legacy_uvm_accum_smoke_seq.sv"]
     assert "req.randomize() with { rst == 1'b0; }" in artifact_map["legacy_uvm_accum_smoke_seq.sv"]
 

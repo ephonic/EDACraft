@@ -1783,7 +1783,13 @@ class CppBackendScaffold:
             if expr.op == "<<":
                 return f"value_shl({lhs_expr}, value_to_size({rhs_expr}))"
             if expr.op == ">>":
-                return f"value_ashr({lhs_expr}, value_to_size({rhs_expr}))"
+                lhs_width = _infer_expr_width(expr.lhs, signal_map, memory_map)
+                masked_lhs = f"value_mask({lhs_expr}, {lhs_width}u)"
+                shift_expr = f"value_to_size({rhs_expr})"
+                if _expr_is_signed(expr.lhs, signal_map, memory_map):
+                    signed_lhs = f"value_sign_extend({masked_lhs}, {lhs_width}u)"
+                    return f"value_ashr({signed_lhs}, {shift_expr})"
+                return f"value_lshr({masked_lhs}, {shift_expr})"
             if expr.op == ">>>":
                 lhs_width = _infer_expr_width(expr.lhs, signal_map, memory_map)
                 masked_lhs = f"value_mask({lhs_expr}, {lhs_width}u)"

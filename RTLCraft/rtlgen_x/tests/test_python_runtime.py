@@ -1,6 +1,7 @@
 from rtlgen_x.sim import (
     Assignment,
     BinaryExpr,
+    ConstExpr,
     CppBackendScaffold,
     MaskExpr,
     Memory,
@@ -178,6 +179,24 @@ def test_python_reference_supports_signed_unsigned_and_arithmetic_shift():
         "logical_shift_out": 0x40,
         "arith_shift_out": 0xC0,
     }
+
+
+def test_python_reference_wide_logical_shift_zero_fills_unsigned_values():
+    module = SimModule(
+        name="python_wide_shift",
+        signals=(
+            Signal("inp", width=80, kind="input"),
+            Signal("out", width=80, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", MaskExpr(BinaryExpr(">>", SignalRef("inp"), ConstExpr(4, 3)), 80)),
+        ),
+        outputs=("out",),
+    )
+
+    python_sim = PythonSimulator(module)
+    value = (1 << 79) | 0x1234
+    assert python_sim.step({"inp": value}) == {"out": value >> 4}
 
 
 def test_python_reference_wide_buffered_state_round_trip():

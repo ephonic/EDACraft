@@ -449,7 +449,7 @@ def generate_uvm_runtime_bundle(
         dut_source = _emit_legacy_dut_sv(module)
         dut_module_name = dut_module_name or _infer_preferred_sv_module_name(dut_source, module, executable)
     else:
-        dut_module_name = dut_module_name or executable.name
+        dut_module_name = dut_module_name or _infer_preferred_sv_module_name(dut_source, module, executable)
     dut_file_name = f"{stem}_dut.sv"
     top_file_name = f"{top_module_name}.sv"
     runtime_artifacts = (
@@ -1711,6 +1711,7 @@ def _render_collection_block(lines: Sequence[str]) -> str:
 
 
 def _infer_sv_module_name(source: str) -> Optional[str]:
+    module_names = []
     for line in source.splitlines():
         stripped = line.strip()
         if not stripped.startswith("module "):
@@ -1718,25 +1719,27 @@ def _infer_sv_module_name(source: str) -> Optional[str]:
         remainder = stripped[len("module ") :].strip()
         if not remainder:
             continue
-        return remainder.split("(", 1)[0].strip()
-    return None
+        module_names.append(remainder.split("(", 1)[0].strip())
+    return module_names[0] if module_names else None
 
 
 def _infer_preferred_sv_module_name(source: str, module: Any, executable: SimModule) -> str:
-    module_names = {
+    module_names = [
         line.strip()[len("module ") :].strip().split("(", 1)[0].strip()
         for line in source.splitlines()
         if line.strip().startswith("module ")
-    }
+    ]
     for candidate in (
-        module.__class__.__name__,
-        getattr(module, "_type_name", None),
         getattr(module, "name", None),
         executable.name,
+        module.__class__.__name__,
+        getattr(module, "_type_name", None),
     ):
         if candidate and candidate in module_names:
             return candidate
-    return _infer_sv_module_name(source) or getattr(module, "_type_name", executable.name)
+    if module_names:
+        return module_names[-1]
+    return getattr(module, "name", None) or getattr(module, "_type_name", executable.name)
 
 
 def _snake_name(name: str) -> str:
