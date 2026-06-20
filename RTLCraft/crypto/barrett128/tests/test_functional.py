@@ -89,8 +89,22 @@ def test_bundled_sim_directed():
     assert run_one(sim, 2, 3, N_FULL) == modmul(2, 3, N_FULL)
 
 
+def test_bundled_sim_back_to_back_stream():
+    from rtlgen_x.dsl import lower_legacy_module_to_sim
+    from rtlgen_x.sim import PythonSimulator
+    from crypto.barrett128 import BarrettModMul
+    from crypto.barrett128.driver import random_cases, reset_sim, run_stream
+
+    rng = random.Random(0xC0FFEE)
+    cases = list(random_cases(rng, 6))
+    expected = [modmul(a, b, n, m) for a, b, n, m in cases]
+    sim = PythonSimulator(lower_legacy_module_to_sim(BarrettModMul()).module)
+    reset_sim(sim)
+    assert run_stream(sim, cases) == expected
+
+
 # ---------------------------------------------------------------------------
-# 2. iverilog one-shot cosim
+# 2. iverilog streaming cosim
 # ---------------------------------------------------------------------------
 
 def test_iverilog_directed_cosim():
@@ -98,6 +112,13 @@ def test_iverilog_directed_cosim():
         pytest.skip("RTLGEN_X_SKIP_COSIM set")
     from crypto.barrett128.tests.iverilog_cosim import run
     assert run(vec_count=16, seed=20260620)
+
+
+def test_iverilog_streaming_cosim_smoke():
+    if os.environ.get("RTLGEN_X_SKIP_COSIM"):
+        pytest.skip("RTLGEN_X_SKIP_COSIM set")
+    from crypto.barrett128.tests.iverilog_cosim import run
+    assert run(vec_count=100, seed=1)
 
 
 # ---------------------------------------------------------------------------

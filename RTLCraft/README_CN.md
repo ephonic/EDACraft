@@ -3,6 +3,25 @@
 > 面向对象、装饰器驱动的 Python API，用于描述可综合的 Verilog/SystemVerilog 数字逻辑。
 > 这不是黑盒生成器，而是**白盒框架**——让 AI Agent 和开发者可以直接理解、操作和演进 RTL 抽象语法树 (AST)。
 
+## 当前项目状态
+
+仓库里现在实际上有两个重心：
+
+1. `rtlgen/`：原始的大而全框架与历史工作流
+2. `rtlgen_x/`：当前主推的 clean-core 工具箱，聚焦架构探索、可执行建模、
+   编译仿真、验证与 PPA 分析
+
+如果是继续做新设计，推荐优先从 **`rtlgen_x/`** 开始，而不是旧的重文档、
+重流程框架。
+
+推荐阅读顺序：
+
+1. [rtlgen_x/README.md](./rtlgen_x/README.md)
+2. [rtlgen_x/TUTORIAL_UVM.md](./rtlgen_x/TUTORIAL_UVM.md)
+3. [rtlgen_x/TUTORIAL_ARCH_PPA.md](./rtlgen_x/TUTORIAL_ARCH_PPA.md)
+4. [crypto/barrett128/PPA_REPORT.md](./crypto/barrett128/PPA_REPORT.md)，这里有
+   一个流式验证 + 模块级 PPA 的具体示例
+
 ---
 
 ## 设计理念
@@ -52,6 +71,46 @@ Verilog (通过 VerilogEmitter)
 ```
 
 **跨层一致性**：同一测试程序必须在三个层上产生完全相同的结果（L1 == L2 == L3）。由 `test_consistency.py` 强制保证。
+
+### Spec2RTL 分层闭环（当前实现）
+
+当前仓库已经补齐一个可执行、可审阅的最小闭环：
+
+```text
+SpecIR
+  -> BehaviorIR
+  -> CycleIR
+  -> MicroArchitectureIR（当前由增强后的 ArchitectureIR 承担）
+  -> StructuralIR
+  -> DSL AST
+```
+
+其中：
+
+- `rtlgen/dsl_gen.py` 中的 `DSLGenerator` 已恢复为公共 API，可从 `SpecIR + ArchitectureIR` 确定性生成 DSL。
+- `dsl_from_spec` 不再允许“全部 fallback 但仍然 PASS”。
+- `skill_ppa` 会输出机器可读 sidecar：
+  - `*_review_spec.json`
+  - `*_behaviorir.json`
+  - `*_cycleir.json`
+  - `*_structuralir.json`
+  - `*_verificationir.json`
+  - `*_specir.json`
+  - `*_arch.json`
+- 每轮还会生成 review bundle：
+
+```text
+generated/<skill>/review/
+  01_spec_review.md
+  02_behavior_review.md
+  03_cycle_review.md
+  04_microarch_review.md
+  05_structure_review.md
+  06_verification_plan.md
+  07_lowering_report.md
+```
+
+这让用户可以在 Verilog 发射之前，对 lowering 的每一层进行 review、diff 和问题定位。
 
 ### PPA 驱动优化闭环
 

@@ -3,6 +3,25 @@
 > An object-oriented, decorator-driven Python API for describing synthesizable Verilog / SystemVerilog digital logic.
 > This is not a black-box generator, but a **white-box framework** — enabling AI agents and developers to directly understand, manipulate, and evolve the RTL abstract syntax tree (AST).
 
+## Project Status
+
+The repository currently contains two different centers of gravity:
+
+1. `rtlgen/`: the original broad framework and historical workflow surface
+2. `rtlgen_x/`: the current clean-core toolbox for architecture exploration,
+   executable modeling, compiled simulation, verification, and PPA analysis
+
+For new work, the recommended entry point is **`rtlgen_x/`**, not the older
+document-heavy workflow stack.
+
+Start here:
+
+1. [rtlgen_x/README.md](./rtlgen_x/README.md)
+2. [rtlgen_x/TUTORIAL_UVM.md](./rtlgen_x/TUTORIAL_UVM.md)
+3. [rtlgen_x/TUTORIAL_ARCH_PPA.md](./rtlgen_x/TUTORIAL_ARCH_PPA.md)
+4. [crypto/barrett128/PPA_REPORT.md](./crypto/barrett128/PPA_REPORT.md) for a
+   concrete worked example of streaming verification plus module-side PPA
+
 ---
 
 ## Design Philosophy
@@ -1114,12 +1133,13 @@ earphone/
 
 Key ideas:
 
-- **One directory per module, one directory per IR layer**: each IP is split into `layer_L1_behavior/` … `layer_L6_verilog/`, each with its own `src/`, `specs/`, and (where applicable) `tests/`.
+- **The framework supports a 6-layer vocabulary, not a universal 6-layer burden**: `L1`/`L2`/`L5`/`L6` are the common backbone; `L3`/`L4` become mandatory when a module is architecturally rich or hierarchically composed.
+- **One directory per module, with per-layer artifacts where the chosen profile requires them**: complex IPs may expose `layer_L1_behavior/` … `layer_L6_verilog/`; simpler leaf modules can legitimately omit some middle authored layers.
 - **Documents are first-class inputs**: top-level spec drives module specs; per-layer specs drive implementation and tests at that layer.
 - **Templates filled with real data**: `earphone/docgen.py` introspects the source code (instruction lists, architecture tables, test inventory, pytest results) and renders `doc_templates/` with meaningful content instead of placeholders.
 - **Per-layer test plans and reports**: every IR layer has its own test plan and test report; the module-level report rolls them up.
 - **User confirmation loop**: Agent infers defaults for incomplete user specs and asks for confirmation on high-impact fields.
-- **Tests propagate level by level**: L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests → integration → system.
+- **Tests propagate level by level**: the required chain depends on module profile, but always ends in executable implementation checks rather than documentation-only handoff.
 
 Run the new flow:
 

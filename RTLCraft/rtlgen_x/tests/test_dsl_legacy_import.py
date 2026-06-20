@@ -1,5 +1,7 @@
 import importlib.util
 from pathlib import Path
+import shutil
+import subprocess
 
 import pytest
 
@@ -15,6 +17,7 @@ from rtlgen_x.dsl import (
     lower_legacy_module_to_sim,
     Module,
     Output,
+    PadLeft,
     Reg,
     Simulator,
     VerilogEmitter,
@@ -73,6 +76,29 @@ class NamedByString(Module):
         @self.comb
         def _comb():
             self.out <<= self.inp
+
+
+class ConcatWidened(Module):
+    def __init__(self):
+        super().__init__("concat_widened")
+        self.inp = Input(128, "inp")
+        self.out = Output(260, "out")
+
+        @self.comb
+        def _comb():
+            self.out <<= PadLeft(self.inp, 260)
+
+
+class NestedSliceBinOp(Module):
+    def __init__(self):
+        super().__init__("nested_slice_binop")
+        self.inp = Input(128, "inp")
+        self.out = Output(17, "out")
+
+        @self.comb
+        def _comb():
+            midsum = PadLeft(self.inp[127:64], 65) + PadLeft(self.inp[63:0], 65)
+            self.out <<= midsum[64:32][16:0]
 
 
 class SliceUpdate(Module):
@@ -311,6 +337,36 @@ def test_legacy_dsl_emit_prefers_explicit_module_name():
 
     assert "module named_by_string" in text
     assert "module NamedByString" not in text
+
+
+def test_legacy_dsl_emits_extracted_concat_without_constructor_collision():
+    text = VerilogEmitter().emit(ConcatWidened())
+
+    assert "module concat_widened" in text
+    assert "assign out =" in text
+
+
+def test_legacy_dsl_nested_slice_binop_emits_iverilog_safe_verilog(tmp_path):
+    text = VerilogEmitter().emit(NestedSliceBinOp())
+
+    assert "module nested_slice_binop" in text
+    assert "assign out =" in text
+    assert ">>" in text
+    assert "&" in text
+
+    compiler = shutil.which("iverilog")
+    if compiler is None:
+        pytest.skip("iverilog not installed")
+
+    rtl = tmp_path / "nested_slice_binop.v"
+    rtl.write_text(text, encoding="utf-8")
+    out = tmp_path / "nested_slice_binop.vvp"
+    cp = subprocess.run(
+        [compiler, "-g2012", "-o", str(out), str(rtl)],
+        capture_output=True,
+        text=True,
+    )
+    assert cp.returncode == 0, f"iverilog compile failed:\n{cp.stderr}"
 
 
 def test_legacy_dsl_simulates():

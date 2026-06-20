@@ -1880,7 +1880,7 @@ class VerilogEmitter:
             new_ops = [self._extract_sub_exprs(target_name, op, body, wire_counter) for op in expr.operands]
             if all(n is o for n, o in zip(new_ops, expr.operands)):
                 return expr
-            return Concat(*new_ops, width=expr.width)
+            return Concat(new_ops, expr.width)
 
         # If still too complex after recursion, extract this node itself
         wire_name = f"_{target_name}_ex{wire_counter[0]}"
@@ -2175,16 +2175,32 @@ class VerilogEmitter:
                 return f"((({operand_str}) >> {lo}) & {width}'d{mask})"
             if isinstance(expr.operand, Slice):
                 # Flatten nested slices (e.g. vsrc1[255:240][3:0]) into a single
-                # slice on the underlying signal so iverilog can parse it.
-                inner = expr.operand
-                inner_hi = max(inner.hi, inner.lo)
-                inner_lo = min(inner.hi, inner.lo)
-                combined_hi = inner_lo + hi
-                combined_lo = inner_lo + lo
-                base_str = self._emit_expr(inner.operand, None, for_lhs)
-                if combined_hi == combined_lo:
-                    return f"{base_str}[{combined_hi}]"
-                return f"{base_str}[{combined_hi}:{combined_lo}]"
+                # slice on the underlying signal so iverilog can parse it. Walk
+                # the chain of nested Slice operands so multi-level nests
+                # (3+ deep) collapse to a single index range.
+                cur_hi = hi
+                cur_lo = lo
+                base = expr.operand
+                while isinstance(base, Slice):
+                    inner_lo = min(base.hi, base.lo)
+                    cur_hi = inner_lo + cur_hi
+                    cur_lo = inner_lo + cur_lo
+                    base = base.operand
+                # If the deepest base is an expression iverilog cannot directly
+                # part-select (BinOp / UnaryOp / Mux / Concat), the flattened
+                # slice cannot be written as ``base[hi:lo]`` — fall back to
+                # shift+mask emulation as in the non-flattened branch above.
+                if isinstance(base, (BinOp, UnaryOp, Mux, Concat)):
+                    base_str = self._emit_expr(base, None, for_lhs)
+                    width = cur_hi - cur_lo + 1
+                    mask = (1 << width) - 1
+                    if cur_lo == 0:
+                        return f"(({base_str}) & {width}'d{mask})"
+                    return f"((({base_str}) >> {cur_lo}) & {width}'d{mask})"
+                base_str = self._emit_expr(base, None, for_lhs)
+                if cur_hi == cur_lo:
+                    return f"{base_str}[{cur_hi}]"
+                return f"{base_str}[{cur_hi}:{cur_lo}]"
             if hi == lo:
                 return f"{operand_str}[{hi}]"
             return f"{operand_str}[{hi}:{lo}]"
