@@ -20,6 +20,7 @@ from rtlgen_x.archsim import (
     run_stage_queue_depth_sweep,
 )
 from rtlgen_x.dsl import LoweredLegacyModule, lower_legacy_module_to_sim
+from rtlgen_x.ppa.reports import ImplementationReportBundle
 from rtlgen_x.sim import (
     Assignment,
     BinaryExpr,
@@ -49,8 +50,8 @@ class PpaGoals:
             raise ValueError(f"unsupported PPA priority '{self.priority}'")
         if self.min_throughput_tokens_per_cycle is not None and self.min_throughput_tokens_per_cycle <= 0:
             raise ValueError("min_throughput_tokens_per_cycle must be positive")
-        if self.max_stall_ratio is not None and not 0 <= self.max_stall_ratio <= 1:
-            raise ValueError("max_stall_ratio must be in [0, 1]")
+        if self.max_stall_ratio is not None and self.max_stall_ratio < 0:
+            raise ValueError("max_stall_ratio must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -108,11 +109,25 @@ class PpaRecommendation:
 
 
 @dataclass(frozen=True)
+class PpaTransformCandidate:
+    name: str
+    category: str
+    target: str
+    expected_benefit: str
+    rationale: str
+    suggested_knob: Optional[str] = None
+    suggested_value: Optional[object] = None
+
+
+@dataclass(frozen=True)
 class PpaReport:
     goals: PpaGoals
     module_stats: Optional[ModulePpaStats]
     architecture_stats: Optional[ArchitecturePpaStats]
     recommendations: Tuple[PpaRecommendation, ...]
+    calibrated_module_estimate: Optional["CalibratedModulePpaEstimate"] = None
+    calibrated_architecture_estimate: Optional["CalibratedArchitecturePpaEstimate"] = None
+    transform_candidates: Tuple[PpaTransformCandidate, ...] = ()
 
 
 def analyze_module_ppa(module: Any) -> ModulePpaStats:
@@ -219,6 +234,9 @@ def advise_ppa(
     cycle_report: Optional[CycleReport] = None,
     goals: Optional[PpaGoals] = None,
     include_sweep_evidence: bool = True,
+    implementation_reports: Optional[ImplementationReportBundle] = None,
+    module_calibration: Optional["ModulePpaCalibrationModel"] = None,
+    architecture_calibration: Optional["ArchitecturePpaCalibrationModel"] = None,
 ) -> PpaReport:
     """Return a lightweight set of PPA recommendations from structural/runtime evidence."""
 
@@ -232,10 +250,27 @@ def advise_ppa(
             behavior_report=behavior_report,
             cycle_report=cycle_report,
         )
+    calibrated_module_estimate = None
+    calibrated_architecture_estimate = None
+    if module_stats is not None and module_calibration is not None:
+        from rtlgen_x.ppa.calibration import estimate_calibrated_module_ppa
+
+        calibrated_module_estimate = estimate_calibrated_module_ppa(module_stats, module_calibration)
+    if arch_stats is not None and architecture_calibration is not None:
+        from rtlgen_x.ppa.calibration import estimate_calibrated_architecture_ppa
+
+        calibrated_architecture_estimate = estimate_calibrated_architecture_ppa(
+            stats=arch_stats,
+            calibration=architecture_calibration,
+        )
 
     recommendations: List[PpaRecommendation] = []
     if module_stats is not None:
         recommendations.extend(_module_recommendations(module_stats, goals))
+    if implementation_reports is not None:
+        recommendations.extend(_implementation_report_recommendations(implementation_reports, goals))
+    if calibrated_module_estimate is not None:
+        recommendations.extend(_calibrated_module_recommendations(calibrated_module_estimate))
     if arch_stats is not None and model is not None:
         recommendations.extend(
             _architecture_recommendations(
@@ -246,12 +281,18 @@ def advise_ppa(
                 include_sweep_evidence=include_sweep_evidence,
             )
         )
+    if calibrated_architecture_estimate is not None:
+        recommendations.extend(_calibrated_architecture_recommendations(calibrated_architecture_estimate))
     recommendations.sort(key=_recommendation_rank)
+    transform_candidates = tuple(_derive_transform_candidates(recommendations))
     return PpaReport(
         goals=goals,
         module_stats=module_stats,
         architecture_stats=arch_stats,
         recommendations=tuple(recommendations),
+        calibrated_module_estimate=calibrated_module_estimate,
+        calibrated_architecture_estimate=calibrated_architecture_estimate,
+        transform_candidates=transform_candidates,
     )
 
 
@@ -367,6 +408,143 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
             )
         )
     return recs
+
+
+def _implementation_report_recommendations(
+    reports: ImplementationReportBundle,
+    goals: PpaGoals,
+) -> List[PpaRecommendation]:
+    recs: List[PpaRecommendation] = []
+    if reports.timing.wns_ns is not None and reports.timing.wns_ns < 0:
+        recs.append(
+            PpaRecommendation(
+                category="timing",
+                severity="high",
+                title="Close negative timing slack",
+                rationale=(
+                    f"Imported implementation evidence reports WNS {reports.timing.wns_ns:.3f} ns, "
+                    "so the current design misses timing."
+                ),
+                evidence={
+                    "wns_ns": reports.timing.wns_ns,
+                    "tns_ns": reports.timing.tns_ns,
+                    "sources": reports.sources,
+                },
+                suggestions=(
+                    "Pipeline the longest arithmetic/control path or lower fanout on timing-critical nets.",
+                    "Use the architecture and sweep-backed recommendations to identify the most leverageful bottleneck first.",
+                ),
+            )
+        )
+    if reports.power.total_mw is not None and reports.power.total_mw > 1.0:
+        recs.append(
+            PpaRecommendation(
+                category="power",
+                severity="medium",
+                title="Reduce implementation power hotspots",
+                rationale=(
+                    f"Imported implementation evidence reports total power {reports.power.total_mw:.3f} mW."
+                ),
+                evidence={
+                    "dynamic_mw": reports.power.dynamic_mw,
+                    "leakage_mw": reports.power.leakage_mw,
+                    "total_mw": reports.power.total_mw,
+                    "sources": reports.sources,
+                },
+                suggestions=(
+                    "Clock-gate idle state and reduce standing queue occupancy where possible.",
+                    "Revisit memory banking and wide always-active datapaths if dynamic power dominates.",
+                ),
+            )
+        )
+    if reports.area.total_area is not None and reports.area.total_area > 20_000:
+        recs.append(
+            PpaRecommendation(
+                category="area_power",
+                severity="medium",
+                title="Revisit large implementation area",
+                rationale=(
+                    f"Imported implementation evidence reports total area {reports.area.total_area:.1f}."
+                ),
+                evidence={
+                    "total_area": reports.area.total_area,
+                    "combinational_area": reports.area.combinational_area,
+                    "sequential_area": reports.area.sequential_area,
+                    "sources": reports.sources,
+                },
+                suggestions=(
+                    "Share low-duty datapaths or serialize infrequently used arithmetic.",
+                    "Move large storage-heavy structures toward banked memories or denser macros.",
+                ),
+            )
+        )
+    return recs
+
+
+def _calibrated_module_recommendations(estimate: "CalibratedModulePpaEstimate") -> List[PpaRecommendation]:
+    evidence: Dict[str, object] = {
+        "module": estimate.module_name,
+        "critical_path_ns": estimate.critical_path_ns,
+        "fmax_mhz": estimate.fmax_mhz,
+        "total_area": estimate.total_area,
+        "total_power_mw": estimate.total_power_mw,
+        "timing_score": estimate.timing_score,
+        "area_score": estimate.area_score,
+        "power_score": estimate.power_score,
+        "calibration_sample_count": estimate.calibration_sample_count,
+    }
+    return [
+        PpaRecommendation(
+            category="tradeoff",
+            severity="low",
+            title="Use calibration-backed module PPA estimate",
+            rationale=(
+                f"Module '{estimate.module_name}' now carries timing/area/power estimates scaled from "
+                f"{estimate.calibration_sample_count} implementation calibration sample(s)."
+            ),
+            evidence=evidence,
+            suggestions=(
+                "Use the calibrated critical-path, area, and power estimates as the default ranking signal before new implementation reports arrive.",
+                "Refresh the calibration set when synthesis or signoff data moves materially.",
+            ),
+        )
+    ]
+
+
+def _calibrated_architecture_recommendations(
+    estimate: "CalibratedArchitecturePpaEstimate",
+) -> List[PpaRecommendation]:
+    flow_estimates = tuple(estimate.flow_estimates.values())
+    evidence: Dict[str, object] = {
+        "total_cycles": estimate.total_cycles,
+        "makespan_cycles": estimate.makespan_cycles,
+        "cycle_scale": estimate.cycle_scale,
+        "makespan_scale": estimate.makespan_scale,
+        "throughput_scale": estimate.throughput_scale,
+        "stall_scale": estimate.stall_scale,
+        "calibration_sample_count": estimate.calibration_sample_count,
+    }
+    if flow_estimates:
+        evidence["min_flow_throughput_tokens_per_cycle"] = min(
+            flow.throughput_tokens_per_cycle for flow in flow_estimates
+        )
+        evidence["max_flow_stall_ratio"] = max(flow.stall_ratio for flow in flow_estimates)
+    return [
+        PpaRecommendation(
+            category="tradeoff",
+            severity="low",
+            title="Use calibration-backed architecture estimate",
+            rationale=(
+                "Architecture throughput, cycle, and stall projections are now scaled by measured feedback "
+                f"from {estimate.calibration_sample_count} calibration sample(s)."
+            ),
+            evidence=evidence,
+            suggestions=(
+                "Use the calibrated architecture estimate when comparing stage-level what-if sweeps against measured silicon or RTL behavior.",
+                "Feed updated measurements back into calibration whenever the bottleneck stage or workload mix changes.",
+            ),
+        )
+    ]
 
 
 def _architecture_recommendations(
@@ -748,6 +926,43 @@ def _recommendation_rank(rec: PpaRecommendation) -> Tuple[int, str, str]:
         category_order.get(rec.category, 99),
         rec.title,
     )
+
+
+def _derive_transform_candidates(
+    recommendations: Sequence[PpaRecommendation],
+) -> Iterable[PpaTransformCandidate]:
+    for rec in recommendations:
+        evidence = dict(rec.evidence)
+        knob = evidence.get("sweep_knob")
+        value = evidence.get("sweep_recommended_value")
+        target = str(evidence.get("bottleneck_stage") or evidence.get("stage") or evidence.get("flow") or "design")
+        if knob is not None and value is not None:
+            yield PpaTransformCandidate(
+                name=rec.title,
+                category=rec.category,
+                target=target,
+                expected_benefit=f"Improve cycles by {evidence.get('sweep_cycle_reduction', 'unknown')} or speedup {evidence.get('sweep_speedup', 'unknown')}",
+                rationale=rec.rationale,
+                suggested_knob=str(knob),
+                suggested_value=value,
+            )
+            continue
+        if rec.category == "timing":
+            yield PpaTransformCandidate(
+                name=rec.title,
+                category=rec.category,
+                target=target,
+                expected_benefit="Improve timing slack / reduce critical path depth",
+                rationale=rec.rationale,
+            )
+        elif rec.category in {"power", "area_power"}:
+            yield PpaTransformCandidate(
+                name=rec.title,
+                category=rec.category,
+                target=target,
+                expected_benefit="Reduce power or implementation area",
+                rationale=rec.rationale,
+            )
 
 
 def _normalize_executable_module(module: Any) -> SimModule:

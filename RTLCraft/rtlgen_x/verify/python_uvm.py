@@ -83,6 +83,13 @@ class PythonUvmSequenceLibrary:
             for item in sequencer:
                 yield item
 
+    @classmethod
+    def from_sequences(
+        cls,
+        *sequences: Iterable[Union[PythonUvmSequenceItem, StepVector, Mapping[str, int]]],
+    ) -> "PythonUvmSequenceLibrary":
+        return cls(sequences=tuple(sequences))
+
 
 @dataclass
 class PythonUvmDriver:
@@ -97,11 +104,14 @@ class PythonUvmDriver:
     def drive(self, item: PythonUvmSequenceItem) -> Dict[str, int]:
         return dict(self.simulator.step(dict(item.inputs)))
 
+    def supports_batch(self) -> bool:
+        return hasattr(self.simulator, "input_names") and hasattr(self.simulator, "run_batch")
+
     def drive_batch(
         self,
         items: Sequence[PythonUvmSequenceItem],
     ) -> Optional[Tuple[Dict[str, int], ...]]:
-        if not hasattr(self.simulator, "input_names") or not hasattr(self.simulator, "run_batch"):
+        if not self.supports_batch():
             return None
         input_names = tuple(self.simulator.input_names)
         rows = [
@@ -216,6 +226,16 @@ class PythonUvmScoreboard:
             )
         return None
 
+    def supports_expected_batch(
+        self,
+        items: Sequence[PythonUvmSequenceItem],
+    ) -> bool:
+        if any(item.expected is not None for item in items):
+            return False
+        if self.expected_fn is not None:
+            return True
+        return self.reference_model is not None and hasattr(self.reference_model, "predict_batch")
+
     def check(
         self,
         cycle: int,
@@ -308,9 +328,7 @@ class PythonUvmEnv:
         cycle_base: int,
         traces: List[TraceSample],
     ) -> bool:
-        batch_outputs = self.driver.drive_batch(items)
-        batch_expected = self.scoreboard.resolve_expected_batch(cycle_base, items)
-        if batch_outputs is None or batch_expected is None:
+        if not self.driver.supports_batch() or not self.scoreboard.supports_expected_batch(items):
             for idx, item in enumerate(items):
                 cycle = cycle_base + idx
                 outputs = self.driver.drive(item)
@@ -319,6 +337,10 @@ class PythonUvmEnv:
                 self.scoreboard.check(cycle, item, outputs, expected)
                 self.coverage.sample(item, outputs)
             return False
+        batch_outputs = self.driver.drive_batch(items)
+        batch_expected = self.scoreboard.resolve_expected_batch(cycle_base, items)
+        if batch_outputs is None or batch_expected is None:
+            raise RuntimeError("batch-capable simulator/reference model returned no batch results")
         for idx, item in enumerate(items):
             cycle = cycle_base + idx
             outputs = dict(batch_outputs[idx])

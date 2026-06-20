@@ -43,6 +43,7 @@ try:
         IndexedAssign as RtlgenIndexedAssign,
         MemRead as RtlgenMemRead,
         MemWrite as RtlgenMemWrite,
+        Module as RtlgenModule,
         Mux as RtlgenMux,
         PartSelect as RtlgenPartSelect,
         Ref as RtlgenRef,
@@ -65,6 +66,7 @@ except ImportError:  # pragma: no cover - rtlgen may be absent in some deploymen
     RtlgenIndexedAssign = ()
     RtlgenMemRead = ()
     RtlgenMemWrite = ()
+    RtlgenModule = ()
     RtlgenMux = ()
     RtlgenPartSelect = ()
     RtlgenRef = ()
@@ -137,6 +139,11 @@ def lower_legacy_module_to_sim(
     lowered_source = flatten_fn(module) if flatten else module
     _reject_unsupported_module_features(lowered_source)
     _register_implicit_signals(lowered_source)
+    state_inits, memory_inits = _collect_initial_values(module)
+    if lowered_source is not module and getattr(lowered_source, "_init_blocks", None):
+        lowered_state_inits, lowered_memory_inits = _collect_initial_values(lowered_source)
+        state_inits.update(lowered_state_inits)
+        memory_inits.update(lowered_memory_inits)
 
     signals: List[SimSignal] = []
     signal_map: Dict[str, SimSignal] = {}
@@ -147,7 +154,11 @@ def lower_legacy_module_to_sim(
             width=source_signal.width,
             kind=kind,
             signed=getattr(source_signal, "signed", False),
-            init=(source_signal.init_value or 0),
+            init=(
+                state_inits.get(source_signal.name, source_signal.init_value or 0)
+                if kind == "state"
+                else (source_signal.init_value or 0)
+            ),
         )
         signals.append(sim_signal)
         signal_map[source_signal.name] = sim_signal
@@ -164,13 +175,7 @@ def lower_legacy_module_to_sim(
     memories: List[Memory] = []
     memory_names: Dict[str, Memory] = {}
     for source_memory in lowered_source._memories.values():
-        init = ()
-        if getattr(source_memory, "init_data", None):
-            init = tuple(int(value) for value in source_memory.init_data[: source_memory.depth])
-            if len(init) < source_memory.depth:
-                init = init + (0,) * (source_memory.depth - len(init))
-        elif getattr(source_memory, "init_zero", False):
-            init = tuple(0 for _ in range(source_memory.depth))
+        init = memory_inits.get(source_memory.name, ())
         sim_memory = Memory(
             name=source_memory.name,
             width=source_memory.width,
@@ -184,12 +189,18 @@ def lower_legacy_module_to_sim(
             name=source_array.name,
             width=source_array.width,
             depth=source_array.depth,
+            init=memory_inits.get(source_array.name, ()),
         )
         memories.append(sim_memory)
         memory_names[source_array.name] = sim_memory
 
     assignments: List[Assignment] = []
     memory_writes: List[MemoryWrite] = []
+    if lowered_source._top_level:
+        env = _LoweringEnv(signal_map, memory_names)
+        _lower_stmt_list(lowered_source._top_level, phase="comb", env=env)
+        assignments.extend(env.finalize_phase())
+        memory_writes.extend(env.finalize_memory_writes())
     for body in lowered_source._comb_blocks:
         env = _LoweringEnv(signal_map, memory_names)
         _lower_stmt_list(body, phase="comb", env=env)
@@ -198,10 +209,6 @@ def lower_legacy_module_to_sim(
 
     for index, seq_item in enumerate(lowered_source._seq_blocks):
         clk, rst, reset_async, reset_active_low, body = seq_item
-        if reset_async:
-            raise LegacyLoweringError("async reset seq blocks are not yet supported")
-        if reset_active_low:
-            raise LegacyLoweringError("active-low reset seq blocks are not yet supported")
         if clk is None:
             raise LegacyLoweringError("sequential block is missing clock")
         env = _LoweringEnv(signal_map, memory_names)
@@ -248,17 +255,372 @@ def build_compiled_simulator_from_legacy(
     return runtime_builder.build(lowered.module, build_dir=build_dir)
 
 
+def _collect_initial_values(module) -> tuple[Dict[str, int], Dict[str, tuple[int, ...]]]:
+    signal_defs = dict(module._regs)
+    signal_values = {
+        name: int(signal.init_value or 0) & _mask_for_width(signal.width)
+        for name, signal in signal_defs.items()
+    }
+    memory_defs = {}
+    memory_values: Dict[str, List[int]] = {}
+    for source_memory in module._memories.values():
+        memory_defs[source_memory.name] = source_memory
+        init = [0] * source_memory.depth
+        if getattr(source_memory, "init_data", None):
+            for idx, value in enumerate(source_memory.init_data[: source_memory.depth]):
+                init[idx] = int(value) & _mask_for_width(source_memory.width)
+        memory_values[source_memory.name] = init
+    for source_array in module._arrays.values():
+        memory_defs[source_array.name] = source_array
+        memory_values[source_array.name] = [0] * source_array.depth
+    for body in module._init_blocks:
+        _eval_initial_stmt_list(body, signal_defs, signal_values, memory_defs, memory_values)
+    return signal_values, {name: tuple(values) for name, values in memory_values.items()}
+
+
+def _eval_initial_stmt_list(
+    stmts: Iterable[object],
+    signal_defs: Mapping[str, object],
+    signal_values: MutableMapping[str, int],
+    memory_defs: Mapping[str, object],
+    memory_values: MutableMapping[str, List[int]],
+) -> None:
+    for stmt in stmts:
+        if isinstance(stmt, _ASSIGN_TYPES):
+            _eval_initial_assign(stmt.target, stmt.value, signal_defs, signal_values, memory_defs, memory_values)
+            continue
+        if isinstance(stmt, _INDEXED_ASSIGN_TYPES):
+            target_expr = BitSelect(Ref(stmt.target_signal), stmt.index)
+            _eval_initial_assign(target_expr, stmt.value, signal_defs, signal_values, memory_defs, memory_values)
+            continue
+        if isinstance(stmt, _MEM_WRITE_TYPES):
+            _eval_initial_memory_write(
+                stmt.mem_name,
+                stmt.addr,
+                stmt.value,
+                signal_defs,
+                signal_values,
+                memory_defs,
+                memory_values,
+            )
+            continue
+        if isinstance(stmt, _ARRAY_WRITE_TYPES):
+            _eval_initial_memory_write(
+                stmt.array_name,
+                stmt.index,
+                stmt.value,
+                signal_defs,
+                signal_values,
+                memory_defs,
+                memory_values,
+            )
+            continue
+        if isinstance(stmt, _IF_TYPES):
+            if _eval_initial_expr(stmt.cond, signal_defs, signal_values, memory_defs, memory_values):
+                _eval_initial_stmt_list(stmt.then_body, signal_defs, signal_values, memory_defs, memory_values)
+                continue
+            branch_taken = False
+            for elif_cond, elif_body in stmt.elif_bodies:
+                if _eval_initial_expr(elif_cond, signal_defs, signal_values, memory_defs, memory_values):
+                    _eval_initial_stmt_list(elif_body, signal_defs, signal_values, memory_defs, memory_values)
+                    branch_taken = True
+                    break
+            if not branch_taken:
+                _eval_initial_stmt_list(stmt.else_body, signal_defs, signal_values, memory_defs, memory_values)
+            continue
+        if isinstance(stmt, _SWITCH_TYPES):
+            selector = _eval_initial_expr(stmt.expr, signal_defs, signal_values, memory_defs, memory_values)
+            matched = False
+            for case_value, case_body in stmt.cases:
+                if selector == _eval_initial_expr(case_value, signal_defs, signal_values, memory_defs, memory_values):
+                    _eval_initial_stmt_list(case_body, signal_defs, signal_values, memory_defs, memory_values)
+                    matched = True
+                    break
+            if not matched:
+                _eval_initial_stmt_list(stmt.default_body, signal_defs, signal_values, memory_defs, memory_values)
+            continue
+        if isinstance(stmt, _WHEN_TYPES):
+            for cond, body in stmt.branches:
+                if cond is None or _eval_initial_expr(cond, signal_defs, signal_values, memory_defs, memory_values):
+                    _eval_initial_stmt_list(body, signal_defs, signal_values, memory_defs, memory_values)
+                    break
+            continue
+        if type(stmt).__name__ == "Comment":
+            continue
+        raise LegacyLoweringError(f"unsupported initial-block statement type '{type(stmt).__name__}'")
+
+
+def _eval_initial_assign(
+    target,
+    value,
+    signal_defs: Mapping[str, object],
+    signal_values: MutableMapping[str, int],
+    memory_defs: Mapping[str, object],
+    memory_values: MutableMapping[str, List[int]],
+) -> None:
+    if isinstance(target, _SIGNAL_TYPES):
+        signal = signal_defs.get(target.name)
+        if signal is None:
+            raise LegacyLoweringError(
+                f"initial block assignment only supports register targets, got '{target.name}'"
+            )
+        signal_values[target.name] = _eval_initial_expr(
+            value, signal_defs, signal_values, memory_defs, memory_values
+        ) & _mask_for_width(signal.width)
+        return
+    if isinstance(target, _REF_TYPES):
+        _eval_initial_assign(target.signal, value, signal_defs, signal_values, memory_defs, memory_values)
+        return
+    if isinstance(target, _BITSELECT_TYPES):
+        _eval_initial_bit_or_range_assign(target, value, signal_defs, signal_values, memory_defs, memory_values)
+        return
+    if isinstance(target, _SLICE_TYPES):
+        _eval_initial_bit_or_range_assign(target, value, signal_defs, signal_values, memory_defs, memory_values)
+        return
+    if isinstance(target, _PARTSELECT_TYPES):
+        _eval_initial_bit_or_range_assign(target, value, signal_defs, signal_values, memory_defs, memory_values)
+        return
+    raise LegacyLoweringError(
+        f"unsupported initial-block assignment target '{type(target).__name__}'"
+    )
+
+
+def _eval_initial_bit_or_range_assign(
+    target,
+    value,
+    signal_defs: Mapping[str, object],
+    signal_values: MutableMapping[str, int],
+    memory_defs: Mapping[str, object],
+    memory_values: MutableMapping[str, List[int]],
+) -> None:
+    operand = getattr(target, "operand", None)
+    if not isinstance(operand, _REF_TYPES):
+        raise LegacyLoweringError("initial block bit-range assignment must target a register")
+    signal = signal_defs.get(operand.signal.name)
+    if signal is None:
+        raise LegacyLoweringError(
+            f"initial block bit-range assignment only supports register targets, got '{operand.signal.name}'"
+        )
+    base_value = signal_values.get(operand.signal.name, 0) & _mask_for_width(signal.width)
+    replacement_value = _eval_initial_expr(value, signal_defs, signal_values, memory_defs, memory_values)
+    if isinstance(target, _BITSELECT_TYPES):
+        index = _eval_initial_expr(target.index, signal_defs, signal_values, memory_defs, memory_values)
+        signal_values[operand.signal.name] = _replace_python_bit_range(
+            base_value,
+            int(index),
+            1,
+            replacement_value,
+            signal.width,
+        )
+        return
+    if isinstance(target, _PARTSELECT_TYPES):
+        offset = _eval_initial_expr(target.offset, signal_defs, signal_values, memory_defs, memory_values)
+        signal_values[operand.signal.name] = _replace_python_bit_range(
+            base_value,
+            int(offset),
+            target.width,
+            replacement_value,
+            signal.width,
+        )
+        return
+    lo = target.lo
+    hi = target.hi
+    if not isinstance(lo, int) or not isinstance(hi, int):
+        raise LegacyLoweringError("unsupported non-static slice target in initial block")
+    signal_values[operand.signal.name] = _replace_python_bit_range(
+        base_value,
+        lo,
+        hi - lo + 1,
+        replacement_value,
+        signal.width,
+    )
+
+
+def _eval_initial_memory_write(
+    memory_name: str,
+    addr_expr,
+    value_expr,
+    signal_defs: Mapping[str, object],
+    signal_values: MutableMapping[str, int],
+    memory_defs: Mapping[str, object],
+    memory_values: MutableMapping[str, List[int]],
+) -> None:
+    memory = memory_defs.get(memory_name)
+    if memory is None:
+        raise LegacyLoweringError(f"initial block writes unknown memory '{memory_name}'")
+    addr = int(_eval_initial_expr(addr_expr, signal_defs, signal_values, memory_defs, memory_values))
+    if addr < 0 or addr >= memory.depth:
+        raise LegacyLoweringError(
+            f"initial block write to '{memory_name}' is outside depth {memory.depth}: addr={addr}"
+        )
+    value = _eval_initial_expr(value_expr, signal_defs, signal_values, memory_defs, memory_values)
+    memory_values[memory_name][addr] = int(value) & _mask_for_width(memory.width)
+
+
+def _eval_initial_expr(
+    expr,
+    signal_defs: Mapping[str, object],
+    signal_values: Mapping[str, int],
+    memory_defs: Mapping[str, object],
+    memory_values: Mapping[str, List[int]],
+) -> int:
+    if isinstance(expr, int):
+        return int(expr)
+    if isinstance(expr, _SIGNAL_TYPES):
+        if expr.name not in signal_values:
+            raise LegacyLoweringError(
+                f"initial block expression references non-register signal '{expr.name}'"
+            )
+        return int(signal_values[expr.name]) & _mask_for_width(expr.width)
+    if isinstance(expr, _CONST_TYPES):
+        return int(expr.value) & _mask_for_width(expr.width)
+    if isinstance(expr, _REF_TYPES):
+        signal = expr.signal
+        if signal.name not in signal_values:
+            raise LegacyLoweringError(
+                f"initial block expression references non-register signal '{signal.name}'"
+            )
+        return int(signal_values[signal.name]) & _mask_for_width(signal.width)
+    if isinstance(expr, _MEM_READ_TYPES):
+        memory = memory_defs[expr.mem_name]
+        addr = int(_eval_initial_expr(expr.addr, signal_defs, signal_values, memory_defs, memory_values))
+        return int(memory_values[expr.mem_name][addr % memory.depth]) & _mask_for_width(memory.width)
+    if isinstance(expr, _ARRAY_READ_TYPES):
+        memory = memory_defs[expr.array_name]
+        addr = int(_eval_initial_expr(expr.index, signal_defs, signal_values, memory_defs, memory_values))
+        return int(memory_values[expr.array_name][addr % memory.depth]) & _mask_for_width(memory.width)
+    if isinstance(expr, _UNARY_TYPES):
+        operand = _eval_initial_expr(expr.operand, signal_defs, signal_values, memory_defs, memory_values)
+        width = expr.width
+        if expr.op == "~":
+            return (~operand) & _mask_for_width(width)
+        if expr.op == "-":
+            return (-operand) & _mask_for_width(width)
+        if expr.op == "!":
+            return int(not operand)
+        if expr.op == "$signed":
+            return _to_signed(operand, width)
+        if expr.op == "$unsigned":
+            return operand & _mask_for_width(width)
+        raise LegacyLoweringError(f"unsupported unary op '{expr.op}' in initial block")
+    if isinstance(expr, _BINOP_TYPES):
+        lhs = _eval_initial_expr(expr.lhs, signal_defs, signal_values, memory_defs, memory_values)
+        rhs = _eval_initial_expr(expr.rhs, signal_defs, signal_values, memory_defs, memory_values)
+        width = expr.width
+        if expr.op == "+":
+            return (lhs + rhs) & _mask_for_width(width)
+        if expr.op == "-":
+            return (lhs - rhs) & _mask_for_width(width)
+        if expr.op == "*":
+            return (lhs * rhs) & _mask_for_width(width)
+        if expr.op == "&":
+            return (lhs & rhs) & _mask_for_width(width)
+        if expr.op == "|":
+            return (lhs | rhs) & _mask_for_width(width)
+        if expr.op == "^":
+            return (lhs ^ rhs) & _mask_for_width(width)
+        if expr.op == "<<":
+            return (lhs << rhs) & _mask_for_width(width)
+        if expr.op == ">>":
+            return (lhs >> rhs) & _mask_for_width(width)
+        if expr.op == ">>>":
+            return (_to_signed(lhs, _expr_eval_width(expr.lhs, signal_defs, memory_defs)) >> rhs) & _mask_for_width(width)
+        if expr.op == "==":
+            return int(lhs == rhs)
+        if expr.op == "!=":
+            return int(lhs != rhs)
+        if expr.op == "<":
+            return int(lhs < rhs)
+        if expr.op == "<=":
+            return int(lhs <= rhs)
+        if expr.op == ">":
+            return int(lhs > rhs)
+        if expr.op == ">=":
+            return int(lhs >= rhs)
+        raise LegacyLoweringError(f"unsupported binary op '{expr.op}' in initial block")
+    if isinstance(expr, _MUX_TYPES):
+        cond = _eval_initial_expr(expr.cond, signal_defs, signal_values, memory_defs, memory_values)
+        branch = expr.true_expr if cond else expr.false_expr
+        return _eval_initial_expr(branch, signal_defs, signal_values, memory_defs, memory_values)
+    if isinstance(expr, _SLICE_TYPES):
+        operand = _eval_initial_expr(expr.operand, signal_defs, signal_values, memory_defs, memory_values)
+        if not isinstance(expr.lo, int) or not isinstance(expr.hi, int):
+            raise LegacyLoweringError("dynamic slice expression is not yet supported in initial blocks")
+        return (operand >> expr.lo) & _mask_for_width(expr.hi - expr.lo + 1)
+    if isinstance(expr, _PARTSELECT_TYPES):
+        operand = _eval_initial_expr(expr.operand, signal_defs, signal_values, memory_defs, memory_values)
+        offset = _eval_initial_expr(expr.offset, signal_defs, signal_values, memory_defs, memory_values)
+        return (operand >> int(offset)) & _mask_for_width(expr.width)
+    if isinstance(expr, _BITSELECT_TYPES):
+        operand = _eval_initial_expr(expr.operand, signal_defs, signal_values, memory_defs, memory_values)
+        index = _eval_initial_expr(expr.index, signal_defs, signal_values, memory_defs, memory_values)
+        return (operand >> int(index)) & 0x1
+    if isinstance(expr, _CONCAT_TYPES):
+        value = 0
+        for operand in expr.operands:
+            part = _eval_initial_expr(operand, signal_defs, signal_values, memory_defs, memory_values)
+            value = (value << operand.width) | (part & _mask_for_width(operand.width))
+        return value & _mask_for_width(expr.width)
+    raise LegacyLoweringError(f"unsupported initial-block expression type '{type(expr).__name__}'")
+
+
+def _expr_eval_width(expr, signal_defs: Mapping[str, object], memory_defs: Mapping[str, object]) -> int:
+    if isinstance(expr, int):
+        return max(expr.bit_length(), 1)
+    if isinstance(expr, _SIGNAL_TYPES):
+        return expr.width
+    if isinstance(expr, _CONST_TYPES):
+        return expr.width
+    if isinstance(expr, _REF_TYPES):
+        return expr.signal.width
+    if isinstance(expr, _MEM_READ_TYPES):
+        return memory_defs[expr.mem_name].width
+    if isinstance(expr, _ARRAY_READ_TYPES):
+        return memory_defs[expr.array_name].width
+    if hasattr(expr, "width"):
+        return int(expr.width)
+    raise LegacyLoweringError(f"cannot derive width for initial-block expression '{type(expr).__name__}'")
+
+
+def _to_signed(value: int, width: int) -> int:
+    mask = _mask_for_width(width)
+    masked = int(value) & mask
+    sign_bit = 1 << (width - 1)
+    return masked - (1 << width) if masked & sign_bit else masked
+
+
+def _replace_python_bit_range(base_value: int, lo: int, width: int, replacement_value: int, base_width: int) -> int:
+    if width < 1:
+        raise LegacyLoweringError("bit range width must be positive")
+    if lo < 0 or lo + width > base_width:
+        raise LegacyLoweringError("bit range assignment is outside the target signal width")
+    range_mask = ((1 << width) - 1) << lo
+    keep_mask = _mask_for_width(base_width) ^ range_mask
+    return (
+        (base_value & keep_mask)
+        | ((int(replacement_value) & _mask_for_width(width)) << lo)
+    ) & _mask_for_width(base_width)
+
+
+def _mask_for_width(width: int) -> int:
+    return (1 << width) - 1
+
+
 def _reject_unsupported_module_features(module) -> None:
     if module._submodules:
         raise LegacyLoweringError("legacy lowering expects a flattened module")
     if getattr(module, "_beh_func", None) is not None:
         raise LegacyLoweringError("behavioral callback modules are not supported")
-    if module._top_level:
-        raise LegacyLoweringError("top-level statements are not yet supported")
+    unsupported_top = [
+        type(stmt).__name__
+        for stmt in module._top_level
+        if not isinstance(stmt, _ASSIGN_TYPES) and type(stmt).__name__ != "Comment"
+    ]
+    if unsupported_top:
+        kinds = ", ".join(sorted(set(unsupported_top)))
+        raise LegacyLoweringError(f"unsupported top-level statement types: {kinds}")
     if module._latch_blocks:
         raise LegacyLoweringError("latch blocks are not yet supported")
-    if module._init_blocks:
-        raise LegacyLoweringError("initial blocks are not yet supported")
 
 
 class _LoweringEnv:
@@ -536,24 +898,24 @@ def _lower_expr(expr, env: _LoweringEnv):
         )
     if isinstance(expr, _SLICE_TYPES):
         if not isinstance(expr.hi, int) or not isinstance(expr.lo, int):
-            raise LegacyLoweringError("dynamic slices are not yet supported")
-        operand = _lower_expr(expr.operand, env)
-        if expr.hi == expr.lo:
-            return BinaryExpr(
-                "&",
-                BinaryExpr(">>", operand, ConstExpr(expr.lo, max(expr.lo.bit_length(), 1))),
-                ConstExpr(1, 1),
+            return MaskExpr(
+                BinaryExpr(">>", _lower_expr(expr.operand, env), _lower_expr(expr.lo, env)),
+                expr.width,
             )
+        operand = _lower_expr(expr.operand, env)
         width = expr.hi - expr.lo + 1
-        return BinaryExpr(
-            "&",
+        return MaskExpr(
             BinaryExpr(">>", operand, ConstExpr(expr.lo, max(expr.lo.bit_length(), 1))),
-            ConstExpr((1 << width) - 1, width),
+            width,
         )
+    if isinstance(expr, _PARTSELECT_TYPES):
+        operand = _lower_expr(expr.operand, env)
+        offset = _lower_expr(expr.offset, env)
+        return MaskExpr(BinaryExpr(">>", operand, offset), expr.width)
     if isinstance(expr, _BITSELECT_TYPES):
         operand = _lower_expr(expr.operand, env)
         index = _lower_expr(expr.index, env)
-        return BinaryExpr("&", BinaryExpr(">>", operand, index), ConstExpr(1, 1))
+        return MaskExpr(BinaryExpr(">>", operand, index), 1)
     if isinstance(expr, _CONCAT_TYPES):
         operands = list(expr.operands)
         if not operands:
@@ -562,19 +924,23 @@ def _lower_expr(expr, env: _LoweringEnv):
         running_width = operands[0].width
         for operand in operands[1:]:
             part = _lower_expr(operand, env)
+            running_width += operand.width
             acc = BinaryExpr(
                 "|",
                 BinaryExpr("<<", acc, ConstExpr(operand.width, max(operand.width.bit_length(), 1))),
                 part,
             )
-            running_width += operand.width
-        return acc
+            acc = MaskExpr(acc, running_width)
+        return MaskExpr(acc, running_width)
     raise LegacyLoweringError(f"unsupported expression type '{type(expr).__name__}'")
 
 
 def _lower_assign(target, value, *, phase: str, env: _LoweringEnv) -> None:
     if isinstance(target, _SIGNAL_TYPES):
         env.assign(target, _lower_expr(value, env), phase=phase)
+        return
+    if isinstance(target, _REF_TYPES):
+        env.assign(target.signal, _lower_expr(value, env), phase=phase)
         return
     if isinstance(target, _SLICE_TYPES):
         _lower_slice_assign(target, value, phase=phase, env=env)
@@ -658,14 +1024,21 @@ def _lower_partselect_assign(target: PartSelect, value, *, phase: str, env: _Low
     base_signal = target.operand.signal
     offset = _const_int(target.offset)
     if offset is None:
-        raise LegacyLoweringError("dynamic part-select assignment is not yet supported")
-    replacement = _replace_bit_range_expr(
-        env.read(base_signal.name),
-        offset,
-        target.width,
-        _lower_expr(value, env),
-        base_signal.width,
-    )
+        replacement = _replace_dynamic_range_expr(
+            env.read(base_signal.name),
+            _lower_expr(target.offset, env),
+            target.width,
+            _lower_expr(value, env),
+            base_signal.width,
+        )
+    else:
+        replacement = _replace_bit_range_expr(
+            env.read(base_signal.name),
+            offset,
+            target.width,
+            _lower_expr(value, env),
+            base_signal.width,
+        )
     env.assign(base_signal, replacement, phase=phase)
 
 
@@ -682,11 +1055,14 @@ def _replace_bit_range_expr(base, lo: int, width: int, value, base_width: int):
 
 
 def _replace_dynamic_bit_expr(base, index, value, base_width: int):
-    one = ConstExpr(1, 1)
-    dynamic_mask = BinaryExpr("<<", one, index)
+    return _replace_dynamic_range_expr(base, index, 1, value, base_width)
+
+
+def _replace_dynamic_range_expr(base, offset, width: int, value, base_width: int):
+    dynamic_mask = BinaryExpr("<<", ConstExpr((1 << width) - 1, width), offset)
     keep_mask = BinaryExpr("^", ConstExpr((1 << base_width) - 1, base_width), dynamic_mask)
     cleared = BinaryExpr("&", base, keep_mask)
-    shifted = BinaryExpr("<<", MaskExpr(value, 1), index)
+    shifted = BinaryExpr("<<", MaskExpr(value, width), offset)
     return MaskExpr(BinaryExpr("|", cleared, shifted), base_width)
 
 
@@ -724,8 +1100,7 @@ _WHEN_TYPES = (WhenNode,) + ((RtlgenWhenNode,) if RtlgenWhenNode else ())
 
 
 def _select_flatten_module(module):
-    module_name = module.__class__.__module__
-    if module_name.startswith("rtlgen.") and rtlgen_flatten_module is not None:
+    if RtlgenModule and isinstance(module, RtlgenModule) and rtlgen_flatten_module is not None:
         return rtlgen_flatten_module
     return flatten_module
 
@@ -853,6 +1228,8 @@ def _register_implicit_signals(module) -> None:
     for body in module._comb_blocks:
         for stmt in body:
             visit_stmt(stmt)
+    for stmt in module._top_level:
+        visit_stmt(stmt)
     for _, _, _, _, body in module._seq_blocks:
         for stmt in body:
             visit_stmt(stmt)

@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib.util
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+import shutil
+import subprocess
+import sys
+import tempfile
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from rtlgen_x.sim import (
     Assignment,
@@ -23,6 +28,9 @@ from rtlgen_x.sim import (
 from rtlgen_x.verify.module_adapter import normalize_executable_module
 
 
+REFERENCE_RUNTIME_ARTIFACT = "rtlgen_x_ref_runtime.py"
+
+
 @dataclass(frozen=True)
 class VerificationPort:
     """One verification-facing port."""
@@ -39,6 +47,7 @@ class VerificationInterface:
 
     module_name: str
     reset_signal: Optional[str]
+    reset_active_low: bool
     inputs: Tuple[VerificationPort, ...]
     outputs: Tuple[VerificationPort, ...]
 
@@ -49,6 +58,14 @@ class GeneratedArtifact:
 
     path: str
     contents: str
+
+
+@dataclass(frozen=True)
+class UvmSequenceStep:
+    """One directed transaction for generated UVM collateral."""
+
+    inputs: Mapping[str, int]
+    label: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -65,9 +82,55 @@ class UvmCollateral:
         return {artifact.path: artifact.contents for artifact in self.artifacts}
 
 
+@dataclass(frozen=True)
+class UvmRuntimeBundle:
+    """Runnable UVM bundle with DUT/top/filelist helpers."""
+
+    module_name: str
+    package_name: str
+    interface_name: str
+    dut_module_name: str
+    top_module_name: str
+    test_name: str
+    artifacts: Tuple[GeneratedArtifact, ...]
+
+    def artifact_map(self) -> Dict[str, str]:
+        return {artifact.path: artifact.contents for artifact in self.artifacts}
+
+
+@dataclass(frozen=True)
+class ReferenceModelSmokeReport:
+    path: Path
+    class_name: str
+    inputs: Mapping[str, int]
+    predicted: Mapping[str, int]
+    batched_predicted: Tuple[Mapping[str, int], ...]
+
+
+@dataclass(frozen=True)
+class IverilogCollateralProbeReport:
+    collateral_dir: Path
+    interface_source: Path
+    package_source: Path
+    interface_compile_ok: bool
+    package_compile_ok: bool
+    interface_returncode: int
+    package_returncode: int
+    interface_stdout: str
+    interface_stderr: str
+    package_stdout: str
+    package_stderr: str
+    skipped_reason: Optional[str] = None
+
+    @property
+    def uvm_support_available(self) -> bool:
+        return self.package_compile_ok and self.skipped_reason is None
+
+
 def describe_verification_interface(module: Any) -> VerificationInterface:
     """Return an ordered verification-facing interface view for a module."""
 
+    source_module = module
     module = normalize_executable_module(module)
     inputs = []
     outputs = []
@@ -92,9 +155,11 @@ def describe_verification_interface(module: Any) -> VerificationInterface:
                 signed=signal.signed,
             )
         )
+    reset_signal, reset_active_low = _infer_reset_behavior(source_module, tuple(inputs))
     return VerificationInterface(
         module_name=module.name,
-        reset_signal=module.reset_signal,
+        reset_signal=reset_signal,
+        reset_active_low=reset_active_low,
         inputs=tuple(inputs),
         outputs=tuple(outputs),
     )
@@ -110,20 +175,20 @@ def emit_python_reference_model(
     module = normalize_executable_module(module)
     model_fn = f"build_{_snake_name(module.name)}_module"
     class_name = class_name or f"{_camel_name(module.name)}ReferenceModel"
-    signals_src = ",\n".join(
-        f"            {_render_signal(signal)},"
+    signals_src = _render_collection_block(
+        f"            {_render_signal(signal)}"
         for signal in module.signals
     )
-    memories_src = ",\n".join(
-        f"            {_render_memory(memory)},"
+    memories_src = _render_collection_block(
+        f"            {_render_memory(memory)}"
         for memory in module.memories
     )
-    assignments_src = ",\n".join(
-        f"            {_render_assignment(assignment)},"
+    assignments_src = _render_collection_block(
+        f"            {_render_assignment(assignment)}"
         for assignment in module.assignments
     )
-    memory_writes_src = ",\n".join(
-        f"            {_render_memory_write(write)},"
+    memory_writes_src = _render_collection_block(
+        f"            {_render_memory_write(write)}"
         for write in module.memory_writes
     )
     outputs_src = ", ".join(repr(name) for name in module.outputs)
@@ -139,22 +204,38 @@ def emit_python_reference_model(
     )
     return (
         f'"""Generated Python reference model for "{module.name}"."""\n\n'
+        "from __future__ import annotations\n\n"
+        "import importlib.util\n"
+        "import sys\n"
+        "from pathlib import Path\n"
         "from typing import Dict, Mapping\n\n"
-        "from rtlgen_x.sim import (\n"
-        "    Assignment,\n"
-        "    BinaryExpr,\n"
-        "    ConstExpr,\n"
-        "    MaskExpr,\n"
-        "    Memory,\n"
-        "    MemoryReadExpr,\n"
-        "    MemoryWrite,\n"
-        "    MuxExpr,\n"
-        "    PythonSimulator,\n"
-        "    Signal,\n"
-        "    SignalRef,\n"
-        "    SimModule,\n"
-        "    UnaryExpr,\n"
-        ")\n\n\n"
+        "def _load_runtime_module():\n"
+        f"    runtime_path = Path(__file__).with_name({REFERENCE_RUNTIME_ARTIFACT!r})\n"
+        "    module_name = runtime_path.stem + \"_rtlgen_x_runtime\"\n"
+        "    module = sys.modules.get(module_name)\n"
+        "    if module is not None:\n"
+        "        return module\n"
+        "    spec = importlib.util.spec_from_file_location(module_name, runtime_path)\n"
+        "    if spec is None or spec.loader is None:\n"
+        "        raise ImportError(f\"unable to load runtime from {runtime_path}\")\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    sys.modules[module_name] = module\n"
+        "    spec.loader.exec_module(module)\n"
+        "    return module\n\n"
+        "_runtime = _load_runtime_module()\n"
+        "Assignment = _runtime.Assignment\n"
+        "BinaryExpr = _runtime.BinaryExpr\n"
+        "ConstExpr = _runtime.ConstExpr\n"
+        "MaskExpr = _runtime.MaskExpr\n"
+        "Memory = _runtime.Memory\n"
+        "MemoryReadExpr = _runtime.MemoryReadExpr\n"
+        "MemoryWrite = _runtime.MemoryWrite\n"
+        "MuxExpr = _runtime.MuxExpr\n"
+        "PythonSimulator = _runtime.PythonSimulator\n"
+        "Signal = _runtime.Signal\n"
+        "SignalRef = _runtime.SignalRef\n"
+        "SimModule = _runtime.SimModule\n"
+        "UnaryExpr = _runtime.UnaryExpr\n\n\n"
         f"def {model_fn}() -> SimModule:\n"
         "    return SimModule(\n"
         f"        name={module.name!r},\n"
@@ -187,7 +268,10 @@ def emit_python_reference_model(
         "    def reset(self) -> None:\n"
         "        self._sim.reset()\n\n"
         "    def predict(self, transaction: Mapping[str, int]) -> Dict[str, int]:\n"
-        "        return self._sim.step(transaction)\n"
+        "        return self._sim.step(transaction)\n\n"
+        "    def predict_batch(self, transactions):\n"
+        "        rows = [tuple(int(item.get(name, 0)) for name in self.input_names) for item in transactions]\n"
+        "        return tuple(dict(row) for row in self._sim.run_batch(rows))\n"
     )
 
 
@@ -198,6 +282,7 @@ def generate_uvm_collateral(
     class_prefix: Optional[str] = None,
     interface_name: Optional[str] = None,
     clock_name: str = "clk",
+    directed_sequence: Optional[Sequence[UvmSequenceStep | Mapping[str, int]]] = None,
 ) -> UvmCollateral:
     """Generate UVM skeleton collateral and a Python reference-model bridge."""
 
@@ -232,7 +317,14 @@ def generate_uvm_collateral(
         ),
         GeneratedArtifact(
             path=f"{sequence_class}.sv",
-            contents=_emit_sequence_sv(interface, txn_class, sequencer_class, sequence_class, clock_name),
+            contents=_emit_sequence_sv(
+                interface,
+                txn_class,
+                sequencer_class,
+                sequence_class,
+                clock_name,
+                directed_sequence=directed_sequence,
+            ),
         ),
         GeneratedArtifact(
             path=f"{driver_class}.sv",
@@ -273,6 +365,7 @@ def generate_uvm_collateral(
         GeneratedArtifact(
             path=f"{package_name}.sv",
             contents=_emit_package_sv(
+                interface,
                 package_name,
                 interface_name,
                 txn_class,
@@ -284,7 +377,12 @@ def generate_uvm_collateral(
                 scoreboard_class,
                 env_class,
                 test_class,
+                clock_name,
             ),
+        ),
+        GeneratedArtifact(
+            path=REFERENCE_RUNTIME_ARTIFACT,
+            contents=_emit_reference_runtime_python(),
         ),
         GeneratedArtifact(
             path=f"{stem}_ref_model.py",
@@ -315,17 +413,235 @@ def generate_uvm_collateral(
     )
 
 
+def generate_uvm_runtime_bundle(
+    module: Any,
+    *,
+    package_name: Optional[str] = None,
+    class_prefix: Optional[str] = None,
+    interface_name: Optional[str] = None,
+    clock_name: str = "clk",
+    dut_module_name: Optional[str] = None,
+    dut_source: Optional[str] = None,
+    top_module_name: Optional[str] = None,
+    test_name: Optional[str] = None,
+    directed_sequence: Optional[Sequence[UvmSequenceStep | Mapping[str, int]]] = None,
+) -> UvmRuntimeBundle:
+    """Generate a runnable UVM bundle with DUT/top/filelist/run script."""
+
+    executable = normalize_executable_module(module)
+    collateral = generate_uvm_collateral(
+        module,
+        package_name=package_name,
+        class_prefix=class_prefix,
+        interface_name=interface_name,
+        clock_name=clock_name,
+        directed_sequence=directed_sequence,
+    )
+    input_names = {port.name for port in collateral.interface.inputs}
+    if clock_name not in input_names:
+        raise ValueError(f"clock signal '{clock_name}' not found in module inputs")
+
+    stem = _snake_name(executable.name)
+    interface_name = next(
+        artifact.path[:-3]
+        for artifact in collateral.artifacts
+        if artifact.path.endswith("_if.sv")
+    )
+    test_name = test_name or f"{class_prefix or stem}_test"
+    top_module_name = top_module_name or f"{stem}_top"
+    if dut_source is None:
+        dut_source = _emit_legacy_dut_sv(module)
+        dut_module_name = dut_module_name or _infer_preferred_sv_module_name(dut_source, module, executable)
+    else:
+        dut_module_name = dut_module_name or executable.name
+    dut_file_name = f"{stem}_dut.sv"
+    top_file_name = f"{top_module_name}.sv"
+    runtime_artifacts = (
+        GeneratedArtifact(path=dut_file_name, contents=dut_source),
+        GeneratedArtifact(
+            path=top_file_name,
+            contents=_emit_uvm_top_sv(
+                collateral.interface,
+                package_name=collateral.package_name,
+                interface_name=interface_name,
+                dut_module_name=dut_module_name,
+                top_module_name=top_module_name,
+                test_name=test_name,
+                clock_name=clock_name,
+            ),
+        ),
+        GeneratedArtifact(
+            path="filelist.f",
+            contents=_emit_vcs_filelist(collateral.package_name, dut_file_name, top_file_name),
+        ),
+        GeneratedArtifact(
+            path="run_vcs.sh",
+            contents=_emit_vcs_run_script(
+                top_module_name=top_module_name,
+                test_name=test_name,
+                dpi_bridge_c=f"{stem}_dpi_bridge.c",
+            ),
+        ),
+    )
+    return UvmRuntimeBundle(
+        module_name=executable.name,
+        package_name=collateral.package_name,
+        interface_name=interface_name,
+        dut_module_name=dut_module_name,
+        top_module_name=top_module_name,
+        test_name=test_name,
+        artifacts=collateral.artifacts + runtime_artifacts,
+    )
+
+
 def write_uvm_collateral(collateral: UvmCollateral, output_dir: Path | str) -> Tuple[Path, ...]:
     """Materialize generated collateral under one output directory."""
 
+    return _write_generated_artifacts(collateral.artifacts, output_dir)
+
+
+def write_uvm_runtime_bundle(
+    bundle: UvmRuntimeBundle,
+    output_dir: Path | str,
+    *,
+    include_runtime_package: bool = False,
+) -> Tuple[Path, ...]:
+    """Materialize one runnable UVM bundle and optionally vendor rtlgen_x."""
+
+    written = list(_write_generated_artifacts(bundle.artifacts, output_dir))
     root = Path(output_dir)
-    root.mkdir(parents=True, exist_ok=True)
-    written = []
-    for artifact in collateral.artifacts:
-        path = root / artifact.path
-        path.write_text(artifact.contents, encoding="utf-8")
-        written.append(path)
+    run_script = root / "run_vcs.sh"
+    if run_script.exists():
+        run_script.chmod(0o755)
+    if include_runtime_package:
+        package_root = Path(__file__).resolve().parents[1]
+        shutil.copytree(
+            package_root,
+            root / "rtlgen_x",
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache"),
+        )
     return tuple(written)
+
+
+def load_generated_reference_model(
+    ref_model_path: Path | str,
+    *,
+    class_name: Optional[str] = None,
+):
+    """Load one generated Python reference model class from disk."""
+
+    path = Path(ref_model_path)
+    spec = importlib.util.spec_from_file_location(f"{path.stem}_rtlgen_x_generated_ref", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"unable to load generated reference model from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    if class_name is not None:
+        ref_cls = getattr(module, class_name, None)
+        if ref_cls is None:
+            raise AttributeError(f"reference model class '{class_name}' not found in {path}")
+        return ref_cls()
+    for name in dir(module):
+        candidate = getattr(module, name)
+        if name.endswith("ReferenceModel") and callable(candidate):
+            return candidate()
+    raise AttributeError(f"no ReferenceModel class found in {path}")
+
+
+def smoke_test_generated_reference_model(
+    ref_model_path: Path | str,
+    *,
+    inputs: Optional[Mapping[str, int]] = None,
+    class_name: Optional[str] = None,
+) -> ReferenceModelSmokeReport:
+    """Load a generated reference model and execute scalar plus batch predictions."""
+
+    model = load_generated_reference_model(ref_model_path, class_name=class_name)
+    tx = {name: 0 for name in getattr(model, "input_names", ())}
+    if inputs is not None:
+        tx.update({name: int(value) for name, value in dict(inputs).items()})
+    model.reset()
+    predicted = dict(model.predict(tx))
+    model.reset()
+    batched_predicted = tuple(dict(row) for row in model.predict_batch((tx,)))
+    return ReferenceModelSmokeReport(
+        path=Path(ref_model_path),
+        class_name=type(model).__name__,
+        inputs=tx,
+        predicted=predicted,
+        batched_predicted=batched_predicted,
+    )
+
+
+def probe_iverilog_uvm_collateral(
+    collateral: UvmCollateral,
+    *,
+    output_dir: Optional[Path | str] = None,
+    iverilog_cmd: str = "iverilog",
+) -> IverilogCollateralProbeReport:
+    """Probe how far generated SV/UVM collateral can go under iverilog."""
+
+    if shutil.which(iverilog_cmd) is None:
+        root = Path(output_dir) if output_dir is not None else Path(".")
+        stem = _snake_name(collateral.module_name)
+        return IverilogCollateralProbeReport(
+            collateral_dir=root,
+            interface_source=root / f"{stem}_if.sv",
+            package_source=root / f"{collateral.package_name}.sv",
+            interface_compile_ok=False,
+            package_compile_ok=False,
+            interface_returncode=-1,
+            package_returncode=-1,
+            interface_stdout="",
+            interface_stderr="",
+            package_stdout="",
+            package_stderr="",
+            skipped_reason="iverilog",
+        )
+
+    temp_dir_obj = None
+    if output_dir is None:
+        temp_dir_obj = tempfile.TemporaryDirectory(prefix="rtlgen_x_iverilog_probe_")
+        root = Path(temp_dir_obj.name)
+    else:
+        root = Path(output_dir)
+    try:
+        write_uvm_collateral(collateral, root)
+        interface_name = next(
+            artifact.path for artifact in collateral.artifacts
+            if artifact.path.endswith("_if.sv")
+        )
+        interface_path = root / interface_name
+        package_path = root / f"{collateral.package_name}.sv"
+
+        interface_proc = subprocess.run(
+            [iverilog_cmd, "-g2012", "-o", str(root / "interface.vvp"), str(interface_path)],
+            capture_output=True,
+            text=True,
+        )
+        package_proc = subprocess.run(
+            [iverilog_cmd, "-g2012", "-I", str(root), "-o", str(root / "package.vvp"), str(package_path)],
+            capture_output=True,
+            text=True,
+        )
+        return IverilogCollateralProbeReport(
+            collateral_dir=root,
+            interface_source=interface_path,
+            package_source=package_path,
+            interface_compile_ok=interface_proc.returncode == 0,
+            package_compile_ok=package_proc.returncode == 0,
+            interface_returncode=interface_proc.returncode,
+            package_returncode=package_proc.returncode,
+            interface_stdout=interface_proc.stdout,
+            interface_stderr=interface_proc.stderr,
+            package_stdout=package_proc.stdout,
+            package_stderr=package_proc.stderr,
+        )
+    finally:
+        if temp_dir_obj is not None:
+            temp_dir_obj.cleanup()
 
 
 def _render_signal(signal: Signal) -> str:
@@ -457,20 +773,79 @@ def _emit_sequence_sv(
     sequencer_class: str,
     sequence_class: str,
     clock_name: str,
+    directed_sequence: Optional[Sequence[UvmSequenceStep | Mapping[str, int]]] = None,
 ) -> str:
-    driven_ports = _transaction_inputs(interface, clock_name)
-    if driven_ports:
-        body = (
-            "    repeat (32) begin\n"
-            f"      {txn_class} req;\n"
-            f"      req = {txn_class}::type_id::create(\"req\");\n"
-            "      start_item(req);\n"
-            "      if (!req.randomize()) begin\n"
-            "        `uvm_fatal(\"SEQ\", \"Randomization failed\")\n"
-            "      end\n"
-            "      finish_item(req);\n"
-            "    end\n"
+    normalized_directed = _normalize_directed_sequence(directed_sequence)
+    if normalized_directed:
+        body = _emit_directed_sequence_body(
+            interface,
+            txn_class,
+            normalized_directed,
+            clock_name,
         )
+        return (
+            f"class {sequence_class} extends uvm_sequence #({txn_class});\n"
+            f"  `uvm_object_utils({sequence_class})\n"
+            f"  `uvm_declare_p_sequencer({sequencer_class})\n\n"
+            f"  function new(string name=\"{sequence_class}\");\n"
+            "    super.new(name);\n"
+            "  endfunction\n\n"
+            "  task body();\n"
+            f"{body}"
+            "  endtask\n"
+            "endclass\n"
+        )
+    driven_ports = _transaction_inputs(interface, clock_name)
+    reset_name = interface.reset_signal
+    semantic_constraints = _default_sequence_constraints(driven_ports, reset_name=reset_name)
+    if driven_ports:
+        if reset_name is not None and any(port.name == reset_name for port in driven_ports):
+            reset_asserted = "1'b0" if interface.reset_active_low else "1'b1"
+            reset_deasserted = "1'b1" if interface.reset_active_low else "1'b0"
+            reset_constraint_lines = [f"{reset_name} == {reset_asserted};"] + semantic_constraints
+            body_constraint_lines = [f"{reset_name} == {reset_deasserted};"] + semantic_constraints
+            reset_constraint_block = " ".join(reset_constraint_lines)
+            body_constraint_block = " ".join(body_constraint_lines)
+            body = (
+                "    repeat (2) begin\n"
+                f"      {txn_class} req;\n"
+                f"      req = {txn_class}::type_id::create(\"reset_req\");\n"
+                "      start_item(req);\n"
+                f"      if (!req.randomize() with {{ {reset_constraint_block} }}) begin\n"
+                "        `uvm_fatal(\"SEQ\", \"Reset randomization failed\")\n"
+                "      end\n"
+                "      finish_item(req);\n"
+                "    end\n"
+                "    repeat (32) begin\n"
+                f"      {txn_class} req;\n"
+                f"      req = {txn_class}::type_id::create(\"req\");\n"
+                "      start_item(req);\n"
+                f"      if (!req.randomize() with {{ {body_constraint_block} }}) begin\n"
+                "        `uvm_fatal(\"SEQ\", \"Randomization failed\")\n"
+                "      end\n"
+                "      finish_item(req);\n"
+                "    end\n"
+            )
+        else:
+            constraint_block = " ".join(semantic_constraints)
+            randomize_line = (
+                "      if (!req.randomize() with { "
+                + constraint_block
+                + " }) begin\n"
+                if semantic_constraints
+                else "      if (!req.randomize()) begin\n"
+            )
+            body = (
+                "    repeat (32) begin\n"
+                f"      {txn_class} req;\n"
+                f"      req = {txn_class}::type_id::create(\"req\");\n"
+                "      start_item(req);\n"
+                f"{randomize_line}"
+                "        `uvm_fatal(\"SEQ\", \"Randomization failed\")\n"
+                "      end\n"
+                "      finish_item(req);\n"
+                "    end\n"
+            )
     else:
         body = (
             "    repeat (32) begin\n"
@@ -492,6 +867,71 @@ def _emit_sequence_sv(
         "  endtask\n"
         "endclass\n"
     )
+
+
+def _normalize_directed_sequence(
+    directed_sequence: Optional[Sequence[UvmSequenceStep | Mapping[str, int]]],
+) -> Tuple[UvmSequenceStep, ...]:
+    if not directed_sequence:
+        return ()
+    steps = []
+    for index, step in enumerate(directed_sequence):
+        if isinstance(step, UvmSequenceStep):
+            steps.append(step)
+            continue
+        if isinstance(step, Mapping):
+            steps.append(UvmSequenceStep(inputs=dict(step), label=f"step_{index}"))
+            continue
+        raise TypeError("directed_sequence entries must be mappings or UvmSequenceStep")
+    return tuple(steps)
+
+
+def _emit_directed_sequence_body(
+    interface: VerificationInterface,
+    txn_class: str,
+    directed_sequence: Sequence[UvmSequenceStep],
+    clock_name: str,
+) -> str:
+    driven_ports = _transaction_inputs(interface, clock_name)
+    driven_names = {port.name for port in driven_ports}
+    body_lines = []
+    for index, step in enumerate(directed_sequence):
+        unknown = sorted(set(step.inputs) - driven_names)
+        if unknown:
+            joined = ", ".join(unknown)
+            raise ValueError(f"directed UVM step references unknown driven ports: {joined}")
+        instance_name = _sv_string_literal(step.label or f"step_{index}")
+        body_lines.append(f"    {txn_class} req;")
+        body_lines.append(f"    req = {txn_class}::type_id::create({instance_name});")
+        body_lines.append("    start_item(req);")
+        for port in driven_ports:
+            value = int(step.inputs.get(port.name, 0))
+            body_lines.append(f"    req.{port.name} = {_sv_literal(port.width, value=value)};")
+        body_lines.append("    finish_item(req);")
+        if index + 1 < len(directed_sequence):
+            body_lines.append("")
+    if body_lines and body_lines[-1] == "":
+        body_lines.pop()
+    return "\n".join(body_lines) + "\n"
+
+
+def _default_sequence_constraints(
+    ports: Sequence[VerificationPort],
+    *,
+    reset_name: Optional[str],
+) -> list[str]:
+    constraints = []
+    for port in ports:
+        if port.name == reset_name:
+            continue
+        lower = port.name.lower()
+        if lower.endswith("_gnt") or lower.endswith("_valid") or lower.endswith("_ready"):
+            constraints.append(f"{port.name} == {_sv_literal(port.width, all_ones=True)};")
+        elif lower.endswith("_rdata") or lower == "rdata":
+            constraints.append(f"{port.name} == {_sv_literal(port.width, value=0)};")
+        elif lower.endswith("_err") or lower.endswith("_slverr") or lower.endswith("error"):
+            constraints.append(f"{port.name} == {_sv_literal(port.width, value=0)};")
+    return constraints
 
 
 def _emit_driver_sv(
@@ -516,7 +956,7 @@ def _emit_driver_sv(
         f"    {txn_class} req;\n"
         "    forever begin\n"
         "      seq_item_port.get_next_item(req);\n"
-        f"      @(posedge vif.{clock_name});\n"
+        f"      @(negedge vif.{clock_name});\n"
         f"{drive_lines}\n"
         "      seq_item_port.item_done();\n"
         "    end\n"
@@ -549,6 +989,7 @@ def _emit_monitor_sv(
         f"    {txn_class} txn;\n"
         "    forever begin\n"
         f"      @(posedge vif.{clock_name});\n"
+        "      #1step;\n"
         f"      txn = {txn_class}::type_id::create(\"txn\", this);\n"
         f"{sampling_lines}\n"
         "      ap.write(txn);\n"
@@ -622,15 +1063,9 @@ def _emit_scoreboard_sv(
         [f"observed.{port.name}" for port in _transaction_inputs(interface, clock_name)]
         + [f"predicted_{port.name}" for port in interface.outputs]
     )
-    dpi_decl = (
-        "  import \"DPI-C\" context function void rtlgen_x_predict(\n"
-        f"    input string ref_model_path,\n{_sv_predict_dpi_ports(interface, clock_name)}\n"
-        "  );\n\n"
-    )
     return (
         f"class {scoreboard_class} extends uvm_component;\n"
         f"  `uvm_component_utils({scoreboard_class})\n\n"
-        f"{dpi_decl}"
         f"  uvm_analysis_imp#({txn_class}, {scoreboard_class}) analysis_export;\n"
         "  int unsigned error_count;\n\n"
         f"  function new(string name=\"{scoreboard_class}\", uvm_component parent=null);\n"
@@ -643,7 +1078,7 @@ def _emit_scoreboard_sv(
         f"    expected = {txn_class}::type_id::create(\"expected\");\n"
         f"    // Hook this DPI call to the generated Python reference model: {reference_model_path}.\n"
         f"    // Inputs passed into the predictor: {input_comment}. Outputs filled here: {output_comment}.\n"
-        f"    rtlgen_x_predict({reference_model_path!r}, {predict_args});\n"
+        f"    rtlgen_x_predict({_sv_string_literal(reference_model_path)}, {predict_args});\n"
         f"{predict_assign_lines}\n"
         "    return expected;\n"
         "  endfunction\n\n"
@@ -651,6 +1086,14 @@ def _emit_scoreboard_sv(
         f"    {txn_class} expected;\n"
         "    expected = predict(observed);\n"
         f"{compare_lines}\n"
+        "  endfunction\n"
+        "\n"
+        "  function void report_phase(uvm_phase phase);\n"
+        "    super.report_phase(phase);\n"
+        "    if (error_count != 0) begin\n"
+        f"      `uvm_fatal(\"{scoreboard_class.upper()}\", $sformatf(\"observed %0d mismatches\", error_count))\n"
+        "    end\n"
+        f"    `uvm_info(\"{scoreboard_class.upper()}\", \"scoreboard passed\", UVM_LOW)\n"
         "  endfunction\n"
         "endclass\n"
     )
@@ -706,6 +1149,7 @@ def _emit_test_sv(env_class: str, sequence_class: str, test_class: str) -> str:
 
 
 def _emit_package_sv(
+    interface: VerificationInterface,
     package_name: str,
     interface_name: str,
     txn_class: str,
@@ -717,6 +1161,7 @@ def _emit_package_sv(
     scoreboard_class: str,
     env_class: str,
     test_class: str,
+    clock_name: str,
 ) -> str:
     includes = "\n".join(
         f'  `include "{name}.sv"'
@@ -732,11 +1177,13 @@ def _emit_package_sv(
             test_class,
         )
     )
+    dpi_import_decl = _emit_scoreboard_dpi_import_sv(interface, clock_name)
     return (
         f'`include "{interface_name}.sv"\n\n'
         f"package {package_name};\n"
         "  import uvm_pkg::*;\n"
         '  `include "uvm_macros.svh"\n\n'
+        f"{dpi_import_decl}\n"
         f"{includes}\n"
         "endpackage\n"
     )
@@ -785,10 +1232,226 @@ def _sv_predict_dpi_ports(
     return "\n".join(lines)
 
 
+def _emit_scoreboard_dpi_import_sv(
+    interface: VerificationInterface,
+    clock_name: str,
+) -> str:
+    return (
+        "  import \"DPI-C\" context function void rtlgen_x_predict(\n"
+        f"    input string ref_model_path,\n{_sv_predict_dpi_ports(interface, clock_name)}\n"
+        "  );\n"
+    )
+
+
 def _sv_width(width: int) -> str:
     if width == 1:
         return ""
     return f"[{width - 1}:0] "
+
+
+def _sv_string_literal(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
+    return f'"{escaped}"'
+
+
+def _sv_literal(width: int, *, value: Optional[int] = None, all_ones: bool = False) -> str:
+    if width <= 0:
+        raise ValueError("width must be positive")
+    if all_ones:
+        value = (1 << width) - 1
+    if value is None:
+        raise ValueError("value or all_ones must be provided")
+    if width == 1:
+        return f"1'b{int(value) & 1}"
+    return f"{width}'h{int(value) & ((1 << width) - 1):x}"
+
+
+def _infer_reset_behavior(
+    module: Any,
+    inputs: Tuple[VerificationPort, ...],
+) -> Tuple[Optional[str], bool]:
+    reset_signal = getattr(module, "reset_signal", None)
+    if reset_signal is not None:
+        return reset_signal, False
+    if hasattr(module, "_seq_blocks"):
+        legacy_reset = _infer_legacy_reset_behavior(module)
+        if legacy_reset is not None:
+            return legacy_reset
+    input_names = {port.name: port for port in inputs if port.width == 1}
+    for candidate in ("rst", "reset", "rst_n", "reset_n"):
+        if candidate in input_names:
+            return candidate, False
+    return None, False
+
+
+def _infer_legacy_reset_behavior(module: Any) -> Optional[Tuple[str, bool]]:
+    reset_name = None
+    active_low = False
+    for seq_item in getattr(module, "_seq_blocks", ()):
+        if len(seq_item) < 2:
+            continue
+        inferred = _legacy_reset_expr_info(seq_item[1])
+        if inferred is None:
+            continue
+        name, low = inferred
+        if reset_name is None:
+            reset_name = name
+            active_low = low
+            continue
+        if reset_name != name or active_low != low:
+            return None
+    if reset_name is None:
+        return None
+    return reset_name, active_low
+
+
+def _legacy_reset_expr_info(expr: Any) -> Optional[Tuple[str, bool]]:
+    direct_name = getattr(expr, "name", None)
+    if direct_name:
+        return direct_name, False
+    inner = getattr(expr, "_expr", None)
+    if getattr(inner, "op", None) != "~":
+        return None
+    operand = getattr(inner, "operand", None)
+    ref_signal = getattr(operand, "signal", None)
+    ref_name = getattr(ref_signal, "name", None)
+    if ref_name:
+        return ref_name, True
+    return None
+
+
+def _emit_uvm_top_sv(
+    interface: VerificationInterface,
+    *,
+    package_name: str,
+    interface_name: str,
+    dut_module_name: str,
+    top_module_name: str,
+    test_name: str,
+    clock_name: str,
+) -> str:
+    driven_inputs = tuple(port for port in interface.inputs if port.name != clock_name)
+    init_lines = "\n".join(f"    vif.{port.name} = '0;" for port in driven_inputs)
+    port_lines = []
+    for port in interface.inputs:
+        if port.name == clock_name:
+            port_lines.append(f"    .{port.name}(clk)")
+        else:
+            port_lines.append(f"    .{port.name}(vif.{port.name})")
+    for port in interface.outputs:
+        port_lines.append(f"    .{port.name}(vif.{port.name})")
+    port_map = ",\n".join(port_lines)
+    return (
+        "`timescale 1ns/1ps\n\n"
+        f"module {top_module_name};\n"
+        "  import uvm_pkg::*;\n"
+        f"  import {package_name}::*;\n\n"
+        "  logic clk;\n"
+        f"  {interface_name} vif(clk);\n\n"
+        "  initial begin\n"
+        "    clk = 1'b0;\n"
+        f"{init_lines}\n"
+        "  end\n\n"
+        "  always #5 clk = ~clk;\n\n"
+        f"  {dut_module_name} dut (\n"
+        f"{port_map}\n"
+        "  );\n\n"
+        "  initial begin\n"
+        f"    uvm_config_db#(virtual {interface_name})::set(null, \"*\", \"vif\", vif);\n"
+        f"    run_test(\"{test_name}\");\n"
+        "  end\n"
+        "endmodule\n"
+    )
+
+
+def _emit_vcs_filelist(package_name: str, dut_file_name: str, top_file_name: str) -> str:
+    return (
+        f"{package_name}.sv\n"
+        f"{dut_file_name}\n"
+        f"{top_file_name}\n"
+    )
+
+
+def _emit_vcs_run_script(
+    *,
+    top_module_name: str,
+    test_name: str,
+    dpi_bridge_c: str,
+) -> str:
+    dpi_lib_stem = Path(dpi_bridge_c).stem
+    return (
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n\n"
+        "export PYTHONPATH=\"$PWD${PYTHONPATH:+:$PYTHONPATH}\"\n"
+        "VCS_BIN=\"${VCS_BIN:-$(command -v vcs)}\"\n"
+        "if [ -z \"$VCS_BIN\" ]; then\n"
+        "  echo \"vcs not found; source your simulator environment before running this script\" >&2\n"
+        "  exit 1\n"
+        "fi\n"
+        "VCS_ROOT=\"$(cd \"$(dirname \"$VCS_BIN\")/../..\" && pwd)\"\n"
+        "PYTHON_INCLUDES=\"$(python3-config --includes)\"\n"
+        "if python3-config --embed --ldflags >/dev/null 2>&1; then\n"
+        "  PYTHON_LDFLAGS=\"$(python3-config --embed --ldflags)\"\n"
+        "else\n"
+        "  PYTHON_LDFLAGS=\"$(python3-config --ldflags)\"\n"
+        "fi\n\n"
+        "rm -rf csrc simv simv.daidir ucli.key vc_hdrs.h "
+        f"lib{dpi_lib_stem}.so\n"
+        "gcc -shared -fPIC "
+        "\"-I${VCS_ROOT}/include\" ${PYTHON_INCLUDES} "
+        f"{dpi_bridge_c} ${{PYTHON_LDFLAGS}} "
+        f"-o lib{dpi_lib_stem}.so\n"
+        "vcs -full64 -sverilog -ntb_opts uvm-1.2 -timescale=1ns/1ps \\\n"
+        "  +incdir+. -f filelist.f \\\n"
+        "  -top "
+        f"{top_module_name} \\\n"
+        "  -o simv\n\n"
+        "./simv -sv_lib "
+        f"lib{dpi_lib_stem} "
+        "+UVM_TESTNAME="
+        f"{test_name}"
+        " \"$@\"\n"
+    )
+
+
+def _emit_legacy_dut_sv(module: Any) -> str:
+    if not (hasattr(module, "_inputs") and hasattr(module, "_outputs") and hasattr(module, "_seq_blocks")):
+        raise ValueError("dut_source is required unless module is a legacy DSL module")
+    emitter_cls = None
+    profile_cls = None
+
+    try:
+        from rtlgen.core import Module as RtlgenModule
+        from rtlgen.codegen import EmitProfile as RtlgenEmitProfile, VerilogEmitter as RtlgenVerilogEmitter
+
+        if isinstance(module, RtlgenModule):
+            emitter_cls = RtlgenVerilogEmitter
+            profile_cls = RtlgenEmitProfile
+    except ImportError:
+        pass
+
+    if emitter_cls is None or profile_cls is None:
+        from rtlgen_x.dsl import EmitProfile as RtlgenXEmitProfile, VerilogEmitter as RtlgenXVerilogEmitter
+
+        emitter_cls = RtlgenXVerilogEmitter
+        profile_cls = RtlgenXEmitProfile
+
+    emitter = emitter_cls(profile=profile_cls(language="systemverilog"))
+    return emitter.emit_design(module)
+
+
+def _write_generated_artifacts(
+    artifacts: Sequence[GeneratedArtifact],
+    output_dir: Path | str,
+) -> Tuple[Path, ...]:
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    written = []
+    for artifact in artifacts:
+        path = root / artifact.path
+        path.write_text(artifact.contents, encoding="utf-8")
+        written.append(path)
+    return tuple(written)
 
 
 def _emit_dpi_bridge_python(
@@ -820,6 +1483,7 @@ def _emit_dpi_bridge_python(
         "    if spec is None or spec.loader is None:\n"
         "        raise ImportError(f\"unable to load reference model from {resolved}\")\n"
         "    module = importlib.util.module_from_spec(spec)\n"
+        "    sys.modules[module_name] = module\n"
         "    spec.loader.exec_module(module)\n"
         "    ref_cls = getattr(module, REFERENCE_MODEL_CLASS, None)\n"
         "    if ref_cls is None:\n"
@@ -866,6 +1530,10 @@ def _emit_dpi_bridge_python(
     )
 
 
+def _emit_reference_runtime_python() -> str:
+    return Path(__file__).with_name("ref_runtime.py").read_text(encoding="utf-8")
+
+
 def _emit_dpi_bridge_c(
     interface: VerificationInterface,
     stem: str,
@@ -889,7 +1557,10 @@ def _emit_dpi_bridge_c(
             "  PyTuple_SET_ITEM(args, 0, PyUnicode_FromString(ref_model_path));",
         ]
         + [
-            f"  PyTuple_SET_ITEM(args, {idx + 1}, PyLong_FromUnsignedLongLong({_c_input_to_u64(port)}));"
+            f"  {{ PyObject* arg_{idx + 1} = {_c_input_to_pyobject(port)};"
+            f" if (arg_{idx + 1} == NULL) {{ PyErr_Print(); Py_DECREF(args);"
+            f" {_c_zero_outputs_inline(outputs)} return; }}"
+            f" PyTuple_SET_ITEM(args, {idx + 1}, arg_{idx + 1}); }}"
             for idx, port in enumerate(inputs)
         ]
     )
@@ -915,6 +1586,8 @@ def _emit_dpi_bridge_c(
         f"/* Generated DPI bridge for {interface.module_name}. */\n\n"
         "#include <Python.h>\n"
         '#include "svdpi.h"\n'
+        "#include <stdio.h>\n"
+        "#include <stdlib.h>\n"
         "#include <stdint.h>\n\n"
         f'#define RTLGEN_X_DPI_PY_MODULE "{stem}_dpi_bridge"\n'
         '#ifndef RTLGEN_X_DPI_MODULE_DIR\n'
@@ -922,20 +1595,56 @@ def _emit_dpi_bridge_c(
         "#endif\n\n"
         "static PyObject* rtlgen_x_bridge_module = NULL;\n"
         "static PyObject* rtlgen_x_predict_fn = NULL;\n\n"
-        "static uint64_t rtlgen_x_u64_from_svbitvec(const svBitVecVal* value, unsigned words) {\n"
-        "  uint64_t result = 0;\n"
-        "  unsigned limit = words < 2 ? words : 2;\n"
+        "static PyObject* rtlgen_x_pyint_from_svbitvec(const svBitVecVal* value, unsigned words) {\n"
+        "  size_t digits = ((size_t)words * 8u) + 1u;\n"
+        "  char* buffer = (char*)malloc(digits);\n"
+        "  char* cursor;\n"
         "  unsigned idx;\n"
-        "  for (idx = 0; idx < limit; ++idx) {\n"
-        "    result |= ((uint64_t)value[idx]) << (32u * idx);\n"
+        "  PyObject* py_value;\n"
+        "  if (buffer == NULL) {\n"
+        "    return PyErr_NoMemory();\n"
         "  }\n"
-        "  return result;\n"
+        "  cursor = buffer;\n"
+        "  for (idx = words; idx > 0; --idx) {\n"
+        "    snprintf(cursor, 9, \"%08x\", (unsigned)value[idx - 1]);\n"
+        "    cursor += 8;\n"
+        "  }\n"
+        "  *cursor = '\\0';\n"
+        "  py_value = PyLong_FromString(buffer, NULL, 16);\n"
+        "  free(buffer);\n"
+        "  return py_value;\n"
         "}\n\n"
-        "static void rtlgen_x_u64_to_svbitvec(svBitVecVal* value, unsigned words, uint64_t raw) {\n"
+        "static void rtlgen_x_zero_svbitvec(svBitVecVal* value, unsigned words) {\n"
         "  unsigned idx;\n"
         "  for (idx = 0; idx < words; ++idx) {\n"
-        "    value[idx] = (svBitVecVal)((raw >> (32u * idx)) & 0xffffffffu);\n"
+        "    value[idx] = 0u;\n"
         "  }\n"
+        "}\n\n"
+        "static int rtlgen_x_svbitvec_from_pyint(svBitVecVal* value, unsigned words, PyObject* py_value) {\n"
+        "  unsigned idx;\n"
+        "  for (idx = 0; idx < words; ++idx) {\n"
+        "    PyObject* shift = PyLong_FromUnsignedLong(32u * idx);\n"
+        "    PyObject* shifted;\n"
+        "    unsigned long chunk;\n"
+        "    if (shift == NULL) {\n"
+        "      PyErr_Print();\n"
+        "      return 0;\n"
+        "    }\n"
+        "    shifted = PyNumber_Rshift(py_value, shift);\n"
+        "    Py_DECREF(shift);\n"
+        "    if (shifted == NULL) {\n"
+        "      PyErr_Print();\n"
+        "      return 0;\n"
+        "    }\n"
+        "    chunk = PyLong_AsUnsignedLongMask(shifted);\n"
+        "    Py_DECREF(shifted);\n"
+        "    if (PyErr_Occurred()) {\n"
+        "      PyErr_Print();\n"
+        "      return 0;\n"
+        "    }\n"
+        "    value[idx] = (svBitVecVal)(chunk & 0xffffffffu);\n"
+        "  }\n"
+        "  return 1;\n"
         "}\n\n"
         "static int rtlgen_x_init_bridge(void) {\n"
         "  PyObject* module_dir;\n"
@@ -991,6 +1700,42 @@ def _emit_dpi_bridge_c(
     )
 
 
+def _render_collection_block(lines: Sequence[str]) -> str:
+    items = tuple(lines)
+    if not items:
+        return ""
+    return ",\n".join(items) + ","
+
+
+def _infer_sv_module_name(source: str) -> Optional[str]:
+    for line in source.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("module "):
+            continue
+        remainder = stripped[len("module ") :].strip()
+        if not remainder:
+            continue
+        return remainder.split("(", 1)[0].strip()
+    return None
+
+
+def _infer_preferred_sv_module_name(source: str, module: Any, executable: SimModule) -> str:
+    module_names = {
+        line.strip()[len("module ") :].strip().split("(", 1)[0].strip()
+        for line in source.splitlines()
+        if line.strip().startswith("module ")
+    }
+    for candidate in (
+        module.__class__.__name__,
+        getattr(module, "_type_name", None),
+        getattr(module, "name", None),
+        executable.name,
+    ):
+        if candidate and candidate in module_names:
+            return candidate
+    return _infer_sv_module_name(source) or getattr(module, "_type_name", executable.name)
+
+
 def _snake_name(name: str) -> str:
     chars = [c.lower() if c.isalnum() else "_" for c in name]
     cleaned = "".join(chars)
@@ -1013,22 +1758,29 @@ def _c_dpi_arg_decl(port: VerificationPort, *, is_output: bool) -> str:
     return f"{qualifier}svBitVecVal{pointer} {name}"
 
 
-def _c_input_to_u64(port: VerificationPort) -> str:
+def _c_input_to_pyobject(port: VerificationPort) -> str:
     if port.width == 1:
-        return f"(uint64_t){port.name}"
-    return f"rtlgen_x_u64_from_svbitvec({port.name}, {_sv_word_count(port.width)})"
+        return f"PyLong_FromUnsignedLong((unsigned long)({port.name} & 0x1u))"
+    return f"rtlgen_x_pyint_from_svbitvec({port.name}, {_sv_word_count(port.width)})"
 
 
 def _c_output_from_result(port: VerificationPort, idx: int) -> str:
-    cast_value = (
-        f"(uint64_t)PyLong_AsUnsignedLongLong(PySequence_GetItem(result, {idx}))"
-    )
     if port.width == 1:
         return (
-            f"  *predicted_{port.name} = (svBit)({cast_value} & 0x1u);"
+            f"{{ PyObject* item_{idx} = PySequence_GetItem(result, {idx}); "
+            f"unsigned long raw_{idx}; "
+            f"if (item_{idx} == NULL) {{ PyErr_Print(); {_c_zero_outputs_inline((port,))} return; }} "
+            f"raw_{idx} = PyLong_AsUnsignedLongMask(item_{idx}); "
+            f"Py_DECREF(item_{idx}); "
+            f"if (PyErr_Occurred()) {{ PyErr_Print(); {_c_zero_outputs_inline((port,))} return; }} "
+            f"*predicted_{port.name} = (svBit)(raw_{idx} & 0x1u); }}"
         )
     return (
-        f"  rtlgen_x_u64_to_svbitvec(predicted_{port.name}, {_sv_word_count(port.width)}, {cast_value});"
+        f"{{ PyObject* item_{idx} = PySequence_GetItem(result, {idx}); "
+        f"if (item_{idx} == NULL) {{ PyErr_Print(); {_c_zero_outputs_inline((port,))} return; }} "
+        f"if (!rtlgen_x_svbitvec_from_pyint(predicted_{port.name}, {_sv_word_count(port.width)}, item_{idx})) "
+        f"{{ Py_DECREF(item_{idx}); {_c_zero_outputs_inline((port,))} return; }} "
+        f"Py_DECREF(item_{idx}); }}"
     )
 
 
@@ -1037,7 +1789,18 @@ def _c_zero_outputs(outputs: Sequence[VerificationPort], indent: str) -> str:
         (
             f"{indent}*predicted_{port.name} = 0;\n"
             if port.width == 1
-            else f"{indent}rtlgen_x_u64_to_svbitvec(predicted_{port.name}, {_sv_word_count(port.width)}, 0);\n"
+            else f"{indent}rtlgen_x_zero_svbitvec(predicted_{port.name}, {_sv_word_count(port.width)});\n"
+        )
+        for port in outputs
+    )
+
+
+def _c_zero_outputs_inline(outputs: Sequence[VerificationPort]) -> str:
+    return "".join(
+        (
+            f"*predicted_{port.name} = 0; "
+            if port.width == 1
+            else f"rtlgen_x_zero_svbitvec(predicted_{port.name}, {_sv_word_count(port.width)}); "
         )
         for port in outputs
     )

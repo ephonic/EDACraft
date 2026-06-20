@@ -1,9 +1,12 @@
 import pytest
+import random
 
 from rtlgen_x.sim import (
     Assignment,
     BinaryExpr,
+    compare_python_and_compiled,
     ConstExpr,
+    CppBuildError,
     CppBackendScaffold,
     MaskExpr,
     Memory,
@@ -181,6 +184,30 @@ def test_compiled_simulator_can_recompute_outputs_after_state_commit(tmp_path):
         assert sim.step({"inp": 2}) == {"out": 7}
 
 
+def test_compiled_backend_supports_wide_signal_modules(tmp_path):
+    module = SimModule(
+        name="wide_runtime",
+        signals=(
+            Signal("inp", width=128, kind="input"),
+            Signal("acc", width=128, kind="state", init=1),
+            Signal("out", width=128, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", BinaryExpr("+", SignalRef("inp"), SignalRef("acc"))),
+            Assignment("acc", SignalRef("out"), phase="seq"),
+        ),
+        outputs=("out",),
+    )
+
+    with CppBackendScaffold(namespace="wideguard").build(module, tmp_path) as sim:
+        assert sim.step({"inp": (1 << 96) + 5}) == {"out": (1 << 96) + 6}
+        assert sim.step({"inp": (1 << 80) + 9}) == {"out": (1 << 96) + (1 << 80) + 15}
+        snapshot = sim.snapshot_state_values()
+        assert snapshot == ((1 << 96) + (1 << 80) + 15,)
+        sim.restore_state_values((3,))
+        assert sim.step({"inp": 7}) == {"out": 10}
+
+
 def test_compiled_simulator_supports_comb_read_seq_write_memory(tmp_path):
     module = SimModule(
         name="mem_runtime",
@@ -248,3 +275,32 @@ def test_compiled_simulator_supports_signed_unsigned_and_arithmetic_shift(tmp_pa
             "logical_shift_out": 0x40,
             "arith_shift_out": 0xC0,
         }
+
+
+def test_compiled_simulator_randomized_python_parity(tmp_path):
+    module = SimModule(
+        name="cpp_random_parity",
+        signals=(
+            Signal("a", width=8, kind="input"),
+            Signal("b", width=8, kind="input"),
+            Signal("acc", width=8, kind="state", init=7),
+            Signal("out", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", BinaryExpr("^", BinaryExpr("+", SignalRef("acc"), SignalRef("a")), SignalRef("b"))),
+            Assignment("acc", BinaryExpr("+", SignalRef("acc"), SignalRef("a")), phase="seq"),
+        ),
+        outputs=("out",),
+    )
+    rng = random.Random(1234)
+    vectors = tuple({"a": rng.randrange(256), "b": rng.randrange(256)} for _ in range(64))
+
+    report = compare_python_and_compiled(
+        module,
+        vectors,
+        builder=CppBackendScaffold(),
+        build_dir=tmp_path / "random_parity",
+    )
+
+    assert report.matched is True
+    assert report.mismatches == ()

@@ -17,6 +17,8 @@ from rtlgen_x.sim.cpp_backend import (
     SignalRef,
     SimModule,
     pack_u64_words,
+    pack_signal_values_u64_words,
+    _word_count,
 )
 from rtlgen_x.sim.python_runtime import PythonSimulator
 
@@ -200,8 +202,8 @@ def benchmark_compiled_speedup(
     runtime_builder = builder if builder is not None else CppBackendScaffold()
     python_sim = PythonSimulator(module)
     step_rows = _split_rows(flat_inputs, cycles, python_sim.input_count)
-    packed_inputs = flat_inputs if isinstance(flat_inputs, array) else pack_u64_words(flat_inputs)
-    total_outputs = cycles * python_sim.output_count
+    packed_inputs = _normalize_packed_inputs(flat_inputs, cycles, python_sim)
+    total_outputs = cycles * python_sim.output_word_count
     python_output_buffer = array("Q", [0]) * total_outputs
     cpp_output_buffer = array("Q", [0]) * total_outputs
 
@@ -309,15 +311,15 @@ def benchmark_streaming_capacity(
     finally:
         cpp_sim.close()
 
-    input_count = len([signal for signal in module.signals if signal.kind == "input"])
-    output_count = len(module.outputs)
+    input_words = sum(_word_count(signal.width) for signal in module.signals if signal.kind == "input")
+    output_words = sum(_word_count(signal.width) for signal in module.signals if signal.kind == "output")
     return StreamingBenchmarkReport(
         module_name=module.name,
         cycles=cycles,
         chunk_cycles=chunk_cycles,
         compile_seconds=compile_seconds,
-        chunk_input_bytes=chunk_cycles * input_count * 8,
-        chunk_output_bytes=chunk_cycles * output_count * 8,
+        chunk_input_bytes=chunk_cycles * input_words * 8,
+        chunk_output_bytes=chunk_cycles * output_words * 8,
         python_stream_seconds=python_stream_seconds,
         cpp_stream_seconds=cpp_stream_seconds,
         stream_speedup=python_stream_seconds / cpp_stream_seconds,
@@ -343,10 +345,31 @@ def _split_rows(flat_inputs: Sequence[int], cycles: int, input_count: int) -> Tu
     )
 
 
+def _normalize_packed_inputs(flat_inputs: Sequence[int], cycles: int, simulator: PythonSimulator) -> array:
+    if isinstance(flat_inputs, array) and len(flat_inputs) == cycles * simulator.input_word_count:
+        return flat_inputs
+    if len(flat_inputs) != cycles * simulator.input_count:
+        raise ValueError(
+            f"expected either {cycles * simulator.input_count} logical inputs or "
+            f"{cycles * simulator.input_word_count} packed words, got {len(flat_inputs)}"
+        )
+    packed = array("Q")
+    for cycle in range(cycles):
+        start = cycle * simulator.input_count
+        packed.extend(
+            pack_signal_values_u64_words(
+                flat_inputs[start : start + simulator.input_count],
+                simulator.input_widths,
+            )
+        )
+    return packed
+
+
 def _consume_chunk_stream(chunks: Iterable[array]) -> int:
     checksum = 0
     for chunk in chunks:
-        checksum = (checksum + int(sum(chunk))) & 0xFFFFFFFFFFFFFFFF
+        for value in chunk:
+            checksum = (checksum + int(value)) & 0xFFFFFFFFFFFFFFFF
     return checksum
 
 

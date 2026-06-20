@@ -7,6 +7,7 @@ from rtlgen_x.sim import (
     MemoryReadExpr,
     MemoryWrite,
     PythonSimulator,
+    pack_signal_values_u64_words,
     pack_u64_words,
     Signal,
     SignalRef,
@@ -149,3 +150,38 @@ def test_python_reference_supports_signed_unsigned_and_arithmetic_shift():
         "logical_shift_out": 0x40,
         "arith_shift_out": 0xC0,
     }
+
+
+def test_python_reference_wide_buffered_state_round_trip():
+    module = SimModule(
+        name="python_wide_state",
+        signals=(
+            Signal("inp", width=128, kind="input"),
+            Signal("acc", width=128, kind="state", init=1),
+            Signal("out", width=128, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", BinaryExpr("+", SignalRef("acc"), SignalRef("inp"))),
+            Assignment("acc", SignalRef("out"), phase="seq"),
+        ),
+        outputs=("out",),
+    )
+
+    python_sim = PythonSimulator(module)
+    packed_inputs = pack_signal_values_u64_words(
+        ((1 << 96) + 5, (1 << 80) + 9),
+        (128, 128),
+    )
+
+    outputs = python_sim.run_batch_buffered(packed_inputs, 2)
+    assert list(outputs) == list(
+        pack_signal_values_u64_words(
+            ((1 << 96) + 6, (1 << 96) + (1 << 80) + 15),
+            (128, 128),
+        )
+    )
+    state_snapshot = python_sim.snapshot_state_values()
+    assert state_snapshot == ((1 << 96) + (1 << 80) + 15,)
+    packed_state = python_sim.snapshot_state_numpy()
+    python_sim.restore_state_numpy(packed_state)
+    assert python_sim.snapshot_state_values() == state_snapshot

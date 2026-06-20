@@ -25,7 +25,7 @@ The first baseline here is small but executable:
 - `dsl/` provides the imported legacy RTL DSL kernel under the `rtlgen_x` namespace, including Verilog emission, Python simulation, linting, protocols, RAM wrappers, and DSL simulation validation
 - `sim/` provides a self-contained compiled-simulator model, Python reference runtime, C++ emitter, compile/load runtime, and benchmark helpers
 - `sim/` also provides compiled-vs-RTL differential cosim hooks for legacy DSL modules via `iverilog`
-- `ppa/` provides a first-pass structural/runtime PPA advisor for executable modules and architecture simulations
+- `ppa/` provides analysis-first structural/runtime PPA guidance for executable modules and architecture simulations; optimization rewrites are left to the agent side
 - `verify/` provides directed/streaming verification, SystemVerilog UVM collateral export, and a Python UVM-style execution framework on top of the local simulators
 - `tests/` regression-locks the new clean baseline
 
@@ -76,8 +76,15 @@ Verification bridge entry points:
 
 - `generate_uvm_collateral(...)` to export SystemVerilog UVM skeletons and a Python reference model from `SimModule`
 - `write_uvm_collateral(...)` to materialize generated SV/Python verification collateral
+- `generate_uvm_runtime_bundle(...)` to add a runnable `dut.sv`, `top.sv`, `filelist.f`, and `run_vcs.sh` around generated UVM collateral
+- generated collateral now includes a self-contained `rtlgen_x_ref_runtime.py`, so emitted Python reference models no longer depend on importing the full `rtlgen_x` package root
+- `write_uvm_runtime_bundle(...)` emits a runnable bundle directly; `include_runtime_package=True` remains available when vendoring the whole local Python package is still useful
+- `run_remote_uvm_probe(...)` plus `scripts/run_remote_uvm_probe.py` to generate, upload, and execute one VCS/UVM bundle on a remote host over SSH
+- `run_remote_uvm_regression(...)` plus `scripts/run_remote_uvm_regression.py` to batch a multi-module remote UVM regression and keep local generation errors visible in the report
 - generated collateral now also includes a minimal Python DPI helper and C DPI shim alongside the SV scoreboard hook
 - generated SV scoreboards include a DPI-style predictor hook that points at the emitted Python reference model path
+- generated smoke sequences now assert reset for the first two items and keep it deasserted for the randomized body when the executable model exposes a reset signal
+- `probe_iverilog_uvm_collateral(...)` can experimentally check how far generated collateral compiles under the local `iverilog`; in this environment, interface-level SV smoke is viable while full UVM package closure still depends on external UVM simulator support
 - `run_python_uvm_test(...)` to execute a lightweight UVM-style environment directly on `PythonSimulator` or `CompiledSimulator`
 - `run_legacy_rtl_cosim(...)` to compare compiled execution against emitted RTL with a race-free `iverilog` testbench
 - `PythonUvmSequenceLibrary` to compose reusable local sequence sets

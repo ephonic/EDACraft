@@ -5,11 +5,18 @@ from pathlib import Path
 from rtlgen_x.dsl import Else, If, Input, Module, Output, Reg, build_compiled_simulator_from_legacy
 from rtlgen_x.sim import Assignment, BinaryExpr, CppBackendScaffold, Signal, SignalRef, SimModule
 from rtlgen_x.verify import (
+    ApbTransfer,
+    AxiStreamTransfer,
     PythonUvmCoverage,
     PythonUvmSequenceItem,
     PythonUvmSequenceLibrary,
+    WishboneTransfer,
+    apb_sequence,
+    axistream_sequence,
     dump_python_uvm_triage,
+    register_reference_model,
     run_python_uvm_test,
+    wishbone_sequence,
 )
 
 
@@ -224,3 +231,145 @@ def test_python_uvm_runs_real_sram256k_module_on_compiled_simulator(tmp_path):
     assert report.used_batch_mode is True
     assert report.traces[2].outputs["prdata"] == 0x11223344
     assert report.traces[3].expected["prdata"] == 0x11223344
+
+
+def test_python_uvm_supports_apb_protocol_sequences():
+    module = _load_external_module(
+        "earphone/modules/sram256k/layer_L5_dsl/src/dsl.py",
+        "EarphoneSRAM256K",
+    )
+    sequence = apb_sequence(
+        (
+            ApbTransfer(addr=8, write=True, wdata=0x11223344, label="write"),
+            ApbTransfer(addr=8, write=False, expected_rdata=0x11223344, label="read"),
+        ),
+        extra_inputs={"clk": 0, "rst_n": 1},
+    )
+    report = run_python_uvm_test(
+        module,
+        sequence,
+        reference_model=register_reference_model(storage={}, read_output_name="prdata"),
+        name="python_uvm_apb_protocol",
+    )
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["write"] == 2
+    assert report.traces[-1].expected["prdata"] == 0x11223344
+    assert report.used_batch_mode is False
+
+
+def test_python_uvm_uses_batch_mode_with_register_reference_model():
+    module = _load_external_module(
+        "earphone/modules/sram256k/layer_L5_dsl/src/dsl.py",
+        "EarphoneSRAM256K",
+    )
+    sequence = apb_sequence(
+        (
+            ApbTransfer(addr=8, write=True, wdata=0x11223344, label="write"),
+            ApbTransfer(addr=8, write=False, expected_rdata=0x11223344, label="read"),
+        ),
+        extra_inputs={"clk": 0, "rst_n": 1},
+    )
+    report = run_python_uvm_test(
+        module,
+        sequence,
+        reference_model=register_reference_model(storage={}, read_output_name="prdata"),
+        name="python_uvm_apb_protocol_batch",
+        batch_cycles=2,
+    )
+
+    assert report.passed is True
+    assert report.used_batch_mode is True
+    assert report.traces[-1].expected["prdata"] == 0x11223344
+
+
+def test_register_reference_model_supports_full_cycle_apb_checking():
+    module = _load_external_module(
+        "earphone/modules/sram256k/layer_L5_dsl/src/dsl.py",
+        "EarphoneSRAM256K",
+    )
+    sequence = (
+        {"clk": 0, "rst_n": 0, "paddr": 0, "pwdata": 0, "pwrite": 0, "psel": 0, "penable": 0, "pstrb": 0},
+        *apb_sequence(
+            (
+                ApbTransfer(addr=8, write=True, wdata=0x11223344, label="write"),
+                ApbTransfer(addr=8, write=False, label="read"),
+            ),
+            extra_inputs={"clk": 0, "rst_n": 1},
+        ),
+    )
+    report = run_python_uvm_test(
+        module,
+        sequence,
+        reference_model=register_reference_model(storage={}, read_output_name="prdata"),
+        name="python_uvm_apb_full_cycle_ref",
+        batch_cycles=2,
+    )
+
+    assert report.passed is True
+    assert report.used_batch_mode is True
+    assert report.traces[-1].expected["prdata"] == 0x11223344
+
+
+def test_python_uvm_supports_wishbone_protocol_sequences():
+    module = SimModule(
+        name="wishbone_regfile",
+        signals=(
+            Signal("wb_adr", width=4, kind="input"),
+            Signal("wb_dat_w", width=32, kind="input"),
+            Signal("wb_we", width=1, kind="input"),
+            Signal("wb_cyc", width=1, kind="input"),
+            Signal("wb_stb", width=1, kind="input"),
+            Signal("wb_sel", width=4, kind="input"),
+            Signal("wb_dat_r", width=32, kind="output"),
+            Signal("wb_ack", width=1, kind="output"),
+        ),
+        assignments=(
+            Assignment("wb_dat_r", SignalRef("wb_dat_w")),
+            Assignment("wb_ack", BinaryExpr("&", SignalRef("wb_cyc"), SignalRef("wb_stb"))),
+        ),
+        outputs=("wb_dat_r", "wb_ack"),
+    )
+    sequence = wishbone_sequence(
+        (
+            WishboneTransfer(addr=1, write=True, wdata=0x55AA55AA, label="wb_write"),
+            WishboneTransfer(addr=1, write=False, expected_rdata=0, label="wb_read"),
+        )
+    )
+    report = run_python_uvm_test(
+        module,
+        sequence,
+        name="python_uvm_wishbone",
+    )
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["wb_write"] == 1
+    assert report.traces[0].outputs["wb_ack"] == 1
+
+
+def test_python_uvm_supports_axistream_sequences():
+    module = SimModule(
+        name="axis_sink",
+        signals=(
+            Signal("tdata", width=16, kind="input"),
+            Signal("tvalid", width=1, kind="input"),
+            Signal("tlast", width=1, kind="input"),
+            Signal("tkeep", width=2, kind="input"),
+            Signal("tready", width=1, kind="output"),
+        ),
+        assignments=(
+            Assignment("tready", SignalRef("tvalid")),
+        ),
+        outputs=("tready",),
+    )
+    sequence = axistream_sequence(
+        (
+            AxiStreamTransfer(data=0x1234, keep=0x3, expected_ready=1, label="beat0"),
+            AxiStreamTransfer(data=0x5678, keep=0x3, last=1, expected_ready=1, label="beat1"),
+        )
+    )
+    report = run_python_uvm_test(module, sequence, name="python_uvm_axis")
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["beat0"] == 1
+    assert report.traces[-1].expected["tready"] == 1

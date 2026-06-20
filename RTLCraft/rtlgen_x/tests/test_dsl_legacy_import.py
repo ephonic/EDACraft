@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 from rtlgen import Simulator as RtlgenSimulator
 from rtlgen_x.dsl import (
     Array,
@@ -17,6 +19,7 @@ from rtlgen_x.dsl import (
     Simulator,
     VerilogEmitter,
 )
+from rtlgen_x.sim.python_runtime import PythonSimulator
 
 
 class Accum(Module):
@@ -80,6 +83,50 @@ class SliceUpdate(Module):
                 self.state <<= 0xA0
             with Else():
                 self.state[3:0] <<= self.nibble
+
+
+class DynamicPartSelectUpdate(Module):
+    def __init__(self):
+        super().__init__("DynamicPartSelectUpdate")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.we = Input(1, "we")
+        self.lane = Input(2, "lane")
+        self.nibble = Input(4, "nibble")
+        self.out = Output(4, "out")
+        self.state = Reg(16, "state")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.state[(self.lane + 1) * 4 - 1 : self.lane * 4]
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.state <<= 0
+            with Else():
+                with If(self.we == 1):
+                    self.state[(self.lane + 1) * 4 - 1 : self.lane * 4] <<= self.nibble
+
+
+class InitBlockState(Module):
+    def __init__(self):
+        super().__init__("InitBlockState")
+        self.addr = Input(2, "addr")
+        self.out = Output(8, "out")
+        self.acc = Reg(8, "acc")
+        self.rf = Array(8, 4, "rf")
+
+        with self.init:
+            self.acc <<= 0xA0
+            self.acc[3:0] <<= 0x5
+            self.rf[0] <<= 1
+            self.rf[1] <<= 7
+            self.rf[2] <<= 9
+
+        @self.comb
+        def _comb():
+            self.out <<= self.acc + self.rf[self.addr]
 
 
 class TinyMem(Module):
@@ -272,6 +319,138 @@ def test_legacy_dsl_compiled_simulator_supports_slice_assignment(tmp_path):
         compiled.close()
 
 
+def test_legacy_dsl_compiled_simulator_supports_dynamic_partselect(tmp_path):
+    legacy = Simulator(DynamicPartSelectUpdate())
+    compiled = build_compiled_simulator_from_legacy(
+        DynamicPartSelectUpdate(),
+        build_dir=tmp_path / "dynamic_partselect",
+    )
+    try:
+        for vector in (
+            {"clk": 0, "rst": 1, "we": 0, "lane": 0, "nibble": 0},
+            {"clk": 0, "rst": 0, "we": 1, "lane": 0, "nibble": 0xA},
+            {"clk": 0, "rst": 0, "we": 1, "lane": 1, "nibble": 0x5},
+            {"clk": 0, "rst": 0, "we": 0, "lane": 0, "nibble": 0},
+            {"clk": 0, "rst": 0, "we": 0, "lane": 1, "nibble": 0},
+        ):
+            legacy.set("rst", vector["rst"])
+            legacy.set("we", vector["we"])
+            legacy.set("lane", vector["lane"])
+            legacy.set("nibble", vector["nibble"])
+            legacy.step()
+            assert compiled.step(vector) == {"out": legacy.get_int("out")}
+    finally:
+        compiled.close()
+
+
+def test_legacy_dsl_lowering_applies_initial_block_state_and_array_values(tmp_path):
+    lowered = lower_legacy_module_to_sim(InitBlockState())
+    sim = PythonSimulator(lowered.module)
+
+    signal_map = lowered.module.signal_map()
+    memory_map = lowered.module.memory_map()
+    assert signal_map["acc"].init == 0xA5
+    assert memory_map["rf"].init == (1, 7, 9, 0)
+
+    compiled = build_compiled_simulator_from_legacy(
+        InitBlockState(),
+        build_dir=tmp_path / "initial_block",
+    )
+    try:
+        expected = {
+            0: {"out": 0xA5 + 1},
+            1: {"out": 0xA5 + 7},
+            2: {"out": 0xA5 + 9},
+            3: {"out": 0xA5},
+        }
+        for addr, observed in expected.items():
+            assert sim.step({"addr": addr}) == observed
+            compiled.reset()
+            assert compiled.step({"addr": addr}) == observed
+    finally:
+        compiled.close()
+
+
+def test_legacy_lowering_preserves_slice_width_for_signed_arithmetic():
+    class SignedShiftLane(Module):
+        def __init__(self):
+            super().__init__("SignedShiftLane")
+            self.inp = Input(16, "inp")
+            self.shamt = Input(4, "shamt")
+            self.out = Output(16, "out")
+
+            with self.comb:
+                self.out <<= (self.inp[7:0].as_sint() >> self.shamt).as_uint()[7:0]
+
+    lowered = lower_legacy_module_to_sim(SignedShiftLane())
+    sim = PythonSimulator(lowered.module)
+
+    observed = sim.step({"inp": 0x0088, "shamt": 1})
+    assert observed == {"out": 0x00C4}
+
+
+def test_legacy_lowered_simd16_matches_behavior_model_for_signed_int_ops():
+    pytest.importorskip("earphone.modules.simd16.layer_L1_behavior.src.behavior")
+    from earphone.modules.simd16.layer_L1_behavior.src.behavior import (
+        SIMD_OP_VADD,
+        SIMD_OP_VCMP_EQ,
+        SIMD_OP_VCMP_LT,
+        SIMD_OP_VMUL,
+        SIMD_OP_VSRA,
+        SIMD_OP_VSUB,
+        simd16_int16_functional,
+    )
+
+    module = _load_external_module(
+        "earphone/modules/simd16/layer_L5_dsl/src/dsl.py",
+        "EarphoneSIMD16",
+    )
+    sim = PythonSimulator(lower_legacy_module_to_sim(module).module)
+
+    vectors = (
+        (
+            0x000100027FFF80000000FFFF1234ABCD * (1 << 128)
+            | 0x11112222333344445555666677778888,
+            0x0001000100010001FFFF000100020003 * (1 << 128)
+            | 0x00010002000300040005000600070008,
+            0x0001,
+        ),
+        (
+            int("55aa" * 16, 16),
+            int("0f0f" * 16, 16),
+            0xFFFF,
+        ),
+    )
+    ops = (
+        SIMD_OP_VADD,
+        SIMD_OP_VSUB,
+        SIMD_OP_VMUL,
+        SIMD_OP_VSRA,
+        SIMD_OP_VCMP_EQ,
+        SIMD_OP_VCMP_LT,
+    )
+
+    for op in ops:
+        for a, b, pred in vectors:
+            sim.reset()
+            observed = sim.step(
+                {
+                    "clk": 0,
+                    "rst_n": 1,
+                    "vsrc0": a,
+                    "vsrc1": b,
+                    "vsrc2": 0,
+                    "op": op,
+                    "mode": 0,
+                    "pred": pred,
+                    "start": 1,
+                }
+            )
+            expected = simd16_int16_functional(op, a, b, pred)
+            assert observed["done"] == 1
+            assert observed["vdst"] == expected
+
+
 def test_legacy_dsl_lowers_memory_storage():
     lowered = lower_legacy_module_to_sim(TinyMem())
 
@@ -452,5 +631,77 @@ def test_real_rv32_module_compiled_simulator_matches_legacy(tmp_path):
         )
         for vector in vectors:
             _step_legacy_and_compiled(legacy, compiled, vector)
+    finally:
+        compiled.close()
+
+
+def test_real_simd16_module_compiled_simulator_matches_python_model(tmp_path):
+    pytest.importorskip("earphone.modules.simd16.layer_L1_behavior.src.behavior")
+    from earphone.modules.simd16.layer_L1_behavior.src.behavior import (
+        SIMD_OP_VADD,
+        SIMD_OP_VCMP_LT,
+        SIMD_OP_VMUL,
+        SIMD_OP_VSRA,
+    )
+
+    module = _load_external_module(
+        "earphone/modules/simd16/layer_L5_dsl/src/dsl.py",
+        "EarphoneSIMD16",
+    )
+    lowered = lower_legacy_module_to_sim(module).module
+    python_sim = PythonSimulator(lowered)
+    compiled = build_compiled_simulator_from_legacy(module, build_dir=tmp_path / "simd16")
+    try:
+        vectors = (
+            {
+                "clk": 0,
+                "rst_n": 1,
+                "vsrc0": int("80007fff0001ffff" * 2, 16),
+                "vsrc1": int("0001000200030004" * 2, 16),
+                "vsrc2": 0,
+                "op": SIMD_OP_VADD,
+                "mode": 0,
+                "pred": 0xFFFF,
+                "start": 1,
+            },
+            {
+                "clk": 0,
+                "rst_n": 1,
+                "vsrc0": int("ff00ff0080007fff" * 2, 16),
+                "vsrc1": int("0003000300010001" * 2, 16),
+                "vsrc2": 0,
+                "op": SIMD_OP_VSRA,
+                "mode": 0,
+                "pred": 0xFFFF,
+                "start": 1,
+            },
+            {
+                "clk": 0,
+                "rst_n": 1,
+                "vsrc0": int("8000000100020003" * 2, 16),
+                "vsrc1": int("0001000200030004" * 2, 16),
+                "vsrc2": 0,
+                "op": SIMD_OP_VCMP_LT,
+                "mode": 0,
+                "pred": 0xFFFF,
+                "start": 1,
+            },
+            {
+                "clk": 0,
+                "rst_n": 1,
+                "vsrc0": int("0002000300040005" * 2, 16),
+                "vsrc1": int("0003000400050006" * 2, 16),
+                "vsrc2": 0,
+                "op": SIMD_OP_VMUL,
+                "mode": 0,
+                "pred": 0xFFFF,
+                "start": 1,
+            },
+        )
+
+        for vector in vectors:
+            python_sim.reset()
+            compiled.reset()
+            assert compiled.step(vector) == python_sim.step(vector)
     finally:
         compiled.close()

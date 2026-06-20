@@ -1,70 +1,262 @@
-"""Pure-Python reference simulator for the local executable model."""
+"""Minimal self-contained runtime for generated Python reference models."""
 
 from __future__ import annotations
 
-from array import array
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, Mapping, Optional, Sequence, Tuple
+from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
 
-import numpy as np
 
-from rtlgen_x.sim.cpp_backend import (
-    Assignment,
-    BinaryExpr,
-    ConstExpr,
-    Expr,
-    MaskExpr,
-    MemoryReadExpr,
-    MemoryWrite,
-    MuxExpr,
-    Memory,
-    Signal,
-    SignalRef,
-    SimModule,
-    UnaryExpr,
-    pack_signal_values_u64_words,
-    pack_u64_words,
-    unpack_signal_values_u64_words,
-    _word_count,
-    _word_slices,
-)
+@dataclass(frozen=True)
+class Signal:
+    name: str
+    width: int
+    kind: str
+    signed: bool = False
+    init: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("signal name must not be empty")
+        if self.width < 1:
+            raise ValueError("signal width must be positive")
+        if self.kind not in {"input", "output", "state", "wire"}:
+            raise ValueError(f"unsupported signal kind '{self.kind}'")
+
+    @property
+    def mask(self) -> int:
+        return (1 << self.width) - 1
+
+
+@dataclass(frozen=True)
+class Memory:
+    name: str
+    width: int
+    depth: int
+    init: Tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("memory name must not be empty")
+        if self.width < 1:
+            raise ValueError("memory width must be positive")
+        if self.depth < 1:
+            raise ValueError("memory depth must be positive")
+        if self.init and len(self.init) != self.depth:
+            raise ValueError("memory init must be empty or match depth")
+
+    @property
+    def mask(self) -> int:
+        return (1 << self.width) - 1
+
+
+@dataclass(frozen=True)
+class ConstExpr:
+    value: int
+    width: int
+
+    def __post_init__(self) -> None:
+        if self.width < 1:
+            raise ValueError("const width must be positive")
+
+
+@dataclass(frozen=True)
+class SignalRef:
+    name: str
+
+
+@dataclass(frozen=True)
+class MemoryReadExpr:
+    memory: str
+    addr: "Expr"
+
+
+@dataclass(frozen=True)
+class MaskExpr:
+    value: "Expr"
+    width: int
+
+    def __post_init__(self) -> None:
+        if self.width < 1:
+            raise ValueError("mask width must be positive")
+
+
+@dataclass(frozen=True)
+class UnaryExpr:
+    op: str
+    value: "Expr"
+
+    def __post_init__(self) -> None:
+        if self.op not in {"~", "-", "!", "$signed", "$unsigned"}:
+            raise ValueError(f"unsupported unary op '{self.op}'")
+
+
+@dataclass(frozen=True)
+class BinaryExpr:
+    op: str
+    lhs: "Expr"
+    rhs: "Expr"
+
+    def __post_init__(self) -> None:
+        if self.op not in {
+            "+",
+            "-",
+            "*",
+            "&",
+            "|",
+            "^",
+            "<<",
+            ">>",
+            ">>>",
+            "==",
+            "!=",
+            "<",
+            "<=",
+            ">",
+            ">=",
+        }:
+            raise ValueError(f"unsupported binary op '{self.op}'")
+
+
+@dataclass(frozen=True)
+class MuxExpr:
+    cond: "Expr"
+    when_true: "Expr"
+    when_false: "Expr"
+
+
+Expr = Union[ConstExpr, SignalRef, MemoryReadExpr, MaskExpr, UnaryExpr, BinaryExpr, MuxExpr]
+
+
+@dataclass(frozen=True)
+class Assignment:
+    target: str
+    expr: Expr
+    phase: str = "comb"
+
+    def __post_init__(self) -> None:
+        if self.phase not in {"comb", "seq"}:
+            raise ValueError("assignment phase must be 'comb' or 'seq'")
+
+
+@dataclass(frozen=True)
+class MemoryWrite:
+    memory: str
+    addr: Expr
+    value: Expr
+    enable: Expr = ConstExpr(1, 1)
+
+
+@dataclass(frozen=True)
+class SimModule:
+    name: str
+    signals: Tuple[Signal, ...]
+    assignments: Tuple[Assignment, ...]
+    outputs: Tuple[str, ...]
+    memories: Tuple[Memory, ...] = ()
+    memory_writes: Tuple[MemoryWrite, ...] = ()
+    reset_signal: Optional[str] = None
+    outputs_post_state: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("module name must not be empty")
+        if not self.signals:
+            raise ValueError("module must contain at least one signal")
+        signal_map: Dict[str, Signal] = {}
+        for signal in self.signals:
+            if signal.name in signal_map:
+                raise ValueError(f"duplicate signal '{signal.name}'")
+            signal_map[signal.name] = signal
+        memory_map: Dict[str, Memory] = {}
+        for memory in self.memories:
+            if memory.name in signal_map:
+                raise ValueError(f"memory '{memory.name}' conflicts with an existing signal")
+            if memory.name in memory_map:
+                raise ValueError(f"duplicate memory '{memory.name}'")
+            memory_map[memory.name] = memory
+        if not self.outputs:
+            raise ValueError("module must expose at least one output")
+        for output_name in self.outputs:
+            signal = signal_map.get(output_name)
+            if signal is None:
+                raise ValueError(f"unknown output '{output_name}'")
+            if signal.kind != "output":
+                raise ValueError(f"output '{output_name}' must have kind='output'")
+        if self.reset_signal is not None:
+            reset_signal = signal_map.get(self.reset_signal)
+            if reset_signal is None:
+                raise ValueError(f"unknown reset signal '{self.reset_signal}'")
+            if reset_signal.kind != "input":
+                raise ValueError("reset signal must be declared as an input")
+        for assignment in self.assignments:
+            target = signal_map.get(assignment.target)
+            if target is None:
+                raise ValueError(f"assignment targets unknown signal '{assignment.target}'")
+            if assignment.phase == "seq" and target.kind != "state":
+                raise ValueError("sequential assignments may only target state signals")
+            if assignment.phase == "comb" and target.kind == "state":
+                raise ValueError("combinational assignments may not target state signals")
+            self._validate_expr(assignment.expr, signal_map, memory_map)
+        for write in self.memory_writes:
+            memory = memory_map.get(write.memory)
+            if memory is None:
+                raise ValueError(f"memory write targets unknown memory '{write.memory}'")
+            self._validate_expr(write.addr, signal_map, memory_map)
+            self._validate_expr(write.value, signal_map, memory_map)
+            self._validate_expr(write.enable, signal_map, memory_map)
+
+    @staticmethod
+    def _validate_expr(
+        expr: Expr,
+        signal_map: Dict[str, Signal],
+        memory_map: Dict[str, Memory],
+    ) -> None:
+        if isinstance(expr, ConstExpr):
+            return
+        if isinstance(expr, SignalRef):
+            if expr.name not in signal_map:
+                raise ValueError(f"expression references unknown signal '{expr.name}'")
+            return
+        if isinstance(expr, MemoryReadExpr):
+            if expr.memory not in memory_map:
+                raise ValueError(f"expression references unknown memory '{expr.memory}'")
+            SimModule._validate_expr(expr.addr, signal_map, memory_map)
+            return
+        if isinstance(expr, MaskExpr):
+            SimModule._validate_expr(expr.value, signal_map, memory_map)
+            return
+        if isinstance(expr, UnaryExpr):
+            SimModule._validate_expr(expr.value, signal_map, memory_map)
+            return
+        if isinstance(expr, BinaryExpr):
+            SimModule._validate_expr(expr.lhs, signal_map, memory_map)
+            SimModule._validate_expr(expr.rhs, signal_map, memory_map)
+            return
+        if isinstance(expr, MuxExpr):
+            SimModule._validate_expr(expr.cond, signal_map, memory_map)
+            SimModule._validate_expr(expr.when_true, signal_map, memory_map)
+            SimModule._validate_expr(expr.when_false, signal_map, memory_map)
+            return
+        raise TypeError(f"unsupported expression type: {type(expr)!r}")
+
+    def signal_map(self) -> Dict[str, Signal]:
+        return {signal.name: signal for signal in self.signals}
+
+    def memory_map(self) -> Dict[str, Memory]:
+        return {memory.name: memory for memory in self.memories}
 
 
 @dataclass
 class PythonSimulator:
-    """Simple reference interpreter for the compiled-simulator local model."""
-
     module: SimModule
 
     def __post_init__(self) -> None:
         self._signal_map = self.module.signal_map()
+        self._memory_map = self.module.memory_map()
         self.input_names = tuple(
             signal.name for signal in self.module.signals if signal.kind == "input"
         )
         self.output_names = tuple(self.module.outputs)
-        self.state_names = tuple(
-            [signal.name for signal in self.module.signals if signal.kind == "state"]
-            + [
-                f"{memory.name}[{idx}]"
-                for memory in self.module.memories
-                for idx in range(memory.depth)
-            ]
-        )
-        self.input_count = len(self.input_names)
-        self.output_count = len(self.output_names)
-        self.state_count = len(self.state_names)
-        self.input_widths = tuple(self._signal_map[name].width for name in self.input_names)
-        self.output_widths = tuple(self._signal_map[name].width for name in self.output_names)
-        self.state_widths = tuple(
-            [self._signal_map[signal.name].width for signal in self.module.signals if signal.kind == "state"]
-            + [memory.width for memory in self.module.memories for _ in range(memory.depth)]
-        )
-        self.input_word_slices = _word_slices(self.input_widths)
-        self.output_word_slices = _word_slices(self.output_widths)
-        self.state_word_slices = _word_slices(self.state_widths)
-        self.input_word_count = sum(words for _, words in self.input_word_slices)
-        self.output_word_count = sum(words for _, words in self.output_word_slices)
-        self.state_word_count = sum(words for _, words in self.state_word_slices)
         self._input_masks = tuple(self._signal_map[name].mask for name in self.input_names)
         self._output_masks = tuple(self._signal_map[name].mask for name in self.output_names)
         self._comb_assignments = tuple(
@@ -78,7 +270,6 @@ class PythonSimulator:
             for signal in self.module.signals
             if signal.kind == "state"
         }
-        self._memory_map = self.module.memory_map()
         self._memory_init = {
             memory.name: tuple(
                 (memory.init[idx] if memory.init else 0) & memory.mask
@@ -98,8 +289,7 @@ class PythonSimulator:
     def step(self, inputs: Mapping[str, int]) -> Dict[str, int]:
         unknown_inputs = sorted(set(inputs) - set(self.input_names))
         if unknown_inputs:
-            joined = ", ".join(unknown_inputs)
-            raise KeyError(f"unknown simulator inputs: {joined}")
+            raise KeyError(f"unknown simulator inputs: {', '.join(unknown_inputs)}")
         raw_inputs = tuple(int(inputs.get(name, 0)) for name in self.input_names)
         raw_outputs = self.step_raw(raw_inputs)
         return {
@@ -108,9 +298,9 @@ class PythonSimulator:
         }
 
     def step_raw(self, input_values: Sequence[int]) -> Tuple[int, ...]:
-        if len(input_values) != self.input_count:
+        if len(input_values) != len(self.input_names):
             raise ValueError(
-                f"expected {self.input_count} input values, got {len(input_values)}"
+                f"expected {len(self.input_names)} input values, got {len(input_values)}"
             )
         values = {
             name: int(input_values[idx]) & self._input_masks[idx]
@@ -147,111 +337,22 @@ class PythonSimulator:
             for assignment in self._comb_assignments:
                 signal = self._signal_map[assignment.target]
                 values[assignment.target] = self._eval_expr(assignment.expr, values) & signal.mask
-        outputs = tuple(values[name] & self._output_masks[idx] for idx, name in enumerate(self.output_names))
-        return outputs
-
-    def run_batch_raw(self, flat_inputs: Sequence[int], cycles: int) -> Tuple[int, ...]:
-        if cycles < 0:
-            raise ValueError("cycles must be non-negative")
-        expected_values = cycles * self.input_count
-        if len(flat_inputs) != expected_values:
-            raise ValueError(
-                f"expected {expected_values} flattened input values, got {len(flat_inputs)}"
-            )
-        packed_inputs = array("Q")
-        for cycle in range(cycles):
-            start = cycle * self.input_count
-            packed_inputs.extend(
-                pack_signal_values_u64_words(
-                    flat_inputs[start : start + self.input_count],
-                    self.input_widths,
-                )
-            )
-        output_buffer = self.run_batch_buffered(packed_inputs, cycles)
-        unpacked_outputs = []
-        for cycle in range(cycles):
-            start = cycle * self.output_word_count
-            unpacked_outputs.extend(
-                unpack_signal_values_u64_words(
-                    output_buffer[start : start + self.output_word_count],
-                    self.output_widths,
-                )
-            )
-        return tuple(unpacked_outputs)
-
-    def run_batch_buffered(
-        self,
-        flat_inputs: array,
-        cycles: int,
-        output_buffer: Optional[array] = None,
-    ) -> array:
-        """Run a packed batch using reusable unsigned-64 buffers."""
-
-        if flat_inputs.typecode != "Q":
-            raise TypeError("flat_inputs must be array('Q')")
-        if cycles < 0:
-            raise ValueError("cycles must be non-negative")
-        expected_values = cycles * self.input_word_count
-        if len(flat_inputs) != expected_values:
-            raise ValueError(
-                f"expected {expected_values} flattened input values, got {len(flat_inputs)}"
-            )
-        total_outputs = cycles * self.output_word_count
-        if output_buffer is None:
-            output_buffer = array("Q", [0]) * total_outputs
-        else:
-            if output_buffer.typecode != "Q":
-                raise TypeError("output_buffer must be array('Q')")
-            if len(output_buffer) != total_outputs:
-                raise ValueError(
-                    f"expected output_buffer length {total_outputs}, got {len(output_buffer)}"
-                )
-        for cycle in range(cycles):
-            start = cycle * self.input_word_count
-            row_words = flat_inputs[start : start + self.input_word_count]
-            row = unpack_signal_values_u64_words(row_words, self.input_widths)
-            outputs = self.step_raw(row)
-            packed_outputs = pack_signal_values_u64_words(outputs, self.output_widths)
-            output_start = cycle * self.output_word_count
-            for idx, value in enumerate(packed_outputs):
-                output_buffer[output_start + idx] = value & 0xFFFFFFFFFFFFFFFF
-        return output_buffer
-
-    def iter_batch_buffered(
-        self,
-        input_rows: Iterable[Sequence[int]],
-        *,
-        chunk_cycles: int = 65536,
-    ) -> Iterator[array]:
-        """Stream arbitrarily long batches in bounded chunks."""
-
-        if chunk_cycles < 1:
-            raise ValueError("chunk_cycles must be positive")
-        chunk_inputs = array("Q")
-        chunk_len = 0
-        for row in input_rows:
-            if len(row) != self.input_count:
-                raise ValueError(f"expected {self.input_count} input values, got {len(row)}")
-            chunk_inputs.extend(pack_signal_values_u64_words(row, self.input_widths))
-            chunk_len += 1
-            if chunk_len == chunk_cycles:
-                yield self.run_batch_buffered(chunk_inputs, chunk_len)
-                chunk_inputs = array("Q")
-                chunk_len = 0
-        if chunk_len:
-            yield self.run_batch_buffered(chunk_inputs, chunk_len)
+        return tuple(
+            values[name] & self._output_masks[idx]
+            for idx, name in enumerate(self.output_names)
+        )
 
     def run_batch(self, input_rows: Sequence[Sequence[int]]) -> Tuple[Dict[str, int], ...]:
-        outputs = []
+        rows = []
         for row in input_rows:
             raw_outputs = self.step_raw(row)
-            outputs.append(
+            rows.append(
                 {
                     name: raw_outputs[idx] & self._output_masks[idx]
                     for idx, name in enumerate(self.output_names)
                 }
             )
-        return tuple(outputs)
+        return tuple(rows)
 
     def _eval_expr(self, expr: Expr, values: Mapping[str, int]) -> int:
         if isinstance(expr, ConstExpr):
@@ -307,9 +408,7 @@ class PythonSimulator:
                 masked_lhs = lhs & ((1 << lhs_width) - 1)
                 if self._expr_is_signed(expr.lhs):
                     sign_bit = 1 << (lhs_width - 1)
-                    signed_lhs = (
-                        masked_lhs - (1 << lhs_width) if masked_lhs & sign_bit else masked_lhs
-                    )
+                    signed_lhs = masked_lhs - (1 << lhs_width) if masked_lhs & sign_bit else masked_lhs
                     return signed_lhs >> rhs
                 return masked_lhs >> rhs
             if expr.op == "==":
@@ -326,8 +425,7 @@ class PythonSimulator:
                 return int(lhs >= rhs)
             raise TypeError(f"unsupported binary op '{expr.op}'")
         if isinstance(expr, MuxExpr):
-            cond = self._eval_expr(expr.cond, values)
-            branch = expr.when_true if cond else expr.when_false
+            branch = expr.when_true if self._eval_expr(expr.cond, values) else expr.when_false
             return self._eval_expr(branch, values)
         raise TypeError(f"unsupported expression type: {type(expr)!r}")
 
@@ -373,9 +471,7 @@ class PythonSimulator:
         if isinstance(expr, UnaryExpr):
             if expr.op == "$signed":
                 return True
-            if expr.op == "$unsigned":
-                return False
-            if expr.op == "!":
+            if expr.op in {"$unsigned", "!"}:
                 return False
             return self._expr_is_signed(expr.value)
         if isinstance(expr, BinaryExpr):
@@ -383,49 +479,5 @@ class PythonSimulator:
                 return False
             return self._expr_is_signed(expr.lhs) or self._expr_is_signed(expr.rhs)
         if isinstance(expr, MuxExpr):
-            return self._expr_is_signed(expr.when_true) and self._expr_is_signed(
-                expr.when_false
-            )
+            return self._expr_is_signed(expr.when_true) and self._expr_is_signed(expr.when_false)
         raise TypeError(f"unsupported expression type: {type(expr)!r}")
-
-    def snapshot_state_numpy(self) -> np.ndarray:
-        payload = array("Q")
-        for signal in self.module.signals:
-            if signal.kind == "state":
-                payload.extend(pack_signal_values_u64_words((self._state[signal.name] & signal.mask,), (signal.width,)))
-        for memory in self.module.memories:
-            for value in self._memories[memory.name]:
-                payload.extend(pack_signal_values_u64_words((value & memory.mask,), (memory.width,)))
-        return np.asarray(payload, dtype=np.uint64)
-
-    def snapshot_state_values(self) -> Tuple[int, ...]:
-        payload = []
-        for signal in self.module.signals:
-            if signal.kind == "state":
-                payload.append(self._state[signal.name] & signal.mask)
-        for memory in self.module.memories:
-            payload.extend(value & memory.mask for value in self._memories[memory.name])
-        return tuple(payload)
-
-    def restore_state_numpy(self, state: np.ndarray) -> None:
-        if state.dtype != np.uint64:
-            raise TypeError("state must have dtype=uint64")
-        if state.ndim != 1:
-            raise TypeError("state must be a 1D numpy array")
-        if len(state) != self.state_word_count:
-            raise ValueError(f"expected state length {self.state_word_count}, got {len(state)}")
-        values = unpack_signal_values_u64_words(state, self.state_widths)
-        self.restore_state_values(values)
-
-    def restore_state_values(self, state: Sequence[int]) -> None:
-        if len(state) != self.state_count:
-            raise ValueError(f"expected state length {self.state_count}, got {len(state)}")
-        cursor = 0
-        for signal in self.module.signals:
-            if signal.kind == "state":
-                self._state[signal.name] = int(state[cursor]) & signal.mask
-                cursor += 1
-        for memory in self.module.memories:
-            for idx in range(memory.depth):
-                self._memories[memory.name][idx] = int(state[cursor]) & memory.mask
-                cursor += 1

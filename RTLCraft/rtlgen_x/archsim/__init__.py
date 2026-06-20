@@ -17,6 +17,12 @@ from rtlgen_x.archsim.explore import (
     run_stage_latency_sweep,
     run_stage_queue_depth_sweep,
 )
+from rtlgen_x.archsim.infer import (
+    CalibrationTarget,
+    calibrate_architecture_model,
+    infer_architecture_from_module,
+    infer_flow_from_module,
+)
 from rtlgen_x.archsim.model import ArchitectureModel, FlowSpec, StageSpec, Workload
 from rtlgen_x.archsim.presets import (
     ArchitectureScenario,
@@ -52,6 +58,7 @@ __all__ = [
     "ArchitectureScenario",
     "BehaviorReport",
     "BehaviorSimulator",
+    "CalibrationTarget",
     "CycleReport",
     "CycleSimulator",
     "FlowSpec",
@@ -72,12 +79,15 @@ __all__ = [
     "build_npu_systolic_scenario",
     "build_streaming_datapath_scenario",
     "cache_hierarchy",
+    "calibrate_architecture_model",
     "compose_stage_groups",
     "compute_stage",
     "controller_stage",
     "dataflow_array",
     "datapath_stage",
     "dma_engine",
+    "infer_architecture_from_module",
+    "infer_flow_from_module",
     "interconnect_stage",
     "linear_model",
     "memory_stage",
