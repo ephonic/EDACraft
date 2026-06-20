@@ -109,6 +109,34 @@ class DynamicPartSelectUpdate(Module):
                     self.state[(self.lane + 1) * 4 - 1 : self.lane * 4] <<= self.nibble
 
 
+class DynamicSliceUpdate(Module):
+    def __init__(self):
+        super().__init__("DynamicSliceUpdate")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.we = Input(1, "we")
+        self.lo = Input(3, "lo")
+        self.width_sel = Input(1, "width_sel")
+        self.data = Input(4, "data")
+        self.out = Output(8, "out")
+        self.state = Reg(8, "state")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.state
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.state <<= 0
+            with Else():
+                with If(self.we == 1):
+                    with If(self.width_sel == 0):
+                        self.state[self.lo + 1 : self.lo] <<= self.data[1:0]
+                    with Else():
+                        self.state[self.lo + 3 : self.lo] <<= self.data
+
+
 class InitBlockState(Module):
     def __init__(self):
         super().__init__("InitBlockState")
@@ -337,6 +365,30 @@ def test_legacy_dsl_compiled_simulator_supports_dynamic_partselect(tmp_path):
             legacy.set("we", vector["we"])
             legacy.set("lane", vector["lane"])
             legacy.set("nibble", vector["nibble"])
+            legacy.step()
+            assert compiled.step(vector) == {"out": legacy.get_int("out")}
+    finally:
+        compiled.close()
+
+
+def test_legacy_dsl_compiled_simulator_supports_dynamic_slice_assign(tmp_path):
+    legacy = Simulator(DynamicSliceUpdate())
+    compiled = build_compiled_simulator_from_legacy(
+        DynamicSliceUpdate(),
+        build_dir=tmp_path / "dynamic_slice",
+    )
+    try:
+        for vector in (
+            {"clk": 0, "rst": 1, "we": 0, "lo": 0, "width_sel": 0, "data": 0},
+            {"clk": 0, "rst": 0, "we": 1, "lo": 1, "width_sel": 0, "data": 0b0011},
+            {"clk": 0, "rst": 0, "we": 1, "lo": 4, "width_sel": 1, "data": 0b1010},
+            {"clk": 0, "rst": 0, "we": 1, "lo": 0, "width_sel": 1, "data": 0b0101},
+        ):
+            legacy.set("rst", vector["rst"])
+            legacy.set("we", vector["we"])
+            legacy.set("lo", vector["lo"])
+            legacy.set("width_sel", vector["width_sel"])
+            legacy.set("data", vector["data"])
             legacy.step()
             assert compiled.step(vector) == {"out": legacy.get_int("out")}
     finally:

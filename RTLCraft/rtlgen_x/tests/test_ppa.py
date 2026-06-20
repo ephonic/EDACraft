@@ -1,4 +1,5 @@
 from rtlgen_x.archsim import ArchitectureModel, FlowSpec, StageSpec, Workload, calibrate_architecture_model
+import json
 from rtlgen_x.dsl import Else, If, Input, Module, Output, Reg
 from rtlgen_x.ppa import (
     PpaGoals,
@@ -15,6 +16,8 @@ from rtlgen_x.ppa import (
     fit_architecture_ppa_calibration,
     fit_module_ppa_calibration,
     load_implementation_report_bundle,
+    ModulePpaCalibrationModel,
+    ArchitecturePpaCalibrationModel,
     validate_rewrite_proposal,
 )
 from rtlgen_x.sim import (
@@ -381,6 +384,41 @@ def test_architecture_calibration_feedback_derives_stage_targets():
         calibrated_stats.flow_stats["cpu"].throughput_tokens_per_cycle
         <= baseline.flow_stats["cpu"].throughput_tokens_per_cycle
     )
+
+
+def test_ppa_calibration_models_round_trip_json(tmp_path):
+    module_calibration = ModulePpaCalibrationModel(
+        timing_ns_per_depth=0.5,
+        area_per_score=10.0,
+        power_mw_per_score=0.2,
+        sample_count=3,
+        timing_sample_count=3,
+        area_sample_count=2,
+        power_sample_count=1,
+        sources=("a", "b"),
+    )
+    arch_calibration = ArchitecturePpaCalibrationModel(
+        cycle_scale=1.5,
+        makespan_scale=1.2,
+        throughput_scale=0.8,
+        stall_scale=1.1,
+        sample_count=4,
+        cycle_sample_count=4,
+        makespan_sample_count=3,
+        throughput_sample_count=2,
+        stall_sample_count=1,
+        sources=("measured",),
+    )
+
+    module_path = module_calibration.to_json_file(tmp_path / "module_calibration.json")
+    arch_path = arch_calibration.to_json_file(tmp_path / "arch_calibration.json")
+    loaded_module = ModulePpaCalibrationModel.from_json_file(module_path)
+    loaded_arch = ArchitecturePpaCalibrationModel.from_json_file(arch_path)
+
+    assert json.loads(module_path.read_text(encoding="utf-8"))["sample_count"] == 3
+    assert json.loads(arch_path.read_text(encoding="utf-8"))["cycle_scale"] == 1.5
+    assert loaded_module.area_per_score == 10.0
+    assert loaded_arch.throughput_scale == 0.8
 
 
 def test_ppa_report_exposes_transform_candidates():

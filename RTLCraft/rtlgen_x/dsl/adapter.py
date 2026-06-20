@@ -982,16 +982,24 @@ def _lower_array_write(stmt: ArrayWrite, *, phase: str, env: _LoweringEnv) -> No
 def _lower_slice_assign(target: Slice, value, *, phase: str, env: _LoweringEnv) -> None:
     if not isinstance(target.operand, _REF_TYPES):
         raise LegacyLoweringError("slice assignment must target a signal")
-    if not isinstance(target.hi, int) or not isinstance(target.lo, int):
-        raise LegacyLoweringError("dynamic slice assignment is not yet supported")
     base_signal = target.operand.signal
-    replacement = _replace_bit_range_expr(
-        env.read(base_signal.name),
-        target.lo,
-        target.width,
-        _lower_expr(value, env),
-        base_signal.width,
-    )
+    replacement_value = _lower_expr(value, env)
+    if isinstance(target.hi, int) and isinstance(target.lo, int):
+        replacement = _replace_bit_range_expr(
+            env.read(base_signal.name),
+            target.lo,
+            target.width,
+            replacement_value,
+            base_signal.width,
+        )
+    else:
+        replacement = _replace_dynamic_range_expr(
+            env.read(base_signal.name),
+            _lower_expr(target.lo, env),
+            target.width,
+            replacement_value,
+            base_signal.width,
+        )
     env.assign(base_signal, replacement, phase=phase)
 
 

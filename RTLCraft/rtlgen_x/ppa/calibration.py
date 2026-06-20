@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from math import ceil, floor
+from pathlib import Path
 from statistics import fmean
 from typing import Mapping, Optional, Sequence, Tuple
 
@@ -43,6 +45,41 @@ class ModulePpaCalibrationModel:
     power_sample_count: int
     sources: Tuple[str, ...]
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "timing_ns_per_depth": self.timing_ns_per_depth,
+            "area_per_score": self.area_per_score,
+            "power_mw_per_score": self.power_mw_per_score,
+            "sample_count": self.sample_count,
+            "timing_sample_count": self.timing_sample_count,
+            "area_sample_count": self.area_sample_count,
+            "power_sample_count": self.power_sample_count,
+            "sources": list(self.sources),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, object]) -> "ModulePpaCalibrationModel":
+        return cls(
+            timing_ns_per_depth=_optional_float(payload.get("timing_ns_per_depth")),
+            area_per_score=_optional_float(payload.get("area_per_score")),
+            power_mw_per_score=_optional_float(payload.get("power_mw_per_score")),
+            sample_count=int(payload.get("sample_count", 0)),
+            timing_sample_count=int(payload.get("timing_sample_count", 0)),
+            area_sample_count=int(payload.get("area_sample_count", 0)),
+            power_sample_count=int(payload.get("power_sample_count", 0)),
+            sources=tuple(payload.get("sources", ())),
+        )
+
+    def to_json_file(self, path: str | Path) -> Path:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+        return output_path
+
+    @classmethod
+    def from_json_file(cls, path: str | Path) -> "ModulePpaCalibrationModel":
+        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+
 
 @dataclass(frozen=True)
 class CalibratedModulePpaEstimate:
@@ -79,6 +116,45 @@ class ArchitecturePpaCalibrationModel:
     throughput_sample_count: int
     stall_sample_count: int
     sources: Tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "cycle_scale": self.cycle_scale,
+            "makespan_scale": self.makespan_scale,
+            "throughput_scale": self.throughput_scale,
+            "stall_scale": self.stall_scale,
+            "sample_count": self.sample_count,
+            "cycle_sample_count": self.cycle_sample_count,
+            "makespan_sample_count": self.makespan_sample_count,
+            "throughput_sample_count": self.throughput_sample_count,
+            "stall_sample_count": self.stall_sample_count,
+            "sources": list(self.sources),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, object]) -> "ArchitecturePpaCalibrationModel":
+        return cls(
+            cycle_scale=float(payload.get("cycle_scale", 1.0)),
+            makespan_scale=float(payload.get("makespan_scale", 1.0)),
+            throughput_scale=float(payload.get("throughput_scale", 1.0)),
+            stall_scale=float(payload.get("stall_scale", 1.0)),
+            sample_count=int(payload.get("sample_count", 0)),
+            cycle_sample_count=int(payload.get("cycle_sample_count", 0)),
+            makespan_sample_count=int(payload.get("makespan_sample_count", 0)),
+            throughput_sample_count=int(payload.get("throughput_sample_count", 0)),
+            stall_sample_count=int(payload.get("stall_sample_count", 0)),
+            sources=tuple(payload.get("sources", ())),
+        )
+
+    def to_json_file(self, path: str | Path) -> Path:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+        return output_path
+
+    @classmethod
+    def from_json_file(cls, path: str | Path) -> "ArchitecturePpaCalibrationModel":
+        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
 @dataclass(frozen=True)
@@ -446,3 +522,9 @@ def _scale_queue_depth(base: int, stall_scale: float) -> int:
     if stall_scale >= 1.0:
         return max(1, int(floor(raw)))
     return max(1, int(ceil(raw)))
+
+
+def _optional_float(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    return float(value)

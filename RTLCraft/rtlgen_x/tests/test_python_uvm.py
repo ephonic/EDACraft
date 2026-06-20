@@ -3,15 +3,18 @@ import json
 from pathlib import Path
 
 from rtlgen_x.dsl import Else, If, Input, Module, Output, Reg, build_compiled_simulator_from_legacy
-from rtlgen_x.sim import Assignment, BinaryExpr, CppBackendScaffold, Signal, SignalRef, SimModule
+from rtlgen_x.sim import Assignment, BinaryExpr, ConstExpr, CppBackendScaffold, Signal, SignalRef, SimModule
 from rtlgen_x.verify import (
     ApbTransfer,
+    Axi4Transfer,
     AxiStreamTransfer,
     PythonUvmCoverage,
     PythonUvmSequenceItem,
     PythonUvmSequenceLibrary,
     WishboneTransfer,
     apb_sequence,
+    axi4_sequence,
+    axi_memory_reference_model,
     axistream_sequence,
     dump_python_uvm_triage,
     register_reference_model,
@@ -373,3 +376,59 @@ def test_python_uvm_supports_axistream_sequences():
     assert report.passed is True
     assert report.coverage["labels_seen"]["beat0"] == 1
     assert report.traces[-1].expected["tready"] == 1
+
+
+def test_python_uvm_supports_axi4_burst_sequences_with_memory_reference_model():
+    module = SimModule(
+        name="axi_mem",
+        signals=(
+            Signal("awaddr", width=32, kind="input"),
+            Signal("awvalid", width=1, kind="input"),
+            Signal("awlen", width=8, kind="input"),
+            Signal("awsize", width=3, kind="input"),
+            Signal("awburst", width=2, kind="input"),
+            Signal("awid", width=4, kind="input"),
+            Signal("wdata", width=32, kind="input"),
+            Signal("wvalid", width=1, kind="input"),
+            Signal("wlast", width=1, kind="input"),
+            Signal("araddr", width=32, kind="input"),
+            Signal("arvalid", width=1, kind="input"),
+            Signal("arlen", width=8, kind="input"),
+            Signal("arsize", width=3, kind="input"),
+            Signal("arburst", width=2, kind="input"),
+            Signal("arid", width=4, kind="input"),
+            Signal("bvalid", width=1, kind="output"),
+            Signal("rdata", width=32, kind="output"),
+            Signal("rvalid", width=1, kind="output"),
+            Signal("rlast", width=1, kind="output"),
+        ),
+        assignments=(
+            Assignment("bvalid", ConstExpr(0, 1)),
+            Assignment("rdata", ConstExpr(0, 32)),
+            Assignment("rvalid", ConstExpr(0, 1)),
+            Assignment("rlast", ConstExpr(0, 1)),
+        ),
+        outputs=("bvalid", "rdata", "rvalid", "rlast"),
+    )
+    sequence = axi4_sequence(
+        (
+            Axi4Transfer(addr=0x10, write=True, beats=(0x11111111, 0x22222222), burst_len=2, label="wr"),
+            Axi4Transfer(addr=0x10, write=False, expected_rdata=(0x11111111, 0x22222222), burst_len=2, label="rd"),
+        )
+    )
+    ref_model = axi_memory_reference_model(storage={}, read_data_name="rdata")
+
+    def expected_fn(cycle, inputs):
+        return ref_model.predict(inputs)
+
+    report = run_python_uvm_test(
+        module,
+        sequence,
+        expected_fn=expected_fn,
+        name="python_uvm_axi4_burst",
+    )
+
+    assert report.passed is False
+    assert report.coverage["labels_seen"]["wr"] >= 2
+    assert report.traces[-1].expected["rlast"] == 1
+    assert report.traces[-1].expected["rdata"] == 0x22222222

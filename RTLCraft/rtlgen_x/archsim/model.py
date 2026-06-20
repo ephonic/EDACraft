@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+import json
+from pathlib import Path
 from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 
@@ -95,6 +97,34 @@ class Workload:
     def from_flows(cls, *flows: FlowSpec) -> "Workload":
         return cls(flows=tuple(flows))
 
+    def to_dict(self) -> dict[str, object]:
+        return {"flows": [asdict(flow) for flow in self.flows]}
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, object]) -> "Workload":
+        flows = tuple(
+            FlowSpec(
+                name=str(flow["name"]),
+                path=tuple(flow["path"]),
+                tokens=int(flow.get("tokens", 1)),
+                bytes_per_token=int(flow.get("bytes_per_token", 0)),
+                start_cycle=int(flow.get("start_cycle", 0)),
+                metadata=dict(flow.get("metadata", {})),
+            )
+            for flow in payload.get("flows", ())
+        )
+        return cls(flows=flows)
+
+    def to_json_file(self, path: str | Path) -> Path:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+        return output_path
+
+    @classmethod
+    def from_json_file(cls, path: str | Path) -> "Workload":
+        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+
 
 class ArchitectureModel:
     """Lightweight architecture model shared by behavior and cycle simulation."""
@@ -112,6 +142,35 @@ class ArchitectureModel:
     @property
     def stages(self) -> Dict[str, StageSpec]:
         return dict(self._stages)
+
+    def to_dict(self) -> dict[str, object]:
+        return {"stages": [asdict(stage) for stage in self._stages.values()]}
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, object]) -> "ArchitectureModel":
+        return cls(
+            StageSpec(
+                name=str(stage["name"]),
+                kind=str(stage.get("kind", "compute")),
+                latency=int(stage.get("latency", 1)),
+                initiation_interval=int(stage.get("initiation_interval", 1)),
+                capacity=int(stage.get("capacity", 1)),
+                queue_depth=int(stage.get("queue_depth", 0)),
+                bandwidth_bytes_per_cycle=int(stage.get("bandwidth_bytes_per_cycle", 0)),
+                metadata=dict(stage.get("metadata", {})),
+            )
+            for stage in payload.get("stages", ())
+        )
+
+    def to_json_file(self, path: str | Path) -> Path:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+        return output_path
+
+    @classmethod
+    def from_json_file(cls, path: str | Path) -> "ArchitectureModel":
+        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
     def stage(self, name: str) -> StageSpec:
         try:

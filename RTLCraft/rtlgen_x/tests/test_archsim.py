@@ -12,6 +12,7 @@ from rtlgen_x.archsim import (
     StageSpec,
     Workload,
 )
+import json
 
 
 def test_behavior_level_reports_bottleneck_for_cpu_like_pipeline():
@@ -159,3 +160,24 @@ def test_streaming_datapath_preset_finishes_full_burst():
     assert behavior.flow_metrics["stream_burst"].bytes_moved == 20 * 24 * 4
     assert cycle.flow_metrics["stream_burst"].completed_tokens == 20
     assert cycle.stage_metrics["egress_link"].busy_token_cycles >= 20
+
+
+def test_archsim_model_and_workload_round_trip_json(tmp_path):
+    model = ArchitectureModel([
+        StageSpec("dispatch", kind="control", latency=1, initiation_interval=1, capacity=2, queue_depth=4),
+        StageSpec("dram", kind="memory", latency=6, initiation_interval=2, capacity=1, queue_depth=8, bandwidth_bytes_per_cycle=32),
+    ])
+    workload = Workload.from_flows(
+        FlowSpec("cpu", path=("dispatch", "dram"), tokens=8, bytes_per_token=64, start_cycle=1, metadata={"class": "cpu"}),
+    )
+
+    model_path = model.to_json_file(tmp_path / "model.json")
+    workload_path = workload.to_json_file(tmp_path / "workload.json")
+
+    loaded_model = ArchitectureModel.from_json_file(model_path)
+    loaded_workload = Workload.from_json_file(workload_path)
+
+    assert json.loads(model_path.read_text(encoding="utf-8"))["stages"][1]["bandwidth_bytes_per_cycle"] == 32
+    assert json.loads(workload_path.read_text(encoding="utf-8"))["flows"][0]["metadata"]["class"] == "cpu"
+    assert loaded_model.stage("dram").latency == 6
+    assert loaded_workload.flows[0].bytes_per_token == 64

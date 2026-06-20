@@ -27,11 +27,14 @@ from rtlgen_x.verify.python_uvm import (
 )
 from rtlgen_x.verify.protocols import (
     ApbTransfer,
+    Axi4Transfer,
     AxiLiteTransfer,
     AxiStreamTransfer,
     WishboneTransfer,
     apb_sequence,
+    axi4_sequence,
     axilite_sequence,
+    axi_memory_reference_model,
     axistream_sequence,
     register_reference_model,
     wishbone_sequence,
@@ -71,6 +74,7 @@ from rtlgen_x.verify.uvm import (
 
 __all__ = [
     "ApbTransfer",
+    "Axi4Transfer",
     "AxiLiteTransfer",
     "AxiStreamTransfer",
     "WishboneTransfer",
@@ -103,7 +107,9 @@ __all__ = [
     "VerificationFailure",
     "VerificationPort",
     "apb_sequence",
+    "axi4_sequence",
     "axilite_sequence",
+    "axi_memory_reference_model",
     "axistream_sequence",
     "describe_verification_interface",
     "emit_python_reference_model",
