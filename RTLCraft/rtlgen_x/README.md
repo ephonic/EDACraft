@@ -14,6 +14,11 @@ capabilities that an agent can call directly:
 The agent is expected to orchestrate these capabilities. `rtlgen_x` provides
 the engines.
 
+One concrete worked example now lives in [../sfu/README.md](../sfu/README.md):
+a fully pipelined FP16 SFU that uses LUT-backed second-order interpolation and
+is regression-locked across the legacy DSL simulator, lowered executable model,
+and emitted RTL path.
+
 ## What `rtlgen_x` is
 
 `rtlgen_x` is designed around a capability-first thesis:
@@ -288,6 +293,13 @@ Recent latch closure is important here:
    slices rooted at `BinOp` / `UnaryOp` / `Mux` / `Concat` expressions fall
    back to shift+mask emission when direct part-select syntax would break
    `iverilog`
+6. `Memory(..., init_data=...)` now stays consistent across emitted RTL, legacy
+   AST simulation, legacy JIT, and lowered `SimModule` execution
+7. arithmetic right shift via `SRA(...)` lowers and emits consistently
+8. combinational assignments are topologically ordered during lowering so
+   dependent wire chains evaluate correctly in the executable model
+9. lowered multiply expressions preserve full product width instead of truncating
+   to the larger operand width
 
 ### 3. Detailed simulation: `rtlgen_x.sim`
 
@@ -336,6 +348,14 @@ Current detailed-sim feature coverage includes:
 4. output recomputation after state updates
 5. batch execution
 6. latch-phase state holding/update semantics
+7. LUT-heavy fixed-point pipelines that depend on signed multiply plus
+   arithmetic right shift
+8. sequential multiply inside `seq` blocks, preserving full product width
+   through lowering, Python sim, and compiled sim
+
+A unified `reset_simulator(...)` helper resets either the new
+(`PythonSimulator` / `CompiledSimulator`) or the legacy simulator frontend, so
+test harnesses need not branch on the concrete simulator class.
 
 High-throughput batch helpers:
 
@@ -370,7 +390,9 @@ RTL differential checking:
 1. `run_legacy_rtl_cosim(...)`
 
 This path compares compiled execution against emitted RTL using `iverilog` when
-available.
+available. For valid-gated pipelines, use `valid_signal`, `flush_cycles`, and
+`flush_inputs` so the helper only checks architecturally meaningful output
+beats.
 
 For hand-written or generated streaming RTL cosim, keep two practical rules in
 mind:
@@ -499,7 +521,10 @@ Runtime bundle generation adds:
 Important current behavior:
 
 1. generated reference models are self-contained and rely on emitted
-   `rtlgen_x_ref_runtime.py`
+   `rtlgen_x_ref_runtime.py`; if the model and runtime get separated, point the
+   loader at the runtime via the `RTLGEN_X_REF_RUNTIME_PATH` environment
+   variable or the `runtime_path=` argument of
+   `load_generated_reference_model(...)`
 2. generated scoreboards call the generated Python reference model through a DPI
    bridge hook
 3. generated reset smoke sequences understand reset polarity when the executable
@@ -530,6 +555,10 @@ Current practical split:
 1. `probe_iverilog_uvm_collateral(...)` is good for local SV smoke and basic
    packaging checks
 2. full UVM closure depends on an external UVM-capable simulator such as VCS
+
+The probe report surfaces compile warnings: check `report.warnings`,
+`report.has_warnings`, and `report.clean` so width-mismatch and other lint
+diagnostics are not hidden behind a successful compile.
 
 ### 5. PPA capability: `rtlgen_x.ppa`
 
@@ -724,6 +753,47 @@ bundle = generate_uvm_runtime_bundle(module, clock_name="clk")
 write_uvm_runtime_bundle(bundle, "build/uvm_bundle", include_runtime_package=False)
 ```
 
+### Example 6: fully pipelined FP16 SFU regression
+
+The repository includes a nontrivial scalar SFU example in `../sfu/`:
+
+1. FP16 input/output
+2. `relu`, `sigmoid`, `tanh`, `sin`, `cos`
+3. throughput 1, latency 5
+4. second-order interpolation from compact LUTs
+
+It is a good reference design when you want to sanity-check LUT initialization,
+pipeline alignment, signed fixed-point math, and nonlinear verification flow.
+
+Run the example regressions with:
+
+```bash
+python -m pytest sfu/tests/test_functional.py -q
+python -m pytest rtlgen_x/tests/test_dsl_legacy_import.py sfu/tests/test_functional.py -q -rA
+python sfu/iverilog_cosim.py
+```
+
+And emit the DUT RTL with:
+
+```python
+from rtlgen_x.dsl import VerilogEmitter
+from sfu.dsl import Fp16Sfu
+
+rtl = VerilogEmitter().emit(Fp16Sfu())
+print(rtl[:400])
+```
+
+This example also acted as a framework stress test: the latest fixes for
+`init_data`, `SRA`, combinational dependency ordering, and multiply-width
+inference were all validated through this design.
+
+For emitted RTL closure, the current best practice is:
+
+1. use the dedicated `sfu/iverilog_cosim.py` harness for valid-aware streaming
+   parity when you want DUT-specific checks or larger stress runs
+2. use `run_legacy_rtl_cosim(...)` for both cycle-aligned interfaces and
+   straightforward valid-gated streaming parity
+
 ## Tutorials
 
 For full step-by-step flows, use the standalone tutorials:
@@ -757,6 +827,64 @@ Recent regression locks also cover:
 1. nested-slice Verilog emission on widened combinational expressions
 2. back-to-back streaming verification on a real pipelined arithmetic DUT
 3. module-side PPA hotspot attribution with file/line metadata
+4. legacy memory `init_data` propagation through AST sim, JIT, and lowered
+   executable simulation
+5. arithmetic right shift round-trip through lowering, simulation, and Verilog
+   emission
+6. a fully pipelined LUT-backed FP16 SFU across directed and random streaming
+   verification
+7. sequential multiply inside `seq` blocks across truncation, sliced-product,
+   and full-width product-register forms (Python and compiled paths agree)
+8. `LegacyLoweringError` diagnostics naming the offending port/kind and the
+   recommended shadow-register pattern for Output targets in sequential blocks
+9. generated reference models loading their runtime via an env override or the
+   `runtime_path` kwarg when the model and runtime are separated
+10. iverilog probe reports surfacing width-mismatch and other warning lines
+11. a unified `reset_simulator(...)` adapter that resets both the legacy and the
+    new simulator frontends
+
+## Recent fixes (audit0621-kimi)
+
+A closure pass against the GPU SM reference design surfaced several framework
+friction points. The ones that translated into code changes are summarized here.
+
+1. **Sequential multiply (`A * B` inside `seq` blocks)** is verified across the
+   Python runtime, the compiled runtime, and a gpu_sm-style full-width
+   product-register form. The product width is preserved during lowering and
+   only truncated at the assignment target, so registered products no longer
+   silently collapse to zero. Regression tests lock all three forms.
+
+2. **`LegacyLoweringError` diagnostics** for unsupported assignment targets now
+   report the signal kind (for example `output 'out'`) and, for an Output in a
+   sequential block, spell out the recommended shadow-register pattern:
+
+   ```python
+   # inside seq:  self.out_reg <<= value
+   # inside comb: self.out <<= self.out_reg
+   ```
+
+3. **Generated reference models** can now locate their runtime helper even when
+   the model file and `rtlgen_x_ref_runtime.py` are not co-located. Set the
+   `RTLGEN_X_REF_RUNTIME_PATH` environment variable, or pass `runtime_path=` to
+   `load_generated_reference_model(...)`. `load_generated_reference_model(...)`
+   also drops stale cached runtime modules so the override is always honored.
+
+4. **`IverilogCollateralProbeReport`** now exposes `warnings`, `has_warnings`,
+   and `clean`, so width-mismatch and other compile warnings are no longer
+   buried in a successful compile. Treat `report.clean` as the stricter pass
+   gate when lint discipline matters.
+
+5. **`reset_simulator(...)`** (in `rtlgen_x.sim`) provides one entry point that
+   resets either frontend: it calls the no-arg `reset()` on the new
+   `PythonSimulator` / `CompiledSimulator`, and forwards `rst` / `cycles` to the
+   legacy `Simulator.reset(rst=None, cycles=2)`. Test harnesses no longer need
+   to branch on the concrete simulator class.
+
+The remaining audit note is a modeling-discipline item rather than a framework
+bug: the Python-UVM scoreboard compares outputs cycle-by-cycle, so a reference
+model must emit any "preview" output in the same cycle the DUT asserts
+`out_valid`, deferring only the architectural state commit. See the pipelined
+DUT guidance in [TUTORIAL_UVM.md](./TUTORIAL_UVM.md).
 
 ## Practical boundaries today
 

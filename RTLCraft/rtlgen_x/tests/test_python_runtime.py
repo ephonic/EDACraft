@@ -232,3 +232,44 @@ def test_python_reference_wide_buffered_state_round_trip():
     packed_state = python_sim.snapshot_state_numpy()
     python_sim.restore_state_numpy(packed_state)
     assert python_sim.snapshot_state_values() == state_snapshot
+
+
+def test_reset_simulator_adapter_handles_new_runtime_no_args():
+    """Finding #6: reset_simulator() must reset the new PythonSimulator (no-arg
+    reset) and ignore rst/cycles arguments it does not understand."""
+    from rtlgen_x.sim import reset_simulator
+
+    module = _accum_module()
+    sim = PythonSimulator(module)
+    # Step a few times to dirty the accumulator state.
+    sim.step({"rst": 0, "inp": 5})
+    sim.step({"rst": 0, "inp": 5})
+    assert sim.snapshot_state_values() != (3,)
+
+    # rst/cycles are accepted but ignored for the new runtime.
+    reset_simulator(sim, rst="rst", cycles=2)
+    assert sim.snapshot_state_values() == (3,)
+
+
+def test_reset_simulator_adapter_forwards_legacy_rst_cycles():
+    """Finding #6: reset_simulator() must forward rst/cycles to a legacy-style
+    simulator whose reset() accepts those parameters."""
+    from rtlgen_x.sim import reset_simulator
+
+    class LegacyFakeSim:
+        """Minimal stand-in for the legacy Simulator reset() signature."""
+
+        def __init__(self):
+            self.last_kwargs = {}
+
+        def reset(self, rst=None, cycles=2):
+            self.last_kwargs = {"rst": rst, "cycles": cycles}
+
+    legacy = LegacyFakeSim()
+    reset_simulator(legacy, rst="rst_n", cycles=4)
+    assert legacy.last_kwargs == {"rst": "rst_n", "cycles": 4}
+
+    # Calling with no overrides still works and uses the legacy defaults.
+    reset_simulator(legacy)
+    assert legacy.last_kwargs == {"rst": None, "cycles": 2}
+

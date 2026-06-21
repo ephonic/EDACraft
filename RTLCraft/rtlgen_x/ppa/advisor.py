@@ -69,7 +69,26 @@ class ModulePpaStats:
     arithmetic_ops: int
     compare_ops: int
     mux_ops: int
+    multiplier_ops: int
+    adder_ops: int
+    shift_ops: int
     max_expr_depth: int
+    max_memory_width: int = 0
+    max_memory_depth: int = 0
+    wide_memory_count: int = 0
+    small_memory_count: int = 0
+    critical_assignment_target: Optional[str] = None
+    critical_assignment_phase: Optional[str] = None
+    critical_assignment_source_file: Optional[str] = None
+    critical_assignment_source_line: Optional[int] = None
+    critical_expr_kind: Optional[str] = None
+    critical_expr_op: Optional[str] = None
+    critical_expr_operand_widths: Tuple[int, ...] = ()
+    widest_multiplier_operand_widths: Tuple[int, int] = ()
+    widest_multiplier_assignment_target: Optional[str] = None
+    widest_multiplier_phase: Optional[str] = None
+    widest_multiplier_source_file: Optional[str] = None
+    widest_multiplier_source_line: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +154,7 @@ def analyze_module_ppa(module: Any) -> ModulePpaStats:
 
     module = _normalize_executable_module(module)
     signal_map = module.signal_map()
+    memory_map = {memory.name: memory for memory in module.memories}
     input_bits = sum(signal.width for signal in module.signals if signal.kind == "input")
     output_bits = sum(signal_map[name].width for name in module.outputs)
     state_bits = sum(signal.width for signal in module.signals if signal.kind == "state")
@@ -145,20 +165,50 @@ def analyze_module_ppa(module: Any) -> ModulePpaStats:
     arithmetic_ops = 0
     compare_ops = 0
     mux_ops = 0
+    multiplier_ops = 0
+    adder_ops = 0
+    shift_ops = 0
     max_expr_depth = 0
+    critical_assignment = None
+    widest_multiplier = None
+    widest_multiplier_widths: Tuple[int, int] = ()
     for assignment in module.assignments:
         metrics = _expr_metrics(assignment.expr)
         arithmetic_ops += metrics["arithmetic_ops"]
         compare_ops += metrics["compare_ops"]
         mux_ops += metrics["mux_ops"]
-        max_expr_depth = max(max_expr_depth, int(metrics["depth"]))
+        multiplier_ops += metrics["multiplier_ops"]
+        adder_ops += metrics["adder_ops"]
+        shift_ops += metrics["shift_ops"]
+        depth = int(metrics["depth"])
+        if depth > max_expr_depth:
+            max_expr_depth = depth
+            critical_assignment = assignment
+        assignment_multiplier = _select_widest_multiplier(assignment.expr, signal_map, memory_map)
+        if assignment_multiplier is not None:
+            candidate_widths = _expr_operand_widths(assignment_multiplier, signal_map, memory_map)
+            if len(candidate_widths) == 2:
+                if widest_multiplier is None or max(candidate_widths) > max(widest_multiplier_widths) or (
+                    max(candidate_widths) == max(widest_multiplier_widths)
+                    and sum(candidate_widths) > sum(widest_multiplier_widths)
+                ):
+                    widest_multiplier = (assignment, assignment_multiplier)
+                    widest_multiplier_widths = (int(candidate_widths[0]), int(candidate_widths[1]))
     for write in module.memory_writes:
         for expr in (write.addr, write.value, write.enable):
             metrics = _expr_metrics(expr)
             arithmetic_ops += metrics["arithmetic_ops"]
             compare_ops += metrics["compare_ops"]
             mux_ops += metrics["mux_ops"]
+            multiplier_ops += metrics["multiplier_ops"]
+            adder_ops += metrics["adder_ops"]
+            shift_ops += metrics["shift_ops"]
             max_expr_depth = max(max_expr_depth, int(metrics["depth"]))
+    critical_expr = _select_critical_expr(critical_assignment.expr) if critical_assignment is not None else None
+    max_memory_width = max((memory.width for memory in module.memories), default=0)
+    max_memory_depth = max((memory.depth for memory in module.memories), default=0)
+    wide_memory_count = sum(1 for memory in module.memories if memory.width >= 48)
+    small_memory_count = sum(1 for memory in module.memories if memory.depth <= 64)
 
     return ModulePpaStats(
         module_name=module.name,
@@ -174,7 +224,46 @@ def analyze_module_ppa(module: Any) -> ModulePpaStats:
         arithmetic_ops=arithmetic_ops,
         compare_ops=compare_ops,
         mux_ops=mux_ops,
+        multiplier_ops=multiplier_ops,
+        adder_ops=adder_ops,
+        shift_ops=shift_ops,
         max_expr_depth=max_expr_depth,
+        max_memory_width=max_memory_width,
+        max_memory_depth=max_memory_depth,
+        wide_memory_count=wide_memory_count,
+        small_memory_count=small_memory_count,
+        critical_assignment_target=(
+            critical_assignment.target if critical_assignment is not None else None
+        ),
+        critical_assignment_phase=(
+            critical_assignment.phase if critical_assignment is not None else None
+        ),
+        critical_assignment_source_file=(
+            critical_assignment.source_file if critical_assignment is not None else None
+        ),
+        critical_assignment_source_line=(
+            critical_assignment.source_line if critical_assignment is not None else None
+        ),
+        critical_expr_kind=type(critical_expr).__name__ if critical_expr is not None else None,
+        critical_expr_op=_expr_op_name(critical_expr),
+        critical_expr_operand_widths=(
+            _expr_operand_widths(critical_expr, signal_map, memory_map)
+            if critical_expr is not None
+            else ()
+        ),
+        widest_multiplier_operand_widths=widest_multiplier_widths,
+        widest_multiplier_assignment_target=(
+            widest_multiplier[0].target if widest_multiplier is not None else None
+        ),
+        widest_multiplier_phase=(
+            widest_multiplier[0].phase if widest_multiplier is not None else None
+        ),
+        widest_multiplier_source_file=(
+            widest_multiplier[0].source_file if widest_multiplier is not None else None
+        ),
+        widest_multiplier_source_line=(
+            widest_multiplier[0].source_line if widest_multiplier is not None else None
+        ),
     )
 
 
@@ -298,20 +387,49 @@ def advise_ppa(
 
 def _expr_metrics(expr) -> Dict[str, int]:
     if isinstance(expr, (ConstExpr, SignalRef, MemoryReadExpr)):
-        return {"depth": 1, "arithmetic_ops": 0, "compare_ops": 0, "mux_ops": 0}
+        return {
+            "depth": 1,
+            "arithmetic_ops": 0,
+            "compare_ops": 0,
+            "mux_ops": 0,
+            "multiplier_ops": 0,
+            "adder_ops": 0,
+            "shift_ops": 0,
+        }
     if isinstance(expr, MaskExpr):
         child = _expr_metrics(expr.value)
-        return {"depth": child["depth"] + 1, **{key: child[key] for key in ("arithmetic_ops", "compare_ops", "mux_ops")}}
+        return {
+            "depth": child["depth"] + 1,
+            **{
+                key: child[key]
+                for key in ("arithmetic_ops", "compare_ops", "mux_ops", "multiplier_ops", "adder_ops", "shift_ops")
+            },
+        }
     if isinstance(expr, UnaryExpr):
         child = _expr_metrics(expr.value)
-        return {"depth": child["depth"] + 1, **{key: child[key] for key in ("arithmetic_ops", "compare_ops", "mux_ops")}}
+        return {
+            "depth": child["depth"] + 1,
+            **{
+                key: child[key]
+                for key in ("arithmetic_ops", "compare_ops", "mux_ops", "multiplier_ops", "adder_ops", "shift_ops")
+            },
+        }
     if isinstance(expr, BinaryExpr):
         lhs = _expr_metrics(expr.lhs)
         rhs = _expr_metrics(expr.rhs)
         arithmetic_ops = lhs["arithmetic_ops"] + rhs["arithmetic_ops"]
         compare_ops = lhs["compare_ops"] + rhs["compare_ops"]
+        multiplier_ops = lhs["multiplier_ops"] + rhs["multiplier_ops"]
+        adder_ops = lhs["adder_ops"] + rhs["adder_ops"]
+        shift_ops = lhs["shift_ops"] + rhs["shift_ops"]
         if expr.op in {"+", "-", "*", "<<", ">>", ">>>", "&", "|", "^"}:
             arithmetic_ops += 1
+        if expr.op == "*":
+            multiplier_ops += 1
+        if expr.op in {"+", "-"}:
+            adder_ops += 1
+        if expr.op in {"<<", ">>", ">>>"}:
+            shift_ops += 1
         if expr.op in {"==", "!=", "<", "<=", ">", ">="}:
             compare_ops += 1
         return {
@@ -319,6 +437,9 @@ def _expr_metrics(expr) -> Dict[str, int]:
             "arithmetic_ops": arithmetic_ops,
             "compare_ops": compare_ops,
             "mux_ops": lhs["mux_ops"] + rhs["mux_ops"],
+            "multiplier_ops": multiplier_ops,
+            "adder_ops": adder_ops,
+            "shift_ops": shift_ops,
         }
     if isinstance(expr, MuxExpr):
         cond = _expr_metrics(expr.cond)
@@ -329,8 +450,208 @@ def _expr_metrics(expr) -> Dict[str, int]:
             "arithmetic_ops": cond["arithmetic_ops"] + when_true["arithmetic_ops"] + when_false["arithmetic_ops"],
             "compare_ops": cond["compare_ops"] + when_true["compare_ops"] + when_false["compare_ops"],
             "mux_ops": cond["mux_ops"] + when_true["mux_ops"] + when_false["mux_ops"] + 1,
+            "multiplier_ops": cond["multiplier_ops"] + when_true["multiplier_ops"] + when_false["multiplier_ops"],
+            "adder_ops": cond["adder_ops"] + when_true["adder_ops"] + when_false["adder_ops"],
+            "shift_ops": cond["shift_ops"] + when_true["shift_ops"] + when_false["shift_ops"],
         }
     raise TypeError(f"unsupported expression type: {type(expr)!r}")
+
+
+def _select_widest_multiplier(expr, signal_map: Mapping[str, object], memory_map: Mapping[str, object]):
+    best = None
+    best_widths: Tuple[int, int] = ()
+
+    def visit(node) -> None:
+        nonlocal best, best_widths
+        if isinstance(node, BinaryExpr):
+            if node.op == "*":
+                widths = _expr_operand_widths(node, signal_map, memory_map)
+                if len(widths) == 2:
+                    widths = (int(widths[0]), int(widths[1]))
+                    if best is None or max(widths) > max(best_widths) or (
+                        max(widths) == max(best_widths) and sum(widths) > sum(best_widths)
+                    ):
+                        best = node
+                        best_widths = widths
+            visit(node.lhs)
+            visit(node.rhs)
+            return
+        if isinstance(node, MuxExpr):
+            visit(node.cond)
+            visit(node.when_true)
+            visit(node.when_false)
+            return
+        if isinstance(node, MaskExpr):
+            visit(node.value)
+            return
+        if isinstance(node, UnaryExpr):
+            visit(node.value)
+            return
+        if isinstance(node, MemoryReadExpr):
+            visit(node.addr)
+
+    visit(expr)
+    return best
+
+
+def _select_critical_expr(expr):
+    candidates: List[object] = []
+
+    def visit(node) -> None:
+        if isinstance(node, (BinaryExpr, MuxExpr, MaskExpr, UnaryExpr)):
+            candidates.append(node)
+        if isinstance(node, BinaryExpr):
+            visit(node.lhs)
+            visit(node.rhs)
+            return
+        if isinstance(node, MuxExpr):
+            visit(node.cond)
+            visit(node.when_true)
+            visit(node.when_false)
+            return
+        if isinstance(node, MaskExpr):
+            visit(node.value)
+            return
+        if isinstance(node, UnaryExpr):
+            visit(node.value)
+            return
+        if isinstance(node, MemoryReadExpr):
+            visit(node.addr)
+
+    visit(expr)
+    if not candidates:
+        return expr
+    candidates.sort(
+        key=lambda node: (
+            _expr_hotspot_score(node),
+            _expr_hotspot_priority(node),
+            _expr_node_count(node),
+        ),
+        reverse=True,
+    )
+    return candidates[0]
+
+
+def _expr_hotspot_score(expr) -> int:
+    if isinstance(expr, (ConstExpr, SignalRef)):
+        return 1
+    if isinstance(expr, MemoryReadExpr):
+        return max(1, _expr_hotspot_score(expr.addr))
+    if isinstance(expr, MaskExpr):
+        return _expr_hotspot_score(expr.value)
+    if isinstance(expr, UnaryExpr):
+        child = _expr_hotspot_score(expr.value)
+        return child if expr.op in {"$signed", "$unsigned"} else child + 1
+    if isinstance(expr, BinaryExpr):
+        child = max(_expr_hotspot_score(expr.lhs), _expr_hotspot_score(expr.rhs))
+        return child if expr.op in {"<<", ">>", ">>>"} else child + 1
+    if isinstance(expr, MuxExpr):
+        return max(
+            _expr_hotspot_score(expr.cond),
+            _expr_hotspot_score(expr.when_true),
+            _expr_hotspot_score(expr.when_false),
+        )
+    return 1
+
+
+def _expr_hotspot_priority(expr) -> int:
+    if isinstance(expr, BinaryExpr):
+        if expr.op == "*":
+            return 5
+        if expr.op in {"+", "-"}:
+            return 4
+        if expr.op in {"&", "|", "^"}:
+            return 3
+        if expr.op in {"<<", ">>", ">>>"}:
+            return 2
+        return 1
+    if isinstance(expr, MuxExpr):
+        return 1
+    return 0
+
+
+def _expr_node_count(expr) -> int:
+    if isinstance(expr, (ConstExpr, SignalRef)):
+        return 1
+    if isinstance(expr, MemoryReadExpr):
+        return 1 + _expr_node_count(expr.addr)
+    if isinstance(expr, MaskExpr):
+        return 1 + _expr_node_count(expr.value)
+    if isinstance(expr, UnaryExpr):
+        return 1 + _expr_node_count(expr.value)
+    if isinstance(expr, BinaryExpr):
+        return 1 + _expr_node_count(expr.lhs) + _expr_node_count(expr.rhs)
+    if isinstance(expr, MuxExpr):
+        return 1 + _expr_node_count(expr.cond) + _expr_node_count(expr.when_true) + _expr_node_count(expr.when_false)
+    return 1
+
+
+def _expr_op_name(expr) -> Optional[str]:
+    if isinstance(expr, BinaryExpr):
+        return expr.op
+    if isinstance(expr, UnaryExpr):
+        return expr.op
+    if isinstance(expr, MuxExpr):
+        return "?:"
+    if isinstance(expr, MaskExpr):
+        return "mask"
+    return None
+
+
+def _expr_operand_widths(
+    expr,
+    signal_map: Mapping[str, object],
+    memory_map: Mapping[str, object],
+) -> Tuple[int, ...]:
+    if isinstance(expr, BinaryExpr):
+        return (
+            _expr_width(expr.lhs, signal_map, memory_map),
+            _expr_width(expr.rhs, signal_map, memory_map),
+        )
+    if isinstance(expr, UnaryExpr):
+        return (_expr_width(expr.value, signal_map, memory_map),)
+    if isinstance(expr, MaskExpr):
+        return (_expr_width(expr.value, signal_map, memory_map),)
+    if isinstance(expr, MuxExpr):
+        return (
+            _expr_width(expr.cond, signal_map, memory_map),
+            _expr_width(expr.when_true, signal_map, memory_map),
+            _expr_width(expr.when_false, signal_map, memory_map),
+        )
+    return ()
+
+
+def _expr_width(
+    expr,
+    signal_map: Mapping[str, object],
+    memory_map: Mapping[str, object],
+) -> int:
+    if isinstance(expr, ConstExpr):
+        return expr.width
+    if isinstance(expr, SignalRef):
+        return signal_map[expr.name].width
+    if isinstance(expr, MemoryReadExpr):
+        return memory_map[expr.memory].width
+    if isinstance(expr, MaskExpr):
+        return expr.width
+    if isinstance(expr, UnaryExpr):
+        return 1 if expr.op == "!" else _expr_width(expr.value, signal_map, memory_map)
+    if isinstance(expr, BinaryExpr):
+        lhs_width = _expr_width(expr.lhs, signal_map, memory_map)
+        rhs_width = _expr_width(expr.rhs, signal_map, memory_map)
+        if expr.op in {"==", "!=", "<", "<=", ">", ">="}:
+            return 1
+        if expr.op == "*":
+            return lhs_width + rhs_width
+        if expr.op in {"+", "-"}:
+            return max(lhs_width, rhs_width) + 1
+        return max(lhs_width, rhs_width)
+    if isinstance(expr, MuxExpr):
+        return max(
+            _expr_width(expr.when_true, signal_map, memory_map),
+            _expr_width(expr.when_false, signal_map, memory_map),
+        )
+    return 1
 
 
 def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaRecommendation]:
@@ -346,7 +667,18 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                     f"Module '{stats.module_name}' reaches expression depth {stats.max_expr_depth}, "
                     f"above the target depth {depth_limit}."
                 ),
-                evidence={"module": stats.module_name, "max_expr_depth": stats.max_expr_depth, "target_depth": depth_limit},
+                evidence={
+                    "module": stats.module_name,
+                    "max_expr_depth": stats.max_expr_depth,
+                    "target_depth": depth_limit,
+                    "critical_assignment_target": stats.critical_assignment_target,
+                    "critical_assignment_phase": stats.critical_assignment_phase,
+                    "critical_assignment_source_file": stats.critical_assignment_source_file,
+                    "critical_assignment_source_line": stats.critical_assignment_source_line,
+                    "critical_expr_kind": stats.critical_expr_kind,
+                    "critical_expr_op": stats.critical_expr_op,
+                    "critical_expr_operand_widths": stats.critical_expr_operand_widths,
+                },
                 suggestions=(
                     "Insert a register boundary around the deepest arithmetic chain.",
                     "Split wide mux/arithmetic trees so the critical path spans fewer operators.",
@@ -363,10 +695,39 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                     f"Module '{stats.module_name}' carries {stats.memory_bits} memory bits across "
                     f"{stats.memory_count} storage objects."
                 ),
-                evidence={"memory_bits": stats.memory_bits, "memory_count": stats.memory_count},
+                evidence={
+                    "memory_bits": stats.memory_bits,
+                    "memory_count": stats.memory_count,
+                    "max_memory_width": stats.max_memory_width,
+                    "max_memory_depth": stats.max_memory_depth,
+                    "wide_memory_count": stats.wide_memory_count,
+                    "small_memory_count": stats.small_memory_count,
+                },
                 suggestions=(
                     "Consider banking the storage or mapping it onto dedicated SRAM macros.",
                     "Gate read/write enables so inactive banks do not toggle every cycle.",
+                ),
+            )
+        )
+    if stats.small_memory_count >= 4 and stats.max_memory_depth <= 64:
+        recs.append(
+            PpaRecommendation(
+                category="area_power",
+                severity="medium",
+                title="Consolidate many small lookup memories",
+                rationale=(
+                    f"Module '{stats.module_name}' uses {stats.small_memory_count} shallow memories; "
+                    "packing related coefficient tables can reduce decoder duplication and simplify routing."
+                ),
+                evidence={
+                    "small_memory_count": stats.small_memory_count,
+                    "memory_count": stats.memory_count,
+                    "max_memory_depth": stats.max_memory_depth,
+                    "max_memory_width": stats.max_memory_width,
+                },
+                suggestions=(
+                    "Pack related coefficient rows into one wider ROM word when the read access pattern is lock-step.",
+                    "Prefer fewer coefficient banks when c0/c1/c2 are always fetched together.",
                 ),
             )
         )
@@ -405,6 +766,31 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                 ),
                 evidence={"arithmetic_ops": stats.arithmetic_ops, "comb_assignments": stats.comb_assignments},
                 suggestions=(mode_hint,),
+            )
+        )
+    if stats.multiplier_ops >= 2:
+        widest = stats.widest_multiplier_operand_widths
+        recs.append(
+            PpaRecommendation(
+                category="timing",
+                severity="medium",
+                title="Audit multiplier-heavy stages",
+                rationale=(
+                    f"Module '{stats.module_name}' contains {stats.multiplier_ops} multiplier nodes; "
+                    "wide signed multiplies usually dominate SFU-style fixed-point timing and energy."
+                ),
+                evidence={
+                    "multiplier_ops": stats.multiplier_ops,
+                    "widest_multiplier_operand_widths": widest,
+                    "widest_multiplier_assignment_target": stats.widest_multiplier_assignment_target,
+                    "widest_multiplier_phase": stats.widest_multiplier_phase,
+                    "widest_multiplier_source_file": stats.widest_multiplier_source_file,
+                    "widest_multiplier_source_line": stats.widest_multiplier_source_line,
+                },
+                suggestions=(
+                    "Check whether the widest multiply should be split across stages or rewritten with a narrower base implementation.",
+                    "If throughput allows, share or serialize mutually exclusive polynomial/trig multiplies.",
+                ),
             )
         )
     return recs

@@ -322,6 +322,64 @@ def test_compiled_simulator_wide_logical_shift_zero_fills_unsigned_values(tmp_pa
         assert sim.step({"inp": value}) == {"out": value >> 4}
 
 
+def test_compiled_simulator_wide_unsigned_compare_matches_python(tmp_path):
+    module = SimModule(
+        name="cpp_wide_unsigned_compare",
+        signals=(
+            Signal("a", width=80, kind="input"),
+            Signal("b", width=80, kind="input"),
+            Signal("lt_out", width=1, kind="output"),
+            Signal("ge_out", width=1, kind="output"),
+        ),
+        assignments=(
+            Assignment("lt_out", BinaryExpr("<", SignalRef("a"), SignalRef("b"))),
+            Assignment("ge_out", BinaryExpr(">=", SignalRef("a"), SignalRef("b"))),
+        ),
+        outputs=("lt_out", "ge_out"),
+    )
+
+    with CppBackendScaffold(namespace="testwidecmp").build(module, tmp_path) as sim:
+        a = (1 << 79) | 0x12
+        b = (1 << 78) | 0x34
+        assert sim.step({"a": a, "b": b}) == {"lt_out": 0, "ge_out": 1}
+        assert sim.step({"a": b, "b": a}) == {"lt_out": 1, "ge_out": 0}
+
+
+def test_compiled_simulator_sign_extends_signed_operands_before_multiply_and_shift(tmp_path):
+    module = SimModule(
+        name="cpp_signed_mul_shift",
+        signals=(
+            Signal("c1", width=18, kind="input"),
+            Signal("delta", width=16, kind="input"),
+            Signal("term", width=36, kind="output"),
+        ),
+        assignments=(
+            Assignment(
+                "term",
+                MaskExpr(
+                    BinaryExpr(
+                        ">>>",
+                        BinaryExpr(
+                            "*",
+                            UnaryExpr("$signed", SignalRef("c1")),
+                            UnaryExpr("$signed", SignalRef("delta")),
+                        ),
+                        ConstExpr(12, 5),
+                    ),
+                    36,
+                ),
+            ),
+        ),
+        outputs=("term",),
+    )
+
+    with CppBackendScaffold(namespace="testsignedmul").build(module, tmp_path) as sim:
+        c1 = (1 << 18) - 12345
+        delta = 2047
+        expected = ((-12345 * 2047) >> 12) & ((1 << 36) - 1)
+        assert sim.step({"c1": c1, "delta": delta}) == {"term": expected}
+
+
 def test_compiled_simulator_randomized_python_parity(tmp_path):
     module = SimModule(
         name="cpp_random_parity",

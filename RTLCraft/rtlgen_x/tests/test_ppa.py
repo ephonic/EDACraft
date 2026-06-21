@@ -185,6 +185,25 @@ def test_ppa_module_analysis_accepts_legacy_dsl_modules():
     assert stats.module_name == "legacy_ppa_accum"
     assert stats.state_bits == 8
     assert stats.comb_assignments >= 1
+    assert stats.critical_assignment_target is not None
+    assert stats.critical_assignment_phase in {"comb", "seq", "latch"}
+
+
+def test_ppa_timing_recommendation_carries_assignment_location_for_legacy_dsl():
+    report = advise_ppa(
+        module=LegacyPpaAccum(),
+        goals=PpaGoals(priority="timing_first", max_logic_depth=1),
+    )
+
+    timing_rec = next(rec for rec in report.recommendations if rec.category == "timing")
+    assert timing_rec.evidence["module"] == "legacy_ppa_accum"
+    assert timing_rec.evidence["critical_assignment_target"] in {"out", "acc"}
+    assert timing_rec.evidence["critical_assignment_phase"] in {"comb", "seq"}
+    assert timing_rec.evidence["critical_assignment_source_file"]
+    assert isinstance(timing_rec.evidence["critical_assignment_source_line"], int)
+    assert timing_rec.evidence["critical_expr_kind"] == "BinaryExpr"
+    assert timing_rec.evidence["critical_expr_op"] == "+"
+    assert timing_rec.evidence["critical_expr_operand_widths"] == (8, 8)
 
 
 def test_ppa_recommendations_accept_implementation_report_evidence(tmp_path):

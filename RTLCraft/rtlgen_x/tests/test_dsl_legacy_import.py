@@ -12,6 +12,7 @@ from rtlgen_x.dsl import (
     Else,
     If,
     Input,
+    LegacyLoweringError,
     Memory,
     build_compiled_simulator_from_legacy,
     lower_legacy_module_to_sim,
@@ -19,8 +20,10 @@ from rtlgen_x.dsl import (
     Output,
     PadLeft,
     Reg,
+    SRA,
     Simulator,
     VerilogEmitter,
+    Wire,
 )
 from rtlgen_x.sim.python_runtime import PythonSimulator
 
@@ -250,6 +253,30 @@ class TinyMem(Module):
                 self.mem[self.addr] <<= self.din
 
 
+class InitDataMem(Module):
+    def __init__(self):
+        super().__init__("InitDataMem")
+        self.addr = Input(2, "addr")
+        self.dout = Output(8, "dout")
+        self.mem = self.add_memory(Memory(8, 4, "mem", init_data=[-1, 3, 0x55, -128]))
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.mem[self.addr]
+
+
+class ArithmeticShiftLane(Module):
+    def __init__(self):
+        super().__init__("ArithmeticShiftLane")
+        self.inp = Input(8, "inp")
+        self.shamt = Input(3, "shamt")
+        self.out = Output(8, "out")
+
+        @self.comb
+        def _comb():
+            self.out <<= SRA(self.inp.as_sint(), self.shamt).as_uint()[7:0]
+
+
 class TinyRegFile(Module):
     def __init__(self):
         super().__init__("TinyRegFile")
@@ -302,6 +329,81 @@ class MultiSeqActiveLow(Module):
             with Else():
                 with If(self.we):
                     self.rf[self.addr] <<= self.din
+
+
+class SeqMulTruncate(Module):
+    """Sequential block registers a truncated product (full width -> 16-bit reg)."""
+
+    def __init__(self):
+        super().__init__("SeqMulTruncate")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.a = Input(16, "a")
+        self.b = Input(16, "b")
+        self.out = Output(16, "out")
+        self.y_reg = Reg(16, "y_reg")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.y_reg
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.y_reg <<= 0
+            with Else():
+                self.y_reg <<= self.a * self.b
+
+
+class SeqMulSlice(Module):
+    """Sequential block registers a sliced product (slice of product in seq)."""
+
+    def __init__(self):
+        super().__init__("SeqMulSlice")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.a = Input(16, "a")
+        self.b = Input(16, "b")
+        self.out = Output(16, "out")
+        self.y_reg = Reg(16, "y_reg")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.y_reg
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.y_reg <<= 0
+            with Else():
+                self.y_reg <<= (self.a * self.b)[15:0]
+
+
+class SeqMulProductReg(Module):
+    """gpu_sm-style: 32-bit product register, low 16 bits extracted next cycle."""
+
+    def __init__(self):
+        super().__init__("SeqMulProductReg")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.a = Input(16, "a")
+        self.b = Input(16, "b")
+        self.out = Output(16, "out")
+        self.acc = Reg(16, "acc")
+        self.prod = Reg(32, "prod")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.acc
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.acc <<= 0
+                self.prod <<= 0
+            with Else():
+                self.prod <<= self.a * self.b
+                self.acc <<= self.prod[15:0]
 
 
 def _load_external_module(rel_path: str, class_name: str):
@@ -367,6 +469,25 @@ def test_legacy_dsl_nested_slice_binop_emits_iverilog_safe_verilog(tmp_path):
         text=True,
     )
     assert cp.returncode == 0, f"iverilog compile failed:\n{cp.stderr}"
+
+
+def test_legacy_dsl_memory_init_data_emits_masked_literals():
+    text = VerilogEmitter().emit(InitDataMem())
+
+    assert "mem[0] = 8'hff;" in text
+    assert "mem[1] = 8'd3;" in text
+    assert "mem[2] = 8'd85;" in text
+    assert "mem[3] = 8'h80;" in text
+
+
+def test_legacy_init_data_reaches_ast_interpreter_and_jit(tmp_path):
+    interp = Simulator(InitDataMem())
+    interp._jit = None
+    assert [interp.peek_memory("mem", idx) for idx in range(4)] == [0xFF, 0x03, 0x55, 0x80]
+
+    jit = Simulator(InitDataMem())
+    assert jit._jit is not None
+    assert [jit.peek_memory("mem", idx) for idx in range(4)] == [0xFF, 0x03, 0x55, 0x80]
 
 
 def test_legacy_dsl_simulates():
@@ -596,6 +717,17 @@ def test_legacy_lowering_preserves_slice_width_for_signed_arithmetic():
     assert observed == {"out": 0x00C4}
 
 
+def test_legacy_sra_helper_round_trip_to_verilog_and_sim():
+    lowered = lower_legacy_module_to_sim(ArithmeticShiftLane())
+    sim = PythonSimulator(lowered.module)
+
+    observed = sim.step({"inp": 0x88, "shamt": 2})
+    assert observed == {"out": 0xE2}
+
+    emitted = VerilogEmitter().emit(ArithmeticShiftLane())
+    assert ">>>" in emitted
+
+
 def test_legacy_lowered_simd16_matches_behavior_model_for_signed_int_ops():
     pytest.importorskip("earphone.modules.simd16.layer_L1_behavior.src.behavior")
     from earphone.modules.simd16.layer_L1_behavior.src.behavior import (
@@ -663,6 +795,13 @@ def test_legacy_dsl_lowers_memory_storage():
 
     assert tuple(memory.name for memory in lowered.module.memories) == ("mem",)
     assert len(lowered.module.memory_writes) == 1
+
+
+def test_legacy_dsl_lowers_memory_init_data():
+    lowered = lower_legacy_module_to_sim(InitDataMem())
+
+    assert tuple(memory.name for memory in lowered.module.memories) == ("mem",)
+    assert lowered.module.memories[0].init == (0xFF, 0x03, 0x55, 0x80)
 
 
 def test_legacy_dsl_compiled_simulator_supports_memory_and_array_storage(tmp_path):
@@ -912,3 +1051,129 @@ def test_real_simd16_module_compiled_simulator_matches_python_model(tmp_path):
             assert compiled.step(vector) == python_sim.step(vector)
     finally:
         compiled.close()
+
+
+def _run_seq_multiply_dut(module_cls, build_subdir, tmp_path):
+    """Lower a sequential-multiply DUT and exercise it on both runtimes.
+
+    Returns the (python, compiled) output tuples after the directed run so the
+    caller can assert they match and stay non-zero (the historical bug produced
+    all-zero multiplier results).
+    """
+    lowered = lower_legacy_module_to_sim(module_cls())
+    python_sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_legacy(
+        module_cls(), build_dir=tmp_path / build_subdir
+    )
+    vectors = (
+        {"clk": 0, "rst": 1, "a": 0, "b": 0},
+        {"clk": 0, "rst": 0, "a": 3, "b": 5},
+        {"clk": 0, "rst": 0, "a": 7, "b": 6},
+        {"clk": 0, "rst": 0, "a": 257, "b": 257},
+    )
+    py_outputs = []
+    cpp_outputs = []
+    try:
+        python_sim.reset()
+        compiled.reset()
+        for vector in vectors:
+            py_outputs.append(python_sim.step(vector))
+            cpp_outputs.append(compiled.step(vector))
+    finally:
+        compiled.close()
+    return py_outputs, cpp_outputs
+
+
+def test_legacy_dsl_sequential_multiply_truncates_nonzero(tmp_path):
+    py_outputs, cpp_outputs = _run_seq_multiply_dut(
+        SeqMulTruncate, "seq_mul_truncate", tmp_path
+    )
+    assert py_outputs == cpp_outputs
+    # 3 * 5 = 15, 7 * 6 = 42 (non-zero, historically regressed to zero)
+    assert py_outputs[1] == {"out": 15}
+    assert py_outputs[2] == {"out": 42}
+    # 257 * 257 = 66049, truncated to 16 bits = 513
+    assert py_outputs[3] == {"out": 513}
+
+
+def test_legacy_dsl_sequential_multiply_slice_nonzero(tmp_path):
+    py_outputs, cpp_outputs = _run_seq_multiply_dut(
+        SeqMulSlice, "seq_mul_slice", tmp_path
+    )
+    assert py_outputs == cpp_outputs
+    assert py_outputs[1] == {"out": 15}
+    assert py_outputs[2] == {"out": 42}
+    assert py_outputs[3] == {"out": 513}
+
+
+def test_legacy_dsl_sequential_multiply_full_product_register(tmp_path):
+    """gpu_sm-style: 32-bit product register, low 16 bits read one cycle later."""
+    py_outputs, cpp_outputs = _run_seq_multiply_dut(
+        SeqMulProductReg, "seq_mul_product_reg", tmp_path
+    )
+    assert py_outputs == cpp_outputs
+    # prod = a*b captured into 32-bit reg; acc reads previous prod's low 16 bits.
+    # cycle1 (a=3,b=5): acc = 0 (previous prod), prod = 15
+    assert py_outputs[1] == {"out": 0}
+    # cycle2 (a=7,b=6): acc = 15 (previous prod), prod = 42
+    assert py_outputs[2] == {"out": 15}
+    # cycle3 (a=257,b=257): acc = 42, prod = 66049
+    assert py_outputs[3] == {"out": 42}
+
+
+class SeqOutputDirectAssign(Module):
+    """Anti-pattern: assigns an Output directly inside a seq block."""
+
+    def __init__(self):
+        super().__init__("SeqOutputDirectAssign")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.a = Input(8, "a")
+        self.out = Output(8, "out")
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.out <<= 0
+            with Else():
+                self.out <<= self.a
+
+
+def test_legacy_dsl_seq_output_assign_error_names_port_and_pattern():
+    """Finding #2: the lowering error for an Output in a seq block must name
+    the port and recommend the shadow-register pattern."""
+    with pytest.raises(LegacyLoweringError) as exc_info:
+        lower_legacy_module_to_sim(SeqOutputDirectAssign())
+    message = str(exc_info.value)
+    assert "output 'out'" in message
+    assert "Reg" in message
+    assert "comb" in message
+
+
+def test_legacy_dsl_seq_wire_assign_error_names_kind():
+    """A wire target in a seq block should report its kind, not a bare name."""
+    class SeqWireAssign(Module):
+        def __init__(self):
+            super().__init__("SeqWireAssign")
+            self.clk = Input(1, "clk")
+            self.rst = Input(1, "rst")
+            self.a = Input(8, "a")
+            self.out = Output(8, "out")
+            self.w = Wire(8, "w")
+
+            @self.comb
+            def _comb():
+                self.out <<= self.w
+
+            @self.seq(self.clk, self.rst)
+            def _seq():
+                with If(self.rst == 1):
+                    self.w <<= 0
+                with Else():
+                    self.w <<= self.a
+
+    with pytest.raises(LegacyLoweringError) as exc_info:
+        lower_legacy_module_to_sim(SeqWireAssign())
+    message = str(exc_info.value)
+    assert "wire 'w'" in message
+

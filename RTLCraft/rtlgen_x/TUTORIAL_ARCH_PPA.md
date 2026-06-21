@@ -290,6 +290,18 @@ These hotspot fields are intentionally agent-friendly: they let you jump from a
 PPA warning to a concrete module name, signal/assignment target, source file,
 source line, and operator family before deciding how to rewrite the design.
 
+Newer module-side stats also expose more structural hints that matter in real
+datapaths:
+
+1. `multiplier_ops`
+2. `adder_ops`
+3. `shift_ops`
+4. `max_memory_width`
+5. `max_memory_depth`
+6. `small_memory_count`
+7. `widest_multiplier_operand_widths`
+8. `widest_multiplier_assignment_target`
+
 This is especially useful when:
 
 1. architecture says bandwidth is the main problem
@@ -366,6 +378,8 @@ Typical module-side changes:
 3. gate cold state
 4. reduce logic depth in a hot path
 5. share or serialize low-duty arithmetic
+6. pack multiple lock-step coefficient tables into one wider ROM word
+7. audit the widest multiplier site before adding more pipeline or LUT depth
 
 After every change:
 
@@ -391,6 +405,14 @@ For module-side timing work, prefer recommendations that identify all of:
 That level of attribution makes it much easier for an agent to decide whether a
 path wants pipelining, decomposition, banking, or a different arithmetic
 structure.
+
+For LUT-backed fixed-point units, the most useful rule of thumb is:
+
+1. if tables are shallow and always read together, consolidate them first
+2. if timing is still poor, look at the widest multiply or signed shift chain
+   before adding more approximation table capacity
+3. only reduce pipeline stages after the multiplier-heavy stages are no longer
+   the dominant pressure point
 
 Treat these three views as complementary, not competing.
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence
+from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set
 
 from rtlgen_x.dsl.legacy.core import (
     ArrayRead,
@@ -220,6 +220,8 @@ def lower_legacy_module_to_sim(
         _lower_stmt_list(body, phase="seq", env=env)
         assignments.extend(env.finalize_phase())
         memory_writes.extend(env.finalize_memory_writes())
+
+    assignments = _topologically_order_comb_assignments(assignments, signal_map)
 
     sim_module = SimModule(
         name=lowered_source.name,
@@ -612,6 +614,44 @@ def _mask_for_width(width: int) -> int:
     return (1 << width) - 1
 
 
+def _pick_preferred_assignment_source(
+    then_value,
+    then_source: tuple[Optional[str], Optional[int]],
+    else_value,
+    else_source: tuple[Optional[str], Optional[int]],
+    fallback_source: tuple[Optional[str], Optional[int]],
+) -> tuple[Optional[str], Optional[int]]:
+    then_score = _compiled_expr_complexity(then_value)
+    else_score = _compiled_expr_complexity(else_value)
+    if else_score > then_score and else_source != (None, None):
+        return else_source
+    if then_source != (None, None):
+        return then_source
+    if else_source != (None, None):
+        return else_source
+    return fallback_source
+
+
+def _compiled_expr_complexity(expr) -> int:
+    if isinstance(expr, (ConstExpr, SignalRef, MemoryReadExpr)):
+        return 1
+    if isinstance(expr, MaskExpr):
+        return _compiled_expr_complexity(expr.value)
+    if isinstance(expr, UnaryExpr):
+        child = _compiled_expr_complexity(expr.value)
+        return child if expr.op in {"$signed", "$unsigned"} else child + 1
+    if isinstance(expr, BinaryExpr):
+        child = max(_compiled_expr_complexity(expr.lhs), _compiled_expr_complexity(expr.rhs))
+        return child if expr.op in {"<<", ">>", ">>>"} else child + 1
+    if isinstance(expr, MuxExpr):
+        return max(
+            _compiled_expr_complexity(expr.cond),
+            _compiled_expr_complexity(expr.when_true),
+            _compiled_expr_complexity(expr.when_false),
+        )
+    return 1
+
+
 def _reject_unsupported_module_features(module) -> None:
     if module._submodules:
         raise LegacyLoweringError("legacy lowering expects a flattened module")
@@ -632,6 +672,7 @@ class _LoweringEnv:
         self._signal_map = signal_map
         self._memory_map = memory_map
         self._assigned: MutableMapping[str, object] = {}
+        self._assignment_sources: MutableMapping[str, tuple[Optional[str], Optional[int]]] = {}
         self._memory_writes: List[MemoryWrite] = []
         self._phase: Optional[str] = None
         self._path_guard = ConstExpr(1, 1)
@@ -650,23 +691,34 @@ class _LoweringEnv:
             raise LegacyLoweringError(f"expression references unknown memory '{memory_name}'")
         return MemoryReadExpr(memory_name, addr_expr)
 
-    def assign(self, target, expr, *, phase: str) -> None:
+    def assign(self, target, expr, *, phase: str, source_file: Optional[str] = None, source_line: Optional[int] = None) -> None:
         signal = self._signal_map.get(target.name)
         if signal is None:
             raise LegacyLoweringError(f"assignment targets unknown signal '{target.name}'")
         if phase == "comb" and signal.kind not in {"wire", "output"}:
             raise LegacyLoweringError(
-                f"combinational lowering only supports wire/output targets, got '{target.name}'"
+                f"combinational lowering only supports wire/output targets, got {signal.kind} '{target.name}'. "
+                "Register updates belong in a sequential ('seq') block, not a combinational ('comb') block."
             )
         if phase == "latch" and signal.kind != "state":
             raise LegacyLoweringError(
-                f"latch lowering only supports reg targets, got '{target.name}'"
+                f"latch lowering only supports reg targets, got {signal.kind} '{target.name}'. "
+                "Latch blocks may only hold state in registers."
             )
         if phase == "seq" and signal.kind != "state":
+            if signal.kind == "output":
+                raise LegacyLoweringError(
+                    f"sequential lowering only supports reg targets, got output '{target.name}'. "
+                    "Drive an Output by registering it first: assign the value to a Reg inside the seq block, "
+                    "then assign the Output from that Reg in a comb block "
+                    "(e.g. self.out_reg <<= value inside seq; self.out <<= self.out_reg inside comb)."
+                )
             raise LegacyLoweringError(
-                f"sequential lowering only supports reg targets, got '{target.name}'"
+                f"sequential lowering only supports reg targets, got {signal.kind} '{target.name}'. "
+                "Sequential blocks may only update registers."
             )
         self._assigned[target.name] = expr
+        self._assignment_sources[target.name] = (source_file, source_line)
         self._phase = phase
 
     def write_memory(self, memory_name: str, addr_expr, value_expr, *, phase: str) -> None:
@@ -686,6 +738,7 @@ class _LoweringEnv:
     def branch(self) -> "_LoweringEnv":
         child = _LoweringEnv(self._signal_map, self._memory_map)
         child._assigned = dict(self._assigned)
+        child._assignment_sources = dict(self._assignment_sources)
         child._memory_writes = list(self._memory_writes)
         child._phase = self._phase
         child._path_guard = self._path_guard
@@ -705,10 +758,19 @@ class _LoweringEnv:
                 base = SignalRef(name) if phase == "seq" or signal.kind == "state" else SignalRef(name)
             then_value = then_env._assigned.get(name, base)
             else_value = else_env._assigned.get(name, base)
+            preferred_source = _pick_preferred_assignment_source(
+                then_value,
+                then_env._assignment_sources.get(name, (None, None)),
+                else_value,
+                else_env._assignment_sources.get(name, (None, None)),
+                self._assignment_sources.get(name, (None, None)),
+            )
             if _expr_equal_compiled(then_value, else_value):
                 self._assigned[name] = then_value
+                self._assignment_sources[name] = preferred_source
             else:
                 self._assigned[name] = MuxExpr(cond, then_value, else_value)
+                self._assignment_sources[name] = preferred_source
         self._phase = phase
 
     def merge_switch(self, selector, cases: Sequence[tuple], default_env: "_LoweringEnv", *, phase: str) -> None:
@@ -730,7 +792,13 @@ class _LoweringEnv:
         if self._phase is None:
             return []
         return [
-            Assignment(target=name, expr=expr, phase=self._phase)
+            Assignment(
+                target=name,
+                expr=expr,
+                phase=self._phase,
+                source_file=self._assignment_sources.get(name, (None, None))[0],
+                source_line=self._assignment_sources.get(name, (None, None))[1],
+            )
             for name, expr in self._assigned.items()
         ]
 
@@ -741,11 +809,105 @@ class _LoweringEnv:
         return self._path_guard
 
 
+def _compiled_expr_signal_refs(expr) -> Set[str]:
+    if isinstance(expr, SignalRef):
+        return {expr.name}
+    if isinstance(expr, MemoryReadExpr):
+        return _compiled_expr_signal_refs(expr.addr)
+    if isinstance(expr, MaskExpr):
+        return _compiled_expr_signal_refs(expr.value)
+    if isinstance(expr, UnaryExpr):
+        return _compiled_expr_signal_refs(expr.value)
+    if isinstance(expr, BinaryExpr):
+        return _compiled_expr_signal_refs(expr.lhs) | _compiled_expr_signal_refs(expr.rhs)
+    if isinstance(expr, MuxExpr):
+        return (
+            _compiled_expr_signal_refs(expr.cond)
+            | _compiled_expr_signal_refs(expr.when_true)
+            | _compiled_expr_signal_refs(expr.when_false)
+        )
+    return set()
+
+
+def _topologically_order_comb_assignments(
+    assignments: Sequence[Assignment],
+    signal_map: Mapping[str, SimSignal],
+) -> List[Assignment]:
+    comb_items: List[tuple[int, Assignment]] = []
+    other_items: List[tuple[int, Assignment]] = []
+    for index, assignment in enumerate(assignments):
+        if assignment.phase == "comb":
+            comb_items.append((index, assignment))
+        else:
+            other_items.append((index, assignment))
+
+    if len(comb_items) < 2:
+        return list(assignments)
+
+    comb_targets = {assignment.target for _, assignment in comb_items}
+    outgoing: Dict[str, Set[str]] = {assignment.target: set() for _, assignment in comb_items}
+    indegree: Dict[str, int] = {assignment.target: 0 for _, assignment in comb_items}
+    original_index = {assignment.target: index for index, assignment in comb_items}
+    target_to_assignment = {assignment.target: assignment for _, assignment in comb_items}
+
+    for _, assignment in comb_items:
+        deps = {
+            name
+            for name in _compiled_expr_signal_refs(assignment.expr)
+            if name in comb_targets and name != assignment.target
+        }
+        for dep in deps:
+            if assignment.target not in outgoing[dep]:
+                outgoing[dep].add(assignment.target)
+                indegree[assignment.target] += 1
+
+    ready = sorted(
+        [target for target, degree in indegree.items() if degree == 0],
+        key=original_index.__getitem__,
+    )
+    ordered_targets: List[str] = []
+    while ready:
+        target = ready.pop(0)
+        ordered_targets.append(target)
+        newly_ready: List[str] = []
+        for succ in sorted(outgoing[target], key=original_index.__getitem__):
+            indegree[succ] -= 1
+            if indegree[succ] == 0:
+                newly_ready.append(succ)
+        if newly_ready:
+            ready.extend(newly_ready)
+            ready.sort(key=original_index.__getitem__)
+
+    if len(ordered_targets) != len(comb_items):
+        remaining = [
+            target
+            for target in sorted(comb_targets, key=original_index.__getitem__)
+            if target not in ordered_targets
+        ]
+        ordered_targets.extend(remaining)
+
+    ordered_comb = [target_to_assignment[target] for target in ordered_targets]
+    ordered_by_original_pos: Dict[int, Assignment] = {}
+    comb_positions = [index for index, _ in comb_items]
+    for position, assignment in zip(comb_positions, ordered_comb):
+        ordered_by_original_pos[position] = assignment
+    for position, assignment in other_items:
+        ordered_by_original_pos[position] = assignment
+
+    return [ordered_by_original_pos[idx] for idx in range(len(assignments))]
+
+
 def _lower_stmt_list(stmts: Iterable[object], *, phase: str, env: _LoweringEnv) -> None:
     env._phase = phase
     for stmt in stmts:
         if isinstance(stmt, _ASSIGN_TYPES):
-            _lower_assign(stmt.target, stmt.value, phase=phase, env=env)
+            _lower_assign(
+                stmt.target,
+                stmt.value,
+                phase=phase,
+                env=env,
+                source_location=getattr(stmt, "source_location", None),
+            )
             continue
         if isinstance(stmt, _INDEXED_ASSIGN_TYPES):
             _lower_indexed_assign(stmt, phase=phase, env=env)
@@ -945,21 +1107,56 @@ def _lower_expr(expr, env: _LoweringEnv):
     raise LegacyLoweringError(f"unsupported expression type '{type(expr).__name__}'")
 
 
-def _lower_assign(target, value, *, phase: str, env: _LoweringEnv) -> None:
+def _lower_assign(target, value, *, phase: str, env: _LoweringEnv, source_location=None) -> None:
+    source_file = getattr(source_location, "file", None)
+    source_line = getattr(source_location, "line", None)
     if isinstance(target, _SIGNAL_TYPES):
-        env.assign(target, _lower_expr(value, env), phase=phase)
+        env.assign(
+            target,
+            _lower_expr(value, env),
+            phase=phase,
+            source_file=source_file,
+            source_line=source_line,
+        )
         return
     if isinstance(target, _REF_TYPES):
-        env.assign(target.signal, _lower_expr(value, env), phase=phase)
+        env.assign(
+            target.signal,
+            _lower_expr(value, env),
+            phase=phase,
+            source_file=source_file,
+            source_line=source_line,
+        )
         return
     if isinstance(target, _SLICE_TYPES):
-        _lower_slice_assign(target, value, phase=phase, env=env)
+        _lower_slice_assign(
+            target,
+            value,
+            phase=phase,
+            env=env,
+            source_file=source_file,
+            source_line=source_line,
+        )
         return
     if isinstance(target, _BITSELECT_TYPES):
-        _lower_bitselect_assign(target, value, phase=phase, env=env)
+        _lower_bitselect_assign(
+            target,
+            value,
+            phase=phase,
+            env=env,
+            source_file=source_file,
+            source_line=source_line,
+        )
         return
     if isinstance(target, _PARTSELECT_TYPES):
-        _lower_partselect_assign(target, value, phase=phase, env=env)
+        _lower_partselect_assign(
+            target,
+            value,
+            phase=phase,
+            env=env,
+            source_file=source_file,
+            source_line=source_line,
+        )
         return
     raise LegacyLoweringError(
         f"lowering only supports signal and bit-range assignment targets, got {type(target).__name__}"
@@ -968,7 +1165,15 @@ def _lower_assign(target, value, *, phase: str, env: _LoweringEnv) -> None:
 
 def _lower_indexed_assign(stmt: IndexedAssign, *, phase: str, env: _LoweringEnv) -> None:
     target_expr = BitSelect(Ref(stmt.target_signal), stmt.index)
-    _lower_bitselect_assign(target_expr, stmt.value, phase=phase, env=env)
+    source_location = getattr(stmt, "source_location", None)
+    _lower_bitselect_assign(
+        target_expr,
+        stmt.value,
+        phase=phase,
+        env=env,
+        source_file=getattr(source_location, "file", None),
+        source_line=getattr(source_location, "line", None),
+    )
 
 
 def _lower_memory_write(stmt: MemWrite, *, phase: str, env: _LoweringEnv) -> None:
@@ -989,7 +1194,15 @@ def _lower_array_write(stmt: ArrayWrite, *, phase: str, env: _LoweringEnv) -> No
     )
 
 
-def _lower_slice_assign(target: Slice, value, *, phase: str, env: _LoweringEnv) -> None:
+def _lower_slice_assign(
+    target: Slice,
+    value,
+    *,
+    phase: str,
+    env: _LoweringEnv,
+    source_file: Optional[str] = None,
+    source_line: Optional[int] = None,
+) -> None:
     if not isinstance(target.operand, _REF_TYPES):
         raise LegacyLoweringError("slice assignment must target a signal")
     base_signal = target.operand.signal
@@ -1010,10 +1223,24 @@ def _lower_slice_assign(target: Slice, value, *, phase: str, env: _LoweringEnv) 
             replacement_value,
             base_signal.width,
         )
-    env.assign(base_signal, replacement, phase=phase)
+    env.assign(
+        base_signal,
+        replacement,
+        phase=phase,
+        source_file=source_file,
+        source_line=source_line,
+    )
 
 
-def _lower_bitselect_assign(target: BitSelect, value, *, phase: str, env: _LoweringEnv) -> None:
+def _lower_bitselect_assign(
+    target: BitSelect,
+    value,
+    *,
+    phase: str,
+    env: _LoweringEnv,
+    source_file: Optional[str] = None,
+    source_line: Optional[int] = None,
+) -> None:
     if not isinstance(target.operand, _REF_TYPES):
         raise LegacyLoweringError("bit-select assignment must target a signal")
     base_signal = target.operand.signal
@@ -1033,10 +1260,24 @@ def _lower_bitselect_assign(target: BitSelect, value, *, phase: str, env: _Lower
             _lower_expr(value, env),
             base_signal.width,
         )
-    env.assign(base_signal, replacement, phase=phase)
+    env.assign(
+        base_signal,
+        replacement,
+        phase=phase,
+        source_file=source_file,
+        source_line=source_line,
+    )
 
 
-def _lower_partselect_assign(target: PartSelect, value, *, phase: str, env: _LoweringEnv) -> None:
+def _lower_partselect_assign(
+    target: PartSelect,
+    value,
+    *,
+    phase: str,
+    env: _LoweringEnv,
+    source_file: Optional[str] = None,
+    source_line: Optional[int] = None,
+) -> None:
     if not isinstance(target.operand, _REF_TYPES):
         raise LegacyLoweringError("part-select assignment must target a signal")
     base_signal = target.operand.signal
@@ -1057,7 +1298,13 @@ def _lower_partselect_assign(target: PartSelect, value, *, phase: str, env: _Low
             _lower_expr(value, env),
             base_signal.width,
         )
-    env.assign(base_signal, replacement, phase=phase)
+    env.assign(
+        base_signal,
+        replacement,
+        phase=phase,
+        source_file=source_file,
+        source_line=source_line,
+    )
 
 
 def _replace_bit_range_expr(base, lo: int, width: int, value, base_width: int):

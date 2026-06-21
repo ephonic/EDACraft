@@ -181,6 +181,15 @@ class Simulator:
                             self.memories[name][addr] = SimValue(val & ((1 << mem.width) - 1), width=mem.width)
                         else:
                             self.memories[name][addr] = val & ((1 << mem.width) - 1)
+            elif mem.init_data:
+                mask = (1 << mem.width) - 1
+                for addr, val in enumerate(mem.init_data):
+                    if addr >= mem.depth:
+                        break
+                    if self.use_xz:
+                        self.memories[name][addr] = SimValue(int(val) & mask, width=mem.width)
+                    else:
+                        self.memories[name][addr] = int(val) & mask
 
         for name, arr in self.module._arrays.items():
             if self.use_xz:

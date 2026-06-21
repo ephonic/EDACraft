@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib.util
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -126,6 +127,30 @@ class IverilogCollateralProbeReport:
     def uvm_support_available(self) -> bool:
         return self.package_compile_ok and self.skipped_reason is None
 
+    @property
+    def warnings(self) -> Tuple[str, ...]:
+        """Lines iverilog emitted as warnings across the interface and package probes.
+
+        Lines are matched case-insensitively against 'warning' so common
+        width-mismatch / implicit-width diagnostics are surfaced even when the
+        compile itself succeeds.
+        """
+        lines: list[str] = []
+        for stream in (self.interface_stderr, self.package_stderr):
+            for line in stream.splitlines():
+                if "warning" in line.lower():
+                    lines.append(line.rstrip("\n"))
+        return tuple(lines)
+
+    @property
+    def has_warnings(self) -> bool:
+        return bool(self.warnings)
+
+    @property
+    def clean(self) -> bool:
+        """True when both artifacts compiled and no warnings were emitted."""
+        return self.interface_compile_ok and self.package_compile_ok and not self.has_warnings
+
 
 def describe_verification_interface(module: Any) -> VerificationInterface:
     """Return an ordered verification-facing interface view for a module."""
@@ -206,11 +231,16 @@ def emit_python_reference_model(
         f'"""Generated Python reference model for "{module.name}"."""\n\n'
         "from __future__ import annotations\n\n"
         "import importlib.util\n"
+        "import os\n"
         "import sys\n"
         "from pathlib import Path\n"
         "from typing import Dict, Mapping\n\n"
         "def _load_runtime_module():\n"
-        f"    runtime_path = Path(__file__).with_name({REFERENCE_RUNTIME_ARTIFACT!r})\n"
+        "    env_path = os.environ.get(\"RTLGEN_X_REF_RUNTIME_PATH\")\n"
+        "    if env_path:\n"
+        "        runtime_path = Path(env_path)\n"
+        "    else:\n"
+        f"        runtime_path = Path(__file__).with_name({REFERENCE_RUNTIME_ARTIFACT!r})\n"
         "    module_name = runtime_path.stem + \"_rtlgen_x_runtime\"\n"
         "    module = sys.modules.get(module_name)\n"
         "    if module is not None:\n"
@@ -524,8 +554,17 @@ def load_generated_reference_model(
     ref_model_path: Path | str,
     *,
     class_name: Optional[str] = None,
+    runtime_path: Optional[Path | str] = None,
 ):
-    """Load one generated Python reference model class from disk."""
+    """Load one generated Python reference model class from disk.
+
+    When the generated reference model and its ``rtlgen_x_ref_runtime.py``
+    helper have been separated (for example, the model was copied without the
+    runtime sibling), pass ``runtime_path`` to point the generated loader at the
+    runtime location. This sets the ``RTLGEN_X_REF_RUNTIME_PATH`` environment
+    variable for the duration of the import so the generated
+    ``_load_runtime_module()`` honors it.
+    """
 
     path = Path(ref_model_path)
     spec = importlib.util.spec_from_file_location(f"{path.stem}_rtlgen_x_generated_ref", path)
@@ -533,7 +572,28 @@ def load_generated_reference_model(
         raise ImportError(f"unable to load generated reference model from {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    saved_env = os.environ.get("RTLGEN_X_REF_RUNTIME_PATH")
+    # Drop any cached runtime module so the generated loader re-resolves it
+    # against the current env / runtime_path. The runtime module name is
+    # derived deterministically from the runtime artifact stem.
+    cached_runtime = sys.modules.pop("rtlgen_x_ref_runtime_rtlgen_x_runtime", None)
+    if runtime_path is not None:
+        os.environ["RTLGEN_X_REF_RUNTIME_PATH"] = str(runtime_path)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        # A failed import can leave a half-initialized module (and a stale
+        # cached runtime module) in sys.modules; drop them so a retry with a
+        # corrected runtime_path does not pick up the broken entries.
+        sys.modules.pop(spec.name, None)
+        sys.modules.pop("rtlgen_x_ref_runtime_rtlgen_x_runtime", None)
+        raise
+    finally:
+        if runtime_path is not None:
+            if saved_env is None:
+                os.environ.pop("RTLGEN_X_REF_RUNTIME_PATH", None)
+            else:
+                os.environ["RTLGEN_X_REF_RUNTIME_PATH"] = saved_env
     if class_name is not None:
         ref_cls = getattr(module, class_name, None)
         if ref_cls is None:

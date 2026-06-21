@@ -429,6 +429,7 @@ class MemWrite:
         self.mem_name = mem_name
         self.addr = addr
         self.value = value
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class ArrayRead(Expr):
@@ -448,6 +449,7 @@ class ArrayWrite:
         self.index = index
         self.value = value
         self.blocking = blocking
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class ArrayProxy:
@@ -604,6 +606,7 @@ class IndexedAssign:
         self.index = index
         self.value = value
         self.blocking = blocking
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class MemProxy:
@@ -1370,7 +1373,8 @@ class Context:
             # Walk up until we find a frame NOT from core.py
             while frame is not None:
                 fname = frame.f_code.co_filename
-                if 'rtlgen/core.py' not in fname and 'rtlgen\\core.py' not in fname:
+                normalized = fname.replace("\\", "/")
+                if not normalized.endswith("/rtlgen/core.py") and not normalized.endswith("/rtlgen_x/dsl/legacy/core.py"):
                     return SourceLoc(file=frame.f_code.co_filename, line=frame.f_lineno)
                 frame = frame.f_back
         except Exception:

@@ -166,7 +166,14 @@ Useful helpers at this stage:
 1. `compare_python_and_compiled(...)`
 2. `capture_execution_trace(...)`
 3. `run_random_parity_fuzz(...)`
-4. `run_legacy_rtl_cosim(...)` if emitted RTL parity matters early
+4. `run_legacy_rtl_cosim(...)` if emitted RTL parity matters early for
+   cycle-aligned interfaces or simple valid-gated streaming interfaces
+
+For valid-driven streaming DUTs, the generic helper now supports
+`valid_signal`, `flush_cycles`, and `flush_inputs`, so it can check results on
+`out_valid` rather than one trace row per input row. The SFU example in
+`sfu/iverilog_cosim.py` is still the reference pattern when you want richer
+DUT-specific scoreboarding or protocol checks.
 
 ## Step 5: run structured local verification
 
@@ -221,6 +228,13 @@ For streaming or pipelined DUTs, include:
 If you keep a hand-written `iverilog` cosim beside the generated UVM collateral,
 also keep build artifacts unique per run when multiple probes may reuse the
 same output directory.
+
+For pipelined streaming DUTs, also keep one more discipline:
+
+1. collect expected values by output transaction, not by raw cycle count
+2. drain the pipe until the expected number of `out_valid` results arrive
+3. keep the local smoke vector count modest when using `iverilog` on larger
+   LUT-heavy DUTs, then scale up with explicit scripts as needed
 
 ## Step 6: generate UVM collateral
 
@@ -357,6 +371,10 @@ This is not full UVM closure. It helps catch:
 1. broken emitted file structure
 2. obvious syntax problems
 3. include/package arrangement mistakes
+
+It does not replace a DUT-aware streaming cosim. For a module with a real
+`in_valid/out_valid` contract, do that closure before or alongside collateral
+export.
 
 ## Step 10: run one remote VCS/UVM probe
 

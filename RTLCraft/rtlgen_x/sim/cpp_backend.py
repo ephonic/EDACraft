@@ -149,6 +149,8 @@ class Assignment:
     target: str
     expr: Expr
     phase: str = "comb"
+    source_file: Optional[str] = None
+    source_line: Optional[int] = None
 
     def __post_init__(self) -> None:
         if self.phase not in {"comb", "latch", "seq"}:
@@ -289,6 +291,14 @@ def _mask_expr(width: int) -> str:
     return f"((uint64_t(1) << {width}) - 1u)"
 
 
+def _sign_extend_expr(expr: str, width: int) -> str:
+    if width == 64:
+        return f"int64_t(uint64_t({expr}))"
+    sign_bit = f"(uint64_t(1) << {width - 1})"
+    masked = f"(uint64_t({expr}) & {_mask_expr(width)})"
+    return f"int64_t(({masked} ^ {sign_bit}) - {sign_bit})"
+
+
 def _word_count(width: int) -> int:
     return max((width + 63) // 64, 1)
 
@@ -352,6 +362,10 @@ def _infer_expr_width(
     if isinstance(expr, BinaryExpr):
         if expr.op in {"==", "!=", "<", "<=", ">", ">="}:
             return 1
+        if expr.op == "*":
+            return _infer_expr_width(expr.lhs, signal_map, memory_map) + _infer_expr_width(
+                expr.rhs, signal_map, memory_map
+            )
         return max(
             _infer_expr_width(expr.lhs, signal_map, memory_map),
             _infer_expr_width(expr.rhs, signal_map, memory_map),
@@ -1802,14 +1816,20 @@ class CppBackendScaffold:
                 return f"value_bool(value_cmp_unsigned({lhs_expr}, {rhs_expr}) == 0)"
             if expr.op == "!=":
                 return f"value_bool(value_cmp_unsigned({lhs_expr}, {rhs_expr}) != 0)"
+            compare_fn = (
+                "value_cmp_signed"
+                if _expr_is_signed(expr.lhs, signal_map, memory_map)
+                or _expr_is_signed(expr.rhs, signal_map, memory_map)
+                else "value_cmp_unsigned"
+            )
             if expr.op == "<":
-                return f"value_bool(value_cmp_signed({lhs_expr}, {rhs_expr}) < 0)"
+                return f"value_bool({compare_fn}({lhs_expr}, {rhs_expr}) < 0)"
             if expr.op == "<=":
-                return f"value_bool(value_cmp_signed({lhs_expr}, {rhs_expr}) <= 0)"
+                return f"value_bool({compare_fn}({lhs_expr}, {rhs_expr}) <= 0)"
             if expr.op == ">":
-                return f"value_bool(value_cmp_signed({lhs_expr}, {rhs_expr}) > 0)"
+                return f"value_bool({compare_fn}({lhs_expr}, {rhs_expr}) > 0)"
             if expr.op == ">=":
-                return f"value_bool(value_cmp_signed({lhs_expr}, {rhs_expr}) >= 0)"
+                return f"value_bool({compare_fn}({lhs_expr}, {rhs_expr}) >= 0)"
         if isinstance(expr, MuxExpr):
             return (
                 f"value_select(value_nonzero({self._emit_wide_expr(expr.cond, signal_map, memory_map)}), "
@@ -1951,19 +1971,21 @@ class CppBackendScaffold:
         if isinstance(expr, MaskExpr):
             return f"(({self._emit_expr(expr.value, signal_map, memory_map)}) & {_mask_expr(expr.width)})"
         if isinstance(expr, UnaryExpr):
+            child_width = _infer_expr_width(expr.value, signal_map, memory_map)
+            child_expr = self._emit_expr(expr.value, signal_map, memory_map)
             if expr.op == "!":
-                return f"(!({self._emit_expr(expr.value, signal_map, memory_map)}))"
+                return f"(!({child_expr}))"
             if expr.op == "$signed":
-                return f"(int64_t({self._emit_expr(expr.value, signal_map, memory_map)}))"
+                return _sign_extend_expr(child_expr, child_width)
             if expr.op == "$unsigned":
-                return f"(uint64_t({self._emit_expr(expr.value, signal_map, memory_map)}))"
+                return f"(uint64_t({child_expr}) & {_mask_expr(child_width)})"
             if expr.op == "~":
                 width = _infer_expr_width(expr, signal_map, memory_map)
                 return (
-                    f"((~({self._emit_expr(expr.value, signal_map, memory_map)})) & "
+                    f"((~({child_expr})) & "
                     f"{_mask_expr(width)})"
                 )
-            return f"({expr.op}({self._emit_expr(expr.value, signal_map, memory_map)}))"
+            return f"({expr.op}({child_expr}))"
         if isinstance(expr, BinaryExpr):
             if expr.op == ">>>":
                 lhs_src = self._emit_expr(expr.lhs, signal_map, memory_map)
@@ -1972,11 +1994,7 @@ class CppBackendScaffold:
                     return f"(uint64_t({lhs_src}) >> ({rhs_src}))"
                 lhs_width = _infer_expr_width(expr.lhs, signal_map, memory_map)
                 masked_lhs = f"(uint64_t({lhs_src}) & {_mask_expr(lhs_width)})"
-                if lhs_width == 64:
-                    signed_lhs = f"int64_t({masked_lhs})"
-                else:
-                    sign_bit = f"(uint64_t(1) << {lhs_width - 1})"
-                    signed_lhs = f"int64_t(({masked_lhs} ^ {sign_bit}) - {sign_bit})"
+                signed_lhs = _sign_extend_expr(masked_lhs, lhs_width)
                 return f"(uint64_t(({signed_lhs}) >> ({rhs_src})))"
             return (
                 f"(({self._emit_expr(expr.lhs, signal_map, memory_map)}) "

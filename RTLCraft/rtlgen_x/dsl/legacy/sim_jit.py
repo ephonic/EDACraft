@@ -150,6 +150,12 @@ class JITModule:
                         else:
                             val = int(line, 10)
                         init_vals[addr] = val & ((1 << mem.width) - 1)
+            elif mem.init_data:
+                mask = (1 << mem.width) - 1
+                for addr, val in enumerate(mem.init_data):
+                    if addr >= mem.depth:
+                        break
+                    init_vals[addr] = int(val) & mask
             self.memories.append(init_vals)
             self.mem_widths.append(mem.width)
             self.mem_masks.append((1 << mem.width) - 1)
@@ -397,6 +403,8 @@ class JITModule:
             if op == "<<":
                 return lambda: l_fn() << r_fn()
             if op == ">>":
+                return lambda: l_fn() >> r_fn()
+            if op == ">>>":
                 return lambda: l_fn() >> r_fn()
             if op == "%":
                 return lambda: l_fn() % r_fn() if r_fn() != 0 else 0

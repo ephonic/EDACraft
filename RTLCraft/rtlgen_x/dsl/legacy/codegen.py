@@ -497,7 +497,8 @@ class VerilogEmitter:
             elif getattr(mem, 'init_data', None):
                 self.lines.append(f"    initial begin")
                 for idx, val in enumerate(mem.init_data):
-                    self.lines.append(f"        {mem.name}[{idx}] = {mem.width}'d{val};")
+                    literal = self._emit_const_literal(int(val), mem.width)
+                    self.lines.append(f"        {mem.name}[{idx}] = {literal};")
                 self.lines.append(f"    end")
             elif getattr(mem, 'init_zero', None):
                 self.lines.append(f"    initial begin")

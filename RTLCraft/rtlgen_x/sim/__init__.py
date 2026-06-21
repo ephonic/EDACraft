@@ -38,6 +38,7 @@ from rtlgen_x.sim.cpp_backend import (
     unpack_signal_values_u64_words,
 )
 from rtlgen_x.sim.python_runtime import PythonSimulator
+from rtlgen_x.sim.compat import reset_simulator
 from rtlgen_x.sim.fuzz import FuzzSuiteReport, FuzzTemplate, build_fuzz_templates, run_fuzz_suite
 from rtlgen_x.sim.trace import (
     ExecutionTrace,
@@ -103,4 +104,5 @@ __all__ = [
     "run_fuzz_suite",
     "run_random_parity_fuzz",
     "run_legacy_rtl_cosim",
+    "reset_simulator",
 ]

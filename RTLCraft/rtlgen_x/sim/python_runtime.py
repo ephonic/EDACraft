@@ -370,6 +370,8 @@ class PythonSimulator:
         if isinstance(expr, BinaryExpr):
             if expr.op in {"==", "!=", "<", "<=", ">", ">="}:
                 return 1
+            if expr.op == "*":
+                return self._expr_width(expr.lhs) + self._expr_width(expr.rhs)
             return max(self._expr_width(expr.lhs), self._expr_width(expr.rhs))
         if isinstance(expr, MuxExpr):
             return max(self._expr_width(expr.when_true), self._expr_width(expr.when_false))

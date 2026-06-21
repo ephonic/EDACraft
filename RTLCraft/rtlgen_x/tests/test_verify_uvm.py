@@ -1,6 +1,9 @@
 import importlib.util
 import os
+import shutil
 from pathlib import Path
+
+import pytest
 
 from rtlgen_x.sim import (
     Assignment,
@@ -568,3 +571,100 @@ def test_verification_collateral_accepts_real_sram256k_module():
     assert "logic [31:0] prdata;" in artifact_map["earphone_sram_if.sv"]
     assert "Memory('mem', width=32, depth=65536" in artifact_map["earphone_sram256k_ref_model.py"]
     assert "MemoryWrite('mem'" in artifact_map["earphone_sram256k_ref_model.py"]
+
+
+def test_generated_reference_model_loads_runtime_via_env_override(tmp_path):
+    """Finding #3: a reference model separated from its runtime sibling must
+    still load when RTLGEN_X_REF_RUNTIME_PATH points at the runtime file."""
+    bundle = generate_uvm_runtime_bundle(
+        _accum_module(),
+        clock_name="clk",
+        dut_module_name="uvm_accum",
+        dut_source=_accum_dut_sv(),
+    )
+    bundle_dir = tmp_path / "bundle"
+    write_uvm_runtime_bundle(bundle, bundle_dir, include_runtime_package=False)
+
+    runtime_src = bundle_dir / "rtlgen_x_ref_runtime.py"
+    assert runtime_src.exists()
+
+    # Move the reference model into its own directory without the runtime sibling.
+    isolated_dir = tmp_path / "isolated_model"
+    isolated_dir.mkdir()
+    ref_model_src = bundle_dir / "uvm_accum_ref_model.py"
+    isolated_ref_model = isolated_dir / "uvm_accum_ref_model.py"
+    shutil.copy(ref_model_src, isolated_ref_model)
+
+    # Without the override, the generated loader cannot find the runtime sibling.
+    saved = os.environ.pop("RTLGEN_X_REF_RUNTIME_PATH", None)
+    try:
+        with pytest.raises((ImportError, FileNotFoundError)):
+            load_generated_reference_model(isolated_ref_model)
+    finally:
+        if saved is not None:
+            os.environ["RTLGEN_X_REF_RUNTIME_PATH"] = saved
+
+    # With the runtime_path override, the model loads and predicts correctly.
+    model = load_generated_reference_model(
+        isolated_ref_model, runtime_path=runtime_src
+    )
+    model.reset()
+    predicted = model.predict({"clk": 0, "rst_n": 0, "inp": 5})
+    assert predicted == {"out": 8}
+
+
+def test_emit_python_reference_model_emits_env_runtime_lookup():
+    """The generated loader source must honor RTLGEN_X_REF_RUNTIME_PATH."""
+    source = emit_python_reference_model(_accum_module())
+    assert "RTLGEN_X_REF_RUNTIME_PATH" in source
+    assert "Path(__file__).with_name" in source
+
+
+def test_iverilog_probe_report_surfaces_width_mismatch_warnings():
+    """Finding #5: warning lines in stderr must be surfaced as a property so
+    width-mismatch diagnostics are not silently buried in a clean compile."""
+    from rtlgen_x.verify import IverilogCollateralProbeReport
+
+    report = IverilogCollateralProbeReport(
+        collateral_dir=Path("/tmp/probe"),
+        interface_source=Path("/tmp/probe/dut_if.sv"),
+        package_source=Path("/tmp/probe/pkg.sv"),
+        interface_compile_ok=True,
+        package_compile_ok=True,
+        interface_returncode=0,
+        package_returncode=0,
+        interface_stdout="",
+        interface_stderr="dut_if.sv:5: warning: Port 0 (out_warp) of dut expects 1 bits, got 2.\n",
+        package_stdout="",
+        package_stderr="pkg.sv:12: some other note\n",
+        skipped_reason=None,
+    )
+    assert report.has_warnings is True
+    assert report.clean is False
+    assert len(report.warnings) == 1
+    assert "out_warp" in report.warnings[0]
+
+
+def test_iverilog_probe_report_clean_when_no_warnings():
+    """A successful compile with no warning lines is clean."""
+    from rtlgen_x.verify import IverilogCollateralProbeReport
+
+    report = IverilogCollateralProbeReport(
+        collateral_dir=Path("/tmp/probe"),
+        interface_source=Path("/tmp/probe/dut_if.sv"),
+        package_source=Path("/tmp/probe/pkg.sv"),
+        interface_compile_ok=True,
+        package_compile_ok=True,
+        interface_returncode=0,
+        package_returncode=0,
+        interface_stdout="",
+        interface_stderr="",
+        package_stdout="",
+        package_stderr="",
+        skipped_reason=None,
+    )
+    assert report.has_warnings is False
+    assert report.warnings == ()
+    assert report.clean is True
+
+

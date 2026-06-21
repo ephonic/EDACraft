@@ -37,20 +37,24 @@ def run_legacy_rtl_cosim(
     mode: str = "auto",
     clock_period_ns: int = 10,
     build_dir: Optional[Path | str] = None,
+    valid_signal: Optional[str] = None,
+    flush_cycles: int = 0,
+    flush_inputs: Optional[Mapping[str, int]] = None,
 ) -> LegacyRtlCosimReport:
     """Compare a compiled simulator built from a legacy DSL module against emitted RTL."""
 
     resolved_mode = _resolve_mode(module, mode)
+    drive_vectors = _extend_vectors(vectors, flush_cycles=flush_cycles, flush_inputs=flush_inputs)
     try:
         legacy_trace = _run_reference_trace(
             module,
-            vectors,
+            drive_vectors,
             mode=resolved_mode,
             clock_period_ns=clock_period_ns,
         )
         rtl_trace = _run_iverilog_trace(
             module,
-            vectors,
+            drive_vectors,
             mode=resolved_mode,
             clock_period_ns=clock_period_ns,
         )
@@ -58,7 +62,7 @@ def run_legacy_rtl_cosim(
         return LegacyRtlCosimReport(
             module_name=module.name,
             mode=resolved_mode,
-            vector_count=len(vectors),
+            vector_count=len(drive_vectors),
             legacy_matches_rtl=False,
             compiled_matches_rtl=False,
             mismatches=(),
@@ -69,25 +73,50 @@ def run_legacy_rtl_cosim(
 
     compiled_trace = _run_compiled_trace(
         module,
-        vectors,
+        drive_vectors,
         mode=resolved_mode,
         build_dir=build_dir,
     )
     outputs = [sig.name for sig in module._outputs.values()]
-    legacy_matches_rtl = not _collect_mismatches(outputs, legacy_trace, rtl_trace)
-    mismatches = _collect_mismatches(outputs, compiled_trace, rtl_trace)
+    filtered_legacy_trace = _filter_trace_by_valid(legacy_trace, valid_signal)
+    filtered_rtl_trace = _filter_trace_by_valid(rtl_trace, valid_signal)
+    filtered_compiled_trace = _filter_trace_by_valid(compiled_trace, valid_signal)
+    legacy_matches_rtl = not _collect_mismatches(outputs, filtered_legacy_trace, filtered_rtl_trace)
+    mismatches = _collect_mismatches(outputs, filtered_compiled_trace, filtered_rtl_trace)
 
     return LegacyRtlCosimReport(
         module_name=module.name,
         mode=resolved_mode,
-        vector_count=len(vectors),
+        vector_count=len(drive_vectors),
         legacy_matches_rtl=legacy_matches_rtl,
         compiled_matches_rtl=not mismatches,
         mismatches=tuple(mismatches),
-        rtl_trace=tuple(dict(step) for step in rtl_trace),
-        compiled_trace=tuple(dict(step) for step in compiled_trace),
+        rtl_trace=tuple(dict(step) for step in filtered_rtl_trace),
+        compiled_trace=tuple(dict(step) for step in filtered_compiled_trace),
         skipped_reason=None,
     )
+
+
+def _extend_vectors(
+    vectors: Sequence[Mapping[str, int]],
+    *,
+    flush_cycles: int,
+    flush_inputs: Optional[Mapping[str, int]],
+) -> Tuple[Mapping[str, int], ...]:
+    base = tuple(dict(vector) for vector in vectors)
+    if flush_cycles <= 0:
+        return base
+    flush_vector = dict(flush_inputs or {})
+    return base + tuple(dict(flush_vector) for _ in range(flush_cycles))
+
+
+def _filter_trace_by_valid(
+    trace: Sequence[Mapping[str, int]],
+    valid_signal: Optional[str],
+) -> Tuple[Mapping[str, int], ...]:
+    if valid_signal is None:
+        return tuple(dict(step) for step in trace)
+    return tuple(dict(step) for step in trace if int(step.get(valid_signal, 0)) == 1)
 
 
 def _run_compiled_trace(
@@ -121,14 +150,12 @@ def _apply_reset_preamble(compiled, current_inputs: Dict[str, int]) -> None:
         compiled.step(current_inputs)
         compiled.step(current_inputs)
         current_inputs["rst"] = 0
-        compiled.step(current_inputs)
         return
     if "rst_n" in current_inputs:
         current_inputs["rst_n"] = 0
         compiled.step(current_inputs)
         compiled.step(current_inputs)
         current_inputs["rst_n"] = 1
-        compiled.step(current_inputs)
 
 
 def _resolve_mode(module, mode: str) -> str:
@@ -156,9 +183,34 @@ def _run_reference_trace(
     clock_period_ns: int,
 ) -> Tuple[Mapping[str, int], ...]:
     if _use_rtlgen_x_legacy(module):
-        from rtlgen_x.dsl import Simulator
-    else:
-        from rtlgen import Simulator
+        from rtlgen_x.dsl import lower_legacy_module_to_sim
+        from rtlgen_x.sim.python_runtime import PythonSimulator
+
+        sim = PythonSimulator(lower_legacy_module_to_sim(module).module)
+        outputs = [sig.name for sig in module._outputs.values()]
+        input_names = {sig.name for sig in module._inputs.values()}
+        current_inputs = {name: 0 for name in input_names}
+        if mode == "seq":
+            if "rst" in input_names:
+                current_inputs["rst"] = 1
+                sim.step(current_inputs)
+                sim.step(current_inputs)
+                current_inputs["rst"] = 0
+            elif "rst_n" in input_names:
+                current_inputs["rst_n"] = 0
+                sim.step(current_inputs)
+                sim.step(current_inputs)
+                current_inputs["rst_n"] = 1
+        trace = []
+        for cycle, vector in enumerate(vectors):
+            for name, value in vector.items():
+                if name in current_inputs:
+                    current_inputs[name] = int(value)
+            outputs_step = sim.step(current_inputs)
+            trace.append({"_cycle": cycle, **{name: int(outputs_step[name]) for name in outputs}})
+        return tuple(trace)
+
+    from rtlgen import Simulator
 
     sim = Simulator(module, clock_period_ns=clock_period_ns)
     outputs = [sig.name for sig in module._outputs.values()]
