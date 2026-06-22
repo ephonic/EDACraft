@@ -1,0 +1,4 @@
+[1/4] Building CXX object tests\CMakeFiles\rfsim_tests.dir\test_large_scale.cpp.obj
+[2/4] Building CXX object tests\CMakeFiles\rfsim_tests.dir\test_multi_device.cpp.obj
+[3/4] Building CXX object tests\CMakeFiles\rfsim_tests.dir\test_large_circuit.cpp.obj
+[4/4] Linking CXX executable bin\rfsim_tests.exe

@@ -1,0 +1,6 @@
+[1/6] Building CXX object src\CMakeFiles\rfsim_core.dir\model\osdi\osdi_library.cpp.obj
+[2/6] Linking CXX static library lib\rfsim_core.lib
+[3/6] Linking CXX executable bin\rfsim.exe
+[4/6] Building CXX object tests\CMakeFiles\rfsim_tests.dir\test_large_scale.cpp.obj
+[5/6] Building CXX object tests\CMakeFiles\rfsim_tests.dir\test_multi_device.cpp.obj
+[6/6] Linking CXX executable bin\rfsim_tests.exe

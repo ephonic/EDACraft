@@ -13,7 +13,7 @@
 #ifndef RFSIM_MODEL_OSDI_OSDI_CLIENT_HPP
 #define RFSIM_MODEL_OSDI_OSDI_CLIENT_HPP
 
-#include "osdi_0_3.h"
+#include "osdi.h"
 #include "osdi_library.hpp"
 #include "../../rfsim.hpp"
 #include "../device_model.hpp"
@@ -45,11 +45,13 @@ public:
 
     // 初始化：绑定 descriptor + 共享模型块，分配实例数据块并 setup_instance。
     // nodes 为该实例的节点连接（对齐 descriptor->nodes 顺序）。
+    // temperature: 传给 setup_instance 的器件温度（K），默认室温 300.15。
     bool init(std::shared_ptr<OsdiLibrary> lib,
               std::shared_ptr<OsdiModelBlock> modelBlock,
               std::vector<NodeId> nodes,
               Diagnostics& diags,
-              const std::vector<std::pair<std::string, double>>& modelParams = {});
+              const std::vector<std::pair<std::string, double>>& modelParams = {},
+              double temperature = 300.15);
 
     // 设置模型参数（setup_model 之后、setup_instance 之前调用）
     bool setModelParam(const std::string& name, double value);

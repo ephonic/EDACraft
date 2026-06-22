@@ -7,6 +7,8 @@
 
 #include "../assembly/mna.hpp"
 #include "../model/device_model.hpp"
+#include "../util/bench.hpp"
+#include "gmin_options.hpp"
 #include <vector>
 
 namespace rfsim {
@@ -19,6 +21,17 @@ struct DcOpResult {
     bool converged = false;
     Diagnostics diags;
     uint32_t iterations = 0;
+
+    // P1-7 / B4: gmin homotopy floor-accept path coverage.
+    // floorAcceptsInner: count of inner-Newton "residual floor" accepts
+    //   (alpha <<1 + |F| stagnant -> accept current point as gmin-step solution).
+    // floorAcceptOuter:  full gmin sweep failed to reach target gmin; we fell
+    //   back to the last converged gmin OP (early break path).
+    uint32_t floorAcceptsInner = 0;
+    bool floorAcceptOuter = false;
+
+    // V2-γ C3: 性能计数器（RFSIM_BENCH_JSON=1 时填充）
+    BenchCounters bench;
 };
 
 // Newton 迭代参数
@@ -26,11 +39,21 @@ struct DcOpOptions {
     uint32_t maxIterations = 100;
     double reltol = 1e-6;     // 相对收敛容差
     double abstol = 1e-12;    // 绝对收敛容差（A/V）
-    double gmin = 1e-12;      // 基础 Gmin 旁路
     double dvmax = 0.1;       // 单步节点电压最大变化（V），PN 结保护
-    // gmin stepping：给非线性器件节点并联电导辅助收敛，从 gminStart 逐步减到 gmin
-    double gminStart = 1e-2;  // 起始并联电导（大=线性化）
-    uint32_t gminSteps = 10;  // gmin 递减步数
+    // P1-8: 共享 gmin 配置；DcOp 历史默认开启同伦（gminSteps=10）。
+    // 字段顺序见 GminOptions：{gmin, gminStart, gminSteps}。
+    GminOptions gmin{1e-12, 1e-2, 10};
+
+    // V2-γ source stepping：把所有 VS 电压乘以 vsScale（0..1）后求解。
+    // 用于 solveDcOp 外层"源步进"同伦：当级联 MOSFET 拓扑在 V_spec 下无法
+    // 从冷启动收敛（OSDI limiter 在 V_DS=0 处产生大量级负 Jacobian 项），
+    // 通过 ε∈{0.1,...,1.0} 多步 warm-start 解出最终工作点。
+    // 装配阶段对 VS 电压做 V *= vsScale。
+    double vsScale = 1.0;
+
+    // 源步进同伦的中间步数（0 表示禁用，>=1 表示先以 ε<1 做若干步，
+    // 再以 ε=1 做最终一步）。仅当存在非线性器件时启用。
+    uint32_t sourceStepCount = 0;
 };
 
 // 求解 DC 工作点。

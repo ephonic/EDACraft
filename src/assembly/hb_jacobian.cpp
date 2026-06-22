@@ -337,7 +337,7 @@ bool assembleHarmonicBalanceReal(
             Complex v1 = (n1 != 0 && n1 <= numNodes) ? X[n1][k] : Complex(0, 0);
             Complex v2 = (n2 != 0 && n2 <= numNodes) ? X[n2][k] : Complex(0, 0);
             Complex src = (k == 0) ? Complex(v->voltage() * sourceScale, 0)
-                                   : v->acMag() * sourceScale;
+                                   : (k == 1 ? v->acMag() * sourceScale : Complex(0, 0));
             Complex res = (v1 - v2) - src;
             addComplexResidual(sys.F, perEntity, brEntity, k, res);
             // Jacobian d(br_eq)/dV
@@ -378,26 +378,42 @@ bool assembleHarmonicBalanceReal(
             }
         }
 
-        // 时域电流采样（阻性 + limiting）
+        // 时域电流 + 电荷采样（阻性 I + 电抗 Q）
         std::vector<std::vector<double>> timeCurrents;
-        osdi->evalTimeSamples(timeVoltages, nodeMap, timeCurrents);
+        std::vector<std::vector<double>> timeCharges;   // S5 路径 B2: 节点电荷 Q(t)
+        osdi->evalTimeSamples(timeVoltages, nodeMap, timeCurrents, timeCharges);
 
         // 电荷 Jacobian 采样（∂Q/∂V），用于频域电纳 Jacobian 块。
-        // 电容电流残差暂通过阻性电流近似；精确的 dQ/dt 需要周期瞬态积分（TODO）。
+        // S5 路径 B2: 残差侧现也补 j·ω_k·qHarm[k] 项，与雅可比 addSusceptanceBlock
+        // 对齐，实现 F/J 一致（原 TODO 已完成）。
         uint32_t nE = desc->num_jacobian_entries;
         std::vector<std::vector<double>> timeJacReact;
         osdi->evalTimeJacobiansReact(timeVoltages, nodeMap, timeJacReact);
 
-        // 时域电流 -> 频域残差
+        // 时域电流 + 电荷 -> 频域残差（F = -(I + j·ω·Q) for 非线性器件）
+        // 符号约定与雅可比 addSusceptanceBlock(sign=-1) 严格对齐：
+        //   雅可比侧贡献 -j·ω·Q（addConductanceBlock(Y, sign=-1)）
+        //   残差侧同样 -j·ω·Q（与 -I 同号，KCL: Y·V - I_nonlin = 0）
+        //   Re(-jωQ) = +ω·Im(Q), Im(-jωQ) = -ω·Re(Q)
         for (uint32_t i = 0; i < dn; ++i) {
             NodeId g = (i < dnodes.size()) ? dnodes[i] : 0;
             if (g == 0 || g > numNodes) continue;
             std::vector<double> iTime(N, 0.0);
-            for (uint32_t s = 0; s < N; ++s) iTime[s] = timeCurrents[s][i];
+            std::vector<double> qTime(N, 0.0);
+            for (uint32_t s = 0; s < N; ++s) {
+                iTime[s] = (i < timeCurrents[s].size()) ? timeCurrents[s][i] : 0.0;
+                qTime[s] = (s < timeCharges.size() && i < timeCharges[s].size())
+                           ? timeCharges[s][i] : 0.0;
+            }
             std::vector<Complex> iHarm = currentFft(iTime, NH);
+            std::vector<Complex> qHarm = currentFft(qTime, NH);
             uint32_t ent = nodeEntity(g);
             for (uint32_t k = 0; k <= NH; ++k) {
-                addComplexResidual(sys.F, perEntity, ent, k, -iHarm[k]);
+                // F_k = -I_k - j·ω_k·Q_k  (sign 与雅可比 addSusceptanceBlock 一致)
+                Complex contrib;
+                contrib.real(-iHarm[k].real() + k * w0 * qHarm[k].imag());   // Re(-I) + ω·Im(Q)
+                contrib.imag(-iHarm[k].imag() - k * w0 * qHarm[k].real());  // Im(-I) - ω·Re(Q)
+                addComplexResidual(sys.F, perEntity, ent, k, contrib);
             }
         }
 
@@ -454,6 +470,19 @@ void realToHarmonic(const HbRealSystem& sys,
             X[e][k] = Complex(x[base + 2 * k - 1], x[base + 2 * k]);
         }
     }
+}
+
+// 周期实信号采样 -> 单边谐波复幅度。
+// 实信号 v(t) = h0 + sum_{k>=1} 2*Re{ H[k] e^{j k w0 t} }
+//            = h0 + sum_{k>=1} ( H[k] e^{j k w t} + H*[k] e^{-j k w t} )
+// 其中 H[k] 是双边谱第 k 个分量。我们把 h[0]=H[0]，h[k>=1]=2*H[k] 作为单边复幅度，
+// 这样 nodeHarmonicsToWaveform(h, NH) 与本函数互为逆变换。
+//
+// 离散估计：H[k] = (1/N) sum_n v[n] exp(-j 2π k n / N)
+// 因此 h[k] = (1/N) sum_n v[n] exp(-j 2π k n / N) , k=0
+//        h[k] = (2/N) sum_n v[n] exp(-j 2π k n / N) , k>=1
+std::vector<Complex> realSamplesToHarmonics(const std::vector<double>& t, uint32_t NH) {
+    return currentFft(t, NH);
 }
 
 } // namespace rfsim

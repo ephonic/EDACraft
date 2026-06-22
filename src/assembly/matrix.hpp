@@ -11,6 +11,7 @@
 #define RFSIM_ASSEMBLY_MATRIX_HPP
 
 #include <cstdint>
+#include <cstdio>
 #include <map>
 #include <string>
 #include <vector>
@@ -31,12 +32,14 @@ public:
 
     // 声明非零模式 (i,j)（重复声明幂等）
     void addPattern(uint32_t i, uint32_t j) {
+        if (patternCommitted_) return;  // 已固化：pattern 不变，忽略
         ensureFinalizedFalse();
         pattern_[key(i, j)];  // 插入默认 0
     }
 
     // 累加: A(i,j) += v（需先 addPattern 或直接用 set 允许隐式创建）
     void add(uint32_t i, uint32_t j, double v) {
+        if (patternCommitted_) { addCommitted(i, j, v); return; }
         ensureFinalizedFalse();
         data_[key(i, j)] += v;
     }
@@ -58,6 +61,23 @@ public:
 
     [[nodiscard]] bool finalized() const noexcept { return finalized_; }
 
+    // V3-L0: pattern 固化模式。
+    void commitPattern() { patternCommitted_ = finalized_; }
+    [[nodiscard]] bool patternCommitted() const noexcept { return patternCommitted_; }
+    [[nodiscard]] double* ptrFor(uint32_t i, uint32_t j);
+    void zeroCommitted() {
+        if (patternCommitted_) {
+            std::fill(values_.begin(), values_.end(), 0.0);
+        }
+    }
+    // 固化后直接累加到 CSR（row scan 找 col）
+    void addCommitted(uint32_t i, uint32_t j, double v) {
+        if (!patternCommitted_ || i >= n_) return;
+        for (uint32_t k = rowPtr_[i]; k < rowPtr_[i + 1]; ++k) {
+            if (colIdx_[k] == j) { values_[k] += v; return; }
+        }
+    }
+
     // CSR 访问（finalize 后）
     [[nodiscard]] const std::vector<uint32_t>& rowPtr() const { return rowPtr_; }
     [[nodiscard]] const std::vector<uint32_t>& colIdx() const { return colIdx_; }
@@ -66,6 +86,7 @@ public:
 private:
     uint32_t n_ = 0;
     bool finalized_ = false;
+    bool patternCommitted_ = false;
     // 构建期：用 (i*n+j) 作为 key
     std::map<uint64_t, double> pattern_;  // 声明的非零模式（含零值占位）
     std::map<uint64_t, double> data_;     // 实际值（finalize 前用）

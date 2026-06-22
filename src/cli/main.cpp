@@ -6,10 +6,14 @@
 #include "../parser/token.hpp"
 #include "../circuit/flatten.hpp"
 #include "../model/device_factory.hpp"
+#include "../model/osdi_model.hpp"
+#include "../model/builtin_devices.hpp"
 #include "../solver/dc_op.hpp"
 #include "../solver/dc_sweep.hpp"
 #include "../solver/ac_analysis.hpp"
 #include "../solver/hb_solver.hpp"
+#include "../solver/hb_nonlinear.hpp"
+#include "../solver/shooting.hpp"
 #include "../output/hspice_out.hpp"
 #include "rfsim/rfsim_config.h"
 
@@ -36,7 +40,7 @@ void printParamValue(const rfsim::ParamValue& v) {
     }
 }
 
-int run(const std::string& path) {
+int run(const std::string& path, const std::string& libSearchDir) {
     std::ifstream f(path);
     if (!f) {
         std::cerr << "error: cannot open file: " << path << "\n";
@@ -120,16 +124,19 @@ int run(const std::string& path) {
     const rfsim::ControlCard* dcCard = nullptr;
     const rfsim::ControlCard* acCard = nullptr;
     const rfsim::ControlCard* hbCard = nullptr;
+    const rfsim::ControlCard* pssCard = nullptr;
     for (const auto& cc : c.controls) {
         if (cc.command == "op") hasOp = true;
         else if (cc.command == "dc") dcCard = &cc;
         else if (cc.command == "ac") acCard = &cc;
         else if (cc.command == "hb") hbCard = &cc;
+        else if (cc.command == "pss") pssCard = &cc;
     }
 
-    // 鑻ユ湁浠讳綍鍒嗘瀽锛屾瀯閫犲櫒浠?wrapper锛堝悇鍒嗘瀽鎸夐渶澶嶅埗鍓湰锛
-    if (hasOp || dcCard || acCard || hbCard) {
+    // 鑻ユ湁浠讳綍鍒嗘瀽锛屾瀯閫犲櫒浠?wrapper锛堝悇鍒嗘瀽鎸夐渶澶嶅埗鍓湰锛
+    if (hasOp || dcCard || acCard || hbCard || pssCard) {
         rfsim::ParamEnv env;
+        env.libSearchDir = libSearchDir;
         auto fac = rfsim::buildDeviceModels(c, env);
         for (const auto& e : fac.diags.errors) {
             std::cerr << "  " << e.loc.file << ":" << e.loc.line << ": " << e.message << "\n";
@@ -263,13 +270,144 @@ int run(const std::string& path) {
                     hbcfg.numHarmonics = static_cast<uint32_t>(n);
                 }
             }
+            // 检测是否含非线性 OSDI 器件，决定是否走非线性 HB
+            bool hasNonlinear = false;
+            for (const auto& dev : fac.devices) {
+                auto* om = dynamic_cast<rfsim::OsdiModel*>(dev.get());
+                if (om && om->ready() && !om->is_linear()) { hasNonlinear = true; break; }
+            }
             std::cout << "\n=== Harmonic Balance (f0=" << hbcfg.fundamental
-                      << " Hz, NH=" << hbcfg.numHarmonics << ") ===\n";
-            auto hb = rfsim::solveHbLinear(fac.totalNodes, fac.devices, hbcfg);
+                      << " Hz, NH=" << hbcfg.numHarmonics
+                      << (hasNonlinear ? ", nonlinear" : ", linear") << ") ===\n";
+
+            rfsim::HbResult hb;
+            if (hasNonlinear) {
+                // 1) 先尝试非线性 HB（弱非线性快路径）
+                rfsim::HbNlOptions nlOpts;
+                nlOpts.sourceSteps = 5;
+                nlOpts.gmin.gmin = 1e-9;
+                nlOpts.dvmax = 0.5;
+                nlOpts.maxIter = 60;
+                auto dcInit = rfsim::solveDcOp(fac.totalNodes, fac.devices);
+                const std::vector<double>* dcPtr = dcInit.converged ? &dcInit.nodeVoltages : nullptr;
+                auto hbnl = rfsim::solveHbNonlinear(fac.totalNodes, fac.devices, hbcfg, dcPtr, nlOpts);
+                if (hbnl.converged) {
+                    hb.config = hbcfg;
+                    hb.nodeVoltages = hbnl.nodeVoltages;
+                    hb.diags = hbnl.diags;
+                    hb.ok = true;
+                    std::cout << "  nonlinear HB converged in " << hbnl.iterations
+                              << " iter, " << hbnl.continuationSteps << " continuation steps\n";
+                } else {
+                    // 2) 非线性 HB 不收敛 → 自动回退到 Shooting-PSS → FFT
+                    std::cout << "  nonlinear HB did not converge; falling back to Shooting-PSS\n";
+                    rfsim::ShootingConfig pssCfg;
+                    pssCfg.fundamental = hbcfg.fundamental;
+                    pssCfg.numTimePoints = std::max<uint32_t>(64u, 4u * (hbcfg.numHarmonics + 1));
+                    pssCfg.method = rfsim::IntegrationMethod::BackwardEuler;
+                    rfsim::ShootingOptions pssOpts;
+                    pssOpts.maxIter = 15;
+                    auto pss = rfsim::solveShooting(fac.totalNodes, fac.devices, pssCfg,
+                                                    dcPtr, pssOpts);
+                    if (pss.converged) {
+                        hb = rfsim::shootingToHarmonics(pss, fac.totalNodes,
+                                                       hbcfg.numHarmonics, hbcfg.fundamental);
+                        std::cout << "  shooting-PSS converged in " << pss.iterations << " iter\n";
+                    } else {
+                        std::cerr << "  shooting-PSS also failed to converge\n";
+                    }
+                }
+            } else {
+                hb = rfsim::solveHbLinear(fac.totalNodes, fac.devices, hbcfg);
+            }
             if (hb.ok) {
                 rfsim::writeHb(std::cout, c, hb, true);
             } else {
                 std::cerr << "HB analysis failed\n";
+            }
+        }
+
+        // ---- .pss: 鍛ㄦ湡绋虫€佸垎鏋愶紙Shooting-Newton锛?----
+        if (pssCard) {
+            // .pss freq=<val> nh=<num> pts=<num>
+            double f0 = 1e9;
+            uint32_t nh = 5;
+            uint32_t pts = 64;
+            for (const auto& [pn, pv] : pssCard->params) {
+                bool ok;
+                if (pn == "freq" || pn == "f0" || pn == "f") {
+                    if (pv.kind == rfsim::ParamValue::Kind::Number) f0 = pv.num;
+                    else f0 = parseSpiceNumber(pv.str, ok);
+                } else if (pn == "nh" || pn == "n") {
+                    if (pv.kind == rfsim::ParamValue::Kind::Number) nh = static_cast<uint32_t>(pv.num);
+                    else { double v = parseSpiceNumber(pv.str, ok); if (ok) nh = static_cast<uint32_t>(v); }
+                } else if (pn == "pts" || pn == "tpts") {
+                    if (pv.kind == rfsim::ParamValue::Kind::Number) pts = static_cast<uint32_t>(pv.num);
+                    else { double v = parseSpiceNumber(pv.str, ok); if (ok) pts = static_cast<uint32_t>(v); }
+                }
+            }
+            if (pts < 2u * (nh + 1)) pts = 2u * (nh + 1);
+            std::cout << "\n=== Periodic Steady State (Shooting, f0=" << f0
+                      << " Hz, NH=" << nh << ", pts=" << pts << ") ===\n";
+            rfsim::ShootingConfig pssCfg;
+            pssCfg.fundamental = f0;
+            pssCfg.numTimePoints = pts;
+            pssCfg.method = rfsim::IntegrationMethod::BackwardEuler;
+            rfsim::ShootingOptions pssOpts;
+            pssOpts.maxIter = 20;
+            pssOpts.localNewtonDvMax = 0.3;
+            auto dcInit = rfsim::solveDcOp(fac.totalNodes, fac.devices);
+            std::vector<double> initFallback;
+            const std::vector<double>* dcPtr = nullptr;
+            if (dcInit.converged && dcInit.nodeVoltages.size() > fac.totalNodes) {
+                dcPtr = &dcInit.nodeVoltages;
+            } else {
+                // DC 不收敛时，用电压源的 DC 直接给被强制节点赋值，其他节点取
+                // 与之相连的电压源最接近值（简单启发：从所有 VS 取最大值作通用偏置）。
+                initFallback.assign(fac.totalNodes + 1, 0.0);
+                double maxVdd = 0.0;
+                for (const auto& d : fac.devices) {
+                    if (auto* vs = dynamic_cast<rfsim::VoltageSource*>(d.get())) {
+                        if (vs->voltage() > maxVdd) maxVdd = vs->voltage();
+                        rfsim::NodeId n1 = vs->nodes()[0];
+                        rfsim::NodeId n2 = vs->nodes()[1];
+                        // VS 连到地的节点直接强制
+                        if (n1 != 0 && n2 == 0 && n1 <= fac.totalNodes) initFallback[n1] = vs->voltage();
+                        if (n2 != 0 && n1 == 0 && n2 <= fac.totalNodes) initFallback[n2] = -vs->voltage();
+                    }
+                }
+                // 其他节点（如 drain）默认取电源最高电压，更接近偏置而非 0
+                for (size_t i = 1; i <= fac.totalNodes; ++i) {
+                    if (initFallback[i] == 0.0) initFallback[i] = maxVdd;
+                }
+                dcPtr = &initFallback;
+                std::cerr << "  warn: DC did not converge; using voltage-source-derived init"
+                          << " (Vmax=" << maxVdd << ") for shooting\n";
+            }
+            auto pss = rfsim::solveShooting(fac.totalNodes, fac.devices, pssCfg, dcPtr, pssOpts);
+            if (!pss.converged) {
+                std::cerr << "PSS shooting did not converge after " << pss.iterations << " iter\n";
+            } else {
+                std::cout << "  shooting converged in " << pss.iterations << " iter\n";
+            }
+            // 即使未收敛也尽力 FFT 输出（只要波形有限），与单元测试语义保持一致：
+            // 真实非线性网表常常需要后续手动检查或加倍 numTimePoints。
+            bool finite = !pss.waveform.points.empty();
+            for (const auto& tp : pss.waveform.points) {
+                for (double xi : tp.x) {
+                    if (!std::isfinite(xi)) { finite = false; break; }
+                }
+                if (!finite) break;
+            }
+            if (finite) {
+                auto hb = rfsim::shootingToHarmonics(pss, fac.totalNodes, nh, f0);
+                if (hb.ok) {
+                    rfsim::writeHb(std::cout, c, hb, true);
+                } else {
+                    for (const auto& e : hb.diags.errors) std::cerr << "  " << e.message << "\n";
+                }
+            } else {
+                std::cerr << "PSS waveform contains non-finite values; FFT skipped\n";
             }
         }
 
@@ -298,10 +436,23 @@ int run(const std::string& path) {
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "usage: rfsim <netlist.sp>\n";
+    std::string netlist;
+    std::string libDir;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "-L" && i + 1 < argc) { libDir = argv[++i]; }
+        else if (a.rfind("-L", 0) == 0 && a.size() > 2) { libDir = a.substr(2); }
+        else if (a == "-h" || a == "--help") {
+            std::cerr << "usage: rfsim [-L <osdi_lib_dir>] <netlist.sp>\n";
+            return 0;
+        }
+        else if (netlist.empty()) { netlist = a; }
+        else { std::cerr << "warn: extra arg ignored: " << a << "\n"; }
+    }
+    if (netlist.empty()) {
+        std::cerr << "usage: rfsim [-L <osdi_lib_dir>] <netlist.sp>\n";
         return 1;
     }
-    return run(argv[1]);
+    return run(netlist, libDir);
 }
 

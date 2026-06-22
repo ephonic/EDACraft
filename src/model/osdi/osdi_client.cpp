@@ -4,9 +4,42 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iostream>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace rfsim {
+
+// 判断指针是否指向可读内存。用于防护 OSDI 模型表尾越界访问：
+// 实测部分 OpenVAF/OpenVAF-Reloaded 编译的 dll 在 param_opvar[] 与
+// jacobian_entries[] 末尾会接续其它 dll 内部数据（非 NULL，但不是有效指针），
+// 直接 deref 会 SEGV。本函数轻量探测：地址在用户态范围 (0..0x7FFFFFFFFFFF) 且
+// 第一字节可读（_WIN32 下用 VirtualQuery，其它平台用读自陷）。
+// 注意：OSDI 表条目的 name 字段总是指向 dll .rdata 段的 C 字符串；任何越界"指针"
+// 通常是小整数 (0x500000004 之类)，明显不在合法用户态段。
+static bool isReadableCString(const char* p) {
+    if (!p) return false;
+    // 合法用户态虚拟地址范围 (x86_64): 0..0x00007FFFFFFFFFFF
+    // 排除明显的小整数伪装指针 (param_opvar 末尾越界条目的典型形态)
+    auto addr = reinterpret_cast<uintptr_t>(p);
+    if (addr < 0x10000) return false;        // 低于 64KB：必定不是有效映射
+    if (addr > 0x7FFFFFFFFFFFull) return false;
+#ifdef _WIN32
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(p, &mbi, sizeof(mbi)) == 0) return false;
+    if (mbi.State != MEM_COMMIT) return false;
+    if (mbi.Protect & PAGE_NOACCESS) return false;
+    if (mbi.Protect & PAGE_GUARD) return false;
+    return true;
+#else
+    // 非 Windows: 尝试 1 字节读，触发 SIGSEGV 即不安全。这里保守返回 true
+    // 让调用方依赖 errno/signal；非 Windows 暂无生产路径，故省略复杂逻辑。
+    return true;
+#endif
+}
 
 OsdiModelBlock::~OsdiModelBlock() {
     if (modelData) std::free(modelData);
@@ -29,11 +62,17 @@ uint32_t findParamId(const OsdiDescriptor* d, const std::string& name, uint32_t 
     if (!d || !d->param_opvar) return 0xFFFFFFFFu;
     std::string low = toLower(name);
     uint32_t n = d->num_params + d->num_instance_params + d->num_opvars;
+    // 防护：部分 OSDI dll 在 param_opvar[] 末尾接续其它 dll 内部数据
+    // (非 NULL，但不是有效 C 字符串指针)。表尾哨兵必须经 isReadableCString
+    // 验证，否则 deref p.name[0] 触发 SEGV。
     for (uint32_t i = 0; i < n; ++i) {
         const OsdiParamOpvar& p = d->param_opvar[i];
-        // 某些 OSDI 库（如 bsimcmg）的计数会把实例参数重复计入 num_params，
-        // 导致表尾出现无效条目。以 name 指针为空作为实际结束哨兵。
-        if (!p.name || !p.name[0]) break;
+        // p.name 是 char** (别名数组指针)；空指针或越界非指针要排除。
+        // 实测部分 OpenVAF dll 的 param_opvar[] 末尾接续其它数据，
+        // .name 字段是 0x500000004 之类小整数，deref 触发 SEGV。
+        const char* firstAlias = (p.name && isReadableCString(reinterpret_cast<const char*>(p.name)))
+                                  ? p.name[0] : nullptr;
+        if (!isReadableCString(firstAlias)) break;
         if ((p.flags & PARA_KIND_MASK) != kindMask) continue;
         if (toLower(p.name[0]) == low) return i;
         // name[1..num_alias] 是别名；做边界保护，避免异常 alias 数量导致越界
@@ -46,13 +85,81 @@ uint32_t findParamId(const OsdiDescriptor* d, const std::string& name, uint32_t 
     return 0xFFFFFFFFu;
 }
 
+// OSDI $simparam 默认表
+//
+// OpenVAF 把 Verilog-A 中的 `$simparam("name", default)` 翻译为线性扫描：
+//     while (paras.names[i] != NULL) {
+//         if (strcmp(paras.names[i], "name") == 0) return paras.vals[i];
+//         ++i;
+//     }
+//     return default;
+// 因此 paras.names 必须至少是一个 NULL-terminated 数组（可以只有终结符）。
+// 如果 paras.names == NULL，模型在 setup_model / setup_instance / eval 中
+// 一旦调用 $simparam 就会解引用空指针而崩溃（如 diode_va 在参数初始化阶段
+// 访问 $simparam("minr",1m)，eval 期间访问 $simparam("gmin",1e-12)）。
+//
+// 这里提供一组常见仿真器参数默认值，让模型可以在未显式传值时拿到合理值；
+// 同时配合 NULL 终结符兜住未列出的查询，保证 default 分支返回。
+struct DefaultSimParas {
+    std::vector<std::string> ownedNames;     // 持有 char* 的所有权
+    std::vector<char*>       names;          // [n+1]，最后一个为 nullptr
+    std::vector<double>      vals;           // [n]
+    std::vector<char*>       namesStr;       // [1] = nullptr
+    std::vector<char*>       valsStr;        // [1] = nullptr
+
+    DefaultSimParas() {
+        const std::pair<const char*, double> kv[] = {
+            {"gmin",         1e-12 },
+            {"minr",         1e-3  },
+            {"imax",         1.0   },
+            {"imelt",        1e-3  },
+            {"scale",        1.0   },
+            {"shrink",       0.0   },
+            {"tnom",         300.15},
+            {"temp",         300.15},
+            {"rthresh",      1e-3  },
+            {"sourceFactor", 1.0   },
+            {"abstol",       1e-12 },
+            {"reltol",       1e-3  },
+        };
+        constexpr size_t N = sizeof(kv) / sizeof(kv[0]);
+        ownedNames.reserve(N);
+        names.reserve(N + 1);
+        vals.reserve(N);
+        for (const auto& p : kv) {
+            ownedNames.emplace_back(p.first);
+            vals.push_back(p.second);
+        }
+        // 在 ownedNames 全部 push 完之后再取地址，防止重分配让指针失效
+        for (auto& s : ownedNames) names.push_back(s.data());
+        names.push_back(nullptr);
+        namesStr.push_back(nullptr);
+        valsStr.push_back(nullptr);
+    }
+
+    OsdiSimParas build() const {
+        OsdiSimParas p{};
+        p.names     = const_cast<char**>(names.data());
+        p.vals      = const_cast<double*>(vals.data());
+        p.names_str = const_cast<char**>(namesStr.data());
+        p.vals_str  = const_cast<char**>(valsStr.data());
+        return p;
+    }
+};
+
+const DefaultSimParas& defaultSimParas() {
+    static const DefaultSimParas s;
+    return s;
+}
+
 } // namespace
 
 bool OsdiClient::init(std::shared_ptr<OsdiLibrary> lib,
                       std::shared_ptr<OsdiModelBlock> modelBlock,
                       std::vector<NodeId> nodes,
                       Diagnostics& diags,
-                      const std::vector<std::pair<std::string, double>>& modelParams) {
+                      const std::vector<std::pair<std::string, double>>& modelParams,
+                      double temperature) {
     lib_ = std::move(lib);
     modelBlock_ = std::move(modelBlock);
     nodes_ = std::move(nodes);
@@ -99,7 +206,7 @@ bool OsdiClient::init(std::shared_ptr<OsdiLibrary> lib,
             OsdiInitInfo info{};
             OsdiInitError errBuf[16];
             info.errors = errBuf;
-            OsdiSimParas paras{};
+            OsdiSimParas paras = defaultSimParas().build();
             desc_->setup_model((void*)lib_.get(), modelBlock_->modelData, &paras, &info);
             if (info.num_errors > 0 && errBuf[0].code != 0) {
                 diags.error({}, std::string("OSDI setup_model error code ") +
@@ -127,8 +234,8 @@ bool OsdiClient::init(std::shared_ptr<OsdiLibrary> lib,
         OsdiInitInfo info{};
         OsdiInitError errBuf[16];
         info.errors = errBuf;
-        double temp = 300.0; // 室温 300K，后续从 .options temp 读取
-        OsdiSimParas paras{};
+        double temp = temperature; // 来自调用方（默认 300.15K，可由 .options temp 覆盖）
+        OsdiSimParas paras = defaultSimParas().build();
         desc_->setup_instance((void*)lib_.get(), instData_, modelBlock_->modelData,
                               temp, desc_->num_terminals, &paras, &info);
         if (info.num_errors > 0 && errBuf[0].code != 0) {
@@ -216,10 +323,7 @@ uint32_t OsdiClient::evalDC(const std::vector<double>& nodeVoltages, uint32_t ex
     const std::vector<double>* solvePtr = ensureSolveBuf(nodes_, nodeVoltages, solveBuf_);
 
     OsdiSimInfo info{};
-    info.paras.names = nullptr;
-    info.paras.vals = nullptr;
-    info.paras.names_str = nullptr;
-    info.paras.vals_str = nullptr;
+    info.paras = defaultSimParas().build();
     info.abstime = 0.0;
     info.prev_solve = const_cast<double*>(solvePtr->data());
     // 某些模型（如 BSIM4）即使在 DC 下也会访问 prev/next_state 指针，
@@ -266,10 +370,7 @@ uint32_t OsdiClient::evalTransient(const std::vector<double>& prevSolve,
     const std::vector<double>* solvePtr = ensureSolveBuf(nodes_, prevSolve, solveBuf_);
 
     OsdiSimInfo info{};
-    info.paras.names = nullptr;
-    info.paras.vals = nullptr;
-    info.paras.names_str = nullptr;
-    info.paras.vals_str = nullptr;
+    info.paras = defaultSimParas().build();
     info.abstime = t;
     info.prev_solve = const_cast<double*>(solvePtr->data());
     info.prev_state = prevState_.empty() ? nullptr : prevState_.data();
@@ -295,13 +396,62 @@ uint32_t OsdiClient::evalTransient(const std::vector<double>& prevSolve,
     return ret;
 }
 
+namespace {
+
+// V2-γ C3 修复：OSDI load_residual_resist / load_spice_rhs / load_limit_rhs
+// 按规范向 GLOBAL 求解向量散射写入（dst[node_mapping[localIdx]] += contrib），
+// 但本仓库的装配层将 dst 视为 LOCAL 索引（dst[localIdx] 对应 nodes_[localIdx]）。
+// 这两种不一致导致 BSIM4 collapse 时（dnodeprime → drain）当 drain NodeId 数值
+// 恰好等于某个本地索引时，散射写到的 dst 位置被装配层错误地解释为另一个
+// 本地节点的残差，导致对称性破坏（C3 / EightFingerBalanced "node-ID-4 specific"）。
+//
+// 解法：在 OSDI 调用前分配 GLOBAL-sized 暂存（按 nodes_ 的最大 NodeId 决定大小），
+// 调用后再做带 collapse 去重的 gather：每个全局 NodeId 只允许第一个本地索引取走值，
+// 后续同 NodeId 的本地索引置 0；ground 节点丢弃。
+//
+// 关于符号约定（V2-γ C3 续）：
+//   OSDI 0.3 / OpenVAF 的 load_residual_resist 写入的是 KCL "current OUT of node"
+//   形式残差（外部网络看到该器件在该节点上"抽走"的电流）。本仓库的线性器件 stamp
+//   遵循同一约定（resistor.cpp 中 F[n1]+=iL，iL 为流出 n1 的电流）。因此 gather
+//   阶段**不**做符号翻转，把 OpenVAF 的 "out" 残差原样交给装配层；装配层
+//   （dc_op.cpp / transient_assembly.cpp）使用 F += dc.f / G += jac 同号累加，
+//   与线性器件保持符号一致。
+void scatterGlobalThenGatherLocal(
+    const OsdiDescriptor* desc,
+    const std::vector<NodeId>& nodes,
+    std::vector<double>& dstLocal,
+    const std::function<void(double* globalBuf)>& callOsdi) {
+    if (!desc) {
+        dstLocal.clear();
+        return;
+    }
+    NodeId maxId = 0;
+    for (NodeId n : nodes) if (n > maxId) maxId = n;
+    std::vector<double> globalBuf(static_cast<size_t>(maxId) + 1, 0.0);
+    callOsdi(globalBuf.data());
+    dstLocal.assign(desc->num_nodes, 0.0);
+    std::vector<uint8_t> taken(globalBuf.size(), 0);
+    uint32_t n = desc->num_nodes;
+    for (uint32_t i = 0; i < n && i < nodes.size(); ++i) {
+        NodeId g = nodes[i];
+        if (g == 0) continue;                  // 接地：丢弃
+        if (g >= globalBuf.size()) continue;   // 越界保护
+        if (taken[g]) continue;                // collapse 去重：值已由更早的本地索引取走
+        dstLocal[i] = globalBuf[g];           // 不翻转：保留 OpenVAF 残差原符号
+        taken[g] = 1;
+    }
+}
+
+} // namespace
+
 void OsdiClient::loadResidualResist(std::vector<double>& dst) const {
     if (!desc_ || !desc_->load_residual_resist || !instData_) {
         dst.assign(desc_ ? desc_->num_nodes : 0, 0.0);
         return;
     }
-    dst.assign(desc_->num_nodes, 0.0);
-    desc_->load_residual_resist(instData_, modelBlock_->modelData, dst.data());
+    scatterGlobalThenGatherLocal(desc_, nodes_, dst, [&](double* g) {
+        desc_->load_residual_resist(instData_, modelBlock_->modelData, g);
+    });
 }
 
 void OsdiClient::loadSpiceRhsTran(std::vector<double>& dst,
@@ -311,14 +461,18 @@ void OsdiClient::loadSpiceRhsTran(std::vector<double>& dst,
         dst.assign(desc_ ? desc_->num_nodes : 0, 0.0);
         return;
     }
-    dst.assign(desc_->num_nodes, 0.0);
     if (desc_->load_spice_rhs_tran) {
         const std::vector<double>* solvePtr = ensureSolveBuf(nodes_, prevSolve, solveBuf_);
-        desc_->load_spice_rhs_tran(instData_, modelBlock_->modelData, dst.data(),
-                                   const_cast<double*>(solvePtr->data()), alpha);
+        scatterGlobalThenGatherLocal(desc_, nodes_, dst, [&](double* g) {
+            desc_->load_spice_rhs_tran(instData_, modelBlock_->modelData, g,
+                                       const_cast<double*>(solvePtr->data()), alpha);
+        });
     } else if (desc_->load_residual_resist) {
-        // 回退到 DC 残差（适用于无内部动态状态的模型）
-        desc_->load_residual_resist(instData_, modelBlock_->modelData, dst.data());
+        scatterGlobalThenGatherLocal(desc_, nodes_, dst, [&](double* g) {
+            desc_->load_residual_resist(instData_, modelBlock_->modelData, g);
+        });
+    } else {
+        dst.assign(desc_->num_nodes, 0.0);
     }
 }
 
@@ -435,8 +589,9 @@ void OsdiClient::loadLimitRhsResist(std::vector<double>& dst) const {
         dst.assign(desc_ ? desc_->num_nodes : 0, 0.0);
         return;
     }
-    dst.assign(desc_->num_nodes, 0.0);
-    desc_->load_limit_rhs_resist(instData_, modelBlock_->modelData, dst.data());
+    scatterGlobalThenGatherLocal(desc_, nodes_, dst, [&](double* g) {
+        desc_->load_limit_rhs_resist(instData_, modelBlock_->modelData, g);
+    });
 }
 
 void OsdiClient::loadLimitRhsReact(std::vector<double>& dst) const {
@@ -444,8 +599,9 @@ void OsdiClient::loadLimitRhsReact(std::vector<double>& dst) const {
         dst.assign(desc_ ? desc_->num_nodes : 0, 0.0);
         return;
     }
-    dst.assign(desc_->num_nodes, 0.0);
-    desc_->load_limit_rhs_react(instData_, modelBlock_->modelData, dst.data());
+    scatterGlobalThenGatherLocal(desc_, nodes_, dst, [&](double* g) {
+        desc_->load_limit_rhs_react(instData_, modelBlock_->modelData, g);
+    });
 }
 
 void OsdiClient::swapState() {

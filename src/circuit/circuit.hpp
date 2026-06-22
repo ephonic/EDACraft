@@ -41,7 +41,7 @@ struct Circuit {
 
 // 控制卡分类（便于求解/输出层取用）
 [[nodiscard]] inline bool isAnalysisCard(const std::string& cmd) {
-    return cmd == "hb" || cmd == "ac" || cmd == "dc" || cmd == "tran" || cmd == "op";
+    return cmd == "hb" || cmd == "ac" || cmd == "dc" || cmd == "tran" || cmd == "op" || cmd == "pss";
 }
 
 } // namespace rfsim

@@ -18,6 +18,17 @@ double SparseMatrix::get(uint32_t i, uint32_t j) const {
     return it != data_.end() ? it->second : 0.0;
 }
 
+// V3-L0: pattern 固化后返回 (i,j) 在 values_ 中的指针。
+// 仅在 bindStampPtrs 阶段调用（每器件每 entry 一次）。
+// 若 (i,j) 不在 pattern 中，返回 nullptr（器件应跳过）。
+double* SparseMatrix::ptrFor(uint32_t i, uint32_t j) {
+    if (!patternCommitted_ || i >= n_) return nullptr;
+    for (uint32_t k = rowPtr_[i]; k < rowPtr_[i + 1]; ++k) {
+        if (colIdx_[k] == j) return &values_[k];
+    }
+    return nullptr;
+}
+
 void SparseMatrix::zeroValues() {
     if (finalized_) {
         // 已 finalize：把 CSR 值清零，保留结构

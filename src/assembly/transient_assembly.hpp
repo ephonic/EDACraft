@@ -21,6 +21,11 @@ struct TransientSystem {
     uint32_t     numNodes = 0;
     uint32_t     numBranches = 0;
     uint32_t     dim() const noexcept { return numNodes + numBranches; }
+    // V3-L0: pattern 固化标记。首次 assembleTransient 建 pattern + commit + bind
+    // 后置 true，后续调用走 zeroCommitted + 指针 stamp 快路径。
+    bool patternBound = false;
+    // 首次 bind 时记录的 dim（若 numNodes/numVS 变化需重新 bind）
+    uint32_t boundDim = 0;
 };
 
 // 装配一个时间点的瞬态方程。

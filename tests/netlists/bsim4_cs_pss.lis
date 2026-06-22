@@ -1,0 +1,16 @@
+****** rfsim RF simulator ******
+****** harmonic balance + osdi ******
+****** version 0.2 ******
+
+$ netlist: rfsim end-to-end: BSIM4 NMOS common-source amplifier @ 1MHz
+$ source: tests\netlists\bsim4_cs_pss.sp
+
+$rfsim ============================================================
+$  node table
+$rfsim ============================================================
+
+  nodes (excl. gnd): 3
+  [1] vdd
+  [2] d
+  [3] g
+

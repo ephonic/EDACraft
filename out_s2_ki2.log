@@ -1,0 +1,132 @@
+Running main() from G:\vibe-codeing\simulator\build\_deps\googletest-src\googletest\src\gtest_main.cc
+Note: Google Test filter = MultiDevice.EightFingerBalanced:LargeScaleBsim4.SelfBiasedCascodeStack5:LargeCircuitBsim4.A1_InverterChain15_HEAVY:LargeCircuitBsim4.A3_NmosPullupBuffer20_HEAVY:LargeCircuitBsim4.S1_InverterChainGrid
+[==========] Running 5 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 1 test from MultiDevice
+VA: 
+RESET igcMod to 0
+
+[ RUN      ] MultiDevice.EightFingerBalanced
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+[8FingerBalanced.diag] V_drain[0..7] = 0.537354 0.537354 0.537354 0.537354 0.537354 0.537354 0.537354 0.537354
+[MultiDevice.EightFingerBalanced] V_drain=0.537354 V  Id≈4.626e-05 A/finger  max|ΔV|=0.00e+00 V
+[       OK ] MultiDevice.EightFingerBalanced (26 ms)
+[----------] 1 test from MultiDevice (26 ms total)
+
+[----------] 1 test from LargeScaleBsim4
+VA: 
+RESET igcMod to 0
+
+[ RUN      ] LargeScaleBsim4.SelfBiasedCascodeStack5
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+[LargeScale.SelfBiasedStack5] DC iters=325 wall=55.9 ms v[1..6]=3.300 0.072 0.000 0.000 -0.000 0.000 Iref=6.455e-05 A
+[       OK ] LargeScaleBsim4.SelfBiasedCascodeStack5 (56 ms)
+[----------] 1 test from LargeScaleBsim4 (56 ms total)
+
+[----------] 3 tests from LargeCircuitBsim4
+VA: 
+RESET igcMod to 0
+
+[ RUN      ] LargeCircuitBsim4.A1_InverterChain15_HEAVY
+G:\vibe-codeing\simulator\tests\test_large_circuit.cpp(951): Skipped
+HEAVY gated (set RFSIM_FORCE_HEAVY=1)
+
+[  SKIPPED ] LargeCircuitBsim4.A1_InverterChain15_HEAVY (0 ms)
+[ RUN      ] LargeCircuitBsim4.A3_NmosPullupBuffer20_HEAVY
+G:\vibe-codeing\simulator\tests\test_large_circuit.cpp(1047): Skipped
+HEAVY gated (set RFSIM_FORCE_HEAVY=1)
+
+[  SKIPPED ] LargeCircuitBsim4.A3_NmosPullupBuffer20_HEAVY (0 ms)
+[ RUN      ] LargeCircuitBsim4.S1_InverterChainGrid
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+[S1.grid] N=2 dc=1(it=101, 9.2 ms) hb=0(104.3 ms) |H1|=0.07311
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+[S1.grid] N=4 dc=1(it=79, 33.4 ms) hb=0(225.6 ms) |H1|=0.4098
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+unknown file: error: SEH exception with code 0xc0000005 thrown in the test body.
+Stack trace:
+
+
+[  FAILED  ] LargeCircuitBsim4.S1_InverterChainGrid (384 ms)
+[----------] 3 tests from LargeCircuitBsim4 (384 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 3 test suites ran. (476 ms total)
+[  PASSED  ] 2 tests.
+[  SKIPPED ] 2 tests, listed below:
+[  SKIPPED ] LargeCircuitBsim4.A1_InverterChain15_HEAVY
+[  SKIPPED ] LargeCircuitBsim4.A3_NmosPullupBuffer20_HEAVY
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] LargeCircuitBsim4.S1_InverterChainGrid
+
+ 1 FAILED TEST

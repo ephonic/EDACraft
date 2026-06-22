@@ -91,7 +91,8 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
                                          const ParamEnv& env,
                                          std::vector<std::shared_ptr<OsdiLibrary>>& libCache,
                                          NodeId& internalNodeBase,
-                                         Diagnostics& diags) {
+                                         Diagnostics& diags,
+                                         OsdiModelBlockCache* blockCache) {
     char c = fd.firstLetter;
 
     // 电阻 R: name n1 n2 value
@@ -126,6 +127,7 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
         double v = 0;
         bool haveDc = false;
         rfsim::Complex acMag(0.0, 0.0);
+        Waveform pendingWaveform;  // 默认 type=DC，仅当显式 SIN/PULSE 才覆盖
         // 遍历位置参数：首个数值为 DC 值；遇到 "ac"/"AC" 后的数值为 AC 幅度(+相位)
         for (size_t i = 0; i < fd.positional.size(); ++i) {
             const auto& pv = fd.positional[i];
@@ -151,11 +153,45 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
                     if (i + 1 < fd.positional.size() && fd.positional[i+1].kind == ParamValue::Kind::Number) {
                         if (!haveDc) { v = fd.positional[i+1].num; haveDc = true; }
                     }
+                    // 收集波形参数：sin(vo va freq [td]) / pulse(v1 v2 td tr tf pw period)
+                    if (low == "sin") {
+                        Waveform wf; wf.type = Waveform::SIN;
+                        auto getNum = [&](size_t j, double def) -> double {
+                            if (j < fd.positional.size() && fd.positional[j].kind == ParamValue::Kind::Number)
+                                return fd.positional[j].num;
+                            return def;
+                        };
+                        wf.vo   = getNum(i+1, 0.0);
+                        wf.va   = getNum(i+2, 0.0);
+                        wf.freq = getNum(i+3, 0.0);
+                        wf.td   = getNum(i+4, 0.0);
+                        pendingWaveform = wf;
+                        // 同时把 SIN 的 va 视作 AC 基频幅度（HB 用），允许用户后续显式 AC 覆盖
+                        if (acMag == rfsim::Complex(0.0, 0.0)) {
+                            acMag = rfsim::Complex(wf.va, 0.0);
+                        }
+                    } else if (low == "pulse") {
+                        Waveform wf; wf.type = Waveform::PULSE;
+                        auto getNum = [&](size_t j, double def) -> double {
+                            if (j < fd.positional.size() && fd.positional[j].kind == ParamValue::Kind::Number)
+                                return fd.positional[j].num;
+                            return def;
+                        };
+                        wf.vo     = getNum(i+1, 0.0);
+                        wf.va     = getNum(i+2, 0.0) - wf.vo;
+                        wf.td     = getNum(i+3, 0.0);
+                        wf.tr     = getNum(i+4, 0.0);
+                        wf.tf     = getNum(i+5, 0.0);
+                        wf.pw     = getNum(i+6, 0.0);
+                        wf.period = getNum(i+7, 0.0);
+                        pendingWaveform = wf;
+                    }
                 }
             }
         }
         auto vs = std::make_unique<VoltageSource>(fd.name, fd.nodes[0], fd.nodes[1], v);
         vs->setAcMag(acMag);
+        if (pendingWaveform.type != Waveform::DC) vs->setWaveform(pendingWaveform);
         return vs;
     }
 
@@ -278,8 +314,24 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
 
         auto m = std::make_unique<OsdiModel>(fd.name, fd.nodes, lib, desc, fd.params, modelParams);
         m->setFallbackTypeName(typeOrName);
+
+        // V2-γ C3：若上层提供了共享 block 缓存且本 modelcard 已经构造过 block，
+        // 注入之；OsdiClient 会跳过重复的 setup_model，仅为本实例分配 instance 数据。
+        // 这同时是 BSIM4 多实例确定性串拥 bug（C1.4 / C2.b）的根本修复。
+        if (blockCache && mdlDef) {
+            auto it = blockCache->find(mdlDef);
+            if (it != blockCache->end() && it->second) {
+                m->useSharedModelBlock(it->second);
+            }
+        }
+
         if (!m->initialize(diags, internalNodeBase)) {
             diags.warn(fd.loc, fd.name + ": OSDI initialize failed");
+        } else if (blockCache && mdlDef) {
+            // 首次构造成功后，把本 modelcard 的 block 登记进缓存；后续同 modelcard 的
+            // 实例由 cache hit 路径复用。
+            auto& slot = (*blockCache)[mdlDef];
+            if (!slot) slot = m->modelBlock();
         }
         return m;
     }
@@ -303,13 +355,16 @@ FactoryResult buildDeviceModels(const Circuit& circuit, const ParamEnv& env) {
     NodeId internalNodeBase = static_cast<NodeId>(circuit.nodes.size()) + 1;
     r.totalNodes = static_cast<uint32_t>(circuit.nodes.size());
 
+    // V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock；按 FlatModel* 索引。
+    OsdiModelBlockCache blockCache;
+
     for (const auto& fd : circuit.devices) {
         const FlatModel* mdl = nullptr;
         if (!fd.model.empty()) {
             auto it = models.find(fd.model);
             if (it != models.end()) mdl = it->second;
         }
-        auto dev = buildDevice(fd, mdl, envFull, r.libraries, internalNodeBase, r.diags);
+        auto dev = buildDevice(fd, mdl, envFull, r.libraries, internalNodeBase, r.diags, &blockCache);
         if (dev) {
             // 累计内部节点数（OSDI 器件的 nodes 超过 num_terminals 的部分）
             r.devices.push_back(std::move(dev));

@@ -4,6 +4,7 @@
 
 #include "../assembly/transient_assembly.hpp"
 #include "../model/device_model.hpp"
+#include "gmin_options.hpp"
 #include <vector>
 
 namespace rfsim {
@@ -12,7 +13,15 @@ struct TimeStepperOptions {
     double tstop = 1e-6;               // 终止时间
     double dt = 1e-9;                  // 固定步长
     IntegrationMethod method = IntegrationMethod::BackwardEuler;
-    double gmin = 1e-12;               // 节点对地小电导，保证可解性
+    // P1-8: 共享 gmin 配置。Transient 当前仅消费 gmin.gmin（同伦字段保留
+    // 以备将来扩展，gminSteps 默认 0 即不启用）。
+    GminOptions gmin{};
+    // 内层 Newton 控制
+    uint32_t localNewtonMaxIter = 50;  // 单步内 Newton 最大迭代数
+    double dvmax = 0.2;                // 单步节点电压最大变化（V），PN 结保护
+    double abstol = 1e-9;              // 节点电压收敛绝对容差
+    double reltol = 1e-3;              // 节点电压收敛相对容差
+    bool failOnNonConverge = true;     // 内层 Newton 失败时是否硬退出（true=报错；false=继续推进）
 };
 
 struct TimePoint {

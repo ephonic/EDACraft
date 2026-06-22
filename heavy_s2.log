@@ -1,0 +1,27 @@
+Running main() from G:/vibe-codeing/simulator/build/_deps/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = LargeCircuitBsim4.S2_Bsim4CsNhGrid
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from LargeCircuitBsim4
+VA: 
+RESET igcMod to 0
+
+[ RUN      ] LargeCircuitBsim4.S2_Bsim4CsNhGrid
+VA: 
+RESET igcMod to 0
+
+[S2.grid] NH=3 dim=119 (dense) dc=1 hb=0 (it=80, 105.1 ms) |H1|=6.668
+VA: 
+RESET igcMod to 0
+
+[S2.grid] NH=5 dim=187 (dense) dc=1 hb=0 (it=80, 274.2 ms) |H1|=7.387
+VA: 
+RESET igcMod to 0
+
+[S2.grid] NH=7 dim=255 (GMRES) dc=1 hb=0 (it=80, 498.9 ms) |H1|=5.863
+[       OK ] LargeCircuitBsim4.S2_Bsim4CsNhGrid (884 ms)
+[----------] 1 test from LargeCircuitBsim4 (885 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (888 ms total)
+[  PASSED  ] 1 test.

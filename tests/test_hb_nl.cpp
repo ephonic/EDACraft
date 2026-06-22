@@ -106,8 +106,8 @@ TEST(HbNonlinear, DiodeRectifierContinuation) {
     HbConfig cfg; cfg.fundamental = 1e6; cfg.numHarmonics = 3;
     HbNlOptions opts;
     opts.sourceSteps = 10;
-    opts.gminSteps = 0;
-    opts.gmin = 1e-2;
+    opts.gmin.gminSteps = 0;
+    opts.gmin.gmin = 1e-2;
     auto r = solveHbNonlinear(2, devs, cfg, nullptr, opts);
     EXPECT_TRUE(r.converged);
     EXPECT_EQ(r.continuationSteps, 10u + 1);
@@ -200,7 +200,7 @@ TEST(HbNonlinear, Bsim4CommonSourceConverges) {
     HbConfig cfg; cfg.fundamental = 1e6; cfg.numHarmonics = 1;
     HbNlOptions opts;
     opts.sourceSteps = 0;
-    opts.gmin = 1e-12;
+    opts.gmin.gmin = 1e-12;
     opts.dvmax = 0.5;
     opts.maxIter = 50;
     auto r = solveHbNonlinear(3, devs, cfg, nullptr, opts);

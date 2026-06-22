@@ -30,11 +30,12 @@ extern "C" void rfsim_osdi_log(void* /*handle*/, char* msg, uint32_t lvl) {
         std::fprintf(stderr, "%s: %s\n", prefix, msg);
     }
     // OSDI spec says ownership of msg is transferred to the simulator and should
-    // be freed here.  However the OSDI library is compiled with a different C
-    // runtime (MSVC) than this simulator (MinGW), so freeing across the CRT
-    // boundary corrupts the heap.  We therefore intentionally leak the message
-    // buffer; log traffic is low enough that this is acceptable.
-    (void)0;
+    // be freed here.  Host and OpenVAF-generated dll both link UCRT (ucrtbase +
+    // VCRUNTIME140) under MSVC /MD, so they share the same process heap; the
+    // historical cross-CRT corruption that forced an intentional leak here is
+    // gone after Sprint S2's MSVC toolchain switch (see plan0621-v4.md §2,
+    // docs/known_issues.md KI-2).  Spec-compliant free now safe.
+    std::free(msg);
 }
 
 namespace rfsim {
@@ -133,6 +134,25 @@ bool OsdiLibrary::load(const std::string& path, std::string& errMessage) {
         *plog = (void*)&rfsim_osdi_log;
     }
     return true;
+}
+
+bool OsdiLibrary::reload(std::string& errMessage) {
+    if (path_.empty()) {
+        errMessage = "reload: no prior path stored";
+        return false;
+    }
+    std::string savedPath = path_;
+    // 释放当前句柄（FreeLibrary/dlclose）。即便 FreeLibrary 因引用计数 > 0
+    // 未真正卸载，host 端 handle_ 仍清零，后续 LoadLibrary 重新拿新句柄。
+    closeLib((LibHandle)handle_);
+    handle_ = nullptr;
+    descriptors_ = nullptr;
+    numDesc_ = 0;
+    verMajor_ = 0;
+    verMinor_ = 0;
+    path_.clear();
+    // 重新加载。失败时对象处于未加载态，调用方需自行处理。
+    return load(savedPath, errMessage);
 }
 
 const OsdiDescriptor* OsdiLibrary::findDescriptor(const std::string& name) const {

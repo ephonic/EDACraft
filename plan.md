@@ -126,10 +126,31 @@ struct HbConfig { double fundamental; uint32_t numHarmonics; };
   - 更系统的子空间重用：GMRES-DR/GCROT 风格，保存并正交化多轮 Krylov 基。
   - 更优预条件器：块对角（每谐波一个块）或 ILU 预条件。
 
+### Stage 2 — 大信号路径打通 / CLI 端到端可用 ✅（2026-06-20）
+- **诊断结果**：通过 `probe_react2.cpp` 实测，OSDI 0.3 的 `load_spice_rhs_tran` 输出**与 dt 无关**，等于 SPICE Newton RHS（α·(J·V−F+lim_rhs)），并不直接暴露 Q 或 dQ/dt。继续在 HB 残差里强行拼电荷不可行；大信号路径应改为 **Shooting → FFT** 提取谐波。
+- **新功能**：
+  - `realSamplesToHarmonics(t,NH)` 公开符号（assembly）。
+  - `shootingToHarmonics(ShootingResult, …)` 直接把周期波形 DFT 成 `HbResult`（solver/shooting）。
+  - CLI：`-L <osdi_lib_dir>` 选项；`.pss freq=<f> nh=<n> pts=<m>` 控制卡；`.hb` 在非线性场景自动尝试 `solveHbNonlinear`，若不收敛回退 Shooting-PSS；DC 不收敛时由电压源推导初值；PSS 即使未收敛也输出有限波形。
+  - `isAnalysisCard` 加入 `"pss"`。
+- **修复两个解析-装配链 Bug**：
+  - `device_factory.cpp` 解析 `Vx ... 0.7 SIN(0.7 0.1 1MEG)` 没装 Waveform、也没把 va 喂给 acMag → SIN 源既无法做瞬态、HB 也拿不到基频。补上 `setWaveform(...)`，并默认 `acMag=(va,0)`。
+  - `hb_jacobian.cpp` 中电压源 acMag 在 **每个 k≠0** 谐波都被加载，相当于把基频幅度同时驱进 H1/H2/H3…。改为仅 H=1 加载。
+- **新增测试**：
+  - `Shooting.ShootingHarmonicsMatchLinear`（线性 RC 与 `solveHbLinear` 5% 对照）。
+  - `Shooting.Bsim4CommonSourcePssConverges`（BSIM4 共源放大，断言波形有限、|Vd_H1|<VDD）。
+  - 真实端到端网表：`tests/netlists/bsim4_cs_pss.sp`，含 `.op / .pss / .hb`。CLI 跑通：HB 18 iter + 6 continuation steps 收敛，输出干净正弦栅压；PSS 输出有限谐波。
+- **基线**：68/68 测试通过（原 66 + 新增 2）。
+
+### Stage 2 后续候选（推迟）
+1. **DC 工作点 source-stepping**：BSIM4 直接 130 步 Newton 仍不收敛，CLI 当前用 VS 推导 fallback。要把 source-stepping 拉到 `solveDcOp`。
+2. **Shooting 替换 finite-diff Jacobian**：BSIM4 32 点 / 20 轮仍未完全闭合，应换 Broyden / 伴随法。
+3. **HB 强非线性精度**：在 Shooting 提供准稳态初值后，再做 jωQ 频域校正。
+
 ---
 
 ## 7. 测试策略
-单元测试（解析/装配/FFT/GMRES）+ 集成测试（RLC→二极管→PA→混频器）+ 对照基线（Ngspice/Qucs/ADS/HSPICE）。当前 57 单元测试通过。
+单元测试（解析/装配/FFT/GMRES）+ 集成测试（RLC→二极管→PA→混频器）+ 对照基线（Ngspice/Qucs/ADS/HSPICE）。当前 **68 单元测试通过**（截至 Stage 2 收尾）。
 
 ## 8. 风险
 - OSDI 接口语义对接（DC 符号调试中）

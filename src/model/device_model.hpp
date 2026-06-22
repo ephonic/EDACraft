@@ -13,6 +13,7 @@
 
 #include "../rfsim.hpp"
 #include "../circuit/circuit.hpp"
+#include "../assembly/matrix.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -68,6 +69,28 @@ public:
     // 矩阵非零模式，供装配预分配
     virtual void stamp_pattern(StampPattern& out) const = 0;
 
+    // V3-L0: pattern 固化后，器件从 SparseMatrix 取出自己每个 jacobian entry
+    // 对应的 values_ 指针，存入 stampPtrs_。后续 stampValues() 直接写指针 O(1)。
+    // numExternalNodes: 外部可见节点数上限（内部节点 NodeId > numExternalNodes
+    // 的 entry 指针为 nullptr，不进外部 MNA）。
+    // 默认实现：空（线性器件在 assembler 内联 stamp，不走此路径）。
+    virtual void bindStampPtrs(SparseMatrix& G, uint32_t numExternalNodes) {
+        (void)G; (void)numExternalNodes;
+    }
+
+    // V3-L0: 用预存的指针直接 stamp 雅可比值到 SparseMatrix。
+    // stampPtrs_ 绑定到特定 G 对象；若当前 G 不同（如 time_stepper 的局部 sys），
+    // stampPtrsBound() 返回 false，回退到 add() 路径。
+    [[nodiscard]] bool stampPtrsBound(const SparseMatrix& G) const {
+        return !stampPtrs_.empty() && boundG_ == &G;
+    }
+    void stampValuesViaPtrs(const std::vector<double>& jac) {
+        for (size_t e = 0; e < stampPtrs_.size() && e < jac.size(); ++e) {
+            if (stampPtrs_[e]) *stampPtrs_[e] += jac[e];
+        }
+    }
+    void clearStampPtrs() { stampPtrs_.clear(); boundG_ = nullptr; }
+
     // 在给定工作点评估贡献（残差 + 雅可比）。
     // 线性器件可忽略 op 中的值（导纳恒定）；非线性器件依赖 op。
     // 返回的 f/jac 维度对齐 nodes() 与 stamp_pattern。
@@ -94,6 +117,14 @@ public:
 
     // 实例名（带层级前缀），用于诊断与输出
     [[nodiscard]] virtual std::string name() const = 0;
+
+protected:
+    // V3-L0: 预存的 CSR values_ 指针，对齐 stamp_pattern 的 entries 顺序。
+    // bindStampPtrs 时由器件子类填入。stampValuesViaPtrs 直接写 *ptr += val。
+    // boundG_ 记录绑定的 G 对象——若 assembleTransient 用不同 G（如 time_stepper
+    // 的局部 sys），stampPtrsBound() 返回 false，回退到 add() 路径。
+    std::vector<double*> stampPtrs_;
+    const SparseMatrix* boundG_ = nullptr;
 };
 
 } // namespace rfsim

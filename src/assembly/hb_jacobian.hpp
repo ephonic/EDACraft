@@ -60,6 +60,13 @@ void realToHarmonic(const HbRealSystem& sys,
                     const std::vector<double>& x,
                     std::vector<std::vector<Complex>>& X);
 
+// 周期实信号采样 -> 单边谐波复幅度（k=0..NH）。
+// 输入 N=t.size() 个等间距采样覆盖一个完整周期；
+// 输出 h[0]=DC 直流分量，h[k>=1]=第 k 谐波单边复幅度
+//   即 v(t) ≈ Re{ h[0] + sum_{k=1..NH} h[k] e^{j k w0 t} }
+// 与现有 nodeHarmonicsToWaveform 互逆。要求 N >= 2*(NH+1)。
+std::vector<Complex> realSamplesToHarmonics(const std::vector<double>& t, uint32_t NH);
+
 } // namespace rfsim
 
 #endif // RFSIM_ASSEMBLY_HB_JACOBIAN_HPP

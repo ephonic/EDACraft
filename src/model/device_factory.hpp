@@ -7,6 +7,7 @@
 
 #include "device_model.hpp"
 #include "osdi/osdi_library.hpp"
+#include "osdi/osdi_client.hpp"
 #include "../circuit/circuit.hpp"
 #include "../parser/ast.hpp"
 #include <memory>
@@ -40,14 +41,22 @@ struct ParamEnv {
 // 从扁平化电路构造器件 wrapper 列表
 FactoryResult buildDeviceModels(const Circuit& circuit, const ParamEnv& env);
 
+// V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock。key 用 FlatModel*（同一 .model
+// 定义指向同一指针）；value 是首个实例 setup_model 后的 block。后续相同 key 的
+// OsdiModel 通过 useSharedModelBlock() 复用之，OsdiClient 跳过重复 setup_model。
+using OsdiModelBlockCache =
+    std::unordered_map<const FlatModel*, std::shared_ptr<OsdiModelBlock>>;
+
 // 单个器件构造（供测试单独调用）
 // internalNodeBase: OSDI 器件内部节点全局编号分配基数（in/out）。
+// blockCache: 可选的共享模型块缓存（nullptr = 每实例独占 block，旧行为）。
 std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
                                          const FlatModel* model,
                                          const ParamEnv& env,
                                          std::vector<std::shared_ptr<OsdiLibrary>>& libCache,
                                          NodeId& internalNodeBase,
-                                         Diagnostics& diags);
+                                         Diagnostics& diags,
+                                         OsdiModelBlockCache* blockCache = nullptr);
 
 } // namespace rfsim
 

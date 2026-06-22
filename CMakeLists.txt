@@ -1,6 +1,6 @@
 # rfsim — 射频仿真器（Harmonic Balance + OpenVAF/OSDI）
 # 详见 plan.md。本顶层 CMake 仅做项目级配置与子目录聚合。
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.22)  # SuiteSparse 7.x 要求 >=3.22
 
 project(rfsim
     VERSION 0.1.0
@@ -31,9 +31,30 @@ add_compile_options(
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wshadow>
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wnon-virtual-dtor>)
 
-# MSVC 用 UTF-8 源码 + C4267 等警告
+# MSVC 工具链：必须 /MD 与 OpenVAF 生成的 bsim4.dll (UCRT + VCRUNTIME140) 对齐，
+# 否则 host (msvcrt 静态 / mingw msvcrt) 与 dll (ucrtbase 动态) 跨堆 → 触发 KI-2
+# cross-CRT 堆腐败（osdi_log msg free 等场景）。详见 plan0621-v4.md §2 与
+# docs/known_issues.md KI-2。/permissive- 与 /W4 仅作用 C++，避免下渗到 KLU/AMD
+# 等纯 C 子项目（C 源走 /W1 降噪）。
 if(MSVC)
-    add_compile_options(/utf-8 /W4 /permissive-)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY
+        "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+    add_compile_options(
+        /utf-8                              # 源/执行字符集 UTF-8（无 BOM）
+        /Zc:__cplusplus                     # __cplusplus 报真实 C++ 版本
+        /Zc:preprocessor                    # 标准 conforming 预处理器
+        $<$<COMPILE_LANGUAGE:CXX>:/permissive->
+        $<$<COMPILE_LANGUAGE:CXX>:/W4>
+        $<$<COMPILE_LANGUAGE:C>:/W1>        # KLU/AMD 等 C 源降噪
+        /wd4244 /wd4267 /wd4305             # size_t↔int / double→float 隐式转换
+        /wd4191                             # FARPROC → 函数指针 unsafe cast (GetProcAddress)
+        /wd4127                             # gtest 宏中 (cond) 常量条件
+        /wd4459)                            # 局部变量屏蔽上层声明
+
+    add_compile_definitions(
+        _CRT_SECURE_NO_WARNINGS             # getenv / fprintf 等不被 deprecate
+        _WINSOCK_DEPRECATED_NO_WARNINGS)
 endif()
 
 # 位置无关代码（便于后续构建共享库/插件）
@@ -47,6 +68,9 @@ configure_file(
     ${CMAKE_SOURCE_DIR}/cmake/rfsim_config.h.in
     ${CMAKE_BINARY_DIR}/generated/rfsim/rfsim_config.h
     @ONLY)
+
+# ---- 第三方依赖：SuiteSparse KLU（Shooting 稀疏直接求解器）------------------
+include(${CMAKE_SOURCE_DIR}/cmake/SuiteSparseKLU.cmake)
 
 # ---- 子目录 -----------------------------------------------------------------
 add_subdirectory(src)

@@ -1,0 +1,54 @@
+Running main() from G:/vibe-codeing/simulator/build/_deps/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = LargeCircuitBsim4.A1_InverterChain15_HEAVY
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from LargeCircuitBsim4
+VA: 
+RESET igcMod to 0
+
+[ RUN      ] LargeCircuitBsim4.A1_InverterChain15_HEAVY
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
+VA: 
+RESET igcMod to 0
+
