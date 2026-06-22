@@ -600,7 +600,7 @@ TEST(Shooting, CurrentMirrorArray8_HEAVY) {
         // V3-MR: 镜像管设 multi-rate K=4（慢器件，每 4 步 eval 一次）
         // V3-MR: 镜像管设 multi-rate K=2（延迟 swapState，eval 每步做）
         // K=1 时与原行为 bit-identical；K>1 时 state 延迟推进
-        m->setRateRatio(2);
+        m->setRateRatio(4);
         devs.push_back(std::move(m));
     }
 

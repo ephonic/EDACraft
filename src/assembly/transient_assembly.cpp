@@ -142,9 +142,27 @@ bool assembleTransient(uint32_t numNodes,
             op.v = nodeV; op.v_prev = prevNodeV;
             op.time = t; op.dt = dt; op.method = method;
             DeviceContribution dc;
-            // V3-MR: multi-rate bypass 在 assembleTransient 层面不支持（Shooting FD 一致性）
-            // multi-rate 仅在 time_stepper 的 standalone transient 中通过延迟 swapState 生效
-            osdi->evalTransient(op, dc);
+            // V3-MR Phase3: 自适应 multi-rate——跳过 eval 复用 cache
+            // 但端电压变化超 mrRelTol_ 时强制重新 eval
+            if (osdi->mrNeedsEval()) {
+                osdi->evalTransient(op, dc);
+                osdi->mrMarkEvalDone();
+            } else {
+                osdi->mrCheckVoltages(nodeV);  // 自适应检查
+                if (osdi->mrNeedsEval()) {
+                    osdi->evalTransient(op, dc);  // 电压变化大，重新 eval
+                    osdi->mrMarkEvalDone();
+                } else {
+                    // cache 有效且电压稳定——复用
+                    // 注意: resetLimiting 会清 evalCached_，此时不走 bypass
+                    if (osdi->evalCached()) {
+                        osdi->evalTransientCached(dc);
+                    } else {
+                        osdi->evalTransient(op, dc);
+                        osdi->mrMarkEvalDone();
+                    }
+                }
+            }
             for (uint32_t k = 0; k < nNodes && k < nds.size() && k < dc.f.size(); ++k) {
                 if (nds[k] != 0 && nds[k] <= numNodes) sys.F[nds[k] - 1] += dc.f[k];
             }

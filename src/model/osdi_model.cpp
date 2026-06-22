@@ -1,6 +1,7 @@
 // osdi_model.cpp — OSDI 器件 wrapper 实现
 #include "osdi_model.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <iostream>

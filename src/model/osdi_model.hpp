@@ -70,10 +70,26 @@ public:
     //   K>1 时器件在 K 个快步长内只 eval 一次，其余 K-1 步复用缓存。
     // mrNeedsEval(): 本步是否需要重新 eval（由积分循环调用）。
     // mrAdvance(): 步末推进 stepCounter，返回是否到达 K 步（需 swapState）。
+    // mrCheckVoltages(): 自适应检查——端电压变化超 mrRelTol_ 则强制重新 eval。
     void setRateRatio(uint32_t K) { mrRateRatio_ = K > 0 ? K : 1; mrStepCounter_ = 0; mrNeedsEval_ = true; }
+    void setMrRelTol(double tol) { mrRelTol_ = tol; }
     [[nodiscard]] uint32_t rateRatio() const noexcept { return mrRateRatio_; }
     [[nodiscard]] bool mrNeedsEval() const noexcept { return mrNeedsEval_; }
     void mrMarkEvalDone() { mrNeedsEval_ = false; }
+    // 自适应：检查当前端电压 vs lastTermV_，变化超阈值则设 needsEval
+    void mrCheckVoltages(const std::vector<double>& nodeV) {
+        if (mrNeedsEval_ || mrRateRatio_ <= 1) return;
+        if (lastTermV_.size() != nodes_.size()) { mrNeedsEval_ = true; return; }
+        for (size_t k = 0; k < nodes_.size(); ++k) {
+            double vk = (nodes_[k] < nodeV.size()) ? nodeV[nodes_[k]] : 0.0;
+            double ref = std::fabs(lastTermV_[k]);
+            double scale = std::max(ref, 1.0);  // 避免除零
+            if (std::fabs(vk - lastTermV_[k]) > mrRelTol_ * scale) {
+                mrNeedsEval_ = true;
+                return;
+            }
+        }
+    }
     // 步末推进：stepCounter++，若达到 K 则返回 true（需 swapState + 重置 needsEval）
     bool mrAdvance() {
         ++mrStepCounter_;
@@ -85,6 +101,7 @@ public:
         return false;  // 慢器件跳过 swapState
     }
     void mrForceEval() { mrNeedsEval_ = true; }  // FD 扰动路径用
+    [[nodiscard]] bool evalCached() const { return evalCached_; }  // V3-MR: cache 是否有效
 
     [[nodiscard]] bool ready() const noexcept { return client_ && client_->ready(); }
     [[nodiscard]] const OsdiDescriptor* descriptor() const noexcept { return descriptor_; }
@@ -191,6 +208,7 @@ private:
     uint32_t mrRateRatio_ = 1;      // K = dt_slow / dt_fast
     uint32_t mrStepCounter_ = 0;    // [0..K-1]
     bool mrNeedsEval_ = true;       // 本步是否需 eval
+    double mrRelTol_ = 1e-3;        // 自适应电压变化阈值（相对）
 };
 
 } // namespace rfsim

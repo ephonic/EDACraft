@@ -345,7 +345,9 @@ ShootingResult solveShooting(uint32_t numNodes,
         for (const auto& d : devices)
             if (auto* o = dynamic_cast<OsdiModel*>(d.get())) {
                 o->resetLimiting();
-                o->mrForceEval();  // V3-MR: FD 扰动路径强制 eval
+                // V3-MR Phase3: 不强制 mrForceEval——让自适应 mrCheckVoltages 决定
+                // FD 扰动 nodeVPert 与 nodeV 只差 eps=1e-7，mrCheckVoltages 会判定稳定→bypass
+                // 这保证主路径和 FD 路径使用一致的 eval 决策
             }
     };
     resetAllLimiting();
