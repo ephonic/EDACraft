@@ -597,6 +597,10 @@ TEST(Shooting, CurrentMirrorArray8_HEAVY) {
                 {"l", ParamValue{ParamValue::Kind::Number, 130e-9, "", SourceLoc{}}}
             }, bsim4ModelParams());
         ASSERT_TRUE(m->initialize(diags, base)) << "M" << k << " init failed";
+        // V3-MR: 镜像管设 multi-rate K=4（慢器件，每 4 步 eval 一次）
+        // V3-MR: 镜像管设 multi-rate K=2（延迟 swapState，eval 每步做）
+        // K=1 时与原行为 bit-identical；K>1 时 state 延迟推进
+        m->setRateRatio(2);
         devs.push_back(std::move(m));
     }
 

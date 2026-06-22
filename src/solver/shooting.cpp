@@ -55,7 +55,16 @@ void updateDeviceStates(const std::vector<std::unique_ptr<DeviceModel>>& devices
     op.dt = dt;
     op.method = method;
     for (const auto& d : devices) {
-        if (d->hasTransientState()) d->updateTransientState(op);
+        if (!d->hasTransientState()) continue;
+        // V3-MR: multi-rate——只对到达 K 步的器件调 swapState
+        if (auto* osdi = dynamic_cast<OsdiModel*>(d.get())) {
+            if (osdi->mrAdvance()) {
+                osdi->updateTransientState(op);  // swapState + invalidateEvalCache
+            }
+            // 慢器件未到 K 步：跳过 swapState，保留 prevState_/nextState_
+        } else {
+            d->updateTransientState(op);  // 非 OSDI 器件：正常 swap
+        }
     }
 }
 
@@ -334,7 +343,10 @@ ShootingResult solveShooting(uint32_t numNodes,
     // shooting 的内层 transient evalTransient。
     auto resetAllLimiting = [&]() {
         for (const auto& d : devices)
-            if (auto* o = dynamic_cast<OsdiModel*>(d.get())) o->resetLimiting();
+            if (auto* o = dynamic_cast<OsdiModel*>(d.get())) {
+                o->resetLimiting();
+                o->mrForceEval();  // V3-MR: FD 扰动路径强制 eval
+            }
     };
     resetAllLimiting();
 

@@ -65,8 +65,37 @@ public:
     void setTemperature(double tempK) { temperature_ = tempK; }
     [[nodiscard]] double temperature() const noexcept { return temperature_; }
 
+    // V3-MR: multi-rate 仿真接口。
+    // setRateRatio(K): 慢器件的步长是快器件的 K 倍（K=1=统一步长）。
+    //   K>1 时器件在 K 个快步长内只 eval 一次，其余 K-1 步复用缓存。
+    // mrNeedsEval(): 本步是否需要重新 eval（由积分循环调用）。
+    // mrAdvance(): 步末推进 stepCounter，返回是否到达 K 步（需 swapState）。
+    void setRateRatio(uint32_t K) { mrRateRatio_ = K > 0 ? K : 1; mrStepCounter_ = 0; mrNeedsEval_ = true; }
+    [[nodiscard]] uint32_t rateRatio() const noexcept { return mrRateRatio_; }
+    [[nodiscard]] bool mrNeedsEval() const noexcept { return mrNeedsEval_; }
+    void mrMarkEvalDone() { mrNeedsEval_ = false; }
+    // 步末推进：stepCounter++，若达到 K 则返回 true（需 swapState + 重置 needsEval）
+    bool mrAdvance() {
+        ++mrStepCounter_;
+        if (mrStepCounter_ >= mrRateRatio_) {
+            mrStepCounter_ = 0;
+            mrNeedsEval_ = true;
+            return true;  // 需 swapState
+        }
+        return false;  // 慢器件跳过 swapState
+    }
+    void mrForceEval() { mrNeedsEval_ = true; }  // FD 扰动路径用
+
     [[nodiscard]] bool ready() const noexcept { return client_ && client_->ready(); }
     [[nodiscard]] const OsdiDescriptor* descriptor() const noexcept { return descriptor_; }
+
+    // V3-MR: multi-rate bypass——从 V3-L1 cache 复用 f/jac，不调 desc_->eval。
+    // 调用前需确保 mrNeedsEval()==false 且 lastF_/lastJac_ 有效。
+    void evalTransientCached(DeviceContribution& out) const {
+        out.f = lastF_;
+        out.jac = lastJac_;
+        evalBypassed_ = true;
+    }
 
     // V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock。
     // 在 initialize() 之前注入预存的 block；OsdiClient::init 检测到 block->setup
@@ -155,6 +184,11 @@ private:
     static double bypassTolDefault();  // 读 RFSIM_BYPASS_TOL，默认 1e-9
     void invalidateEvalCache() { evalCached_ = false; }
     bool bypassEnabled() const { return bypassTol_ > 0.0; }
+
+    // V3-MR: multi-rate 状态
+    uint32_t mrRateRatio_ = 1;      // K = dt_slow / dt_fast
+    uint32_t mrStepCounter_ = 0;    // [0..K-1]
+    bool mrNeedsEval_ = true;       // 本步是否需 eval
 };
 
 } // namespace rfsim
