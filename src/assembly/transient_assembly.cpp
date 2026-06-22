@@ -142,10 +142,8 @@ bool assembleTransient(uint32_t numNodes,
             op.v = nodeV; op.v_prev = prevNodeV;
             op.time = t; op.dt = dt; op.method = method;
             DeviceContribution dc;
-            // V3-MR: multi-rate 当前实现——eval 每步做（保证 f/jac 正确），
-            // swapState 推迟到 K 步（updateDeviceStates 中按 mrAdvance 控制）。
-            // 跳过 eval 导致 Jacobian 不匹配→Newton 发散，后续 Phase 2 探索
-            // 仅复用 f + 重新算 jac 的分离路径。
+            // V3-MR: multi-rate bypass 在 assembleTransient 层面不支持（Shooting FD 一致性）
+            // multi-rate 仅在 time_stepper 的 standalone transient 中通过延迟 swapState 生效
             osdi->evalTransient(op, dc);
             for (uint32_t k = 0; k < nNodes && k < nds.size() && k < dc.f.size(); ++k) {
                 if (nds[k] != 0 && nds[k] <= numNodes) sys.F[nds[k] - 1] += dc.f[k];

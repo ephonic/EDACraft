@@ -82,6 +82,9 @@ public:
     // 返回 EVAL_RET_FLAG_*。
     uint32_t evalTransient(const std::vector<double>& prevSolve,
                            double t, double dt, double alpha, uint32_t extraFlags = 0);
+    // V3-MR Phase2: 只算 residual 不算 jacobian（jacobian 复用上次）
+    uint32_t evalTransientResidOnly(const std::vector<double>& prevSolve,
+                                    double t, double dt, double alpha);
 
     // 取回电阻性残差（电流注入各节点）到 dst（长度 = num_nodes）
     void loadResidualResist(std::vector<double>& dst) const;

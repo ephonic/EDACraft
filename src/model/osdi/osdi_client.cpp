@@ -396,6 +396,34 @@ uint32_t OsdiClient::evalTransient(const std::vector<double>& prevSolve,
     return ret;
 }
 
+// V3-MR Phase2: 只算 residual 不算 jacobian（省 jacobian 计算开销）
+uint32_t OsdiClient::evalTransientResidOnly(const std::vector<double>& prevSolve,
+                                             double t, double dt, double alpha) {
+    if (!desc_ || !desc_->eval || !instData_) return EVAL_RET_FLAG_FATAL;
+    for (double v : prevSolve)
+        if (std::isnan(v) || std::isinf(v)) return EVAL_RET_FLAG_FATAL;
+    (void)dt; (void)alpha;
+
+    const std::vector<double>* solvePtr = ensureSolveBuf(nodes_, prevSolve, solveBuf_);
+
+    OsdiSimInfo info{};
+    info.paras = defaultSimParas().build();
+    info.abstime = t;
+    info.prev_solve = const_cast<double*>(solvePtr->data());
+    info.prev_state = prevState_.empty() ? nullptr : prevState_.data();
+    info.next_state = nextState_.empty() ? nullptr : nextState_.data();
+    // 只算 residual + lim_rhs，不算 jacobian
+    uint32_t flags = CALC_RESIST_RESIDUAL | CALC_REACT_RESIDUAL |
+                     CALC_RESIST_LIM_RHS | CALC_REACT_LIM_RHS |
+                     ENABLE_LIM | ANALYSIS_TRAN;
+    if (!limitingInitialized_) flags |= INIT_LIM;
+    info.flags = flags;
+
+    uint32_t ret = desc_->eval((void*)lib_.get(), instData_, modelBlock_->modelData, &info);
+    limitingInitialized_ = true;
+    return ret;
+}
+
 namespace {
 
 // V2-γ C3 修复：OSDI load_residual_resist / load_spice_rhs / load_limit_rhs

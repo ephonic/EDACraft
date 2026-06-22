@@ -96,6 +96,8 @@ public:
         out.jac = lastJac_;
         evalBypassed_ = true;
     }
+    // V3-MR Phase2: 只算 residual（调 desc_->eval 但不算 jacobian），jac 从 cache 复用
+    void evalTransientResidOnly(const TransientOpPoint& op, DeviceContribution& out) const;
 
     // V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock。
     // 在 initialize() 之前注入预存的 block；OsdiClient::init 检测到 block->setup

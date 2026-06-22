@@ -38,7 +38,15 @@ void updateDeviceStates(const std::vector<std::unique_ptr<DeviceModel>>& devices
     op.dt = dt;
     op.method = method;
     for (const auto& d : devices) {
-        if (d->hasTransientState()) d->updateTransientState(op);
+        if (!d->hasTransientState()) continue;
+        // V3-MR: multi-rate——只对到达 K 步的器件调 swapState
+        if (auto* osdi = dynamic_cast<OsdiModel*>(d.get())) {
+            if (osdi->mrAdvance()) {
+                osdi->updateTransientState(op);
+            }
+        } else {
+            d->updateTransientState(op);
+        }
     }
 }
 

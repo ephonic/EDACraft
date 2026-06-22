@@ -501,6 +501,36 @@ void OsdiModel::evalTransient(const TransientOpPoint& op, DeviceContribution& ou
     }
 }
 
+// V3-MR Phase2: 只算 residual 不算 jacobian——省 jacobian 计算开销。
+// residual 用当前工作点重新算（调 desc_->eval 但去掉 jacobian flag），
+// jacobian 复用上次完整 eval 的 lastJac_。
+void OsdiModel::evalTransientResidOnly(const TransientOpPoint& op, DeviceContribution& out) const {
+    if (!client_ || !client_->ready() || !descriptor_) {
+        out.f.assign(nodes_.size(), 0.0);
+        out.jac.clear();
+        return;
+    }
+    std::vector<uint32_t> nodeMap(nodes_.size(), 0);
+    for (uint32_t i = 0; i < nodes_.size(); ++i) nodeMap[i] = nodes_[i];
+    const_cast<OsdiClient*>(client_.get())->setNodeMapping(nodeMap);
+
+    double alpha = 1.0;
+    (void)op.dt;
+    uint32_t ret = const_cast<OsdiClient*>(client_.get())->evalTransientResidOnly(
+        op.v, op.time, op.dt, alpha);
+    (void)ret;
+
+    // 取回 residual（当前工作点）
+    std::vector<double> rhs;
+    client_->loadSpiceRhsTran(rhs, op.v, alpha);
+    out.f.assign(rhs.size(), 0.0);
+    for (size_t i = 0; i < rhs.size(); ++i) out.f[i] = -rhs[i];
+
+    // jacobian 复用上次完整 eval 的缓存
+    out.jac = lastJac_;
+    evalBypassed_ = true;
+}
+
 void OsdiModel::initializeTransientState(const std::vector<double>& nodeV) {
     invalidateEvalCache();  // V3-L1: 状态初始化，缓存失效
     if (!client_ || !client_->ready() || !descriptor_) {
