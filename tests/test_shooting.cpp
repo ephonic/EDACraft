@@ -646,4 +646,110 @@ TEST(Shooting, CurrentMirrorArray8_HEAVY) {
     EXPECT_LT(vOutFund, 2.0) << "output exceeds VDD";
 }
 
+// ============================================================================
+// V3-MR Phase4: 大电路自动速率分级测试
+//
+// 50 个镜像管电流镜阵列 + 自动 multi-rate 分级。
+// 1 个参考管（gate 接 sine）+ 50 个镜像管（gate 接 DC 偏置）。
+// 镜像管端电压几乎不变 → 自动分级应给大 K → eval 大幅减少。
+// ============================================================================
+TEST(Shooting, CurrentMirrorArray10_AUTO_HEAVY) {
+    if (!std::getenv("RFSIM_FORCE_HEAVY")) {
+        GTEST_SKIP() << "HEAVY gated (set RFSIM_FORCE_HEAVY=1)";
+    }
+
+    std::string path = defaultModelPath("RFSIM_BSIM4_LIB", "models/bsim4.dll");
+    OsdiLibrary lib;
+    std::string err;
+    if (!lib.load(path, err)) GTEST_SKIP() << "cannot load bsim4: " << err;
+    auto libShared = std::make_shared<OsdiLibrary>(std::move(lib));
+    const OsdiDescriptor* d = libShared->descriptors();
+
+    const int N = 10;
+    std::vector<std::unique_ptr<DeviceModel>> devs;
+
+    // VDD = 1.5V
+    devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.5));
+
+    // 参考 gate：0.7V DC + 10mV AC @ 1MHz
+    const double freq = 1e6;
+    auto vref = std::make_unique<VoltageSource>("vref", 2, 0, 0.7);
+    Waveform wf; wf.type = Waveform::SIN; wf.vo = 0.7; wf.va = 0.01; wf.freq = freq;
+    vref->setWaveform(wf);
+    devs.push_back(std::move(vref));
+
+    Diagnostics diags;
+    NodeId base = 200;  // 远离 drain 范围，避免内部节点冲突
+
+    // 参考管：diode-connected
+    auto mref = std::make_unique<OsdiModel>("mref", std::vector<NodeId>{2, 2, 0, 0},
+        libShared, d, ParamList{
+            {"w", ParamValue{ParamValue::Kind::Number, 1e-6, "", SourceLoc{}}},
+            {"l", ParamValue{ParamValue::Kind::Number, 130e-9, "", SourceLoc{}}}
+        }, bsim4ModelParams());
+    ASSERT_TRUE(mref->initialize(diags, base));
+    devs.push_back(std::move(mref));
+
+    // 参考管限流电阻
+    devs.push_back(std::make_unique<Resistor>("rref", 1, 2, 10e3));
+
+    // N 个镜像管：gate=node2, drain 各接 R 到 VDD
+    for (int k = 1; k <= N; ++k) {
+        NodeId drainK = static_cast<NodeId>(2 + k);  // node3..node52
+        char rn[24]; std::snprintf(rn, sizeof(rn), "rd%d", k);
+        devs.push_back(std::make_unique<Resistor>(rn, 1, drainK, 10e3));
+        char mn[24]; std::snprintf(mn, sizeof(mn), "m%d", k);
+        auto m = std::make_unique<OsdiModel>(mn, std::vector<NodeId>{drainK, 2, 0, 0},
+            libShared, d, ParamList{
+                {"w", ParamValue{ParamValue::Kind::Number, 1e-6, "", SourceLoc{}}},
+                {"l", ParamValue{ParamValue::Kind::Number, 130e-9, "", SourceLoc{}}}
+            }, bsim4ModelParams());
+        ASSERT_TRUE(m->initialize(diags, base)) << "M" << k << " init failed";
+        // V3-MR Phase4: K=2（延迟 swapState 改善大电路 Shooting 收敛性）
+        m->setRateRatio(2);
+        m->setMrRelTol(1e-3);
+        devs.push_back(std::move(m));
+    }
+
+    NodeId maxNode = static_cast<NodeId>(2 + N);
+
+    // DC OP warm start
+    DcOpOptions dcOpts;
+    dcOpts.gmin.gminSteps = 10;
+    dcOpts.maxIterations = 300;
+    auto dc = solveDcOp(maxNode, devs, dcOpts);
+    std::vector<double> initV(maxNode + 1, 0.0);
+    if (dc.converged && dc.nodeVoltages.size() > maxNode) initV = dc.nodeVoltages;
+
+    // Shooting PSS
+    ShootingConfig pcfg;
+    pcfg.fundamental = freq;
+    pcfg.numTimePoints = 32;
+    pcfg.method = IntegrationMethod::BackwardEuler;
+
+    ShootingOptions popts;
+    popts.maxIter = 8;
+    popts.localNewtonDvMax = 0.3;
+
+    auto pss = solveShooting(maxNode, devs, pcfg, &initV, popts);
+    rfsim::test::recordBench("Shooting", "CurrentMirrorArray10_AUTO", "Shooting", pss.bench);
+    ASSERT_TRUE(pss.converged) << "CurrentMirrorArray N=10 Shooting did not converge";
+    ASSERT_FALSE(pss.waveform.points.empty());
+
+    for (const auto& tp : pss.waveform.points) {
+        for (double xi : tp.x) {
+            ASSERT_TRUE(std::isfinite(xi)) << "non-finite waveform value";
+        }
+    }
+
+    auto hb = shootingToHarmonics(pss, maxNode, 3, freq);
+    ASSERT_TRUE(hb.ok);
+    double vOutFund = std::abs(hb.nodeVoltages[3].v[1]);
+    std::fprintf(stderr, "[MirrorArray10_AUTO] N=%d vOutFund=%.4g iters=%u\n",
+        N, vOutFund, pss.iterations);
+    EXPECT_TRUE(std::isfinite(vOutFund));
+    EXPECT_GT(vOutFund, 1e-8) << "output fundamental suspiciously zero";
+    EXPECT_LT(vOutFund, 2.0) << "output exceeds VDD";
+}
+
 } // namespace rfsim

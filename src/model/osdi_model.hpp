@@ -71,8 +71,9 @@ public:
     // mrNeedsEval(): 本步是否需要重新 eval（由积分循环调用）。
     // mrAdvance(): 步末推进 stepCounter，返回是否到达 K 步（需 swapState）。
     // mrCheckVoltages(): 自适应检查——端电压变化超 mrRelTol_ 则强制重新 eval。
-    void setRateRatio(uint32_t K) { mrRateRatio_ = K > 0 ? K : 1; mrStepCounter_ = 0; mrNeedsEval_ = true; }
+    void setRateRatio(uint32_t K) { mrRateRatio_ = K > 0 ? K : 1; mrStepCounter_ = 0; mrNeedsEval_ = true; mrForcedEvalCount_ = 0; }
     void setMrRelTol(double tol) { mrRelTol_ = tol; }
+    void setMrAutoTune(bool enable) { mrAutoTune_ = enable; if (enable) mrRateRatio_ = std::max(mrRateRatio_, (uint32_t)1); }
     [[nodiscard]] uint32_t rateRatio() const noexcept { return mrRateRatio_; }
     [[nodiscard]] bool mrNeedsEval() const noexcept { return mrNeedsEval_; }
     void mrMarkEvalDone() { mrNeedsEval_ = false; }
@@ -83,22 +84,35 @@ public:
         for (size_t k = 0; k < nodes_.size(); ++k) {
             double vk = (nodes_[k] < nodeV.size()) ? nodeV[nodes_[k]] : 0.0;
             double ref = std::fabs(lastTermV_[k]);
-            double scale = std::max(ref, 1.0);  // 避免除零
+            double scale = std::max(ref, 1.0);
             if (std::fabs(vk - lastTermV_[k]) > mrRelTol_ * scale) {
                 mrNeedsEval_ = true;
+                ++mrForcedEvalCount_;  // 自动分级：记录强制 eval 次数
                 return;
             }
         }
     }
     // 步末推进：stepCounter++，若达到 K 则返回 true（需 swapState + 重置 needsEval）
+    // V3-MR Phase4: 自动速率分级——K 步到时检查 forcedEvalCount：
+    //   forcedEvalCount == 0 → K 步全 bypass，电压稳定 → K *= 2（上限 16）
+    //   forcedEvalCount >= K/2 → 超半数步触发强制 eval → K = 1（回退快步长）
     bool mrAdvance() {
         ++mrStepCounter_;
         if (mrStepCounter_ >= mrRateRatio_) {
             mrStepCounter_ = 0;
             mrNeedsEval_ = true;
-            return true;  // 需 swapState
+            // 自动分级
+            if (mrAutoTune_) {
+                if (mrForcedEvalCount_ == 0 && mrRateRatio_ < 16) {
+                    mrRateRatio_ *= 2;  // 电压稳定，加大步长
+                } else if (mrForcedEvalCount_ >= (mrRateRatio_ + 1) / 2) {
+                    mrRateRatio_ = 1;   // 电压变化频繁，回退快步长
+                }
+                mrForcedEvalCount_ = 0;
+            }
+            return true;
         }
-        return false;  // 慢器件跳过 swapState
+        return false;
     }
     void mrForceEval() { mrNeedsEval_ = true; }  // FD 扰动路径用
     [[nodiscard]] bool evalCached() const { return evalCached_; }  // V3-MR: cache 是否有效
@@ -209,6 +223,8 @@ private:
     uint32_t mrStepCounter_ = 0;    // [0..K-1]
     bool mrNeedsEval_ = true;       // 本步是否需 eval
     double mrRelTol_ = 1e-3;        // 自适应电压变化阈值（相对）
+    bool mrAutoTune_ = false;       // V3-MR Phase4: 自动速率分级
+    uint32_t mrForcedEvalCount_ = 0; // K 步周期内强制 eval 次数
 };
 
 } // namespace rfsim
