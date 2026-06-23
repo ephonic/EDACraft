@@ -62,7 +62,7 @@ public:
     [[nodiscard]] bool finalized() const noexcept { return finalized_; }
 
     // V3-L0: pattern 固化模式。
-    void commitPattern() { patternCommitted_ = finalized_; }
+    void commitPattern() { patternCommitted_ = finalized_; if (patternCommitted_) data_.clear(); }  // H10: 清 data_ 避免残留
     [[nodiscard]] bool patternCommitted() const noexcept { return patternCommitted_; }
     [[nodiscard]] double* ptrFor(uint32_t i, uint32_t j);
     void zeroCommitted() {

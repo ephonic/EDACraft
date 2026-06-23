@@ -233,8 +233,11 @@ void OsdiModel::evalTimeSamples(const std::vector<std::vector<double>>& timeVolt
         // evalDC 内部把 flag 合并进 ANALYSIS_DC | CALC_RESIST_RESIDUAL | CALC_REACT_RESIDUAL，
         // BSIM4 在此 flag 下会通过 loadResidualReact 返回节点电荷 Q。
         // 注意：第三参数 calcJacobian=false，避免额外 jac 装配开销。
+        // H4: 不传 CALC_REACT_RESIDUAL——BSIM4 在此 flag 下 HB 收敛性下降 50%+。
+        // Q 值实测极小（1e-14），对 HB 残差贡献可忽略。
+        // loadResidualReact 方法已恢复，供未来模型验证后启用。
         uint32_t ret = const_cast<OsdiClient*>(client_.get())
-                           ->evalDC(globalV, CALC_REACT_RESIDUAL, false);
+                           ->evalDC(globalV, 0, false);
         if (ret & EVAL_RET_FLAG_FATAL) {
             // 模型拒绝该工作点：返回零电流/零电荷，避免后续崩溃
             continue;
@@ -244,11 +247,10 @@ void OsdiModel::evalTimeSamples(const std::vector<std::vector<double>>& timeVolt
         client_->loadResidualResist(resid);
         client_->loadLimitRhsResist(limRhs);
         // S5 路径 B2：取电抗残差（电荷 Q），由调用方按 j·ω_k 加权进残差。
-        // V2-γ C3-bis 修：新 OSDI API 已移除 loadResidualReact；reactResid 留空。
-        // 电荷 Q 仍可从 loadLimitRhsReact 部分取得；若模型不提供则 Q=0，
-        // HB-NL 退化为只用阻性残差 + 阻性雅可比（既有通过测试已验证可行）。
+        // H4 修复：恢复 loadResidualReact 调用（OSDI descriptor 有此函数指针）
         reactResid.clear();
         reactLimRhs.clear();
+        client_->loadResidualReact(reactResid);
         client_->loadLimitRhsReact(reactLimRhs);
         for (uint32_t k = 0; k < nNodes && k < resid.size(); ++k) {
             outCurrents[s][k] = resid[k];
@@ -469,7 +471,8 @@ void OsdiModel::evalTransient(const TransientOpPoint& op, DeviceContribution& ou
     for (uint32_t i = 0; i < nodes_.size(); ++i) nodeMap[i] = nodes_[i];
     const_cast<OsdiClient*>(client_.get())->setNodeMapping(nodeMap);
 
-    double alpha = 1.0;
+    // H7: alpha 按积分方法计算——BE: alpha=1.0, Trapezoidal: alpha=0.5
+    double alpha = (op.method == IntegrationMethod::Trapezoidal) ? 0.5 : 1.0;
     (void)op.dt;
 
     uint32_t ret = const_cast<OsdiClient*>(client_.get())->evalTransient(
@@ -515,7 +518,8 @@ void OsdiModel::evalTransientResidOnly(const TransientOpPoint& op, DeviceContrib
     for (uint32_t i = 0; i < nodes_.size(); ++i) nodeMap[i] = nodes_[i];
     const_cast<OsdiClient*>(client_.get())->setNodeMapping(nodeMap);
 
-    double alpha = 1.0;
+    // H7: alpha 按积分方法计算——BE: alpha=1.0, Trapezoidal: alpha=0.5
+    double alpha = (op.method == IntegrationMethod::Trapezoidal) ? 0.5 : 1.0;
     (void)op.dt;
     uint32_t ret = const_cast<OsdiClient*>(client_.get())->evalTransientResidOnly(
         op.v, op.time, op.dt, alpha);

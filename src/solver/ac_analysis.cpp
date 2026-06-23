@@ -2,8 +2,10 @@
 #include "ac_analysis.hpp"
 
 #include "../model/builtin_devices.hpp"
+#include "../model/osdi_model.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace rfsim {
 
@@ -107,6 +109,19 @@ AcResult solveAc(uint32_t numNodes,
         std::vector<Complex> b(n, Complex(0, 0));
 
         // stamp 器件导纳
+        // H5: 检测非线性器件（OSDI），AC 分析当前不支持线性化
+        static bool warnedNonlinear = false;
+        for (const auto& d : devices) {
+            if (dynamic_cast<const OsdiModel*>(d.get())) {
+                if (!warnedNonlinear) {
+                    std::fprintf(stderr,
+                        "[AC] 警告: 电路含非线性器件 (%s)，AC 分析将跳过该器件。\n"
+                        "      完整 AC 需先做 DC OP 线性化（待实现）。\n",
+                        d->name().c_str());
+                    warnedNonlinear = true;
+                }
+            }
+        }
         for (const auto& d : devices) {
             const auto& nds = d->nodes();
             uint32_t n1 = nds.size() > 0 ? nds[0] : 0;

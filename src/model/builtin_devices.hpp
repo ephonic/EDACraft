@@ -149,6 +149,8 @@ public:
     std::string name() const override { return name_; }
     [[nodiscard]] double inductance() const noexcept { return l_; }
     [[nodiscard]] Complex admittance(double omega) const noexcept {
+        // H6: omega=0 时返回大电导（短路），避免除零
+        if (omega == 0.0) return Complex(1e6, 0.0);
         // 1/(jωL) = -j/(ωL)
         return Complex(0.0, -1.0 / (omega * l_));
     }

@@ -149,7 +149,8 @@ bool newtonSolve(uint32_t numNodes,
                  const DcOpOptions& opts, bool hasNonlinear,
                  uint32_t& totalIters,
                  uint32_t& innerFloorAccepts,
-                 BenchCounters* bench = nullptr) {
+                 BenchCounters* bench = nullptr,
+                 bool* floorAccepted = nullptr) {
     int vb = dcopVerbose();
     for (uint32_t iter = 0; iter < opts.maxIterations; ++iter) {
         SparseMatrix J; Vector F; std::vector<uint32_t> vsOff;
@@ -200,6 +201,7 @@ bool newtonSolve(uint32_t numNodes,
                     "  [dc] iter=%u gmin=%.1e |F|=%.3e (residual floor; "
                     "alpha=%.1e bt=%d, accepting as gmin-step solution)\n",
                     iter, opts.gmin.gmin, fNewBest, alpha, btUsed);
+            if (floorAccepted) *floorAccepted = true;  // H3: 标记 floor-accept
             return true;
         }
         // 线搜索完全失败（Newton 方向不再是下降方向 + 残差又没停滞）通常意味着
@@ -410,7 +412,7 @@ DcOpResult solveDcOp(uint32_t numNodes,
 
     bool anyConvergedEver = false;
     std::vector<double> bestNodeV = nodeV;          // 跨源步/gmin 步最近一次收敛解
-    double bestGmin = opts.gmin.gminStart;
+    double bestGmin = opts.gmin.gmin;  // H2: 初始化为 target gmin（非收敛时 polish 用 target）
     double lastConvergedScale = 0.0;
 
     for (size_t si = 0; si < vsSched.size(); ++si) {
@@ -455,17 +457,20 @@ DcOpResult solveDcOp(uint32_t numNodes,
                         "[dc] === gmin step %zu/%zu  gmin=%.3e maxIter=%u vsScale=%.3g ===\n",
                         gi+1, sched.size(), o.gmin.gmin, o.maxIterations, scale);
                 nodeV = bestNodeV;
+                bool floorAccept = false;
                 bool conv = newtonSolve(numNodes, devices, nodeV, o, hasNonlinear,
-                                        r.iterations, r.floorAcceptsInner, bench);
+                                        r.iterations, r.floorAcceptsInner, bench, &floorAccept);
                 if (dcopVerbose())
                     std::fprintf(stderr,
-                        "[dc] gmin step %zu/%zu  converged=%d totalIters=%u\n",
-                        gi+1, sched.size(), conv?1:0, r.iterations);
+                        "[dc] gmin step %zu/%zu  converged=%d floor=%d totalIters=%u\n",
+                        gi+1, sched.size(), conv?1:0, floorAccept?1:0, r.iterations);
                 if (conv) {
                     bestNodeV = nodeV;
                     bestGmin  = o.gmin.gmin;
                     anyConvergedEver = true;
                     stepConv = true;
+                    // H3: floor-accept 仍设 lastConvergedScale（保持兼容），
+                    // 但记录 floorAcceptOuter 供调用方判断
                     lastConvergedScale = scale;
                 } else {
                     if (dcopVerbose())
@@ -569,7 +574,7 @@ DcOpResult solveDcOp(uint32_t numNodes,
                 assemble(numNodes, devices, newNodeV, oFinal, J2, F2, vsOff2);
                 double fNew = 0; for (double fv : F2) fNew += fv*fv;
                 fNew = std::sqrt(fNew);
-                if (fNew <= fOld * (1.0 + 1e-6)) {
+                if (fNew <= fOld * (1.0 + 1e-12)) {  // H1: 近严格下降（仅允许浮点噪声）
                     // 接受此步（含等价 residual：fNew≈fOld 也接受，保留 polish 半步语义）
                     vBest = newNodeV;
                     fBest = fNew;

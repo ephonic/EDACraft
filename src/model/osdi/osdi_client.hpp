@@ -88,6 +88,8 @@ public:
 
     // 取回电阻性残差（电流注入各节点）到 dst（长度 = num_nodes）
     void loadResidualResist(std::vector<double>& dst) const;
+    // H4: 取回反应性残差（电荷 Q）。需 eval 时传 CALC_REACT_RESIDUAL flag。
+    void loadResidualReact(std::vector<double>& dst) const;
 
     // 取回瞬态 RHS（电流注入）到 dst。若模型未提供 tran hook，则回退到 DC 残差。
     void loadSpiceRhsTran(std::vector<double>& dst,

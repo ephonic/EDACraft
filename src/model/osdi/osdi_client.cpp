@@ -482,6 +482,17 @@ void OsdiClient::loadResidualResist(std::vector<double>& dst) const {
     });
 }
 
+// H4 修复：取回反应性残差（电荷 Q）。需 eval 时传 CALC_REACT_RESIDUAL flag。
+void OsdiClient::loadResidualReact(std::vector<double>& dst) const {
+    if (!desc_ || !desc_->load_residual_react || !instData_) {
+        dst.assign(desc_ ? desc_->num_nodes : 0, 0.0);
+        return;
+    }
+    scatterGlobalThenGatherLocal(desc_, nodes_, dst, [&](double* g) {
+        desc_->load_residual_react(instData_, modelBlock_->modelData, g);
+    });
+}
+
 void OsdiClient::loadSpiceRhsTran(std::vector<double>& dst,
                                   const std::vector<double>& prevSolve,
                                   double alpha) const {
@@ -496,9 +507,11 @@ void OsdiClient::loadSpiceRhsTran(std::vector<double>& dst,
                                        const_cast<double*>(solvePtr->data()), alpha);
         });
     } else if (desc_->load_residual_resist) {
+        // H8: fallback 用 load_residual_resist，但 SPICE RHS = -residual，需翻转符号
         scatterGlobalThenGatherLocal(desc_, nodes_, dst, [&](double* g) {
             desc_->load_residual_resist(instData_, modelBlock_->modelData, g);
         });
+        for (double& v : dst) v = -v;  // residual → SPICE RHS
     } else {
         dst.assign(desc_->num_nodes, 0.0);
     }

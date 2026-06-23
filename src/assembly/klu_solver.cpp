@@ -124,8 +124,8 @@ bool KluSolver::factorize(const SparseMatrix& A) {
         }
     }
 
-    // ---- 符号因子化（结构不变则复用）---------------------------------------
-    if (!sym_ || cached_n_ != n_ || cached_nnz_ != nnz) {
+    // ---- 符号因子化（H9: 每次重建——(n,nnz) 匹配不保证 pattern 相同）---
+    {
         if (sym_) {
             klu_symbolic* p = sym(sym_);
             klu_free_symbolic(&p, cmn(common_));
@@ -136,8 +136,6 @@ bool KluSolver::factorize(const SparseMatrix& A) {
             if (benchJsonEnabled()) factorMs_ += tFact.elapsedMs();
             return false;
         }
-        cached_n_ = n_;
-        cached_nnz_ = nnz;
     }
 
     // ---- 数值因子化 ----------------------------------------------------------
