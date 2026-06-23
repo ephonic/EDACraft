@@ -81,7 +81,7 @@ public:
     }
     // 固化后直接累加到 CSR（row scan 找 col）
     void addCommitted(uint32_t i, uint32_t j, double v) {
-        if (!patternCommitted_ || i >= n_) return;
+        if (!patternCommitted_ || i >= n_ || j >= n_) return;  // L3: 检查 i 和 j 越界
         for (uint32_t k = rowPtr_[i]; k < rowPtr_[i + 1]; ++k) {
             if (colIdx_[k] == j) { values_[k] += v; return; }
         }

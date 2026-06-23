@@ -62,11 +62,8 @@ private:
     void* num_    = nullptr;   // klu_numeric*
     void* common_ = nullptr;   // klu_common*
 
-    // 用于在结构未变时重用 sym_（symbolic 因子化）。
-    uint32_t cached_n_   = 0;
-    size_t   cached_nnz_ = 0;
-
     // V2-γ C3: 累计计时（solve 标 const，故 mutable）
+    // L2: mutable 仅用于 bench 计时，非线程安全——勿跨线程共享 KluSolver
     double factorMs_ = 0.0;
     mutable double solveMs_  = 0.0;
 };

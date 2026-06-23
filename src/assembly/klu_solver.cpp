@@ -51,8 +51,8 @@ KluSolver::KluSolver(KluSolver&& o) noexcept {
     sym_ = o.sym_; o.sym_ = nullptr;
     num_ = o.num_; o.num_ = nullptr;
     common_ = o.common_; o.common_ = nullptr;
-    cached_n_ = o.cached_n_;
-    cached_nnz_ = o.cached_nnz_;
+    factorMs_ = o.factorMs_; o.factorMs_ = 0.0;  // L1: 转移 bench 计时器
+    solveMs_ = o.solveMs_; o.solveMs_ = 0.0;
 }
 
 KluSolver& KluSolver::operator=(KluSolver&& o) noexcept {
@@ -66,8 +66,8 @@ KluSolver& KluSolver::operator=(KluSolver&& o) noexcept {
         sym_ = o.sym_; o.sym_ = nullptr;
         num_ = o.num_; o.num_ = nullptr;
         common_ = o.common_; o.common_ = nullptr;
-        cached_n_ = o.cached_n_;
-        cached_nnz_ = o.cached_nnz_;
+        factorMs_ = o.factorMs_; o.factorMs_ = 0.0;  // L1
+        solveMs_ = o.solveMs_; o.solveMs_ = 0.0;
     }
     return *this;
 }

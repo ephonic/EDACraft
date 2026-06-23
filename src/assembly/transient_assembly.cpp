@@ -51,7 +51,7 @@ bool assembleTransient(uint32_t numNodes,
         for (uint32_t k = 0; k < vsIdx.size(); ++k) {
             if (vsIdx[k] == deviceIdx) return numNodes + k;
         }
-        return numNodes;
+        return UINT32_MAX;  // L10: 不应到达——非 VS 器件不应调此
     };
 
     // V3-L0: 两阶段装配。

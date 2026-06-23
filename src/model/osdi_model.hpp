@@ -73,6 +73,7 @@ public:
     // mrCheckVoltages(): 自适应检查——端电压变化超 mrRelTol_ 则强制重新 eval。
     void setRateRatio(uint32_t K) { mrRateRatio_ = K > 0 ? K : 1; mrStepCounter_ = 0; mrNeedsEval_ = true; mrForcedEvalCount_ = 0; }
     void setMrRelTol(double tol) { mrRelTol_ = tol; }
+    void setMrVoltFloor(double floor) { mrVoltFloor_ = floor; }  // L4: 可配电压 floor
     void setMrAutoTune(bool enable) { mrAutoTune_ = enable; if (enable) mrRateRatio_ = std::max(mrRateRatio_, (uint32_t)1); }
     [[nodiscard]] uint32_t rateRatio() const noexcept { return mrRateRatio_; }
     [[nodiscard]] bool mrNeedsEval() const noexcept { return mrNeedsEval_; }
@@ -84,7 +85,7 @@ public:
         for (size_t k = 0; k < nodes_.size(); ++k) {
             double vk = (nodes_[k] < nodeV.size()) ? nodeV[nodes_[k]] : 0.0;
             double ref = std::fabs(lastTermV_[k]);
-            double scale = std::max(ref, 1.0);
+            double scale = std::max(ref, mrVoltFloor_);  // L4: 可配 floor（默认 1.0V）
             if (std::fabs(vk - lastTermV_[k]) > mrRelTol_ * scale) {
                 mrNeedsEval_ = true;
                 ++mrForcedEvalCount_;  // 自动分级：记录强制 eval 次数
@@ -94,8 +95,8 @@ public:
     }
     // 步末推进：stepCounter++，若达到 K 则返回 true（需 swapState + 重置 needsEval）
     // V3-MR Phase4: 自动速率分级——K 步到时检查 forcedEvalCount：
-    //   forcedEvalCount == 0 → K 步全 bypass，电压稳定 → K *= 2（上限 16）
-    //   forcedEvalCount >= K/2 → 超半数步触发强制 eval → K = 1（回退快步长）
+            //   forcedEvalCount == 0 → K 步全 bypass，电压稳定 → K *= 2（上限 16）
+            //   forcedEvalCount >= (K+1)/2 → 达到或超过半数步触发强制 eval → K = 1（回退）
     bool mrAdvance() {
         ++mrStepCounter_;
         if (mrStepCounter_ >= mrRateRatio_) {
@@ -129,6 +130,7 @@ public:
         evalBypassed_ = true;
     }
     // V3-MR Phase2: 只算 residual（调 desc_->eval 但不算 jacobian），jac 从 cache 复用
+    // L6: 当前未被 assembler 调用（死代码），保留供未来 f/jac 分离优化
     void evalTransientResidOnly(const TransientOpPoint& op, DeviceContribution& out) const;
 
     // V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock。
@@ -223,6 +225,7 @@ private:
     uint32_t mrStepCounter_ = 0;    // [0..K-1]
     bool mrNeedsEval_ = true;       // 本步是否需 eval
     double mrRelTol_ = 1e-3;        // 自适应电压变化阈值（相对）
+    double mrVoltFloor_ = 1.0;      // L4: 相对容差电压 floor（可配）
     bool mrAutoTune_ = false;       // V3-MR Phase4: 自动速率分级
     uint32_t mrForcedEvalCount_ = 0; // K 步周期内强制 eval 次数
 };

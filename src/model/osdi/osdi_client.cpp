@@ -319,6 +319,9 @@ uint32_t OsdiClient::evalDC(const std::vector<double>& nodeVoltages, uint32_t ex
     if (!desc_ || !desc_->eval || !instData_) return EVAL_RET_FLAG_FATAL;
     for (double v : nodeVoltages)
         if (std::isnan(v) || std::isinf(v)) return EVAL_RET_FLAG_FATAL;
+    // L7: 检查 state 向量（prevState_ 可能有 NaN）
+    for (double v : prevState_)
+        if (std::isnan(v) || std::isinf(v)) return EVAL_RET_FLAG_FATAL;
 
     const std::vector<double>* solvePtr = ensureSolveBuf(nodes_, nodeVoltages, solveBuf_);
 
@@ -365,6 +368,9 @@ uint32_t OsdiClient::evalTransient(const std::vector<double>& prevSolve,
     if (!desc_ || !desc_->eval || !instData_) return EVAL_RET_FLAG_FATAL;
     for (double v : prevSolve)
         if (std::isnan(v) || std::isinf(v)) return EVAL_RET_FLAG_FATAL;
+    // L7: 检查 state 向量
+    for (double v : prevState_)
+        if (std::isnan(v) || std::isinf(v)) return EVAL_RET_FLAG_FATAL;
     (void)dt; (void)alpha;
 
     const std::vector<double>* solvePtr = ensureSolveBuf(nodes_, prevSolve, solveBuf_);
@@ -401,6 +407,9 @@ uint32_t OsdiClient::evalTransientResidOnly(const std::vector<double>& prevSolve
                                              double t, double dt, double alpha) {
     if (!desc_ || !desc_->eval || !instData_) return EVAL_RET_FLAG_FATAL;
     for (double v : prevSolve)
+        if (std::isnan(v) || std::isinf(v)) return EVAL_RET_FLAG_FATAL;
+    // L7: 检查 state 向量
+    for (double v : prevState_)
         if (std::isnan(v) || std::isinf(v)) return EVAL_RET_FLAG_FATAL;
     (void)dt; (void)alpha;
 

@@ -133,8 +133,7 @@ AcResult solveAc(uint32_t numNodes,
             } else if (auto* ind = dynamic_cast<const Inductor*>(d.get())) {
                 stampAdm(A, n1, n2, ind->admittance(omega), numNodes);
             } else if (auto* cs = dynamic_cast<const CurrentSource*>(d.get())) {
-                // AC 电流源激励：注入 n1 +I_ac，n2 -I_ac（取 DC 值作为 AC 幅度简化）
-                // 完整实现应解析 I1 n1 n2 AC <mag> <phase>
+                // L9: AC 电流源用 DC 值——完整实现应解析 AC mag/phase（待实现）
                 if (n1 != 0) b[n1 - 1] += Complex(cs->current(), 0);
                 if (n2 != 0) b[n2 - 1] -= Complex(cs->current(), 0);
             }
