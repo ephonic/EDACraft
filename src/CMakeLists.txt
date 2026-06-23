@@ -27,6 +27,7 @@ set(RFSIM_ASSEMBLY_SOURCES
     assembly/matrix.cpp
     assembly/lu_solver.cpp
     assembly/klu_solver.cpp
+    assembly/klu_z_solver.cpp
     assembly/mna.cpp
     assembly/hb_jacobian.cpp
     assembly/gmres.cpp
