@@ -62,6 +62,38 @@ class UnsafeSingleBitCrossing(Module):
                 self.flag_seen_q <<= self.flag_q
 
 
+class UnsafeToggleCrossing(Module):
+    def __init__(self):
+        super().__init__("unsafe_toggle_crossing")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.event_in = Input(1, "event_in")
+        self.event_seen = Output(1, "event_seen")
+        self.toggle_src = Reg(1, "toggle_src")
+        self.toggle_seen = Reg(1, "toggle_seen")
+
+        @self.comb
+        def _comb():
+            self.event_seen <<= self.toggle_seen
+
+        @self.seq(self.wr_clk, self.wr_rst)
+        def _wr_seq():
+            with If(self.wr_rst == 1):
+                self.toggle_src <<= 0
+            with Else():
+                with If(self.event_in == 1):
+                    self.toggle_src <<= ~self.toggle_src
+
+        @self.seq(self.rd_clk, self.rd_rst)
+        def _rd_seq():
+            with If(self.rd_rst == 1):
+                self.toggle_seen <<= 0
+            with Else():
+                self.toggle_seen <<= self.toggle_src
+
+
 class UnsafeBusCrossing(Module):
     def __init__(self):
         super().__init__("unsafe_bus_crossing")
@@ -257,6 +289,80 @@ class SafeHandwrittenSyncCrossing(Module):
                 self.sync_ff2 <<= self.sync_ff1
 
 
+class SafeHandwrittenSyncCrossingWithAlias(Module):
+    def __init__(self):
+        super().__init__("safe_handwritten_sync_crossing_with_alias")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.flag_in = Input(1, "flag_in")
+        self.flag_seen = Output(1, "flag_seen")
+        self.flag_q = Reg(1, "flag_q")
+        self.sync_ff1 = Reg(1, "sync_ff1")
+        self.sync_ff2 = Reg(1, "sync_ff2")
+        self.sync_alias = Wire(1, "sync_alias")
+
+        @self.comb
+        def _comb():
+            self.sync_alias <<= self.sync_ff2
+            self.flag_seen <<= self.sync_alias
+
+        @self.seq(self.wr_clk, self.wr_rst)
+        def _wr_seq():
+            with If(self.wr_rst == 1):
+                self.flag_q <<= 0
+            with Else():
+                self.flag_q <<= self.flag_in
+
+        @self.seq(self.rd_clk, self.rd_rst)
+        def _rd_seq():
+            with If(self.rd_rst == 1):
+                self.sync_ff1 <<= 0
+                self.sync_ff2 <<= 0
+            with Else():
+                self.sync_ff1 <<= self.flag_q
+                self.sync_ff2 <<= self.sync_ff1
+
+
+class SafeHandwrittenSyncCrossingWithTap(Module):
+    def __init__(self):
+        super().__init__("safe_handwritten_sync_crossing_with_tap")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.flag_in = Input(1, "flag_in")
+        self.flag_seen = Output(1, "flag_seen")
+        self.sync_dbg = Output(1, "sync_dbg")
+        self.flag_q = Reg(1, "flag_q")
+        self.sync_ff1 = Reg(1, "sync_ff1")
+        self.sync_ff2 = Reg(1, "sync_ff2")
+        self.sync_alias = Wire(1, "sync_alias")
+
+        @self.comb
+        def _comb():
+            self.sync_alias <<= self.sync_ff2
+            self.flag_seen <<= self.sync_alias
+            self.sync_dbg <<= self.sync_ff2
+
+        @self.seq(self.wr_clk, self.wr_rst)
+        def _wr_seq():
+            with If(self.wr_rst == 1):
+                self.flag_q <<= 0
+            with Else():
+                self.flag_q <<= self.flag_in
+
+        @self.seq(self.rd_clk, self.rd_rst)
+        def _rd_seq():
+            with If(self.rd_rst == 1):
+                self.sync_ff1 <<= 0
+                self.sync_ff2 <<= 0
+            with Else():
+                self.sync_ff1 <<= self.flag_q
+                self.sync_ff2 <<= self.sync_ff1
+
+
 class UnsafeAsyncResetRelease(Module):
     def __init__(self):
         super().__init__("unsafe_async_reset_release")
@@ -345,6 +451,44 @@ class SafeHandwrittenAsyncResetRelease(Module):
                 self.data_q <<= self.data_in
 
 
+class SafeHandwrittenAsyncResetReleaseWithAlias(Module):
+    def __init__(self):
+        super().__init__("safe_handwritten_async_reset_release_with_alias")
+        self.core_clk = Input(1, "core_clk")
+        self.rst_async = Input(1, "rst_async")
+        self.data_in = Input(1, "data_in")
+        self.rst_ff1 = Reg(1, "rst_ff1")
+        self.rst_ff2 = Reg(1, "rst_ff2")
+        self.rst_sync_int = Wire(1, "rst_sync_int")
+        self.rst_sync = Wire(1, "rst_sync")
+        self.data_q = Reg(1, "data_q")
+        self.data_out = Output(1, "data_out")
+        self.reset_dbg = Output(1, "reset_dbg")
+
+        @self.comb
+        def _comb():
+            self.rst_sync_int <<= ~self.rst_ff2
+            self.rst_sync <<= self.rst_sync_int
+            self.reset_dbg <<= self.rst_sync_int
+            self.data_out <<= self.data_q
+
+        @self.seq(self.core_clk, self.rst_async, reset_async=True)
+        def _reset_release_seq():
+            with If(self.rst_async == 1):
+                self.rst_ff1 <<= 1
+                self.rst_ff2 <<= 1
+            with Else():
+                self.rst_ff1 <<= 0
+                self.rst_ff2 <<= self.rst_ff1
+
+        @self.seq(self.core_clk, self.rst_sync, reset_async=True)
+        def _core_seq():
+            with If(self.rst_sync == 1):
+                self.data_q <<= 0
+            with Else():
+                self.data_q <<= self.data_in
+
+
 class SafeThreeStageAsyncResetRelease(Module):
     def __init__(self):
         super().__init__("safe_three_stage_async_reset_release")
@@ -393,6 +537,16 @@ def test_analyze_cdc_reports_single_bit_crossing():
     assert "SyncCell" in " ".join(finding.suggestions)
 
 
+def test_analyze_cdc_reports_toggle_crossing_as_pulse_crossing():
+    report = analyze_cdc(UnsafeToggleCrossing())
+
+    assert any(f.category == "pulse_crossing" for f in report.findings)
+    finding = next(f for f in report.findings if f.category == "pulse_crossing")
+    assert finding.src is not None
+    assert finding.src.signal_name == "toggle_src"
+    assert "PulseSynchronizer" in " ".join(finding.suggestions)
+
+
 def test_analyze_cdc_reports_multi_bit_crossing():
     report = analyze_cdc(UnsafeBusCrossing())
 
@@ -419,6 +573,18 @@ def test_analyze_cdc_ignores_safe_sync_cell_crossing():
 
 def test_analyze_cdc_ignores_safe_handwritten_sync_crossing():
     report = analyze_cdc(SafeHandwrittenSyncCrossing())
+
+    assert not any(f.category == "single_bit_crossing" for f in report.findings)
+
+
+def test_analyze_cdc_ignores_safe_handwritten_sync_crossing_with_comb_alias():
+    report = analyze_cdc(SafeHandwrittenSyncCrossingWithAlias())
+
+    assert not any(f.category == "single_bit_crossing" for f in report.findings)
+
+
+def test_analyze_cdc_ignores_safe_handwritten_sync_crossing_with_tap():
+    report = analyze_cdc(SafeHandwrittenSyncCrossingWithTap())
 
     assert not any(f.category == "single_bit_crossing" for f in report.findings)
 
@@ -451,6 +617,12 @@ def test_analyze_cdc_ignores_safe_handwritten_async_reset_release():
     assert not any(f.category == "reset_release_crossing" for f in report.findings)
 
 
+def test_analyze_cdc_ignores_safe_handwritten_async_reset_release_with_alias():
+    report = analyze_cdc(SafeHandwrittenAsyncResetReleaseWithAlias())
+
+    assert not any(f.category == "reset_release_crossing" for f in report.findings)
+
+
 def test_analyze_cdc_ignores_safe_three_stage_handwritten_async_reset_release():
     report = analyze_cdc(SafeThreeStageAsyncResetRelease())
 
@@ -473,8 +645,60 @@ def test_emit_cdc_report_markdown_includes_findings():
     assert "# CDC Smoke" in text
     assert "single_bit_crossing" in text
     assert "flag_q" in text
+    assert "kind=state" in text
     assert "errors" in text
     assert "warnings" in text
+
+
+def test_emit_cdc_report_markdown_includes_source_site_details():
+    report = analyze_cdc(_lowered(SimModule(
+        name="simmodule_single_bit_crossing",
+        signals=(
+            Signal("wr_clk", width=1, kind="input"),
+            Signal("rd_clk", width=1, kind="input"),
+            Signal("wr_rst", width=1, kind="input"),
+            Signal("rd_rst", width=1, kind="input"),
+            Signal("flag_in", width=1, kind="input"),
+            Signal("flag_q", width=1, kind="state"),
+            Signal("flag_seen_q", width=1, kind="state"),
+            Signal("flag_seen", width=1, kind="output"),
+        ),
+        assignments=(
+            Assignment(
+                "flag_seen",
+                SignalRef("flag_seen_q"),
+                phase="comb",
+                source_file="unsafe_sim.py",
+                source_line=30,
+            ),
+            Assignment(
+                "flag_q",
+                SignalRef("flag_in"),
+                phase="seq",
+                clock_domain="wr_clk",
+                source_file="unsafe_sim.py",
+                source_line=11,
+            ),
+            Assignment(
+                "flag_seen_q",
+                SignalRef("flag_q"),
+                phase="seq",
+                clock_domain="rd_clk",
+                source_file="unsafe_sim.py",
+                source_line=21,
+            ),
+        ),
+        outputs=("flag_seen",),
+        clock_domains=(
+            ClockDomain("wr_clk", reset_signal="wr_rst"),
+            ClockDomain("rd_clk", reset_signal="rd_rst"),
+        ),
+    )))
+    text = emit_cdc_report_markdown(report)
+
+    assert "source sites:" in text
+    assert "source `flag_q` -> unsafe_sim.py:11" in text
+    assert "destination `flag_seen_q` -> unsafe_sim.py:21" in text
 
 
 def test_analyze_cdc_reports_simmodule_single_bit_crossing_with_locations():

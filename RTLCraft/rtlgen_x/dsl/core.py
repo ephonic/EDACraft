@@ -270,6 +270,110 @@ class SubmoduleInst:
         self.port_map = port_map
 
 
+@dataclass(frozen=True)
+class ConnectivitySite:
+    """Source-mapped statement site for a connectivity fact."""
+
+    kind: str
+    phase: str
+    source_file: Optional[str] = None
+    source_line: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class SignalDriver:
+    """One structural writer of a DSL signal."""
+
+    signal: str
+    target_kind: str
+    phase: str
+    source_expr_kind: str
+    source_signals: Tuple[str, ...]
+    source_memories: Tuple[str, ...]
+    source_file: Optional[str] = None
+    source_line: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class StateWriter:
+    """A sequential or latch writer for a state element."""
+
+    signal: str
+    phase: str
+    clock: Optional[str]
+    reset: Optional[str]
+    reset_async: bool
+    reset_active_low: bool
+    source_expr_kind: str
+    source_signals: Tuple[str, ...]
+    source_memories: Tuple[str, ...]
+    source_file: Optional[str] = None
+    source_line: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class MemoryAccess:
+    """One read or write touching a declared memory/array."""
+
+    memory: str
+    access: str
+    phase: str
+    target: Optional[str] = None
+    clock: Optional[str] = None
+    reset: Optional[str] = None
+    reset_async: bool = False
+    reset_active_low: bool = False
+    addr_signals: Tuple[str, ...] = ()
+    value_signals: Tuple[str, ...] = ()
+    byte_enable_signals: Tuple[str, ...] = ()
+    source_file: Optional[str] = None
+    source_line: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class PortConnection:
+    """A parent/submodule port binding."""
+
+    instance: str
+    module: str
+    port: str
+    direction: str
+    expr_kind: str
+    connected_signals: Tuple[str, ...]
+    connected_memories: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ModuleInstancePath:
+    """Hierarchy node description for one module instance."""
+
+    path: str
+    module_name: str
+    type_name: str
+    parent_path: Optional[str]
+    child_instances: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ModuleConnectivityReport:
+    """Structured hierarchy/connectivity summary for a DSL module."""
+
+    hierarchy: Tuple[ModuleInstancePath, ...]
+    signal_drivers: Tuple[SignalDriver, ...]
+    state_writers: Tuple[StateWriter, ...]
+    memory_accesses: Tuple[MemoryAccess, ...]
+    port_connections: Tuple[PortConnection, ...]
+
+    def drivers_of(self, signal_name: str) -> Tuple[SignalDriver, ...]:
+        return tuple(driver for driver in self.signal_drivers if driver.signal == signal_name)
+
+    def writers_of(self, signal_name: str) -> Tuple[StateWriter, ...]:
+        return tuple(writer for writer in self.state_writers if writer.signal == signal_name)
+
+    def accesses_of(self, memory_name: str) -> Tuple[MemoryAccess, ...]:
+        return tuple(access for access in self.memory_accesses if access.memory == memory_name)
+
+
 # ---------------------------------------------------------------------
 # Interface — protocol-level signal grouping and bulk connection
 # ---------------------------------------------------------------------
@@ -2691,20 +2795,33 @@ class Module(IREntity, metaclass=ModuleMeta):
         """
         return _SeqContext(self, clock, reset, reset_async, reset_active_low)
 
-    def seq_domain(self, domain: ClockDomainSpec) -> _SeqContext:
-        """Sequential logic context manager bound to a declared clock domain."""
+    def seq_domain(self, domain: Union[str, ClockDomainSpec]) -> _SeqContext:
+        """Sequential logic context manager bound to a declared clock domain.
 
-        declared = self._clock_domain_specs.get(domain.name)
-        if declared is None or declared != domain:
-            raise ValueError(
-                f"clock domain '{domain.name}' must be declared on module '{self.name}' before use"
-            )
+        Accepts either a previously returned :class:`ClockDomainSpec` or the
+        declared domain name directly. The string form keeps multi-clock DSL
+        authoring lighter when the surrounding code already speaks in domain
+        names.
+        """
+
+        if isinstance(domain, str):
+            declared = self._clock_domain_specs.get(domain)
+            if declared is None:
+                raise ValueError(
+                    f"clock domain '{domain}' must be declared on module '{self.name}' before use"
+                )
+        else:
+            declared = self._clock_domain_specs.get(domain.name)
+            if declared is None or declared != domain:
+                raise ValueError(
+                    f"clock domain '{domain.name}' must be declared on module '{self.name}' before use"
+                )
         return _SeqContext(
             self,
-            domain.clock,
-            domain.reset_signal,
-            domain.reset_async,
-            domain.reset_active_low,
+            declared.clock,
+            declared.reset_signal,
+            declared.reset_async,
+            declared.reset_active_low,
         )
 
 
@@ -2864,6 +2981,16 @@ class Module(IREntity, metaclass=ModuleMeta):
 
     def __repr__(self):
         return f"Module({self.name})"
+
+    def describe_hierarchy(self) -> Tuple[ModuleInstancePath, ...]:
+        """Return a structural hierarchy summary rooted at this module."""
+
+        return _describe_module_hierarchy(self)
+
+    def analyze_connectivity(self) -> ModuleConnectivityReport:
+        """Return a structured connectivity summary for this DSL module."""
+
+        return _analyze_module_connectivity(self)
 
 
 # ---------------------------------------------------------------------
@@ -3116,6 +3243,634 @@ def _param_binop(op: str, lhs: Any, rhs: Any, width: Optional[int] = None) -> Si
     s._expr = BinOp(op, le, re, w)
     return s
 
+
+def _stmt_site(stmt: Any, *, kind: str, phase: str) -> ConnectivitySite:
+    source_location = getattr(stmt, "source_location", None)
+    return ConnectivitySite(
+        kind=kind,
+        phase=phase,
+        source_file=getattr(source_location, "file", None),
+        source_line=getattr(source_location, "line", None),
+    )
+
+
+def _copy_source_location(dst: Any, src: Any) -> Any:
+    source_location = getattr(src, "source_location", None)
+    if source_location is not None:
+        setattr(dst, "source_location", source_location)
+    return dst
+
+
+def _expr_kind(expr: Any) -> str:
+    if isinstance(expr, Signal):
+        expr = expr._expr
+    if isinstance(expr, Ref):
+        return "ref"
+    if isinstance(expr, Const):
+        return "const"
+    if isinstance(expr, BinOp):
+        return f"binop:{expr.op}"
+    if isinstance(expr, UnaryOp):
+        return f"unary:{expr.op}"
+    if isinstance(expr, Slice):
+        return "slice"
+    if isinstance(expr, PartSelect):
+        return "partselect"
+    if isinstance(expr, BitSelect):
+        return "bitselect"
+    if isinstance(expr, Concat):
+        return "concat"
+    if isinstance(expr, Mux):
+        return "mux"
+    if isinstance(expr, MemRead):
+        return "memread"
+    if isinstance(expr, ArrayRead):
+        return "arrayread"
+    if isinstance(expr, FunctionCall):
+        return f"call:{expr.name}"
+    return type(expr).__name__.lower()
+
+
+def _expr_signal_names(expr: Any) -> Tuple[str, ...]:
+    names: List[str] = []
+    seen: Set[str] = set()
+
+    def visit(node: Any) -> None:
+        if isinstance(node, Signal):
+            visit(node._expr)
+            return
+        if isinstance(node, Ref):
+            name = node.signal.name
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+            return
+        if isinstance(node, BinOp):
+            visit(node.lhs)
+            visit(node.rhs)
+            return
+        if isinstance(node, UnaryOp):
+            visit(node.operand)
+            return
+        if isinstance(node, Slice):
+            visit(node.operand)
+            return
+        if isinstance(node, PartSelect):
+            visit(node.operand)
+            visit(node.offset)
+            return
+        if isinstance(node, BitSelect):
+            visit(node.operand)
+            visit(node.index)
+            return
+        if isinstance(node, Concat):
+            for operand in node.operands:
+                visit(operand)
+            return
+        if isinstance(node, Mux):
+            visit(node.cond)
+            visit(node.true_expr)
+            visit(node.false_expr)
+            return
+        if isinstance(node, MemRead):
+            visit(node.addr)
+            return
+        if isinstance(node, ArrayRead):
+            visit(node.index)
+            return
+        if isinstance(node, FunctionCall):
+            for arg in node.args:
+                visit(arg)
+            return
+
+    visit(expr)
+    return tuple(names)
+
+
+def _expr_memory_names(expr: Any) -> Tuple[str, ...]:
+    names: List[str] = []
+    seen: Set[str] = set()
+
+    def record(name: str) -> None:
+        if name not in seen:
+            seen.add(name)
+            names.append(name)
+
+    def visit(node: Any) -> None:
+        if isinstance(node, Signal):
+            visit(node._expr)
+            return
+        if isinstance(node, BinOp):
+            visit(node.lhs)
+            visit(node.rhs)
+            return
+        if isinstance(node, UnaryOp):
+            visit(node.operand)
+            return
+        if isinstance(node, Slice):
+            visit(node.operand)
+            return
+        if isinstance(node, PartSelect):
+            visit(node.operand)
+            visit(node.offset)
+            return
+        if isinstance(node, BitSelect):
+            visit(node.operand)
+            visit(node.index)
+            return
+        if isinstance(node, Concat):
+            for operand in node.operands:
+                visit(operand)
+            return
+        if isinstance(node, Mux):
+            visit(node.cond)
+            visit(node.true_expr)
+            visit(node.false_expr)
+            return
+        if isinstance(node, MemRead):
+            record(node.mem_name)
+            visit(node.addr)
+            return
+        if isinstance(node, ArrayRead):
+            record(node.array_name)
+            visit(node.index)
+            return
+        if isinstance(node, FunctionCall):
+            for arg in node.args:
+                visit(arg)
+            return
+
+    visit(expr)
+    return tuple(names)
+
+
+def _assignment_target_info(target: Any) -> Tuple[Optional[str], str]:
+    if isinstance(target, Signal):
+        return target.name, target.__class__.__name__.lower()
+    if isinstance(target, Ref):
+        return target.signal.name, target.signal.__class__.__name__.lower()
+    if isinstance(target, Slice):
+        base = target.operand
+        while isinstance(base, (Slice, PartSelect, BitSelect)):
+            base = base.operand
+        if isinstance(base, Ref):
+            return base.signal.name, f"{base.signal.__class__.__name__.lower()}_slice"
+        return None, "slice"
+    if isinstance(target, PartSelect):
+        base = target.operand
+        while isinstance(base, (Slice, PartSelect, BitSelect)):
+            base = base.operand
+        if isinstance(base, Ref):
+            return base.signal.name, f"{base.signal.__class__.__name__.lower()}_partselect"
+        return None, "partselect"
+    if isinstance(target, BitSelect):
+        base = target.operand
+        while isinstance(base, (Slice, PartSelect, BitSelect)):
+            base = base.operand
+        if isinstance(base, Ref):
+            return base.signal.name, f"{base.signal.__class__.__name__.lower()}_bitselect"
+        return None, "bitselect"
+    return None, type(target).__name__.lower()
+
+
+def _walk_stmt_list(
+    stmts: List[Any],
+    *,
+    phase: str,
+    clock: Optional[str],
+    reset: Optional[str],
+    reset_async: bool,
+    reset_active_low: bool,
+    signal_drivers: List[SignalDriver],
+    state_writers: List[StateWriter],
+    memory_accesses: List[MemoryAccess],
+) -> None:
+    for stmt in stmts:
+        if isinstance(stmt, Assign):
+            target_name, target_kind = _assignment_target_info(stmt.target)
+            source_expr_kind = _expr_kind(stmt.value)
+            source_signals = _expr_signal_names(stmt.value)
+            source_memories = _expr_memory_names(stmt.value)
+            site = _stmt_site(stmt, kind="assign", phase=phase)
+            if target_name is not None:
+                signal_drivers.append(
+                    SignalDriver(
+                        signal=target_name,
+                        target_kind=target_kind,
+                        phase=phase,
+                        source_expr_kind=source_expr_kind,
+                        source_signals=source_signals,
+                        source_memories=source_memories,
+                        source_file=site.source_file,
+                        source_line=site.source_line,
+                    )
+                )
+                if phase in {"seq", "latch"}:
+                    state_writers.append(
+                        StateWriter(
+                            signal=target_name,
+                            phase=phase,
+                            clock=clock,
+                            reset=reset,
+                            reset_async=reset_async,
+                            reset_active_low=reset_active_low,
+                            source_expr_kind=source_expr_kind,
+                            source_signals=source_signals,
+                            source_memories=source_memories,
+                            source_file=site.source_file,
+                            source_line=site.source_line,
+                        )
+                    )
+            for memory_name in source_memories:
+                memory_accesses.append(
+                    MemoryAccess(
+                        memory=memory_name,
+                        access="read",
+                        phase=phase,
+                        target=target_name,
+                        clock=clock if phase in {"seq", "latch"} else None,
+                        reset=reset if phase in {"seq", "latch"} else None,
+                        reset_async=reset_async if phase in {"seq", "latch"} else False,
+                        reset_active_low=reset_active_low if phase in {"seq", "latch"} else False,
+                        addr_signals=(),
+                        value_signals=source_signals,
+                        source_file=site.source_file,
+                        source_line=site.source_line,
+                    )
+                )
+            continue
+        if isinstance(stmt, IndexedAssign):
+            site = _stmt_site(stmt, kind="indexed_assign", phase=phase)
+            source_expr_kind = _expr_kind(stmt.value)
+            value_signals = _expr_signal_names(stmt.value)
+            value_memories = _expr_memory_names(stmt.value)
+            index_signals = _expr_signal_names(stmt.index)
+            signal_drivers.append(
+                SignalDriver(
+                    signal=stmt.target_signal.name,
+                    target_kind=f"{stmt.target_signal.__class__.__name__.lower()}_bitselect",
+                    phase=phase,
+                    source_expr_kind=source_expr_kind,
+                    source_signals=tuple(dict.fromkeys(index_signals + value_signals)),
+                    source_memories=value_memories,
+                    source_file=site.source_file,
+                    source_line=site.source_line,
+                )
+            )
+            if phase in {"seq", "latch"}:
+                state_writers.append(
+                    StateWriter(
+                        signal=stmt.target_signal.name,
+                        phase=phase,
+                        clock=clock,
+                        reset=reset,
+                        reset_async=reset_async,
+                        reset_active_low=reset_active_low,
+                        source_expr_kind=source_expr_kind,
+                        source_signals=tuple(dict.fromkeys(index_signals + value_signals)),
+                        source_memories=value_memories,
+                        source_file=site.source_file,
+                        source_line=site.source_line,
+                    )
+                )
+            for memory_name in value_memories:
+                memory_accesses.append(
+                    MemoryAccess(
+                        memory=memory_name,
+                        access="read",
+                        phase=phase,
+                        target=stmt.target_signal.name,
+                        clock=clock if phase in {"seq", "latch"} else None,
+                        reset=reset if phase in {"seq", "latch"} else None,
+                        reset_async=reset_async if phase in {"seq", "latch"} else False,
+                        reset_active_low=reset_active_low if phase in {"seq", "latch"} else False,
+                        addr_signals=(),
+                        value_signals=tuple(dict.fromkeys(index_signals + value_signals)),
+                        source_file=site.source_file,
+                        source_line=site.source_line,
+                    )
+                )
+            continue
+        if isinstance(stmt, MemWrite):
+            site = _stmt_site(stmt, kind="mem_write", phase=phase)
+            memory_accesses.append(
+                MemoryAccess(
+                    memory=stmt.mem_name,
+                    access="write",
+                    phase=phase,
+                    clock=clock if phase in {"seq", "latch"} else None,
+                    reset=reset if phase in {"seq", "latch"} else None,
+                    reset_async=reset_async if phase in {"seq", "latch"} else False,
+                    reset_active_low=reset_active_low if phase in {"seq", "latch"} else False,
+                    addr_signals=_expr_signal_names(stmt.addr),
+                    value_signals=_expr_signal_names(stmt.value),
+                    byte_enable_signals=_expr_signal_names(stmt.byte_enable) if stmt.byte_enable is not None else (),
+                    source_file=site.source_file,
+                    source_line=site.source_line,
+                )
+            )
+            continue
+        if isinstance(stmt, ArrayWrite):
+            site = _stmt_site(stmt, kind="array_write", phase=phase)
+            memory_accesses.append(
+                MemoryAccess(
+                    memory=stmt.array_name,
+                    access="write",
+                    phase=phase,
+                    clock=clock if phase in {"seq", "latch"} else None,
+                    reset=reset if phase in {"seq", "latch"} else None,
+                    reset_async=reset_async if phase in {"seq", "latch"} else False,
+                    reset_active_low=reset_active_low if phase in {"seq", "latch"} else False,
+                    addr_signals=_expr_signal_names(stmt.index),
+                    value_signals=_expr_signal_names(stmt.value),
+                    source_file=site.source_file,
+                    source_line=site.source_line,
+                )
+            )
+            continue
+        if isinstance(stmt, IfNode):
+            _walk_stmt_list(
+                stmt.then_body,
+                phase=phase,
+                clock=clock,
+                reset=reset,
+                reset_async=reset_async,
+                reset_active_low=reset_active_low,
+                signal_drivers=signal_drivers,
+                state_writers=state_writers,
+                memory_accesses=memory_accesses,
+            )
+            for _, body in stmt.elif_bodies:
+                _walk_stmt_list(
+                    body,
+                    phase=phase,
+                    clock=clock,
+                    reset=reset,
+                    reset_async=reset_async,
+                    reset_active_low=reset_active_low,
+                    signal_drivers=signal_drivers,
+                    state_writers=state_writers,
+                    memory_accesses=memory_accesses,
+                )
+            _walk_stmt_list(
+                stmt.else_body,
+                phase=phase,
+                clock=clock,
+                reset=reset,
+                reset_async=reset_async,
+                reset_active_low=reset_active_low,
+                signal_drivers=signal_drivers,
+                state_writers=state_writers,
+                memory_accesses=memory_accesses,
+            )
+            continue
+        if isinstance(stmt, SwitchNode):
+            for _, body in stmt.cases:
+                _walk_stmt_list(
+                    body,
+                    phase=phase,
+                    clock=clock,
+                    reset=reset,
+                    reset_async=reset_async,
+                    reset_active_low=reset_active_low,
+                    signal_drivers=signal_drivers,
+                    state_writers=state_writers,
+                    memory_accesses=memory_accesses,
+                )
+            _walk_stmt_list(
+                stmt.default_body,
+                phase=phase,
+                clock=clock,
+                reset=reset,
+                reset_async=reset_async,
+                reset_active_low=reset_active_low,
+                signal_drivers=signal_drivers,
+                state_writers=state_writers,
+                memory_accesses=memory_accesses,
+            )
+            continue
+        if isinstance(stmt, WhenNode):
+            for _, body in stmt.branches:
+                _walk_stmt_list(
+                    body,
+                    phase=phase,
+                    clock=clock,
+                    reset=reset,
+                    reset_async=reset_async,
+                    reset_active_low=reset_active_low,
+                    signal_drivers=signal_drivers,
+                    state_writers=state_writers,
+                    memory_accesses=memory_accesses,
+                )
+
+
+def _describe_module_hierarchy(module: Module) -> Tuple[ModuleInstancePath, ...]:
+    nodes: List[ModuleInstancePath] = []
+
+    def walk(mod: Module, *, path: str, parent_path: Optional[str]) -> None:
+        child_instances = tuple(inst_name for inst_name, _ in mod._submodules)
+        nodes.append(
+            ModuleInstancePath(
+                path=path,
+                module_name=mod.name,
+                type_name=getattr(mod, "_type_name", mod.__class__.__name__),
+                parent_path=parent_path,
+                child_instances=child_instances,
+            )
+        )
+        for inst_name, child in mod._submodules:
+            child_path = f"{path}.{inst_name}"
+            walk(child, path=child_path, parent_path=path)
+
+    walk(module, path=module.name, parent_path=None)
+    return tuple(nodes)
+
+
+def _collect_implicit_port_connections(
+    stmts: List[Any],
+    *,
+    parent_module: Module,
+    port_connections: List[PortConnection],
+) -> None:
+    for stmt in stmts:
+        if isinstance(stmt, Assign):
+            target = stmt.target
+            if isinstance(target, Signal):
+                owner = getattr(target, "_parent_module", None)
+                if owner is not None and owner is not parent_module and isinstance(target, Input):
+                    owner_name = next(
+                        (inst_name for inst_name, submod in parent_module._submodules if submod is owner),
+                        owner.name,
+                    )
+                    port_connections.append(
+                        PortConnection(
+                            instance=owner_name,
+                            module=owner.name,
+                            port=target.name,
+                            direction="input",
+                            expr_kind=_expr_kind(stmt.value),
+                            connected_signals=_expr_signal_names(stmt.value),
+                            connected_memories=_expr_memory_names(stmt.value),
+                        )
+                    )
+            if isinstance(stmt.value, Ref):
+                source_signal = stmt.value.signal
+                owner = getattr(source_signal, "_parent_module", None)
+                if owner is not None and owner is not parent_module and isinstance(source_signal, Output):
+                    owner_name = next(
+                        (inst_name for inst_name, submod in parent_module._submodules if submod is owner),
+                        owner.name,
+                    )
+                    target_name, _ = _assignment_target_info(stmt.target)
+                    connected = (target_name,) if target_name is not None else ()
+                    port_connections.append(
+                        PortConnection(
+                            instance=owner_name,
+                            module=owner.name,
+                            port=source_signal.name,
+                            direction="output",
+                            expr_kind="ref",
+                            connected_signals=connected,
+                            connected_memories=(),
+                        )
+                    )
+            continue
+        if isinstance(stmt, IfNode):
+            _collect_implicit_port_connections(
+                stmt.then_body,
+                parent_module=parent_module,
+                port_connections=port_connections,
+            )
+            for _, body in stmt.elif_bodies:
+                _collect_implicit_port_connections(
+                    body,
+                    parent_module=parent_module,
+                    port_connections=port_connections,
+                )
+            _collect_implicit_port_connections(
+                stmt.else_body,
+                parent_module=parent_module,
+                port_connections=port_connections,
+            )
+            continue
+        if isinstance(stmt, SwitchNode):
+            for _, body in stmt.cases:
+                _collect_implicit_port_connections(
+                    body,
+                    parent_module=parent_module,
+                    port_connections=port_connections,
+                )
+            _collect_implicit_port_connections(
+                stmt.default_body,
+                parent_module=parent_module,
+                port_connections=port_connections,
+            )
+            continue
+        if isinstance(stmt, WhenNode):
+            for _, body in stmt.branches:
+                _collect_implicit_port_connections(
+                    body,
+                    parent_module=parent_module,
+                    port_connections=port_connections,
+                )
+
+
+def _analyze_module_connectivity(module: Module) -> ModuleConnectivityReport:
+    signal_drivers: List[SignalDriver] = []
+    state_writers: List[StateWriter] = []
+    memory_accesses: List[MemoryAccess] = []
+    port_connections: List[PortConnection] = []
+
+    _walk_stmt_list(
+        module._top_level,
+        phase="comb",
+        clock=None,
+        reset=None,
+        reset_async=False,
+        reset_active_low=False,
+        signal_drivers=signal_drivers,
+        state_writers=state_writers,
+        memory_accesses=memory_accesses,
+    )
+    for body in module._comb_blocks:
+        _walk_stmt_list(
+            body,
+            phase="comb",
+            clock=None,
+            reset=None,
+            reset_async=False,
+            reset_active_low=False,
+            signal_drivers=signal_drivers,
+            state_writers=state_writers,
+            memory_accesses=memory_accesses,
+        )
+    for body in module._latch_blocks:
+        _walk_stmt_list(
+            body,
+            phase="latch",
+            clock=None,
+            reset=None,
+            reset_async=False,
+            reset_active_low=False,
+            signal_drivers=signal_drivers,
+            state_writers=state_writers,
+            memory_accesses=memory_accesses,
+        )
+    for clk, rst, reset_async, reset_active_low, body in module._seq_blocks:
+        _walk_stmt_list(
+            body,
+            phase="seq",
+            clock=getattr(clk, "name", None),
+            reset=getattr(rst, "name", None) if rst is not None else None,
+            reset_async=reset_async,
+            reset_active_low=reset_active_low,
+            signal_drivers=signal_drivers,
+            state_writers=state_writers,
+            memory_accesses=memory_accesses,
+        )
+
+    for stmt in module._top_level:
+        if not isinstance(stmt, SubmoduleInst):
+            continue
+        submodule = stmt.module
+        instance_name = stmt.name
+        for port_name, expr in stmt.port_map.items():
+            direction = "unknown"
+            if port_name in submodule._inputs:
+                direction = "input"
+            elif port_name in submodule._outputs:
+                direction = "output"
+            port_connections.append(
+                PortConnection(
+                    instance=instance_name,
+                    module=submodule.name,
+                    port=port_name,
+                    direction=direction,
+                    expr_kind=_expr_kind(expr),
+                    connected_signals=_expr_signal_names(expr),
+                    connected_memories=_expr_memory_names(expr),
+                )
+            )
+    _collect_implicit_port_connections(
+        module._top_level,
+        parent_module=module,
+        port_connections=port_connections,
+    )
+    for body in module._comb_blocks:
+        _collect_implicit_port_connections(
+            body,
+            parent_module=module,
+            port_connections=port_connections,
+        )
+
+    return ModuleConnectivityReport(
+        hierarchy=_describe_module_hierarchy(module),
+        signal_drivers=tuple(signal_drivers),
+        state_writers=tuple(state_writers),
+        memory_accesses=tuple(memory_accesses),
+        port_connections=tuple(port_connections),
+    )
+
 # ---------------------------------------------------------------------
 # GenVar substitution helpers (used by both simulation and flattening)
 # ---------------------------------------------------------------------
@@ -3151,26 +3906,48 @@ def _subst_genvar_in_expr(expr: Any, var_name: str, value: int) -> Any:
 
 def _subst_genvar_in_stmt(stmt: Any, var_name: str, value: int) -> Any:
     if isinstance(stmt, Assign):
-        return Assign(_subst_genvar_in_expr(stmt.target, var_name, value),
-                      _subst_genvar_in_expr(stmt.value, var_name, value), stmt.blocking)
+        return _copy_source_location(
+            Assign(
+                _subst_genvar_in_expr(stmt.target, var_name, value),
+                _subst_genvar_in_expr(stmt.value, var_name, value),
+                stmt.blocking,
+            ),
+            stmt,
+        )
     if isinstance(stmt, IndexedAssign):
-        return IndexedAssign(stmt.target_signal,
-                             _subst_genvar_in_expr(stmt.index, var_name, value),
-                             _subst_genvar_in_expr(stmt.value, var_name, value), stmt.blocking)
+        return _copy_source_location(
+            IndexedAssign(
+                stmt.target_signal,
+                _subst_genvar_in_expr(stmt.index, var_name, value),
+                _subst_genvar_in_expr(stmt.value, var_name, value),
+                stmt.blocking,
+            ),
+            stmt,
+        )
     if isinstance(stmt, ArrayWrite):
-        return ArrayWrite(stmt.array_name,
-                          _subst_genvar_in_expr(stmt.index, var_name, value),
-                          _subst_genvar_in_expr(stmt.value, var_name, value),
-                          stmt.blocking)
+        return _copy_source_location(
+            ArrayWrite(
+                stmt.array_name,
+                _subst_genvar_in_expr(stmt.index, var_name, value),
+                _subst_genvar_in_expr(stmt.value, var_name, value),
+                stmt.blocking,
+            ),
+            stmt,
+        )
     if isinstance(stmt, MemWrite):
-        return MemWrite(stmt.mem_name,
-                        _subst_genvar_in_expr(stmt.addr, var_name, value),
-                        _subst_genvar_in_expr(stmt.value, var_name, value),
-                        byte_enable=(
-                            _subst_genvar_in_expr(stmt.byte_enable, var_name, value)
-                            if stmt.byte_enable is not None
-                            else None
-                        ))
+        return _copy_source_location(
+            MemWrite(
+                stmt.mem_name,
+                _subst_genvar_in_expr(stmt.addr, var_name, value),
+                _subst_genvar_in_expr(stmt.value, var_name, value),
+                byte_enable=(
+                    _subst_genvar_in_expr(stmt.byte_enable, var_name, value)
+                    if stmt.byte_enable is not None
+                    else None
+                ),
+            ),
+            stmt,
+        )
     if isinstance(stmt, IfNode):
         n = IfNode(_subst_genvar_in_expr(stmt.cond, var_name, value))
         n.then_body = [_subst_genvar_in_stmt(s, var_name, value) for s in stmt.then_body]
@@ -3299,22 +4076,44 @@ def flatten_module(module: "Module") -> "Module":
     def _rename_stmt(stmt, mapping, mem_rename, arr_rename):
         if isinstance(stmt, Assign):
             new_target = mapping.get(stmt.target, stmt.target) if isinstance(stmt.target, Signal) else _rename_expr(stmt.target, mapping, mem_rename, arr_rename)
-            return Assign(new_target, _rename_expr(stmt.value, mapping, mem_rename, arr_rename), stmt.blocking)
+            return _copy_source_location(
+                Assign(new_target, _rename_expr(stmt.value, mapping, mem_rename, arr_rename), stmt.blocking),
+                stmt,
+            )
         if isinstance(stmt, IndexedAssign):
             ts = mapping.get(stmt.target_signal, stmt.target_signal)
-            return IndexedAssign(ts, _rename_expr(stmt.index, mapping, mem_rename, arr_rename), _rename_expr(stmt.value, mapping, mem_rename, arr_rename), stmt.blocking)
-        if isinstance(stmt, ArrayWrite):
-            return ArrayWrite(arr_rename.get(stmt.array_name, stmt.array_name), _rename_expr(stmt.index, mapping, mem_rename, arr_rename), _rename_expr(stmt.value, mapping, mem_rename, arr_rename), stmt.blocking)
-        if isinstance(stmt, MemWrite):
-            return MemWrite(
-                mem_rename.get(stmt.mem_name, stmt.mem_name),
-                _rename_expr(stmt.addr, mapping, mem_rename, arr_rename),
-                _rename_expr(stmt.value, mapping, mem_rename, arr_rename),
-                byte_enable=(
-                    _rename_expr(stmt.byte_enable, mapping, mem_rename, arr_rename)
-                    if stmt.byte_enable is not None
-                    else None
+            return _copy_source_location(
+                IndexedAssign(
+                    ts,
+                    _rename_expr(stmt.index, mapping, mem_rename, arr_rename),
+                    _rename_expr(stmt.value, mapping, mem_rename, arr_rename),
+                    stmt.blocking,
                 ),
+                stmt,
+            )
+        if isinstance(stmt, ArrayWrite):
+            return _copy_source_location(
+                ArrayWrite(
+                    arr_rename.get(stmt.array_name, stmt.array_name),
+                    _rename_expr(stmt.index, mapping, mem_rename, arr_rename),
+                    _rename_expr(stmt.value, mapping, mem_rename, arr_rename),
+                    stmt.blocking,
+                ),
+                stmt,
+            )
+        if isinstance(stmt, MemWrite):
+            return _copy_source_location(
+                MemWrite(
+                    mem_rename.get(stmt.mem_name, stmt.mem_name),
+                    _rename_expr(stmt.addr, mapping, mem_rename, arr_rename),
+                    _rename_expr(stmt.value, mapping, mem_rename, arr_rename),
+                    byte_enable=(
+                        _rename_expr(stmt.byte_enable, mapping, mem_rename, arr_rename)
+                        if stmt.byte_enable is not None
+                        else None
+                    ),
+                ),
+                stmt,
             )
         if isinstance(stmt, IfNode):
             n = IfNode(_rename_expr(stmt.cond, mapping, mem_rename, arr_rename))

@@ -50,13 +50,86 @@ from rtlgen_x.dsl.core import (
 @dataclass
 class EmitProfile:
     """Verilog 发射配置档。"""
-    style: str = "simple"           # "simple" | "lowrisc" | "synopsys" | "sv"
+    style: str = "review"           # "review" | "default" | "compact" | legacy aliases
     always_comb: bool = False       # 使用 always_comb 而非 always @(*)
     always_ff: bool = False         # 使用 always_ff 而非 always
     explicit_nettype: bool = False  # 在文件头添加 `default_nettype none
     one_module_per_file: bool = False
     reset_style: Optional[str] = None  # None | "async_low" | "async_high" | "sync"
     language: str = "verilog2001"   # "verilog2001" | "systemverilog"
+    emit_header: Optional[bool] = None
+    emit_port_table: Optional[bool] = None
+    emit_block_comments: Optional[bool] = None
+    prefer_sv_always: Optional[bool] = None
+    disable_cse: Optional[bool] = None
+    enable_complexity_extraction: Optional[bool] = None
+    explicit_blank_lines: Optional[bool] = None
+
+    @classmethod
+    def review(cls, **overrides: Any) -> "EmitProfile":
+        return cls(style="review", **overrides)
+
+    @classmethod
+    def default(cls, **overrides: Any) -> "EmitProfile":
+        return cls(style="default", **overrides)
+
+    @classmethod
+    def compact(cls, **overrides: Any) -> "EmitProfile":
+        return cls(style="compact", **overrides)
+
+    @classmethod
+    def systemverilog(cls, style: str = "review", **overrides: Any) -> "EmitProfile":
+        return cls(
+            style=style,
+            language="systemverilog",
+            always_comb=True,
+            always_ff=True,
+            **overrides,
+        )
+
+    def resolved(self) -> Dict[str, Any]:
+        raw_style = (self.style or "review").lower()
+        style = raw_style
+        if style in ("simple", "review", "lowrisc", "synopsys"):
+            style = "review"
+        elif style in ("sv", "default"):
+            style = "default"
+        elif style == "compact":
+            style = "compact"
+
+        config: Dict[str, Any] = {
+            "style": style,
+            "always_comb": self.always_comb,
+            "always_ff": self.always_ff,
+            "explicit_nettype": self.explicit_nettype,
+            "one_module_per_file": self.one_module_per_file,
+            "reset_style": self.reset_style,
+            "language": self.language,
+            "emit_header": style != "compact",
+            "emit_port_table": style != "compact",
+            "emit_block_comments": style != "compact",
+            "prefer_sv_always": self.language == "systemverilog" or raw_style == "sv",
+            "disable_cse": style != "compact",
+            "enable_complexity_extraction": style != "compact",
+            "explicit_blank_lines": style != "compact",
+        }
+
+        overrides = {
+            "emit_header": self.emit_header,
+            "emit_port_table": self.emit_port_table,
+            "emit_block_comments": self.emit_block_comments,
+            "prefer_sv_always": self.prefer_sv_always,
+            "disable_cse": self.disable_cse,
+            "enable_complexity_extraction": self.enable_complexity_extraction,
+            "explicit_blank_lines": self.explicit_blank_lines,
+        }
+        for key, value in overrides.items():
+            if value is not None:
+                config[key] = value
+
+        if self.always_comb:
+            config["prefer_sv_always"] = True
+        return config
 
 
 class VerilogEmitter:
@@ -70,11 +143,31 @@ class VerilogEmitter:
         self.disable_cse = disable_cse
         self.lines: List[str] = []
         self._cse_counter: int = 0  # global CSE wire counter across all always blocks
+        self._emit_header = True
+        self._emit_port_table = True
+        self._emit_block_comments = True
+        self._enable_complexity_extraction = True
+        self._explicit_blank_lines = True
 
         # Apply profile overrides
         if profile is not None:
-            if profile.always_comb:
+            resolved = profile.resolved()
+            self._emit_header = resolved["emit_header"]
+            self._emit_port_table = resolved["emit_port_table"]
+            self._emit_block_comments = resolved["emit_block_comments"]
+            self._enable_complexity_extraction = resolved["enable_complexity_extraction"]
+            self._explicit_blank_lines = resolved["explicit_blank_lines"]
+            self.disable_cse = resolved["disable_cse"]
+            if resolved["prefer_sv_always"]:
                 self.use_sv_always = True
+
+    def _append_blank_line(self) -> None:
+        if self._explicit_blank_lines:
+            self.lines.append("")
+
+    def _emit_section_comment(self, title: str) -> None:
+        if self._emit_block_comments:
+            self.lines.append(f"    // {title}")
 
     # -----------------------------------------------------------------
     # Public API
@@ -85,6 +178,7 @@ class VerilogEmitter:
         self.lines = []
         self._extra_port_wires: List[Tuple[str, str]] = []
         self._port_expr_counter: int = 0
+        self._memory_decl_map: Dict[str, Any] = {}
         # Build mapping from submodule port signal id to instance name.
         # This lets us emit prefixed names (e.g. u_valu_wid) when a submodule
         # port is referenced directly, avoiding name collisions between different
@@ -108,61 +202,19 @@ class VerilogEmitter:
         for _, _, _, _, body in module._seq_blocks:
             _collect_submods(body)
         self._emit_module(module)
+        del self._memory_decl_map
         del self._submod_port_inst_map
         return "\n".join(self.lines)
 
     def _validate_storage_codegen_subset(self, module: Module) -> None:
-        def _scan_stmt(stmt: Any) -> None:
-            if isinstance(stmt, MemWrite) and getattr(stmt, "byte_enable", None) is not None:
+        for memory in getattr(module, "_memories", {}).values():
+            read_style = getattr(memory, "read_style", "async")
+            read_latency = int(getattr(memory, "read_latency", 0))
+            if read_style == "sync" or read_latency != 0:
                 raise NotImplementedError(
-                    "VerilogEmitter does not yet support emitting byte-enable memory writes; "
-                    "the storage contract is explicit, but emitted RTL closure is still incomplete"
+                    "VerilogEmitter does not yet synthesize explicit sync-read/read-latency memories; "
+                    "use the executable lowering path for simulation, or author explicit sampled-output RTL"
                 )
-            if isinstance(stmt, IfNode):
-                for nested in stmt.then_body:
-                    _scan_stmt(nested)
-                for _cond, body in stmt.elif_bodies:
-                    for nested in body:
-                        _scan_stmt(nested)
-                for nested in stmt.else_body:
-                    _scan_stmt(nested)
-                return
-            if isinstance(stmt, WhenNode):
-                for _cond, body in stmt.branches:
-                    for nested in body:
-                        _scan_stmt(nested)
-                return
-            if isinstance(stmt, SwitchNode):
-                for _value, body in stmt.cases:
-                    for nested in body:
-                        _scan_stmt(nested)
-                for nested in stmt.default_body:
-                    _scan_stmt(nested)
-                return
-            if isinstance(stmt, ForGenNode):
-                for nested in stmt.body:
-                    _scan_stmt(nested)
-                return
-            if isinstance(stmt, GenIfNode):
-                for nested in stmt.then_body:
-                    _scan_stmt(nested)
-                for _cond, body in stmt.elif_bodies:
-                    for nested in body:
-                        _scan_stmt(nested)
-                for nested in stmt.else_body:
-                    _scan_stmt(nested)
-
-        for stmt in module._top_level:
-            _scan_stmt(stmt)
-        for body in module._comb_blocks:
-            for stmt in body:
-                _scan_stmt(stmt)
-        for _clk, _rst, _reset_async, _reset_active_low, body in module._seq_blocks:
-            for stmt in body:
-                _scan_stmt(stmt)
-        for body in module._init_blocks:
-            for stmt in body:
-                _scan_stmt(stmt)
 
     def emit_with_lint(self, module: Module, auto_fix: bool = False, rules: Optional[List[str]] = None) -> Tuple[str, "LintResult"]:
         """生成 Verilog 并运行 lint，返回 (verilog_text, lint_result)。"""
@@ -328,13 +380,15 @@ class VerilogEmitter:
         - Timing/protocol notes
         - Per-always-block descriptions (if provided in ModuleDoc)
         """
+        if not self._emit_header:
+            return
         doc = getattr(module, '_module_doc', None)
         if doc is None:
             # Fallback: emit minimal header with module name
             self.lines.append(f"// ==========================================================")
             self.lines.append(f"// Module: {self._emitted_sv_module_name(module)}")
             self.lines.append(f"// ==========================================================")
-            self.lines.append("")
+            self._append_blank_line()
             return
 
         mod_name = self._emitted_sv_module_name(module)
@@ -368,10 +422,12 @@ class VerilogEmitter:
                 self.lines.append(f"//   {line}")
             self.lines.append("//")
 
-        self.lines.append("")
+        self._append_blank_line()
 
     def _emit_port_table(self, module: Module):
         """Emit a formatted table of input and output ports."""
+        if not self._emit_port_table:
+            return
         inputs = list(module._inputs.values())
         outputs = list(module._outputs.values())
 
@@ -398,20 +454,20 @@ class VerilogEmitter:
         # `default_nettype none` — 防止隐式 wire 推断
         if self.profile is not None and self.profile.explicit_nettype:
             self.lines.append("`default_nettype none")
-            self.lines.append("")
+            self._append_blank_line()
 
         # ---- File header from ModuleDoc (agent-injected documentation) ----
         self._emit_module_header(module)
 
         # 模块级注释与建议
-        if module._module_comments or module._module_suggestions:
+        if self._emit_block_comments and (module._module_comments or module._module_suggestions):
             for line in module._module_comments:
                 self.lines.append(f"// {line}")
             if module._module_suggestions:
                 self.lines.append("// PPA Suggestions:")
                 for sug in module._module_suggestions:
                     self.lines.append(f"//   - {sug}")
-            self.lines.append("")
+            self._append_blank_line()
 
         # 先推导哪些 Output 需要在 always 块中被驱动，从而声明为 output reg
         reg_outputs = self._collect_reg_outputs(module)
@@ -442,12 +498,22 @@ class VerilogEmitter:
                 comma = "," if i < len(ports) - 1 else ""
                 self.lines.append(f"    {p}{comma}")
         self.lines.append(");")
-        self.lines.append("")
+        self._append_blank_line()
 
         # Memory 声明
+        has_memory_section = bool(module._memories or module._arrays)
+        if has_memory_section:
+            self._emit_section_comment("Storage declarations")
         self._emit_memory_decls(module)
 
         # 内部信号声明
+        if (
+            module._params
+            or module._wires
+            or module._regs
+            or module._arrays
+        ):
+            self._emit_section_comment("Internal declarations")
         self._emit_internal_decls(module)
 
         # Emit extra port wires for complex slice expressions in submodule instances
@@ -455,7 +521,7 @@ class VerilogEmitter:
             self.lines.append(decl_line)
             self.lines.append(assign_line)
         if self._extra_port_wires:
-            self.lines.append("")
+            self._append_blank_line()
 
         # Audit Fix 0522 — Section 2.2: Resolve cross-module assignments
         # (e.g., ifu.clk <<= self.clk) into proper submodule port connections
@@ -463,6 +529,8 @@ class VerilogEmitter:
         self._resolve_cross_module_assignments(module)
 
         # 顶层语句（assign、子模块实例等）
+        if module._top_level or module._submodules:
+            self._emit_section_comment("Structural wiring and instances")
         for stmt in module._top_level:
             self._emit_toplevel_stmt(stmt)
 
@@ -477,31 +545,40 @@ class VerilogEmitter:
             self._emit_implicit_submodule(inst_name, submod, module)
 
         # 锁存器块 (always_latch)
+        if module._latch_blocks:
+            self._emit_section_comment("Latch logic")
         for body in module._latch_blocks:
             self._emit_always_latch(body)
 
         # 初始化块 (initial)
+        if module._init_blocks:
+            self._emit_section_comment("Initialization")
         for body in module._init_blocks:
             self._emit_initial(body)
 
         # 组合逻辑块
+        if module._comb_blocks:
+            self._emit_section_comment("Combinational logic")
         doc = getattr(module, '_module_doc', None)
         comb_docs = list(doc.always_descriptions) if doc else []
         comb_idx = 0
         for body in module._comb_blocks:
             doc_comment = ""
-            if comb_idx < len(comb_docs) and comb_docs[comb_idx][0] == "Comb":
-                doc_comment = comb_docs[comb_idx][1]
-                comb_idx += 1
-            if not doc_comment:
-                # Auto-generate comment from assigned targets
-                doc_comment = self._auto_always_comment(body, "Comb")
+            if self._emit_block_comments:
+                if comb_idx < len(comb_docs) and comb_docs[comb_idx][0] == "Comb":
+                    doc_comment = comb_docs[comb_idx][1]
+                    comb_idx += 1
+                if not doc_comment:
+                    # Auto-generate comment from assigned targets
+                    doc_comment = self._auto_always_comment(body, "Comb")
             if self._is_simple_comb_block(body):
                 self._emit_simple_comb(body, doc_comment=doc_comment)
             else:
                 self._emit_always_comb(body, doc_comment=doc_comment)
 
         # 时序逻辑块
+        if module._seq_blocks:
+            self._emit_section_comment("Sequential logic")
         seq_docs = list(doc.always_descriptions) if doc else []
         seq_idx = 0
         # Skip already-used Comb entries
@@ -512,11 +589,12 @@ class VerilogEmitter:
                 break
         for clk, rst, reset_async, reset_active_low, body in module._seq_blocks:
             doc_comment = ""
-            if seq_idx < len(seq_docs) and seq_docs[seq_idx][0] in ("Seq", "Reset"):
-                doc_comment = seq_docs[seq_idx][1]
-                seq_idx += 1
-            if not doc_comment:
-                doc_comment = self._auto_always_comment(body, "Seq")
+            if self._emit_block_comments:
+                if seq_idx < len(seq_docs) and seq_docs[seq_idx][0] in ("Seq", "Reset"):
+                    doc_comment = seq_docs[seq_idx][1]
+                    seq_idx += 1
+                if not doc_comment:
+                    doc_comment = self._auto_always_comment(body, "Seq")
             self._emit_always_seq(clk, rst, reset_async, reset_active_low, body, doc_comment=doc_comment)
 
         self.lines.append("endmodule")
@@ -535,6 +613,7 @@ class VerilogEmitter:
         all_arrays: Dict[str, Any] = dict(module._memories)
         all_arrays.update(module._arrays)
         self._collect_arrays_from_ast(module, all_arrays)
+        self._memory_decl_map = dict(all_arrays)
         registered_array_names = {a.name for a in module._arrays.values()}
         for mem in all_arrays.values():
             if mem.name in seen:
@@ -562,7 +641,7 @@ class VerilogEmitter:
                 self.lines.append(f"        end")
                 self.lines.append(f"    end")
         if module._memories:
-            self.lines.append("")
+            self._append_blank_line()
 
     @staticmethod
     def _extract_literal_int(expr) -> int | None:
@@ -778,7 +857,7 @@ class VerilogEmitter:
         for p in localparams:
             self.lines.append(f"    localparam {p.name} = {p.value};")
         if localparams:
-            self.lines.append("")
+            self._append_blank_line()
 
         # 隐式声明
         undeclared = self._collect_undeclared_signals(module)
@@ -790,7 +869,7 @@ class VerilogEmitter:
             seen_names.add(decl_name)
             self.lines.append(self._sig_decl("logic", sig, name_override=decl_name))
         if undeclared:
-            self.lines.append("")
+            self._append_blank_line()
 
         # internal signals (use logic so they can be driven in both assign and always)
         for sig in set(module._wires.values()):
@@ -831,7 +910,7 @@ class VerilogEmitter:
                 if sig.name not in module._wires and sig.name not in module._regs:
                     pass  # implicit signals handled elsewhere or expected to exist
         if module._wires or module._regs or module._arrays or undeclared:
-            self.lines.append("")
+            self._append_blank_line()
 
     def _sig_decl(self, vtype: str, sig: Signal, name_override: Optional[str] = None) -> str:
         init_part = ""
@@ -975,10 +1054,7 @@ class VerilogEmitter:
                 f"{prefix}{stmt.array_name}[{self._emit_expr(stmt.index)}] {op} {self._emit_expr(stmt.value)};"
             )
         elif isinstance(stmt, MemWrite):
-            op = "<=" if mode == "seq" else "="
-            self.lines.append(
-                f"{prefix}{stmt.mem_name}[{self._emit_expr(stmt.addr)}] {op} {self._emit_expr(stmt.value)};"
-            )
+            self._emit_mem_write(stmt, indent_level, mode)
         elif isinstance(stmt, SubmoduleInst):
             # 在 generate-for 块中支持子模块实例化
             self._emit_submodule_inst_with_indent(stmt, indent_level, mode)
@@ -986,6 +1062,31 @@ class VerilogEmitter:
             self._emit_comment(stmt, indent_level)
         else:
             raise TypeError(f"Unknown statement: {type(stmt)}")
+
+    def _emit_mem_write(self, stmt: MemWrite, indent_level: int, mode: str) -> None:
+        prefix = self.indent * indent_level
+        op = "<=" if mode == "seq" else "="
+        addr = self._emit_expr(stmt.addr)
+        value = self._emit_expr(stmt.value)
+        memory = self._memory_decl_map.get(stmt.mem_name)
+        byte_enable = getattr(stmt, "byte_enable", None)
+        if byte_enable is None:
+            self.lines.append(f"{prefix}{stmt.mem_name}[{addr}] {op} {value};")
+            return
+        if memory is None or getattr(memory, "byte_enable_granularity", None) is None:
+            raise NotImplementedError(
+                f"memory '{stmt.mem_name}' uses byte-enable writes but does not expose "
+                "byte_enable_granularity metadata to the emitter"
+            )
+        granularity = int(memory.byte_enable_granularity)
+        lane_count = int(memory.width) // granularity
+        be_expr = self._emit_expr(byte_enable)
+        for lane_idx in range(lane_count):
+            lo = lane_idx * granularity
+            hi = lo + granularity - 1
+            self.lines.append(
+                f"{prefix}if ({be_expr}[{lane_idx}]) {stmt.mem_name}[{addr}][{hi}:{lo}] {op} {value}[{hi}:{lo}];"
+            )
 
     def _collect_assigned_targets(self, body: List[Any]) -> set:
         targets = set()
@@ -1040,14 +1141,14 @@ class VerilogEmitter:
             else:
                 self.lines.append(f"    logic [{w.width - 1}:0] {w.name};")
         if cse_wires:
-            self.lines.append("")
+            self._append_blank_line()
 
     def _emit_simple_comb(self, body: List[Any], doc_comment: str = ""):
         """Emit simple comb block as assign statements.
 
         If doc_comment is provided, emit a key comment before the block.
         """
-        if doc_comment:
+        if doc_comment and self._emit_block_comments:
             self.lines.append(f"    // Comb: {doc_comment}")
         has_mux_chain = any(
             isinstance(stmt, Assign) and isinstance(stmt.target, Signal) and self._is_mux_chain(stmt.value) for stmt in body
@@ -1056,7 +1157,7 @@ class VerilogEmitter:
             if not self.disable_cse:
                 body = self._cse_pass(body)
                 extra_wires = []
-            elif self._needs_complexity_extraction(body):
+            elif self._enable_complexity_extraction and self._needs_complexity_extraction(body):
                 body, extra_wires = self._complexity_pass(body)
             else:
                 extra_wires = []
@@ -1072,7 +1173,8 @@ class VerilogEmitter:
             self._emit_cse_decls(cse_wires)
             if extra_wires:
                 self._emit_cse_decls(extra_wires)
-            self.lines.append("    always @(*) begin")
+            keyword = "always_comb" if self.use_sv_always else "always @(*)"
+            self.lines.append(f"    {keyword} begin")
             for stmt in cse_assigns:
                 lhs = self._emit_lhs(stmt.target)
                 self.lines.append(f"        {lhs} = {self._emit_expr(stmt.value)};")
@@ -1098,13 +1200,13 @@ class VerilogEmitter:
                 elif isinstance(stmt, Comment):
                     self._emit_comment(stmt, indent_level=2)
             self.lines.append("    end")
-            self.lines.append("")
+            self._append_blank_line()
             return
 
         if not self.disable_cse:
             body = self._cse_pass(body)
             extra_wires: List[Signal] = []
-        elif self._needs_complexity_extraction(body):
+        elif self._enable_complexity_extraction and self._needs_complexity_extraction(body):
             body, extra_wires = self._complexity_pass(body)
         else:
             extra_wires = []
@@ -1147,7 +1249,7 @@ class VerilogEmitter:
             elif isinstance(stmt, Comment):
                 self._emit_comment(stmt, indent_level=1)
         if body:
-            self.lines.append("")
+            self._append_blank_line()
 
     def _expr_signature(self, expr: Any) -> tuple:
         if isinstance(expr, Const):
@@ -1324,7 +1426,7 @@ class VerilogEmitter:
             target_str = ", ".join(sorted_targets)
         else:
             target_str = ", ".join(sorted_targets[:3]) + f" (+{len(sorted_targets) - 3})"
-        return f"{block_type}: {target_str}"
+        return target_str
 
     def _emit_always_comb(self, body: List[Any], doc_comment: str = ""):
         """Emit a combinational logic block.
@@ -1352,9 +1454,9 @@ class VerilogEmitter:
             else:
                 self.lines.append(f"    logic [{w.width - 1}:0] {w.name};")
         if cse_wires:
-            self.lines.append("")
+            self._append_blank_line()
 
-        if doc_comment:
+        if doc_comment and self._emit_block_comments:
             self.lines.append(f"    // Comb: {doc_comment}")
         self.lines.append(f"    {keyword} begin")
         for stmt in cse_assigns:
@@ -1362,7 +1464,7 @@ class VerilogEmitter:
         for stmt in rest:
             self._emit_stmt(stmt, 2, "comb")
         self.lines.append("    end")
-        self.lines.append("")
+        self._append_blank_line()
 
     def _emit_else_chain(self, stmt: IfNode, indent_level: int, mode: str):
         prefix = self.indent * indent_level
@@ -1410,7 +1512,7 @@ class VerilogEmitter:
         for stmt in body:
             self._emit_stmt(stmt, indent_level=2, mode="comb")
         self.lines.append("    end")
-        self.lines.append("")
+        self._append_blank_line()
 
     def _emit_initial(self, body: List[Any]):
         """Emit initial block."""
@@ -1418,7 +1520,7 @@ class VerilogEmitter:
         for stmt in body:
             self._emit_stmt(stmt, indent_level=2, mode="seq")
         self.lines.append("    end")
-        self.lines.append("")
+        self._append_blank_line()
 
     def _emit_always_seq(self, clk: Signal, rst: Optional[Signal], reset_async: bool, reset_active_low: bool, body: List[Any], doc_comment: str = ""):
         """Emit a sequential logic block.
@@ -1467,13 +1569,38 @@ class VerilogEmitter:
         use_always_ff = self.use_sv_always or (self.profile is not None and self.profile.always_ff)
         keyword = "always_ff" if use_always_ff else "always"
 
-        if doc_comment:
-            self.lines.append(f"    // Seq: {doc_comment}")
+        if self._emit_block_comments:
+            timing_summary = self._format_seq_timing_comment(
+                clk=clk,
+                rst_name=rst_name,
+                rst_async=rst_async,
+                rst_active_low=rst_active_low,
+            )
+            self.lines.append(f"    // Seq timing: {timing_summary}")
+            if doc_comment:
+                self.lines.append(f"    // Seq: {doc_comment}")
         self.lines.append(f"    {keyword} @({sens}) begin")
         for stmt in body:
             self._emit_stmt(stmt, 2, "seq")
         self.lines.append("    end")
-        self.lines.append("")
+        self._append_blank_line()
+
+    def _format_seq_timing_comment(
+        self,
+        *,
+        clk: Signal,
+        rst_name: Optional[str],
+        rst_async: bool,
+        rst_active_low: bool,
+    ) -> str:
+        parts = [f"clk={clk.name}"]
+        if rst_name is None:
+            parts.append("reset=none")
+        else:
+            reset_mode = "async" if rst_async else "sync"
+            reset_polarity = "active-low" if rst_active_low else "active-high"
+            parts.append(f"reset={rst_name} ({reset_mode}, {reset_polarity})")
+        return ", ".join(parts)
 
     def _emit_for_gen(self, stmt: Any, indent_level: int, mode: str):
         prefix = self.indent * indent_level
@@ -1571,7 +1698,7 @@ class VerilogEmitter:
                 expr_str = self._emit_expr(expr_obj)
             self.lines.append(f"{inner}.{port_name}({expr_str}){comma}")
         self.lines.append(f"{prefix});")
-        self.lines.append("")
+        self._append_blank_line()
 
     def _emit_implicit_submodule(self, inst_name: str, submod: Module, parent: Module):
         """为 self.sub = Submodule() 这种隐式实例化生成默认端口映射（按名称匹配）以及参数映射。"""

@@ -6,24 +6,47 @@ import subprocess
 import pytest
 
 from rtlgen_x.dsl import (
+    AHBLite,
+    APB,
+    APBRegisterBank,
     Array,
+    AXI4Stream,
+    AXI4Lite,
+    AXI4LiteRegisterBank,
     ClockDomainSpec,
+    ConnectivitySite,
     Else,
+    EmitProfile,
     If,
     Input,
     DslLoweringError,
+    MemoryAccess,
     Memory,
     build_compiled_simulator_from_dsl,
     lower_dsl_module_to_sim,
     Module,
+    ModuleConnectivityReport,
+    ModuleInstancePath,
     Output,
     PadLeft,
+    PortConnection,
+    ReadyValid,
+    ReadyValidFIFO,
+    ReadyValidRegister,
+    ReqRsp,
+    ReqRspQueue,
     Reg,
     ResetDomainSpec,
     SRA,
+    SkidBuffer,
+    SignalDriver,
+    StateWriter,
     VerilogEmitter,
+    Wishbone,
+    WishboneRegisterBank,
     Wire,
 )
+from rtlgen_x.dsl.lib import AsyncResetRel, SyncCell
 from rtlgen_x.sim.python_runtime import PythonSimulator
 from rtlgen_x.dsl.unsupported import DslSimulationRemovedError
 
@@ -102,6 +125,48 @@ class NestedSliceBinOp(Module):
         def _comb():
             midsum = PadLeft(self.inp[127:64], 65) + PadLeft(self.inp[63:0], 65)
             self.out <<= midsum[64:32][16:0]
+
+
+class ReadableCombSeq(Module):
+    def __init__(self):
+        super().__init__("readable_comb_seq")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.sel = Input(1, "sel")
+        self.a = Input(8, "a")
+        self.b = Input(8, "b")
+        self.out = Output(8, "out")
+        self.state = Reg(8, "state")
+
+        @self.comb
+        def _comb():
+            with If(self.sel == 1):
+                self.out <<= self.a
+            with Else():
+                self.out <<= self.b
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.state <<= 0
+            with Else():
+                self.state <<= self.out
+
+
+class ReadableRepeatedExpr(Module):
+    def __init__(self):
+        super().__init__("readable_repeated_expr")
+        self.a = Input(16, "a")
+        self.b = Input(16, "b")
+        self.out = Output(17, "out")
+
+        @self.comb
+        def _comb():
+            pair = self.a + self.b
+            expr = pair ^ pair
+            for _ in range(9):
+                expr = expr ^ pair
+            self.out <<= expr
 
 
 class SliceUpdate(Module):
@@ -308,6 +373,123 @@ class ByteEnableDeclaredMem(Module):
             self.mem.write(self.addr, self.din, byte_enable=self.be)
 
 
+class SyncReadDeclaredMem(Module):
+    def __init__(self):
+        super().__init__("SyncReadDeclaredMem")
+        self.clk = Input(1, "clk")
+        self.addr = Input(2, "addr")
+        self.dout = Output(8, "dout")
+        self.mem = self.add_memory(
+            Memory(8, 4, "mem", init_data=[10, 20, 30, 40], read_style="sync", read_latency=1)
+        )
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.mem[self.addr]
+
+        @self.seq(self.clk)
+        def _seq():
+            pass
+
+
+class QueryLeaf(Module):
+    def __init__(self):
+        super().__init__("QueryLeaf")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.a = Input(8, "a")
+        self.addr = Input(2, "addr")
+        self.y = Output(8, "y")
+        self.state = Reg(8, "state")
+        self.mem = self.add_memory(Memory(8, 4, "mem", init_data=[1, 2, 3, 4]))
+
+        @self.comb
+        def _comb():
+            self.y <<= self.state + self.mem[self.addr]
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.state <<= 0
+            with Else():
+                self.state <<= self.a
+                self.mem[self.addr] <<= self.a
+
+
+class QueryTop(Module):
+    def __init__(self):
+        super().__init__("QueryTop")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.a = Input(8, "a")
+        self.addr = Input(2, "addr")
+        self.y = Output(8, "y")
+        self.mid = Wire(8, "mid")
+        self.u_leaf = QueryLeaf()
+
+        @self.comb
+        def _comb():
+            self.u_leaf.clk <<= self.clk
+            self.u_leaf.rst <<= self.rst
+            self.u_leaf.a <<= self.a
+            self.u_leaf.addr <<= self.addr
+            self.mid <<= self.u_leaf.y
+            self.y <<= self.mid
+
+
+class ExplicitLeaf(Module):
+    def __init__(self):
+        super().__init__("ExplicitLeaf")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.din
+
+
+class ExplicitTop(Module):
+    def __init__(self):
+        super().__init__("ExplicitTop")
+        self.a = Input(8, "a")
+        self.y = Output(8, "y")
+        leaf = ExplicitLeaf()
+        self.instantiate(leaf, "u_leaf", port_map={"din": self.a, "dout": self.y})
+
+
+class FlattenLeaf(Module):
+    def __init__(self):
+        super().__init__("FlattenLeaf")
+        self.clk = Input(1, "clk")
+        self.a = Input(8, "a")
+        self.addr = Input(2, "addr")
+        self.y = Output(8, "y")
+        self.mem = self.add_memory(Memory(8, 4, "mem", init_data=[1, 2, 3, 4]))
+
+        @self.comb
+        def _comb():
+            self.y <<= self.mem[self.addr]
+
+        @self.seq(self.clk)
+        def _seq():
+            self.mem[self.addr] <<= self.a
+
+
+class FlattenTop(Module):
+    def __init__(self):
+        super().__init__("FlattenTop")
+        self.clk = Input(1, "clk")
+        self.a = Input(8, "a")
+        self.addr = Input(2, "addr")
+        self.y = Output(8, "y")
+        leaf = FlattenLeaf()
+        self.instantiate(
+            leaf,
+            "u_leaf",
+            port_map={"clk": self.clk, "a": self.a, "addr": self.addr, "y": self.y},
+        )
+
+
 class DeclaredDomainMailbox(Module):
     def __init__(self):
         super().__init__("DeclaredDomainMailbox")
@@ -347,6 +529,53 @@ class DeclaredDomainMailbox(Module):
                     self.wptr <<= self.wptr + 1
 
         @self.seq_domain(self.rd_domain)
+        def _rd_seq():
+            with If(self.rd_rst_n == 0):
+                self.rptr <<= 0
+            with Else():
+                with If(self.rd_en == 1):
+                    self.rptr <<= self.rptr + 1
+
+
+class DeclaredDomainMailboxByName(Module):
+    def __init__(self):
+        super().__init__("DeclaredDomainMailboxByName")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst_n = Input(1, "rd_rst_n")
+        self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+        self.mem = Memory(8, 4, "mailbox_mem", init_zero=True)
+        self.wptr = Reg(2, "wptr")
+        self.rptr = Reg(2, "rptr")
+
+        self.reset_domain("wr_reset", self.wr_rst)
+        self.reset_domain(
+            "rd_reset",
+            self.rd_rst_n,
+            reset_async=True,
+            reset_active_low=True,
+        )
+        self.clock_domain("write", self.wr_clk, self.declared_reset_domains[0])
+        self.clock_domain("read", self.rd_clk, self.declared_reset_domains[1])
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.mem[self.rptr]
+
+        @self.seq_domain("write")
+        def _wr_seq():
+            with If(self.wr_rst == 1):
+                self.wptr <<= 0
+            with Else():
+                with If(self.wr_en == 1):
+                    self.mem[self.wptr] <<= self.din
+                    self.wptr <<= self.wptr + 1
+
+        @self.seq_domain("read")
         def _rd_seq():
             with If(self.rd_rst_n == 0):
                 self.rptr <<= 0
@@ -637,6 +866,929 @@ def test_dsl_nested_slice_binop_emits_iverilog_safe_verilog(tmp_path):
         text=True,
     )
     assert cp.returncode == 0, f"iverilog compile failed:\n{cp.stderr}"
+
+
+def test_emit_profile_review_and_compact_change_readability_contract():
+    review_text = VerilogEmitter(profile=EmitProfile.review()).emit(ReadableRepeatedExpr())
+    compact_text = VerilogEmitter(profile=EmitProfile.compact()).emit(ReadableRepeatedExpr())
+
+    assert "// Module: readable_repeated_expr" in review_text
+    assert "// Module: readable_repeated_expr" not in compact_text
+    assert "// Comb:" in review_text
+    assert "// Comb:" not in compact_text
+    assert "_out_ex" in review_text
+    assert "_cse_" not in review_text
+    assert "_cse_" in compact_text
+
+
+def test_emit_profile_systemverilog_uses_sv_always_keywords():
+    emitted = VerilogEmitter(profile=EmitProfile.systemverilog()).emit(ReadableCombSeq())
+
+    assert "always_comb begin" in emitted
+    assert "always_ff @(posedge clk)" in emitted
+
+
+def test_emit_profile_review_includes_readable_sections_and_seq_timing_comments():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(DeclaredDomainMailbox())
+
+    assert "// Storage declarations" in emitted
+    assert "// Internal declarations" in emitted
+    assert "// Combinational logic" in emitted
+    assert "// Sequential logic" in emitted
+    assert "// Seq timing: clk=wr_clk, reset=wr_rst (sync, active-high)" in emitted
+    assert "// Seq timing: clk=rd_clk, reset=rd_rst_n (async, active-low)" in emitted
+
+
+def test_emit_profile_review_readability_contract_avoids_duplicated_block_prefixes():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(DeclaredDomainMailbox())
+
+    assert "// Comb: dout" in emitted
+    assert "// Seq: wptr" in emitted
+    assert "// Seq: rptr" in emitted
+    assert "Comb: Comb:" not in emitted
+    assert "Seq: Seq:" not in emitted
+
+
+def test_emit_profile_review_declared_domain_mailbox_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(DeclaredDomainMailbox())
+
+    expected_markers = (
+        "// Storage declarations",
+        "reg [7:0] mailbox_mem [0:3];",
+        "// Internal declarations",
+        "reg [1:0] wptr;",
+        "reg [1:0] rptr;",
+        "// Combinational logic",
+        "// Comb: dout",
+        "assign dout = mailbox_mem[rptr];",
+        "// Sequential logic",
+        "// Seq timing: clk=wr_clk, reset=wr_rst (sync, active-high)",
+        "// Seq: wptr",
+        "always @(posedge wr_clk) begin",
+        "// Seq timing: clk=rd_clk, reset=rd_rst_n (async, active-low)",
+        "// Seq: rptr",
+        "always @(posedge rd_clk or negedge rd_rst_n) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_synccell_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(SyncCell())
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg sync_ff1;",
+        "reg sync_ff2;",
+        "// Combinational logic",
+        "assign data_out = sync_ff2;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "// Seq: sync_ff1, sync_ff2",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_asyncresetrel_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(AsyncResetRel())
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg ar_ff1;",
+        "reg ar_ff2;",
+        "// Combinational logic",
+        "assign rst_sync = ~ar_ff2;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst_async (async, active-high)",
+        "// Seq: ar_ff1, ar_ff2",
+        "always @(posedge clk or posedge rst_async) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_apb_register_bank_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(APBRegisterBank(depth=4))
+
+    expected_markers = (
+        "// Storage declarations",
+        "reg [31:0] regmem [0:3];",
+        "// Internal declarations",
+        "reg [31:0] rdata_reg;",
+        "// Combinational logic",
+        "assign prdata = rdata_reg;",
+        "assign pready = psel & penable;",
+        "// Sequential logic",
+        "// Seq timing: clk=pclk, reset=presetn (async, active-low)",
+        "always @(posedge pclk or negedge presetn) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_wishbone_register_bank_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(WishboneRegisterBank(depth=4))
+
+    expected_markers = (
+        "// Storage declarations",
+        "reg [31:0] wbmem [0:3];",
+        "// Internal declarations",
+        "logic access_fire;",
+        "reg ack_state;",
+        "// Combinational logic",
+        "assign access_fire = cyc_i & stb_i;",
+        "assign ack_o = ack_state;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk_i, reset=rst_i (sync, active-high)",
+        "always @(posedge clk_i) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_ready_valid_register_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(ReadyValidRegister())
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [31:0] data_reg;",
+        "reg valid_reg;",
+        "// Combinational logic",
+        "assign in_ready = (valid_reg == 1'd0) | out_ready;",
+        "assign out_valid = valid_reg;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_ready_valid_fifo_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(ReadyValidFIFO(depth=4))
+
+    expected_markers = (
+        "// Storage declarations",
+        "// Internal declarations",
+        "logic push_fire;",
+        "logic pop_fire;",
+        "reg [31:0] storage [0:3];",
+        "// Combinational logic",
+        "always @(*) begin",
+        "out_valid = count != 1'd0;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_reqrsp_queue_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(
+        ReqRspQueue(depth=4, addr_width=12, write_enable=True, strobe_width=4)
+    )
+
+    expected_markers = (
+        "// Storage declarations",
+        "// Internal declarations",
+        "logic push_fire;",
+        "reg [31:0] req_storage [0:3];",
+        "reg [11:0] addr_storage [0:3];",
+        "// Combinational logic",
+        "always @(*) begin",
+        "down_req_valid = count != 1'd0;",
+        "up_rsp = down_rsp;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_axilite_register_bank_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(AXI4LiteRegisterBank(depth=4))
+
+    expected_markers = (
+        "// Storage declarations",
+        "reg [31:0] regmem [0:3];",
+        "// Internal declarations",
+        "logic aw_capture;",
+        "logic write_commit;",
+        "reg [31:0] rdata_state;",
+        "// Combinational logic",
+        "assign awready = ~aw_seen & ~bvalid_state;",
+        "assign write_commit = (aw_seen | aw_capture) & (w_seen | w_capture) & ~bvalid_state;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_ready_valid_bundle_supports_flip_and_protocol_aware_port_map():
+    sink = ReadyValid(32, name="sink")
+    source = sink.flip()
+
+    assert sink.payload_name == "data"
+    assert sink.direction_of("valid") == "in"
+    assert sink.direction_of("ready") == "out"
+    assert source.direction_of("valid") == "out"
+    assert source.direction_of("ready") == "in"
+    assert source.port_map()["data"].width == 32
+
+    port_map = source.connect_port_map(sink)
+    assert set(port_map) == {"data", "valid", "ready"}
+    assert port_map["data"] is source.data
+    assert port_map["valid"] is source.valid
+    assert port_map["ready"] is sink.ready
+
+
+def test_axistream_inherits_ready_valid_channel_shape():
+    axis = AXI4Stream(32, user_width=4, has_strb=True, name="axis")
+    flipped = axis.flip()
+
+    assert axis.payload_name == "tdata"
+    assert axis.valid_name == "tvalid"
+    assert axis.ready_name == "tready"
+    assert axis.direction_of("tvalid") == "in"
+    assert axis.direction_of("tready") == "out"
+    assert flipped.direction_of("tvalid") == "out"
+    assert flipped.direction_of("tready") == "in"
+    assert "tlast" in axis.signal_map()
+    assert "tkeep" in axis.signal_map()
+    assert "tuser" in axis.signal_map()
+    assert "tstrb" in axis.signal_map()
+
+
+def test_reqrsp_bundle_exposes_request_response_semantics_and_port_map():
+    responder = ReqRsp(32, 16, addr_width=12, write_enable=True, strobe_width=4, name="rr_s")
+    requester = responder.flip()
+
+    assert responder.direction_of("req") == "in"
+    assert responder.direction_of("req_valid") == "in"
+    assert responder.direction_of("req_ready") == "out"
+    assert responder.direction_of("rsp") == "out"
+    assert requester.direction_of("req") == "out"
+    assert requester.direction_of("rsp") == "in"
+    assert requester.request_fields() == ("addr", "req", "write", "strb", "req_valid", "req_ready")
+    assert requester.response_fields() == ("rsp", "rsp_valid", "rsp_ready")
+
+    mapping = requester.connect_port_map(responder)
+    assert mapping["addr"] is requester.addr
+    assert mapping["req"] is requester.req
+    assert mapping["write"] is requester.write
+    assert mapping["strb"] is requester.strb
+    assert mapping["req_valid"] is requester.req_valid
+    assert mapping["req_ready"] is responder.req_ready
+    assert mapping["rsp"] is responder.rsp
+    assert mapping["rsp_valid"] is responder.rsp_valid
+    assert mapping["rsp_ready"] is requester.rsp_ready
+
+
+def test_apb_bundle_exposes_master_slave_semantics_and_port_map():
+    slave = APB(32, 32, name="apb_s")
+    master = slave.flip()
+
+    assert master.master_fields()[0:2] == ("pclk", "presetn")
+    assert "prdata" in master.slave_fields()
+    assert slave.direction_of("psel") == "in"
+    assert master.direction_of("psel") == "out"
+    mapping = master.transaction_port_map(slave)
+    assert mapping["psel"] is master.psel
+    assert mapping["prdata"] is slave.prdata
+    assert mapping["pready"] is slave.pready
+
+
+def test_axilite_bundle_exposes_channel_semantics_and_port_map():
+    slave = AXI4Lite(32, 32, name="axil_s")
+    master = slave.flip()
+
+    assert master.write_address_fields() == ("awaddr", "awvalid", "awprot")
+    assert master.read_response_fields()[-2:] == ("rvalid", "rready")
+    assert slave.direction_of("awvalid") == "in"
+    assert master.direction_of("awvalid") == "out"
+    mapping = master.transaction_port_map(slave)
+    assert mapping["awaddr"] is master.awaddr
+    assert mapping["wdata"] is master.wdata
+    assert mapping["bvalid"] is slave.bvalid
+    assert mapping["rdata"] is slave.rdata
+
+
+def test_wishbone_bundle_exposes_master_slave_semantics_and_port_map():
+    slave = Wishbone(32, 32, name="wb_s")
+    master = slave.flip()
+
+    assert master.clock_reset_fields() == ("clk_i", "rst_i")
+    assert master.master_fields()[0:2] == ("clk_i", "rst_i")
+    assert master.slave_fields() == ("dat_o", "ack_o", "err_o", "rty_o")
+    assert slave.direction_of("adr_i") == "in"
+    assert master.direction_of("adr_i") == "out"
+    mapping = master.transaction_port_map(slave)
+    assert mapping["adr_i"] is master.adr_i
+    assert mapping["dat_i"] is master.dat_i
+    assert mapping["ack_o"] is slave.ack_o
+    assert mapping["dat_o"] is slave.dat_o
+
+
+def test_ahblite_bundle_exposes_master_slave_semantics_and_port_map():
+    slave = AHBLite(32, 32, name="ahb_s")
+    master = slave.flip()
+
+    assert master.clock_reset_fields() == ("hclk", "hresetn")
+    assert master.master_fields()[0:2] == ("hclk", "hresetn")
+    assert master.slave_fields() == ("hrdata", "hready", "hresp")
+    assert slave.direction_of("haddr") == "in"
+    assert master.direction_of("haddr") == "out"
+    mapping = master.transaction_port_map(slave)
+    assert mapping["haddr"] is master.haddr
+    assert mapping["hwdata"] is master.hwdata
+    assert mapping["hready"] is slave.hready
+    assert mapping["hrdata"] is slave.hrdata
+
+
+def test_skid_buffer_lowers_and_preserves_stalled_payload():
+    lowered = lower_dsl_module_to_sim(SkidBuffer(16))
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step({"clk": 0, "rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x12, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 0,
+        "out_data": 0x12,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 0}) == {
+        "in_ready": 0,
+        "out_data": 0x12,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+
+
+def test_ready_valid_fifo_lowers_and_handles_backpressure_and_bypass():
+    lowered = lower_dsl_module_to_sim(ReadyValidFIFO(width=8, depth=2))
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step({"clk": 0, "rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+        "level": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x11, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0x11,
+        "out_valid": 1,
+        "level": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x22, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 0,
+        "out_data": 0x11,
+        "out_valid": 1,
+        "level": 2,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x33, "in_valid": 1, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0x22,
+        "out_valid": 1,
+        "level": 2,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0x33,
+        "out_valid": 1,
+        "level": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+        "level": 0,
+    }
+
+
+def test_ready_valid_register_lowers_and_inserts_one_stage_latency():
+    lowered = lower_dsl_module_to_sim(ReadyValidRegister(width=8))
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step({"clk": 0, "rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x44, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 0,
+        "out_data": 0x44,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x55, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 0,
+        "out_data": 0x44,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x66, "in_valid": 1, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0x66,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+
+
+def test_reqrsp_queue_lowers_and_buffers_requests():
+    lowered = lower_dsl_module_to_sim(
+        ReqRspQueue(req_width=8, rsp_width=8, depth=2, addr_width=4, write_enable=True, strobe_width=2)
+    )
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step(
+        {
+            "clk": 0,
+            "rst": 1,
+            "up_addr": 0,
+            "up_req": 0,
+            "up_write": 0,
+            "up_strb": 0,
+            "up_req_valid": 0,
+            "up_rsp_ready": 1,
+            "down_req_ready": 0,
+            "down_rsp": 0,
+            "down_rsp_valid": 0,
+        }
+    ) == {
+        "up_req_ready": 1,
+        "up_rsp": 0,
+        "up_rsp_valid": 0,
+        "down_addr": 0,
+        "down_req": 0,
+        "down_req_valid": 0,
+        "down_rsp_ready": 1,
+        "down_strb": 0,
+        "down_write": 0,
+        "level": 0,
+    }
+    assert sim.step(
+        {
+            "clk": 0,
+            "rst": 0,
+            "up_addr": 3,
+            "up_req": 0x12,
+            "up_write": 1,
+            "up_strb": 0x3,
+            "up_req_valid": 1,
+            "up_rsp_ready": 1,
+            "down_req_ready": 0,
+            "down_rsp": 0x80,
+            "down_rsp_valid": 1,
+        }
+    ) == {
+        "up_req_ready": 1,
+        "up_rsp": 0x80,
+        "up_rsp_valid": 1,
+        "down_addr": 3,
+        "down_req": 0x12,
+        "down_req_valid": 1,
+        "down_rsp_ready": 1,
+        "down_strb": 0x3,
+        "down_write": 1,
+        "level": 1,
+    }
+    assert sim.step(
+        {
+            "clk": 0,
+            "rst": 0,
+            "up_addr": 5,
+            "up_req": 0x34,
+            "up_write": 0,
+            "up_strb": 0x1,
+            "up_req_valid": 1,
+            "up_rsp_ready": 1,
+            "down_req_ready": 0,
+            "down_rsp": 0,
+            "down_rsp_valid": 0,
+        }
+    ) == {
+        "up_req_ready": 0,
+        "up_rsp": 0,
+        "up_rsp_valid": 0,
+        "down_addr": 3,
+        "down_req": 0x12,
+        "down_req_valid": 1,
+        "down_rsp_ready": 1,
+        "down_strb": 0x3,
+        "down_write": 1,
+        "level": 2,
+    }
+    assert sim.step(
+        {
+            "clk": 0,
+            "rst": 0,
+            "up_addr": 7,
+            "up_req": 0x56,
+            "up_write": 1,
+            "up_strb": 0x2,
+            "up_req_valid": 1,
+            "up_rsp_ready": 1,
+            "down_req_ready": 1,
+            "down_rsp": 0,
+            "down_rsp_valid": 0,
+        }
+    ) == {
+        "up_req_ready": 1,
+        "up_rsp": 0,
+        "up_rsp_valid": 0,
+        "down_addr": 5,
+        "down_req": 0x34,
+        "down_req_valid": 1,
+        "down_rsp_ready": 1,
+        "down_strb": 0x1,
+        "down_write": 0,
+        "level": 2,
+    }
+
+
+def test_axilite_register_bank_lowers_and_applies_byte_enable_writes(tmp_path):
+    lowered = lower_dsl_module_to_sim(AXI4LiteRegisterBank(depth=8))
+    sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        AXI4LiteRegisterBank(depth=8),
+        build_dir=tmp_path / "axilite_register_bank",
+    )
+    try:
+        vectors = (
+            (
+                {
+                    "clk": 0,
+                    "rst": 1,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 0,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 1, "wready": 1, "bresp": 0, "bvalid": 0, "arready": 1, "rdata": 0, "rresp": 0, "rvalid": 0},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0x10,
+                    "awvalid": 1,
+                    "awprot": 0,
+                    "wdata": 0x11223344,
+                    "wstrb": 0x5,
+                    "wvalid": 1,
+                    "bready": 0,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 1, "wready": 1, "bresp": 0, "bvalid": 0, "arready": 1, "rdata": 0, "rresp": 0, "rvalid": 0},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 1,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 0, "wready": 0, "bresp": 0, "bvalid": 1, "arready": 1, "rdata": 0, "rresp": 0, "rvalid": 0},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 0,
+                    "araddr": 0x10,
+                    "arvalid": 1,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 0, "wready": 0, "bresp": 0, "bvalid": 1, "arready": 1, "rdata": 0, "rresp": 0, "rvalid": 0},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 0,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 1,
+                },
+                {"awready": 0, "wready": 0, "bresp": 0, "bvalid": 1, "arready": 0, "rvalid": 1, "rdata": 0x00220044, "rresp": 0},
+            ),
+        )
+        for inputs, expected in vectors:
+            assert sim.step(inputs) == expected
+            assert compiled.step(inputs) == expected
+    finally:
+        compiled.close()
+
+    emitted = VerilogEmitter(use_sv_always=True).emit(AXI4LiteRegisterBank(depth=8))
+    assert "module AXI4LiteRegisterBank" in emitted
+    assert "regmem" in emitted
+
+
+def test_apb_register_bank_lowers_and_applies_byte_enable_writes(tmp_path):
+    lowered = lower_dsl_module_to_sim(APBRegisterBank(depth=8))
+    sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        APBRegisterBank(depth=8),
+        build_dir=tmp_path / "apb_register_bank",
+    )
+    try:
+        vectors = (
+            (
+                {
+                    "pclk": 0,
+                    "presetn": 0,
+                    "psel": 0,
+                    "penable": 0,
+                    "pwrite": 0,
+                    "paddr": 0,
+                    "pwdata": 0,
+                    "pprot": 0,
+                    "pstrb": 0,
+                },
+                {"prdata": 0, "pready": 0, "pslverr": 0},
+            ),
+            (
+                {
+                    "pclk": 0,
+                    "presetn": 1,
+                    "psel": 1,
+                    "penable": 0,
+                    "pwrite": 1,
+                    "paddr": 0x10,
+                    "pwdata": 0xA5A55A5A,
+                    "pprot": 0,
+                    "pstrb": 0x5,
+                },
+                {"prdata": 0, "pready": 0, "pslverr": 0},
+            ),
+            (
+                {
+                    "pclk": 0,
+                    "presetn": 1,
+                    "psel": 1,
+                    "penable": 1,
+                    "pwrite": 1,
+                    "paddr": 0x10,
+                    "pwdata": 0xA5A55A5A,
+                    "pprot": 0,
+                    "pstrb": 0x5,
+                },
+                {"prdata": 0, "pready": 1, "pslverr": 0},
+            ),
+            (
+                {
+                    "pclk": 0,
+                    "presetn": 1,
+                    "psel": 1,
+                    "penable": 0,
+                    "pwrite": 0,
+                    "paddr": 0x10,
+                    "pwdata": 0,
+                    "pprot": 0,
+                    "pstrb": 0xF,
+                },
+                {"prdata": 0, "pready": 0, "pslverr": 0},
+            ),
+            (
+                {
+                    "pclk": 0,
+                    "presetn": 1,
+                    "psel": 1,
+                    "penable": 1,
+                    "pwrite": 0,
+                    "paddr": 0x10,
+                    "pwdata": 0,
+                    "pprot": 0,
+                    "pstrb": 0xF,
+                },
+                {"prdata": 0x00A5005A, "pready": 1, "pslverr": 0},
+            ),
+        )
+        for inputs, expected in vectors:
+            assert sim.step(inputs) == expected
+            assert compiled.step(inputs) == expected
+    finally:
+        compiled.close()
+
+    emitted = VerilogEmitter(use_sv_always=True).emit(APBRegisterBank(depth=8))
+    assert "module APBRegisterBank" in emitted
+    assert "regmem" in emitted
+
+
+def test_wishbone_register_bank_lowers_and_applies_byte_enable_writes(tmp_path):
+    lowered = lower_dsl_module_to_sim(WishboneRegisterBank(depth=8))
+    sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        WishboneRegisterBank(depth=8),
+        build_dir=tmp_path / "wishbone_register_bank",
+    )
+    try:
+        vectors = (
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 1,
+                    "adr_i": 0,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0,
+                    "stb_i": 0,
+                    "cyc_i": 0,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0x10,
+                    "dat_i": 0xA5A55A5A,
+                    "we_i": 1,
+                    "sel_i": 0x5,
+                    "stb_i": 1,
+                    "cyc_i": 1,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0x10,
+                    "dat_i": 0xA5A55A5A,
+                    "we_i": 1,
+                    "sel_i": 0x5,
+                    "stb_i": 1,
+                    "cyc_i": 1,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 1, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0,
+                    "stb_i": 0,
+                    "cyc_i": 0,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0x10,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0xF,
+                    "stb_i": 1,
+                    "cyc_i": 1,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0x10,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0xF,
+                    "stb_i": 1,
+                    "cyc_i": 1,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0x00A5005A, "ack_o": 1, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0,
+                    "stb_i": 0,
+                    "cyc_i": 0,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+        )
+        for inputs, expected in vectors:
+            assert sim.step(inputs) == expected
+            assert compiled.step(inputs) == expected
+    finally:
+        compiled.close()
+
+    emitted = VerilogEmitter(use_sv_always=True).emit(WishboneRegisterBank(depth=8))
+    assert "module WishboneRegisterBank" in emitted
+    assert "wbmem" in emitted
 
 
 def test_dsl_memory_init_data_emits_masked_literals():
@@ -990,27 +2142,90 @@ def test_dsl_lowering_preserves_memory_write_source_location():
     assert write.source_line > 0
 
 
-def test_dsl_lowering_rejects_unsupported_storage_contract():
-    class SyncReadMem(Module):
-        def __init__(self):
-            super().__init__("SyncReadMem")
-            self.addr = Input(2, "addr")
-            self.dout = Output(8, "dout")
-            self.mem = self.add_memory(
-                Memory(8, 4, "mem", read_style="sync", read_latency=1)
-            )
+def test_dsl_connectivity_report_exposes_hierarchy_and_signal_memory_relationships():
+    module = QueryLeaf()
+    hierarchy = module.describe_hierarchy()
+    report = module.analyze_connectivity()
 
-            @self.comb
-            def _comb():
-                self.dout <<= self.mem[self.addr]
+    assert isinstance(report, ModuleConnectivityReport)
+    assert all(isinstance(node, ModuleInstancePath) for node in hierarchy)
+    assert hierarchy == (ModuleInstancePath(path="QueryLeaf", module_name="QueryLeaf", type_name="QueryLeaf", parent_path=None, child_instances=()),)
 
-    with pytest.raises(DslLoweringError, match="unsupported storage contract"):
-        lower_dsl_module_to_sim(SyncReadMem())
+    assert all(isinstance(driver, SignalDriver) for driver in report.signal_drivers)
+    y_drivers = report.drivers_of("y")
+    assert any(driver.phase == "comb" for driver in y_drivers)
+
+    assert all(isinstance(writer, StateWriter) for writer in report.state_writers)
+    state_writers = report.writers_of("state")
+    assert state_writers
+    assert all(writer.clock == "clk" for writer in state_writers)
+    assert any("a" in writer.source_signals for writer in state_writers)
+
+    assert all(isinstance(access, MemoryAccess) for access in report.memory_accesses)
+    mem_accesses = report.accesses_of("mem")
+    assert any(access.access == "read" and access.target == "y" for access in mem_accesses)
+    assert any(access.access == "write" and "addr" in access.addr_signals for access in mem_accesses)
+    assert any(access.access == "write" and "a" in access.value_signals for access in mem_accesses)
+    assert any(access.source_file and access.source_file.endswith("test_dsl_import.py") for access in mem_accesses)
+
+    assert all(isinstance(conn, PortConnection) for conn in report.port_connections)
+    assert report.port_connections == ()
 
 
-def test_dsl_lowering_rejects_byte_enable_storage_contract():
-    with pytest.raises(DslLoweringError, match="unsupported storage contract"):
-        lower_dsl_module_to_sim(ByteEnableDeclaredMem())
+def test_dsl_hierarchy_summary_tracks_nested_submodules():
+    hierarchy = QueryTop().describe_hierarchy()
+
+    assert any(node.path == "QueryTop" for node in hierarchy)
+    assert any(node.path == "QueryTop.u_leaf" for node in hierarchy)
+
+
+def test_dsl_connectivity_report_tracks_implicit_submodule_port_links():
+    report = QueryTop().analyze_connectivity()
+
+    assert any(conn.instance == "u_leaf" and conn.port == "a" and conn.direction == "input" for conn in report.port_connections)
+    assert any(conn.instance == "u_leaf" and conn.port == "y" and conn.direction == "output" for conn in report.port_connections)
+
+
+def test_dsl_connectivity_report_tracks_explicit_submodule_port_maps():
+    report = ExplicitTop().analyze_connectivity()
+
+    assert any(conn.instance == "u_leaf" and conn.port == "din" and conn.connected_signals == ("a",) for conn in report.port_connections)
+    assert any(conn.instance == "u_leaf" and conn.port == "dout" and conn.connected_signals == ("y",) for conn in report.port_connections)
+
+
+def test_dsl_flatten_preserves_nested_memory_source_location():
+    lowered = lower_dsl_module_to_sim(FlattenTop())
+
+    matching = [write for write in lowered.module.memory_writes if write.memory == "u_leaf_mem"]
+    assert matching
+    write = matching[0]
+    assert write.source_file is not None
+    assert write.source_file.endswith("test_dsl_import.py")
+    assert isinstance(write.source_line, int)
+    assert write.source_line > 0
+
+
+def test_dsl_lowering_supports_sync_read_storage_contract():
+    lowered = lower_dsl_module_to_sim(SyncReadDeclaredMem())
+    memory = lowered.module.memories[0]
+
+    assert memory.read_style == "async"
+    assert memory.read_latency == 0
+    assert any(signal.name.startswith("__sync_rd_mem_dout") for signal in lowered.module.signals)
+    assert any(
+        assignment.phase == "seq" and assignment.target.startswith("__sync_rd_mem_dout")
+        for assignment in lowered.module.assignments
+    )
+
+
+def test_dsl_lowering_supports_byte_enable_storage_contract():
+    lowered = lower_dsl_module_to_sim(ByteEnableDeclaredMem())
+    memory = lowered.module.memories[0]
+    write = lowered.module.memory_writes[0]
+
+    assert memory.byte_enable_granularity == 8
+    assert memory.byte_enable_width == 4
+    assert write.byte_enable is not None
 
 
 def test_dsl_memory_write_requires_declared_byte_enable_contract():
@@ -1031,9 +2246,43 @@ def test_dsl_memory_write_requires_declared_byte_enable_contract():
         MissingByteEnableContract()
 
 
-def test_dsl_verilog_emitter_rejects_byte_enable_memory_writes():
-    with pytest.raises(NotImplementedError, match="byte-enable memory writes"):
-        VerilogEmitter().emit(ByteEnableDeclaredMem())
+def test_dsl_verilog_emitter_supports_byte_enable_memory_writes():
+    text = VerilogEmitter().emit(ByteEnableDeclaredMem())
+
+    assert "if (be[0]) mem[addr][7:0] <=" in text
+    assert "if (be[3]) mem[addr][31:24] <=" in text
+
+
+def test_dsl_verilog_emitter_rejects_sync_read_memory_inference():
+    with pytest.raises(NotImplementedError, match="sync-read/read-latency memories"):
+        VerilogEmitter().emit(SyncReadDeclaredMem())
+
+
+def test_dsl_compiled_simulator_supports_sync_read_storage_contract(tmp_path):
+    compiled = build_compiled_simulator_from_dsl(
+        SyncReadDeclaredMem(),
+        build_dir=tmp_path / "sync_read_mem",
+    )
+    try:
+        assert compiled.step({"addr": 0}) == {"dout": 10}
+        assert compiled.step({"addr": 2}) == {"dout": 10}
+        assert compiled.step({"addr": 3}) == {"dout": 30}
+        assert compiled.step({"addr": 1}) == {"dout": 40}
+    finally:
+        compiled.close()
+
+
+def test_dsl_compiled_simulator_supports_byte_enable_memory_writes(tmp_path):
+    compiled = build_compiled_simulator_from_dsl(
+        ByteEnableDeclaredMem(),
+        build_dir=tmp_path / "byte_enable_mem",
+    )
+    try:
+        assert compiled.step({"addr": 1, "din": 0x11223344, "be": 0xF}) == {"dout": 0x11223344}
+        assert compiled.step({"addr": 1, "din": 0xAABBCCDD, "be": 0x3}) == {"dout": 0x1122CCDD}
+        assert compiled.step({"addr": 1, "din": 0x55667788, "be": 0x8}) == {"dout": 0x5522CCDD}
+    finally:
+        compiled.close()
 
 
 def test_dsl_declared_clock_and_reset_domains_round_trip():
@@ -1053,6 +2302,19 @@ def test_dsl_declared_clock_and_reset_domains_round_trip():
     assert tuple(domain.reset_signal for domain in lowered.module.clock_domains) == ("wr_rst", "rd_rst_n")
     assert tuple(domain.reset_active_low for domain in lowered.module.clock_domains) == (False, True)
     assert tuple(domain.reset_async for domain in lowered.module.clock_domains) == (False, True)
+
+
+def test_dsl_seq_domain_accepts_declared_domain_name():
+    lowered = lower_dsl_module_to_sim(DeclaredDomainMailboxByName())
+
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
+    seq_domains = {
+        assignment.target: assignment.clock_domain
+        for assignment in lowered.module.assignments
+        if assignment.phase == "seq"
+    }
+    assert seq_domains["wptr"] == "wr_clk"
+    assert seq_domains["rptr"] == "rd_clk"
 
 
 def test_dsl_declared_clock_domain_rejects_conflicting_seq_reset_semantics():

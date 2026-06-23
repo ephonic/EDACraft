@@ -106,6 +106,36 @@ ArchitectureModel + Workload
 This is the intended replacement for a document-heavy framework loop: faster,
 more executable, less ceremony.
 
+## Current authoring guidance
+
+For detailed hardware design, the intended public authoring surface is
+`rtlgen_x.dsl.Module`.
+
+For multi-clock designs:
+
+1. declare clock/reset intent with `reset_domain(...)` and `clock_domain(...)`
+2. bind sequential processes with `@self.seq_domain(...)`
+3. prefer named domain authoring when it keeps the module clearer, for example
+   `@self.seq_domain("write")`
+4. use CDC helpers such as `SyncCell`, `PulseSynchronizer`, `AsyncResetRel`,
+   and `AsyncFIFO` instead of ad hoc crossings where possible
+5. if a hand-written two-flop synchronizer is used, keep the sync chain simple;
+   a final comb alias/observation wire is fine, but avoid mixing extra logic
+   into the first-stage and second-stage transfer path
+
+Current static CDC scope is intentionally modest: it can recognize several
+safe structural patterns, but it does not try to prove arbitrary pulse/toggle
+protocol correctness from timing behavior alone. For event crossings, prefer
+`PulseSynchronizer` or another explicit crossing primitive instead of relying on
+the checker to infer intent from generic logic. In reports, single-bit signals
+named like `*pulse*`, `*event*`, or `*toggle*` are treated as event-style
+crossings and get pulse/toggle-oriented guidance instead of plain level-sync
+guidance.
+
+The public CDC and verification helpers are DSL-facing. They are meant to
+point back to the DSL module and its source locations, not to expose raw
+simulation internals as the main user workflow.
+
 ## Fully Pipelined RTL Pattern
 
 When building a true throughput-1 pipeline in the DSL, use a valid-bit
@@ -259,12 +289,45 @@ Important entry points:
 2. `lower_dsl_module_to_sim(...)`
 3. `build_compiled_simulator_from_dsl(...)`
 
+`VerilogEmitter` now has explicit readability/export profiles via `EmitProfile`:
+
+1. `EmitProfile.review()`
+   - review-first RTL
+   - keeps fallback module header and auto block comments
+   - disables CSE and prefers named extraction for very large expressions
+2. `EmitProfile.compact()`
+   - terser RTL for export/handoff
+   - suppresses fallback header and auto block comments
+   - enables CSE and reduces blank spacer lines
+3. `EmitProfile.systemverilog(...)`
+   - convenience wrapper for SystemVerilog-style emit
+   - enables `always_comb` / `always_ff`
+
+Typical usage:
+
+```python
+from rtlgen_x.dsl import EmitProfile, VerilogEmitter
+
+review_rtl = VerilogEmitter(profile=EmitProfile.review()).emit(my_module)
+compact_rtl = VerilogEmitter(profile=EmitProfile.compact()).emit(my_module)
+sv_rtl = VerilogEmitter(profile=EmitProfile.systemverilog()).emit(my_module)
+```
+
+Agent-facing structural query helpers also now exist directly on DSL modules:
+
+1. `module.describe_hierarchy()`
+2. `module.analyze_connectivity()`
+
+These return structured hierarchy, signal-driver, state-writer, memory-access,
+and port-connection data so an agent can inspect a design semantically instead
+of guessing only from emitted Verilog text.
+
 Key constructs include:
 
 1. `Module`, `Input`, `Output`, `Reg`, `Wire`, `Array`
 2. `If`, `Else`, `Elif`, `Switch`, `When`
-3. `FSM`, `Pipeline`, `SyncFIFO`, `AsyncFIFO`
-4. `Bundle`, `Interface`, `Handshake`, `HandshakeInterface`
+3. `FSM`, `Pipeline`, `SkidBuffer`, `ReadyValidRegister`, `ReadyValidFIFO`, `APBRegisterBank`, `AXI4LiteRegisterBank`, `WishboneRegisterBank`, `SyncFIFO`, `AsyncFIFO`
+4. `Bundle`, `ReadyValid`, `ReqRsp`, `Interface`, `Handshake`, `HandshakeInterface`
 5. `AXI4`, `AXI4Lite`, `AXI4Stream`, `APB`, `AHBLite`, `Wishbone`
 6. `SinglePortRAM`, `SimpleDualPortRAM`
 
@@ -318,6 +381,9 @@ Current boundary:
    `active_domains`
 9. emitted RTL plus an external simulator flow is still the preferred closure
    path for broader generated multi-clock UVM work beyond this directed mode
+10. flattened lowering now preserves source-mapped assignment and memory-write
+    locations through submodule inlining, so downstream diagnostics and
+    hotspot reports can still point back to the original DSL file/line
 10. generated DSL DUT runtime bundles preserve the module's original reset
    semantics, so a synchronous `@self.seq(clk, rst)` block stays synchronous and
    an explicit async-low `@self.seq(clk, ~rst_n)` block stays async-low after
@@ -341,10 +407,14 @@ Recent latch closure is important here:
    intent through lowering, Python simulation, compiled simulation, and
    generated Python reference models
 8. `Memory(..., read_ports=..., write_ports=..., read_style=..., read_latency=...)`
-   now makes storage intent explicit, and lowering/executable runtimes fail fast
-   when that intent exceeds the current executable storage subset
+   now makes storage intent explicit; the executable lowering path closes
+   single-read/single-write `read_style="async"/read_latency=0` memories and
+   also normalizes `read_style="sync"/read_latency=1` memories into explicit
+   sampled executable state
 9. `Memory(..., byte_enable_granularity=...)` and `mem.write(..., byte_enable=...)`
-   now make partial-write intent explicit, and non-closed backends fail fast
+   now close through lowering, Python simulation, compiled simulation, emitted
+   RTL, and RTL cosim for the executable single-read/single-write async-read
+   subset
 10. arithmetic right shift via `SRA(...)` lowers and emits consistently
 11. combinational assignments are topologically ordered during lowering so
    dependent wire chains evaluate correctly in the executable model
@@ -475,26 +545,29 @@ Storage initialization boundary:
    same-address read/write behavior in the lowered Python simulator, compiled
    simulator, and generated Python reference model
 4. `Memory(..., read_ports=..., write_ports=..., read_style=..., read_latency=...)`
-   is now explicit metadata on the DSL/storage model, but the executable subset
-   still only accepts `read_ports=1`, `write_ports=1`, `read_style="async"`,
-   and `read_latency=0`
-5. `Memory(..., byte_enable_granularity=...)` plus
+   is now explicit metadata on the DSL/storage model; executable lowering
+   accepts `read_ports=1`, `write_ports=1`, and either
+   `read_style="async"/read_latency=0` or `read_style="sync"/read_latency=1`
+5. emitted RTL does not yet infer sync-read storage behavior automatically, so
+   `VerilogEmitter` keeps fail-fast behavior for `read_style="sync"` memories
+6. `Memory(..., byte_enable_granularity=...)` plus
    `mem.write(addr, value, byte_enable=...)` now make byte-enable intent
-   explicit, but current executable runtimes and emitted RTL still fail fast
-   instead of silently degrading the write into a full-word store
-6. lowered Python and compiled simulators still start from concrete storage
+   explicit and now close across lowered Python simulation, compiled
+   simulation, emitted RTL, and `iverilog` cosim for the executable storage
+   subset
+7. lowered Python and compiled simulators still start from concrete storage
    values, so local RTL cosim may expose `x/z` on an early read even when the
    executable model returns a number
-7. when that happens, `run_dsl_multiclock_rtl_cosim(...)` now raises
+8. when that happens, `run_dsl_multiclock_rtl_cosim(...)` now raises
    `CosimUnknownValueError` with the signal and cycle instead of failing with an
    opaque missing-key error
-8. if initial contents matter for RTL parity, prefer
+9. if initial contents matter for RTL parity, prefer
    `Memory(..., init_zero=True)`, explicit init blocks, or reset/write coverage
    before the first architecturally meaningful read
-9. `read_during_write` is currently the only first-class storage collision
-   policy closed across the main executable path; richer port-count, style,
-   byte-enable, and latency contracts are now explicit but still only partially
-   executable
+10. `read_during_write`, byte-enable partial writes, and normalized
+   `sync-read/read_latency=1` executable behavior are now available on the main
+   lowering/simulation path; richer port-count, broader style/latency
+   combinations, and emitted RTL closure for sync-read memories remain partial
 
 For hand-written or generated streaming RTL cosim, keep two practical rules in
 mind:
@@ -650,30 +723,111 @@ per-item stepping for such sequences so the event order stays explicit.
 
 The verification layer already includes reusable protocol adapters:
 
-1. `apb_sequence(...)`
-2. `wishbone_sequence(...)`
-3. `axilite_sequence(...)`
-4. `axi4_sequence(...)`
-5. `axistream_sequence(...)`
-6. `csr_sequence(...)`
-7. `interrupt_sequence(...)`
+1. `ready_valid_sequence(...)`
+2. `apb_sequence(...)`
+3. `apb_reference_model(...)`
+4. `wishbone_sequence(...)`
+5. `wishbone_protocol_sequence(...)`
+6. `wishbone_clocked_protocol_sequence(...)`
+7. `ahblite_sequence(...)`
+8. `ahblite_reference_model(...)`
+9. `axilite_sequence(...)`
+10. `axilite_protocol_sequence(...)`
+11. `axilite_reference_model(...)`
+12. `axi4_sequence(...)`
+13. `axistream_sequence(...)`
+14. `csr_sequence(...)`
+15. `interrupt_sequence(...)`
 
 Reference models include:
 
-1. `register_reference_model(...)`
-2. `axi_memory_reference_model(...)`
-3. `csr_reference_model(...)`
-4. `interrupt_reference_model(...)`
+1. `ready_valid_reference_model(...)`
+2. `register_reference_model(...)`
+3. `apb_reference_model(...)`
+4. `wishbone_reference_model(...)`
+5. `wishbone_clocked_reference_model(...)`
+6. `ahblite_reference_model(...)`
+7. `axilite_reference_model(...)`
+8. `axi_memory_reference_model(...)`
+9. `csr_reference_model(...)`
+10. `interrupt_reference_model(...)`
 
 Supported transaction types include:
 
-1. `ApbTransfer`
-2. `WishboneTransfer`
-3. `AxiLiteTransfer`
-4. `Axi4Transfer`
-5. `AxiStreamTransfer`
-6. `CsrTransfer`
-7. `InterruptEvent`
+1. `AhbLiteTransfer`
+2. `ApbTransfer`
+3. `WishboneTransfer`
+4. `AxiLiteTransfer`
+5. `Axi4Transfer`
+6. `AxiStreamTransfer`
+7. `CsrTransfer`
+8. `InterruptEvent`
+
+For `APB`, `AXI4Lite`, `ReadyValid`, `ReqRsp`, `AXI4-Stream`, and now `Wishbone`, the
+stdlib exposes both DSL-side protocol bundles and verify-side helper APIs with
+matching semantic groupings, so agents can move between bundle construction,
+port mapping, and Python-UVM stimulus with less naming drift.
+
+`ReqRsp` is the current minimal request/response channel surface: it exposes
+request fields, request/response handshake signals, protocol-aware bundle
+connection helpers, and a matching Python-UVM sequence/reference-model path.
+That gives control-plane and transaction-style datapaths a lighter alternative
+to jumping directly into a full bus protocol.
+
+On top of that channel, `ReqRspQueue` now provides a first lightweight
+component: it buffers the request path with explicit queue depth while keeping
+the response path as a direct passthrough. That is enough to decouple upstream
+request injection from downstream service latency without yet turning the block
+into a full response-reordering fabric.
+
+On the component side, `SkidBuffer`, `ReadyValidRegister`,
+`ReadyValidFIFO`, `APBRegisterBank`, `AXI4LiteRegisterBank`, and `WishboneRegisterBank` are explicit
+protocol-aware stdlib blocks: they lower through the executable path, emit
+RTL, and can be checked directly with the protocol helpers already used by the
+Python-UVM flow.
+
+Their intended roles are slightly different:
+
+1. `SkidBuffer`: 1-entry elastic buffer with empty-state bypass
+2. `ReadyValidRegister`: fixed 1-stage registered slice with backpressure
+3. `ReadyValidFIFO`: multi-beat queue with occupancy tracking via `level`
+4. `APBRegisterBank`: zero-wait-state APB register bank with byte-enable-backed
+   storage updates
+5. `AXI4LiteRegisterBank`: byte-enable-backed control-plane slave with
+   registered AXI-Lite responses
+6. `WishboneRegisterBank`: byte-enable-backed registered-ack Wishbone slave
+   with next-cycle response timing
+
+That separation makes it easier for an agent to choose whether a datapath wants
+timing decoupling, a true registered stage, or queueing capacity.
+
+The APB / AXI-Lite / Wishbone control-plane side is also slightly more
+realistic now: the generated/local components and the Python reference-model
+paths all honor byte-lane writes (`pstrb` / `wstrb` / `sel_i`) instead of
+assuming every control-plane write is always a full-word overwrite.
+
+The Wishbone side is now split more explicitly into two usage modes:
+
+1. `wishbone_sequence(...)` / `wishbone_protocol_sequence(...)` /
+   `wishbone_reference_model(...)` remain the simple same-step helper path
+2. `WishboneRegisterBank` closes with
+   `wishbone_clocked_protocol_sequence(...)` and
+   `wishbone_clocked_reference_model(...)` for registered-ack timing
+
+It also now includes trace-oriented protocol checkers:
+
+1. `check_ready_valid_trace(...)`
+2. `check_apb_trace(...)`
+3. `check_axistream_trace(...)`
+4. `check_wishbone_trace(...)`
+5. `check_axilite_trace(...)`
+6. `check_ahblite_trace(...)`
+7. `check_reqrsp_trace(...)`
+8. `emit_protocol_check_report_markdown(...)`
+
+These consume `PythonUvmReport.traces` or any iterable of `TraceSample` and
+return explicit rule violations, so protocol debug can be driven from observed
+execution rather than only scoreboard mismatches.
 
 #### 4.4 SystemVerilog/UVM collateral generation
 
@@ -1060,10 +1214,10 @@ python sfu/iverilog_cosim.py
 And emit the DUT RTL with:
 
 ```python
-from rtlgen_x.dsl import VerilogEmitter
+from rtlgen_x.dsl import EmitProfile, VerilogEmitter
 from sfu.dsl import Fp16Sfu
 
-rtl = VerilogEmitter().emit(Fp16Sfu())
+rtl = VerilogEmitter(profile=EmitProfile.review()).emit(Fp16Sfu())
 print(rtl[:400])
 ```
 
