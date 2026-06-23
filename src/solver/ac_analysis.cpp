@@ -17,8 +17,25 @@ namespace rfsim {
 AcResult solveAc(uint32_t numNodes,
                  const std::vector<std::unique_ptr<DeviceModel>>& devices,
                  const AcSpec& spec,
-                 const std::vector<double>& freqs) {
+                 const std::vector<double>& spec_freqs) {
     AcResult r;
+
+    // 从 spec 生成频率列表（若调用方未显式传入）
+    std::vector<double> freqs = spec_freqs;
+    if (freqs.empty() && spec.startFreq > 0 && spec.stopFreq > 0) {
+        if (spec.sweep == AcSpec::Sweep::Dec) {
+            double f = spec.startFreq;
+            double ratio = std::pow(10.0, 1.0 / spec.pointsPerDecade);
+            while (f <= spec.stopFreq * 1.0001) {
+                freqs.push_back(f);
+                f *= ratio;
+            }
+        } else {
+            int pts = spec.pointsPerDecade;
+            for (int i = 0; i < pts; ++i)
+                freqs.push_back(spec.startFreq + (spec.stopFreq - spec.startFreq) * i / (pts - 1));
+        }
+    }
 
     // H5: 检测非线性器件
     static bool warnedNonlinear = false;

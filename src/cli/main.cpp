@@ -245,6 +245,8 @@ int run(const std::string& path, const std::string& libSearchDir) {
                         }
                     } else {
                         std::cerr << "AC analysis failed\n";
+                        for (const auto& e : ac.diags.errors)
+                            std::cerr << "  " << e.message << "\n";
                     }
                 }
             } else {

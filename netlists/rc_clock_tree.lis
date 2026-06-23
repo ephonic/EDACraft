@@ -1,0 +1,28 @@
+****** rfsim RF simulator ******
+****** harmonic balance + osdi ******
+****** version 0.2 ******
+
+$ netlist: Clock Tree — H-tree distributed RC, 16 endpoints
+$ source: rc_clock_tree.sp
+
+$rfsim ============================================================
+$  node table
+$rfsim ============================================================
+
+  nodes (excl. gnd): 15
+  [1] clk
+  [2] a1
+  [3] a2
+  [4] b1
+  [5] b2
+  [6] b3
+  [7] b4
+  [8] c1
+  [9] c2
+  [10] c3
+  [11] c4
+  [12] c5
+  [13] c6
+  [14] c7
+  [15] c8
+
