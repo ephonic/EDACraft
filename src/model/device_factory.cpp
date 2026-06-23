@@ -268,6 +268,14 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
 #endif
         }
 
+        // 先检查 cache——用 modelName/type 查找已加载的 library+descriptor
+        for (auto& cached : libCache) {
+            const OsdiDescriptor* d = cached->findDescriptor(typeOrName);
+            if (!d && !modelName.empty()) d = cached->findDescriptor(modelName);
+            if (d) { lib = cached; desc = d; break; }
+        }
+
+        if (!lib) {
         for (const auto& path : candidates) {
             // 检查缓存（同路径只加载一次）
             for (auto& cached : libCache) {
@@ -292,6 +300,7 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
                 lib.reset();
             }
         }
+        }  // end if (!lib)
 
         if (!lib || !desc) {
             // 未找到库：构造占位 OsdiModel（ready=false），保留器件信息供诊断

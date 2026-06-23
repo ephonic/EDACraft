@@ -1,0 +1,38 @@
+****** rfsim RF simulator ******
+****** harmonic balance + osdi ******
+****** version 0.2 ******
+
+$ netlist: 4-Bit Flash ADC — 15 comparators + resistor ladder
+$ source: mos_flash_adc.sp
+
+$rfsim ============================================================
+$  node table
+$rfsim ============================================================
+
+  nodes (excl. gnd): 25
+  [1] vdd
+  [2] in
+  [3] r1
+  [4] r2
+  [5] r3
+  [6] r4
+  [7] r5
+  [8] r6
+  [9] r7
+  [10] r8
+  [11] r9
+  [12] r10
+  [13] r11
+  [14] r12
+  [15] r13
+  [16] r14
+  [17] o1
+  [18] o2
+  [19] o3
+  [20] o4
+  [21] o5
+  [22] o6
+  [23] o7
+  [24] o8
+  [25] r15
+
