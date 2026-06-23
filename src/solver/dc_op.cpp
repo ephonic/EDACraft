@@ -452,6 +452,12 @@ DcOpResult solveDcOp(uint32_t numNodes,
                 DcOpOptions o = opts;
                 o.gmin.gmin = sched[gi];
                 o.vsScale = scale;
+                // M1: gmin 变化时清 OSDI 器件 eval cache（避免 stale Jacobian 跨 gmin 步）
+                if (gi > 0) {
+                    for (const auto& d : devices)
+                        if (auto* o2 = dynamic_cast<OsdiModel*>(d.get()))
+                            o2->invalidateEvalCache();
+                }
                 if (dcopVerbose())
                     std::fprintf(stderr,
                         "[dc] === gmin step %zu/%zu  gmin=%.3e maxIter=%u vsScale=%.3g ===\n",

@@ -116,6 +116,7 @@ public:
     }
     void mrForceEval() { mrNeedsEval_ = true; }  // FD 扰动路径用
     [[nodiscard]] bool evalCached() const { return evalCached_; }  // V3-MR: cache 是否有效
+    void invalidateEvalCache() { evalCached_ = false; }  // M1: 外部清 cache（gmin 步间）
 
     [[nodiscard]] bool ready() const noexcept { return client_ && client_->ready(); }
     [[nodiscard]] const OsdiDescriptor* descriptor() const noexcept { return descriptor_; }
@@ -215,7 +216,6 @@ private:
     mutable bool evalBypassed_ = false;  // V3-L1: 上次 eval 是否被 bypass（loadJacobianInto 用）
     double bypassTol_ = 0.0;           // 构造时调 bypassTolDefault() 初始化
     static double bypassTolDefault();  // 读 RFSIM_BYPASS_TOL，默认 1e-9
-    void invalidateEvalCache() { evalCached_ = false; }
     bool bypassEnabled() const { return bypassTol_ > 0.0; }
 
     // V3-MR: multi-rate 状态

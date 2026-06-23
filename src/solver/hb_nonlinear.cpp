@@ -549,6 +549,28 @@ bool solveHbNewton(uint32_t numNodes,
             continue;
         }
 
+        // M2: 额外检查 ‖dx‖——防止残差小但 Newton 步未稳定时误报收敛
+        if (fNorm < opts.reltol * f0Norm + opts.abstol) {
+            double dxNorm = 0.0;
+            for (double v : dx) dxNorm += v * v;
+            dxNorm = std::sqrt(dxNorm);
+            double xNorm = 0.0;
+            for (const auto& xe : X)
+                for (const auto& h : xe) { xNorm += h.real()*h.real() + h.imag()*h.imag(); }
+            xNorm = std::sqrt(xNorm);
+            if (xNorm > 0 && dxNorm > opts.reltol * xNorm) {
+                if (hbnlVerbose() >= 1)
+                    std::fprintf(stderr,
+                        "[HB-NL] ||F|| converged but ||dx||/||X||=%.3e > reltol, continue\n",
+                        dxNorm / xNorm);
+            } else {
+                if (hbnlVerbose() >= 1)
+                    std::fprintf(stderr, "[HB-NL] converged at iter=%u (||F||=%.3e ||dx||/||X||=%.3e)\n",
+                                 iter, fNorm, xNorm > 0 ? dxNorm / xNorm : 0.0);
+                return true;
+            }
+        }
+
         // 阻尼 Newton：按 dvmax 限制最大步长，回溯线搜索
         double dxMax = 0.0;
         for (double v : dx) dxMax = std::max(dxMax, std::fabs(v));

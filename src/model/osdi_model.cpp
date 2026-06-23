@@ -384,7 +384,9 @@ void OsdiModel::eval(const OperatingPoint& op, DeviceContribution& out) const {
         if (hit && lastTermV_.size() == nodes_.size()) {
             for (size_t k = 0; k < nodes_.size(); ++k) {
                 double vk = (nodes_[k] < op.v.size()) ? op.v[nodes_[k]] : 0.0;
-                if (std::fabs(vk - lastTermV_[k]) > bypassTol_) { hit = false; break; }
+                // M6: 相对容差——避免近零电压时误 bypass
+                double scale = std::max(std::fabs(lastTermV_[k]), 1.0);
+                if (std::fabs(vk - lastTermV_[k]) > bypassTol_ * scale) { hit = false; break; }
             }
         } else {
             hit = false;
@@ -452,7 +454,9 @@ void OsdiModel::evalTransient(const TransientOpPoint& op, DeviceContribution& ou
         if (hit && lastTermV_.size() == nodes_.size()) {
             for (size_t k = 0; k < nodes_.size(); ++k) {
                 double vk = (nodes_[k] < op.v.size()) ? op.v[nodes_[k]] : 0.0;
-                if (std::fabs(vk - lastTermV_[k]) > bypassTol_) { hit = false; break; }
+                // M6: 相对容差——避免近零电压时误 bypass
+                double scale = std::max(std::fabs(lastTermV_[k]), 1.0);
+                if (std::fabs(vk - lastTermV_[k]) > bypassTol_ * scale) { hit = false; break; }
             }
         } else {
             hit = false;
@@ -534,6 +538,10 @@ void OsdiModel::evalTransientResidOnly(const TransientOpPoint& op, DeviceContrib
     // jacobian 复用上次完整 eval 的缓存
     out.jac = lastJac_;
     evalBypassed_ = true;
+    // M7: residOnly 推进了 next_state 但 cache 仍指向旧值——不清会导致后续 bypass 用 stale cache
+    // 注意：不调 invalidateEvalCache() 因为 lastF_/lastJac_ 仍有效（resid 重新算了但 jac 复用）
+    // 但 next_state 变了——下次 swapState 后必须重新 eval
+    // swapState → invalidateEvalCache 已在 updateTransientState 中处理
 }
 
 void OsdiModel::initializeTransientState(const std::vector<double>& nodeV) {

@@ -62,8 +62,17 @@ public:
     [[nodiscard]] bool finalized() const noexcept { return finalized_; }
 
     // V3-L0: pattern 固化模式。
-    void commitPattern() { patternCommitted_ = finalized_; if (patternCommitted_) data_.clear(); }  // H10: 清 data_ 避免残留
+    void commitPattern() {
+        // M4: commit 前必须 finalize
+        if (!finalized_) return;  // 静默跳过（调用方应保证顺序）
+        patternCommitted_ = true;
+        data_.clear();  // H10: 清 data_ 避免残留
+    }
     [[nodiscard]] bool patternCommitted() const noexcept { return patternCommitted_; }
+    // V3-L0: pattern 固化后返回 (i,j) 在 values_ 中的指针。
+    // M5: 返回的指针在 values_ vector 不被 resize/finalize 重建时有效。
+    // 调用方（bindStampPtrs）必须在 finalize+commit 后调用，且之后不再 resize。
+    // boundG_ 检查（DeviceModel）提供跨 G 对象的额外保护。
     [[nodiscard]] double* ptrFor(uint32_t i, uint32_t j);
     void zeroCommitted() {
         if (patternCommitted_) {

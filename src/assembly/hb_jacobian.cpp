@@ -188,9 +188,9 @@ void addConductanceBlock(std::vector<double>& J, uint32_t dim, uint32_t perEntit
             if (k == 0 && m == 0) {
                 addBlock(0, 0, gp.real(), 0, 0, 0);
             } else if (k == 0 && m >= 1) {
-                // [Re(G[m]), Im(G[m])]
+                // M3: 补 2× 因子——与 (k≥1, m=0) 对称
                 Complex g = G[m];
-                addBlock(0, m, g.real(), g.imag(), 0, 0);
+                addBlock(0, m, 2.0 * g.real(), 2.0 * g.imag(), 0, 0);
             } else if (k >= 1 && m == 0) {
                 // [[2 Re(G[k])]; [2 Im(G[k])]]
                 addBlock(k, 0, 2.0 * gp.real(), 0, 2.0 * gp.imag(), 0);
