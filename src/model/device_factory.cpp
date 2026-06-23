@@ -243,7 +243,17 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
             for (const auto& [pn, pv] : mdlDef->params) {
                 if (pn == "file" || pn == "osdi" || pn == "lib") {
                     if (pv.kind != ParamValue::Kind::Number && !pv.str.empty()) {
-                        candidates.push_back(pv.str);
+                        std::string fpath = pv.str;
+                        candidates.push_back(fpath);  // 原始路径（相对 CWD）
+                        // 从 libSearchDir 解析相对路径
+                        if (!env.libSearchDir.empty()) {
+                            // 取 basename，拼到 libSearchDir 后
+                            size_t pos = fpath.find_last_of("\\/");
+                            std::string base = (pos != std::string::npos) ? fpath.substr(pos + 1) : fpath;
+                            candidates.push_back(env.libSearchDir + "\\" + base);
+                            // 也尝试 libSearchDir + 完整相对路径
+                            candidates.push_back(env.libSearchDir + "\\" + fpath);
+                        }
                     }
                 }
             }

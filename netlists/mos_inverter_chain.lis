@@ -2,15 +2,19 @@
 ****** harmonic balance + osdi ******
 ****** version 0.2 ******
 
-$ netlist: rfsim end-to-end: BSIM4 NMOS common-source amplifier @ 1MHz
-$ source: G:\vibe-codeing\simulator\tests\netlists\bsim4_cs_pss.sp
+$ netlist: Inverter Chain — 5 cascaded CMOS inverters
+$ source: mos_inverter_chain.sp
 
 $rfsim ============================================================
 $  node table
 $rfsim ============================================================
 
-  nodes (excl. gnd): 3
+  nodes (excl. gnd): 7
   [1] vdd
-  [2] d
-  [3] g
+  [2] in
+  [3] s1
+  [4] s2
+  [5] s3
+  [6] s4
+  [7] out
 

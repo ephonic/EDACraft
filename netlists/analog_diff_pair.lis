@@ -2,15 +2,18 @@
 ****** harmonic balance + osdi ******
 ****** version 0.2 ******
 
-$ netlist: rfsim end-to-end: BSIM4 NMOS common-source amplifier @ 1MHz
-$ source: G:\vibe-codeing\simulator\tests\netlists\bsim4_cs_pss.sp
+$ netlist: Differential Pair — source-coupled pair + active load
+$ source: analog_diff_pair.sp
 
 $rfsim ============================================================
 $  node table
 $rfsim ============================================================
 
-  nodes (excl. gnd): 3
+  nodes (excl. gnd): 6
   [1] vdd
-  [2] d
-  [3] g
+  [2] vip
+  [3] vin
+  [4] vss_tail
+  [5] d1
+  [6] d2
 

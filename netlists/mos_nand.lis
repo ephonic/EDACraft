@@ -2,15 +2,17 @@
 ****** harmonic balance + osdi ******
 ****** version 0.2 ******
 
-$ netlist: rfsim end-to-end: BSIM4 NMOS common-source amplifier @ 1MHz
-$ source: G:\vibe-codeing\simulator\tests\netlists\bsim4_cs_pss.sp
+$ netlist: NAND Gate — 2-input CMOS NAND
+$ source: mos_nand.sp
 
 $rfsim ============================================================
 $  node table
 $rfsim ============================================================
 
-  nodes (excl. gnd): 3
+  nodes (excl. gnd): 5
   [1] vdd
-  [2] d
-  [3] g
+  [2] a
+  [3] b
+  [4] out
+  [5] x
 

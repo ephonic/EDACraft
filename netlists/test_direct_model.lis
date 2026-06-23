@@ -2,8 +2,8 @@
 ****** harmonic balance + osdi ******
 ****** version 0.2 ******
 
-$ netlist: rfsim end-to-end: BSIM4 NMOS common-source amplifier @ 1MHz
-$ source: G:\vibe-codeing\simulator\tests\netlists\bsim4_cs_pss.sp
+$ netlist: Direct model test
+$ source: G:\vibe-codeing\simulator\netlists\test_direct_model.sp
 
 $rfsim ============================================================
 $  node table

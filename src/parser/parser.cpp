@@ -273,11 +273,16 @@ private:
     }
 
     void parseInclude(const std::vector<Token>& rest, uint32_t ln, Netlist& netlist) {
-        // .include path   或  .lib path section
         std::string path;
         for (const auto& t : rest) {
-            if (t.kind == TokenKind::Word || t.kind == TokenKind::String) {
-                path = t.text; break;
+            if (t.kind == TokenKind::String) { path = t.text; break; }  // 引号路径优先
+            if (t.kind == TokenKind::Word) { path = t.text; break; }
+        }
+        // 若 path 不含 '.'（tokenizer 把 .inc 拆开了），拼接后续 token
+        if (path.find('.') == std::string::npos) {
+            for (const auto& t : rest) {
+                if (t.kind == TokenKind::Dot) { path += "."; }
+                else if (t.kind == TokenKind::Word && path != t.text) { path += t.text; }
             }
         }
         if (path.empty()) { diags_.error(at(ln), ".include/.lib missing path"); return; }
@@ -288,7 +293,8 @@ private:
         // 子解析器复用当前子电路栈：把 substack_ 传过去
         // 简化：子文件独立解析后，把其 netlist.items 合并到当前位置
         Netlist subNet;
-        sub.parseInto(subNet, substack_);
+        // .include 文件不应跳第一行当标题——直接从第一行开始解析
+        sub.parseBodyInto(subNet, substack_);
         for (auto& it : subNet.items) currentTarget(netlist)->push_back(std::move(it));
         for (auto& p : subNet.globalParams) netlist.globalParams.push_back(p);
         // 合并子解析器的诊断
@@ -300,7 +306,9 @@ private:
     void parseInto(Netlist& out, std::vector<Frame>& sharedStack) {
         substack_ = sharedStack; // 继承外层栈
         auto lines = splitLogicalLines(src_);
-        for (auto& ll : lines) {
+        // 跳过第一行（标题）—— 仅顶层 netlist 需要
+        for (size_t i = 1; i < lines.size(); ++i) {
+            auto& ll = lines[i];
             std::string line = ll.text;
             stripInlineComment(line);
             line = trim(line);
@@ -309,6 +317,22 @@ private:
             else parseCardLine(line, ll.line, out);
         }
         sharedStack = substack_; // 写回（可能新增了未闭合的 subckt）
+    }
+
+    // .include 用——不跳第一行，所有行都解析
+    void parseBodyInto(Netlist& out, std::vector<Frame>& sharedStack) {
+        substack_ = sharedStack;
+        auto lines = splitLogicalLines(src_);
+        for (auto& ll : lines) {
+            std::string line = ll.text;
+            stripInlineComment(line);
+            line = trim(line);
+            if (line.empty()) continue;
+            if (line[0] == '*') continue;
+            if (line[0] == '.') parseDotLine(line, ll.line, out);
+            else parseCardLine(line, ll.line, out);
+        }
+        sharedStack = substack_;
     }
 
     void parseCardLine(const std::string& line, uint32_t ln, Netlist& netlist) {

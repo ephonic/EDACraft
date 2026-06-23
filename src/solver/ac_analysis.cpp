@@ -90,6 +90,11 @@ AcResult solveAc(uint32_t numNodes,
         G.addStatic(br, br, Complex(0, 0));
     }
 
+    // gmin 对角正则化——防止 RC ladder 高频时矩阵奇异（jωC 主导，R 被淹没）
+    const double gmin = 1e-12;
+    for (uint32_t i = 0; i < numNodes; ++i)
+        G.addStatic(i, i, Complex(gmin, 0));
+
     bool firstFreq = true;
     KluZSolver solver;
 
