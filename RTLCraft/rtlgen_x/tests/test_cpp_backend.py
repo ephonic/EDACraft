@@ -4,6 +4,7 @@ import random
 from rtlgen_x.sim import (
     Assignment,
     BinaryExpr,
+    ClockDomain,
     compare_python_and_compiled,
     ConstExpr,
     CppBuildError,
@@ -16,6 +17,7 @@ from rtlgen_x.sim import (
     pack_u64_numpy,
     pack_u64_numpy_rows,
     pack_u64_words,
+    PythonSimulator,
     Signal,
     SignalRef,
     SimModule,
@@ -36,6 +38,77 @@ def test_sim_module_rejects_duplicate_signal_names():
         )
 
 
+def test_sim_module_rejects_unsupported_storage_contract():
+    with pytest.raises(ValueError, match="outside the executable storage subset"):
+        SimModule(
+            name="sync_mem",
+            signals=(
+                Signal("addr", width=2, kind="input"),
+                Signal("dout", width=8, kind="output"),
+            ),
+            assignments=(Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),),
+            outputs=("dout",),
+            memories=(
+                Memory(
+                    "mem",
+                    width=8,
+                    depth=4,
+                    read_ports=1,
+                    write_ports=1,
+                    read_style="sync",
+                    read_latency=1,
+                ),
+            ),
+        )
+
+
+def test_sim_module_rejects_byte_enable_storage_contract():
+    with pytest.raises(ValueError, match="outside the executable storage subset"):
+        SimModule(
+            name="byte_enable_mem",
+            signals=(
+                Signal("addr", width=2, kind="input"),
+                Signal("dout", width=32, kind="output"),
+            ),
+            assignments=(Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),),
+            outputs=("dout",),
+            memories=(
+                Memory(
+                    "mem",
+                    width=32,
+                    depth=4,
+                    byte_enable_granularity=8,
+                ),
+            ),
+        )
+
+
+def test_sim_module_rejects_mismatched_byte_enable_write_metadata():
+    with pytest.raises(ValueError, match="does not declare byte_enable_granularity"):
+        SimModule(
+            name="byte_enable_write_mismatch",
+            signals=(
+                Signal("we", width=1, kind="input"),
+                Signal("be", width=4, kind="input"),
+                Signal("addr", width=2, kind="input"),
+                Signal("din", width=32, kind="input"),
+                Signal("dout", width=32, kind="output"),
+            ),
+            assignments=(Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),),
+            outputs=("dout",),
+            memories=(Memory("mem", width=32, depth=4),),
+            memory_writes=(
+                MemoryWrite(
+                    "mem",
+                    SignalRef("addr"),
+                    SignalRef("din"),
+                    enable=SignalRef("we"),
+                    byte_enable=SignalRef("be"),
+                ),
+            ),
+        )
+
+
 def test_sim_module_rejects_seq_assignment_to_non_state_target():
     with pytest.raises(ValueError, match="sequential assignments"):
         SimModule(
@@ -48,6 +121,26 @@ def test_sim_module_rejects_seq_assignment_to_non_state_target():
                 Assignment("out", SignalRef("inp"), phase="seq"),
             ),
             outputs=("out",),
+        )
+
+
+def test_sim_module_rejects_state_written_from_multiple_clock_domains():
+    with pytest.raises(ValueError, match="written from multiple clock domains"):
+        SimModule(
+            name="bad_multi_clock_state",
+            signals=(
+                Signal("wr_clk", width=1, kind="input"),
+                Signal("rd_clk", width=1, kind="input"),
+                Signal("acc", width=8, kind="state"),
+                Signal("out", width=8, kind="output"),
+            ),
+            assignments=(
+                Assignment("out", SignalRef("acc")),
+                Assignment("acc", ConstExpr(1, 8), phase="seq", clock_domain="wr_clk"),
+                Assignment("acc", ConstExpr(2, 8), phase="seq", clock_domain="rd_clk"),
+            ),
+            outputs=("out",),
+            clock_domains=(ClockDomain("wr_clk"), ClockDomain("rd_clk")),
         )
 
 
@@ -130,6 +223,80 @@ def test_compiled_simulator_honors_reset_input(tmp_path):
         assert sim.step({"rst": 0, "inp": 5}) == {"out": 8}
         assert sim.step({"rst": 1, "inp": 2}) == {"out": 10}
         assert sim.step({"rst": 0, "inp": 1}) == {"out": 4}
+
+
+def _dual_clock_fifo_like_module() -> SimModule:
+    return SimModule(
+        name="cpp_multi_clock",
+        signals=(
+            Signal("wr_clk", width=1, kind="input"),
+            Signal("rd_clk", width=1, kind="input"),
+            Signal("wr_rst", width=1, kind="input"),
+            Signal("rd_rst", width=1, kind="input"),
+            Signal("wr_en", width=1, kind="input"),
+            Signal("rd_en", width=1, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("wr_ptr", width=2, kind="state", init=0),
+            Signal("rd_ptr", width=2, kind="state", init=0),
+            Signal("rd_data", width=8, kind="state", init=0),
+            Signal("out", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", SignalRef("rd_data")),
+            Assignment(
+                "wr_ptr",
+                MuxExpr(SignalRef("wr_en"), BinaryExpr("+", SignalRef("wr_ptr"), ConstExpr(1, 2)), SignalRef("wr_ptr")),
+                phase="seq",
+                clock_domain="wr_clk",
+            ),
+            Assignment(
+                "rd_ptr",
+                MuxExpr(SignalRef("rd_en"), BinaryExpr("+", SignalRef("rd_ptr"), ConstExpr(1, 2)), SignalRef("rd_ptr")),
+                phase="seq",
+                clock_domain="rd_clk",
+            ),
+            Assignment(
+                "rd_data",
+                MuxExpr(SignalRef("rd_en"), MemoryReadExpr("fifo_mem", SignalRef("rd_ptr")), SignalRef("rd_data")),
+                phase="seq",
+                clock_domain="rd_clk",
+            ),
+        ),
+        outputs=("out",),
+        memories=(Memory("fifo_mem", width=8, depth=4),),
+        memory_writes=(
+            MemoryWrite("fifo_mem", SignalRef("wr_ptr"), SignalRef("din"), enable=SignalRef("wr_en"), clock_domain="wr_clk"),
+        ),
+        clock_domains=(
+            ClockDomain("wr_clk", reset_signal="wr_rst"),
+            ClockDomain("rd_clk", reset_signal="rd_rst"),
+        ),
+        outputs_post_state=True,
+    )
+
+
+def test_compiled_backend_supports_clock_domain_metadata_and_explicit_steping(tmp_path):
+    module = _dual_clock_fifo_like_module()
+    scaffold = CppBackendScaffold(namespace="multiclk")
+    source = scaffold.emit_runtime_translation_unit(module)
+    assert "step_domains" in source
+    assert "kDomainMask_wr_clk" in source
+    assert "kDomainMask_rd_clk" in source
+
+    python_sim = PythonSimulator(module)
+    with scaffold.build(module, tmp_path) as sim:
+        with pytest.raises(ValueError, match="step_clocks"):
+            sim.step({"wr_en": 0, "rd_en": 0, "din": 0})
+        assert sim.step_clocks({"wr_en": 1, "din": 11}, ("wr_clk",)) == python_sim.step_clocks({"wr_en": 1, "din": 11}, ("wr_clk",))
+        assert sim.step_clocks({"wr_en": 1, "din": 22}, ("wr_clk",)) == python_sim.step_clocks({"wr_en": 1, "din": 22}, ("wr_clk",))
+        assert sim.step_clocks({"rd_en": 1}, ("rd_clk",)) == python_sim.step_clocks({"rd_en": 1}, ("rd_clk",))
+        assert sim.step_clocks({"rd_en": 1}, ("rd_clk",)) == python_sim.step_clocks({"rd_en": 1}, ("rd_clk",))
+        assert sim.step_clocks({"rd_rst": 1}, ("rd_clk",)) == python_sim.step_clocks({"rd_rst": 1}, ("rd_clk",))
+
+        assert sim.snapshot_state_values() == python_sim.snapshot_state_values()
+
+        with pytest.raises(ValueError, match="single-clock"):
+            sim.run_batch_raw((0, 0, 0, 0, 0, 0, 0, 0), 1)
 
 
 def test_compiled_simulator_buffered_and_streaming_batch(tmp_path):
@@ -267,6 +434,34 @@ def test_compiled_simulator_supports_comb_read_seq_write_memory(tmp_path):
         assert snapshot.tolist() == [1, 2, 99, 4]
         assert sim.step({"rst": 0, "we": 0, "addr": 2, "din": 0}) == {"dout": 99}
         assert sim.step({"rst": 1, "we": 0, "addr": 2, "din": 0}) == {"dout": 3}
+
+
+def test_compiled_simulator_supports_read_first_memory_policy(tmp_path):
+    module = SimModule(
+        name="mem_runtime_read_first",
+        signals=(
+            Signal("we", width=1, kind="input"),
+            Signal("addr", width=2, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("dout", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),
+        ),
+        outputs=("dout",),
+        memories=(
+            Memory("mem", width=8, depth=4, init=(1, 2, 3, 4), read_during_write="read_first"),
+        ),
+        memory_writes=(
+            MemoryWrite("mem", SignalRef("addr"), SignalRef("din"), enable=SignalRef("we")),
+        ),
+        outputs_post_state=True,
+    )
+
+    with CppBackendScaffold(namespace="testmem_read_first").build(module, tmp_path) as sim:
+        assert sim.step({"we": 0, "addr": 2, "din": 0}) == {"dout": 3}
+        assert sim.step({"we": 1, "addr": 2, "din": 99}) == {"dout": 3}
+        assert sim.step({"we": 0, "addr": 2, "din": 0}) == {"dout": 99}
 
 
 def test_compiled_simulator_supports_signed_unsigned_and_arithmetic_shift(tmp_path):

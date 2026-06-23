@@ -46,6 +46,12 @@ class Memory:
     width: int
     depth: int
     init: Tuple[int, ...] = ()
+    read_during_write: str = "write_first"
+    read_ports: int = 1
+    write_ports: int = 1
+    read_style: str = "async"
+    read_latency: int = 0
+    byte_enable_granularity: Optional[int] = None
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -56,6 +62,25 @@ class Memory:
             raise ValueError("memory depth must be positive")
         if self.init and len(self.init) != self.depth:
             raise ValueError("memory init must be empty or match depth")
+        if self.read_during_write not in {"write_first", "read_first"}:
+            raise ValueError(
+                "memory read_during_write must be 'write_first' or 'read_first'"
+            )
+        if self.read_ports < 1:
+            raise ValueError("memory read_ports must be >= 1")
+        if self.write_ports < 1:
+            raise ValueError("memory write_ports must be >= 1")
+        if self.read_style not in {"async", "sync"}:
+            raise ValueError("memory read_style must be 'async' or 'sync'")
+        if self.read_latency < 0:
+            raise ValueError("memory read_latency must be >= 0")
+        if self.byte_enable_granularity is not None:
+            if self.byte_enable_granularity < 1:
+                raise ValueError("memory byte_enable_granularity must be >= 1")
+            if self.width % self.byte_enable_granularity != 0:
+                raise ValueError(
+                    "memory width must be divisible by byte_enable_granularity"
+                )
 
     @property
     def mask(self) -> int:
@@ -64,6 +89,12 @@ class Memory:
     @property
     def addr_width(self) -> int:
         return max((self.depth - 1).bit_length(), 1)
+
+    @property
+    def byte_enable_width(self) -> Optional[int]:
+        if self.byte_enable_granularity is None:
+            return None
+        return self.width // self.byte_enable_granularity
 
 
 @dataclass(frozen=True)
@@ -149,6 +180,7 @@ class Assignment:
     target: str
     expr: Expr
     phase: str = "comb"
+    clock_domain: Optional[str] = None
     source_file: Optional[str] = None
     source_line: Optional[int] = None
 
@@ -163,6 +195,22 @@ class MemoryWrite:
     addr: Expr
     value: Expr
     enable: Expr = ConstExpr(1, 1)
+    clock_domain: Optional[str] = None
+    byte_enable: Optional[Expr] = None
+    source_file: Optional[str] = None
+    source_line: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class ClockDomain:
+    name: str
+    reset_signal: Optional[str] = None
+    reset_async: bool = False
+    reset_active_low: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("clock domain name must not be empty")
 
 
 @dataclass(frozen=True)
@@ -175,6 +223,7 @@ class SimModule:
     outputs: Tuple[str, ...]
     memories: Tuple[Memory, ...] = ()
     memory_writes: Tuple[MemoryWrite, ...] = ()
+    clock_domains: Tuple[ClockDomain, ...] = ()
     reset_signal: Optional[str] = None
     outputs_post_state: bool = False
 
@@ -194,6 +243,7 @@ class SimModule:
                 raise ValueError(f"memory '{memory.name}' conflicts with an existing signal")
             if memory.name in memory_map:
                 raise ValueError(f"duplicate memory '{memory.name}'")
+            _validate_executable_memory_contract(memory)
             memory_map[memory.name] = memory
         if not self.outputs:
             raise ValueError("module must expose at least one output")
@@ -203,30 +253,99 @@ class SimModule:
                 raise ValueError(f"unknown output '{output_name}'")
             if signal.kind != "output":
                 raise ValueError(f"output '{output_name}' must have kind='output'")
+        if len(self.clock_domains) > 64:
+            raise ValueError("clock domain count must be <= 64")
+        domain_map: Dict[str, ClockDomain] = {}
+        for domain in self.clock_domains:
+            if domain.name in domain_map:
+                raise ValueError(f"duplicate clock domain '{domain.name}'")
+            clock_signal = signal_map.get(domain.name)
+            if clock_signal is None:
+                raise ValueError(f"unknown clock domain signal '{domain.name}'")
+            if clock_signal.kind != "input":
+                raise ValueError("clock domain signal must be declared as an input")
+            if domain.reset_signal is not None:
+                reset_signal = signal_map.get(domain.reset_signal)
+                if reset_signal is None:
+                    raise ValueError(f"unknown reset signal '{domain.reset_signal}' for clock domain '{domain.name}'")
+            domain_map[domain.name] = domain
         if self.reset_signal is not None:
             signal = signal_map.get(self.reset_signal)
             if signal is None:
                 raise ValueError(f"unknown reset signal '{self.reset_signal}'")
             if signal.kind != "input":
                 raise ValueError("reset signal must be declared as an input")
+        if len(self.clock_domains) > 1 and self.reset_signal is not None:
+            raise ValueError("multi-clock modules must use per-domain reset signals, not module.reset_signal")
+        if len(self.clock_domains) == 1 and self.reset_signal is not None:
+            domain_reset = self.clock_domains[0].reset_signal
+            if domain_reset is not None and domain_reset != self.reset_signal:
+                raise ValueError("single clock-domain reset disagrees with module.reset_signal")
+
+        def resolve_domain_name(explicit_name: Optional[str], *, kind: str) -> Optional[str]:
+            if not domain_map:
+                return explicit_name
+            if explicit_name is None:
+                if len(domain_map) == 1:
+                    return next(iter(domain_map))
+                raise ValueError(f"{kind} in a multi-clock module must declare clock_domain")
+            if explicit_name not in domain_map:
+                raise ValueError(f"{kind} references unknown clock domain '{explicit_name}'")
+            return explicit_name
+
+        state_domains: Dict[str, str] = {}
+        memory_domains: Dict[str, str] = {}
         for assignment in self.assignments:
             target = signal_map.get(assignment.target)
             if target is None:
                 raise ValueError(f"assignment targets unknown signal '{assignment.target}'")
+            if assignment.phase != "seq" and assignment.clock_domain is not None:
+                raise ValueError("clock_domain metadata is only valid on sequential assignments")
             if assignment.phase == "seq" and target.kind != "state":
                 raise ValueError("sequential assignments may only target state signals")
             if assignment.phase == "comb" and target.kind == "state":
                 raise ValueError("combinational assignments may not target state signals")
             if assignment.phase == "latch" and target.kind != "state":
                 raise ValueError("latch assignments may only target state signals")
+            if assignment.phase == "seq":
+                domain_name = resolve_domain_name(assignment.clock_domain, kind="sequential assignment")
+                if domain_name is not None:
+                    previous = state_domains.get(assignment.target)
+                    if previous is not None and previous != domain_name:
+                        raise ValueError(
+                            f"state '{assignment.target}' is written from multiple clock domains: "
+                            f"'{previous}' and '{domain_name}'"
+                        )
+                    state_domains[assignment.target] = domain_name
             self._validate_expr(assignment.expr, signal_map, memory_map)
         for write in self.memory_writes:
             memory = memory_map.get(write.memory)
             if memory is None:
                 raise ValueError(f"memory write targets unknown memory '{write.memory}'")
+            if write.byte_enable is not None and memory.byte_enable_granularity is None:
+                raise ValueError(
+                    f"memory write targets '{write.memory}' with byte_enable, but the memory "
+                    "does not declare byte_enable_granularity"
+                )
+            if write.byte_enable is None and memory.byte_enable_granularity is not None:
+                raise ValueError(
+                    f"memory write targets '{write.memory}' without byte_enable, but the memory "
+                    "declares byte_enable_granularity"
+                )
+            domain_name = resolve_domain_name(write.clock_domain, kind="memory write")
+            if domain_name is not None:
+                previous = memory_domains.get(write.memory)
+                if previous is not None and previous != domain_name:
+                    raise ValueError(
+                        f"memory '{write.memory}' is written from multiple clock domains: "
+                        f"'{previous}' and '{domain_name}'"
+                    )
+                memory_domains[write.memory] = domain_name
             self._validate_expr(write.addr, signal_map, memory_map)
             self._validate_expr(write.value, signal_map, memory_map)
             self._validate_expr(write.enable, signal_map, memory_map)
+            if write.byte_enable is not None:
+                self._validate_expr(write.byte_enable, signal_map, memory_map)
 
     @staticmethod
     def _validate_expr(
@@ -275,6 +394,30 @@ def _cpp_ident(name: str) -> str:
     if ident and (ident[0].isalpha() or ident[0] == "_"):
         return ident
     return f"sig_{ident}"
+
+
+def _validate_executable_memory_contract(memory: Memory) -> None:
+    problems: List[str] = []
+    if memory.read_ports != 1:
+        problems.append(f"read_ports={memory.read_ports}")
+    if memory.write_ports != 1:
+        problems.append(f"write_ports={memory.write_ports}")
+    if memory.read_style != "async":
+        problems.append(f"read_style={memory.read_style!r}")
+    if memory.read_latency != 0:
+        problems.append(f"read_latency={memory.read_latency}")
+    if memory.byte_enable_granularity is not None:
+        problems.append(
+            f"byte_enable_granularity={memory.byte_enable_granularity}"
+        )
+    if not problems:
+        return
+    details = ", ".join(problems)
+    raise ValueError(
+        f"memory '{memory.name}' is outside the executable storage subset ({details}); "
+        "supported executable memories currently require read_ports=1, "
+        "write_ports=1, read_style='async', read_latency=0, and no byte-enable lanes"
+    )
 
 
 def _cpp_value_name(name: str) -> str:
@@ -464,6 +607,8 @@ class CompiledSimulator:
         output_widths: Sequence[int],
         state_names: Sequence[str],
         state_widths: Sequence[int],
+        step_domains_fn=None,
+        clock_domain_names: Sequence[str] = (),
         artifact_dir: Path,
         source_path: Path,
         library_path: Path,
@@ -477,9 +622,11 @@ class CompiledSimulator:
         self._step_many_fn = step_many_fn
         self._save_state_fn = save_state_fn
         self._load_state_fn = load_state_fn
+        self._step_domains_fn = step_domains_fn
         self.input_names = tuple(input_names)
         self.output_names = tuple(output_names)
         self.state_names = tuple(state_names)
+        self.clock_domain_names = tuple(clock_domain_names)
         self.input_widths = tuple(input_widths)
         self.output_widths = tuple(output_widths)
         self.state_widths = tuple(state_widths)
@@ -503,6 +650,10 @@ class CompiledSimulator:
         self.library_path = library_path
         self._tempdir = tempdir
         self._input_index = {name: idx for idx, name in enumerate(self.input_names)}
+        self._clock_domain_index = {
+            name: idx for idx, name in enumerate(self.clock_domain_names)
+        }
+        self._multi_clock = len(self.clock_domain_names) > 1
 
     def close(self) -> None:
         if self._handle is not None:
@@ -520,6 +671,8 @@ class CompiledSimulator:
     def step(self, inputs: Mapping[str, int]) -> Dict[str, int]:
         if self._handle is None:
             raise RuntimeError("compiled simulator is closed")
+        if self._multi_clock:
+            raise ValueError("multi-clock modules must use step_clocks(...) with explicit active domains")
         unknown_inputs = sorted(set(inputs) - set(self.input_names))
         if unknown_inputs:
             joined = ", ".join(unknown_inputs)
@@ -533,6 +686,8 @@ class CompiledSimulator:
     def step_raw(self, input_values: Sequence[int]) -> Tuple[int, ...]:
         if self._handle is None:
             raise RuntimeError("compiled simulator is closed")
+        if self._multi_clock:
+            raise ValueError("multi-clock modules must use step_raw_clocks(...) with explicit active domains")
         if len(input_values) != self.input_count:
             raise ValueError(f"expected {self.input_count} input values, got {len(input_values)}")
         packed_inputs = pack_signal_values_u64_words(input_values, self.input_widths)
@@ -541,9 +696,81 @@ class CompiledSimulator:
         self._step_fn(self._handle, self._step_input_buffer, self._step_output_buffer)
         return unpack_signal_values_u64_words(self._step_output_buffer, self.output_widths)
 
+    def _normalize_active_domains(
+        self,
+        active_domains: Mapping[str, bool] | Sequence[str],
+    ) -> Tuple[str, ...]:
+        if not self.clock_domain_names:
+            raise ValueError("step_clocks() requires clock-domain metadata")
+        if isinstance(active_domains, Mapping):
+            selected = [name for name, enabled in active_domains.items() if enabled]
+        else:
+            selected = list(active_domains)
+        ordered = tuple(dict.fromkeys(selected))
+        unknown = sorted(set(ordered) - set(self.clock_domain_names))
+        if unknown:
+            joined = ", ".join(unknown)
+            raise KeyError(f"unknown clock domains: {joined}")
+        return ordered
+
+    def _active_domain_mask(
+        self,
+        active_domains: Mapping[str, bool] | Sequence[str],
+    ) -> int:
+        ordered = self._normalize_active_domains(active_domains)
+        mask = 0
+        for name in ordered:
+            mask |= 1 << self._clock_domain_index[name]
+        return mask
+
+    def step_clocks(
+        self,
+        inputs: Mapping[str, int],
+        active_domains: Mapping[str, bool] | Sequence[str],
+    ) -> Dict[str, int]:
+        if self._handle is None:
+            raise RuntimeError("compiled simulator is closed")
+        unknown_inputs = sorted(set(inputs) - set(self.input_names))
+        if unknown_inputs:
+            joined = ", ".join(unknown_inputs)
+            raise KeyError(f"unknown simulator inputs: {joined}")
+        output_values = self.step_raw_clocks(
+            [int(inputs.get(name, 0)) for name in self.input_names],
+            active_domains,
+        )
+        return {
+            name: int(output_values[idx]) & self._output_masks[idx]
+            for idx, name in enumerate(self.output_names)
+        }
+
+    def step_raw_clocks(
+        self,
+        input_values: Sequence[int],
+        active_domains: Mapping[str, bool] | Sequence[str],
+    ) -> Tuple[int, ...]:
+        if self._handle is None:
+            raise RuntimeError("compiled simulator is closed")
+        if self._step_domains_fn is None:
+            raise ValueError("step_raw_clocks() requires clock-domain metadata")
+        if len(input_values) != self.input_count:
+            raise ValueError(f"expected {self.input_count} input values, got {len(input_values)}")
+        active_mask = self._active_domain_mask(active_domains)
+        packed_inputs = pack_signal_values_u64_words(input_values, self.input_widths)
+        for idx, raw_word in enumerate(packed_inputs):
+            self._step_input_buffer[idx] = int(raw_word) & 0xFFFFFFFFFFFFFFFF
+        self._step_domains_fn(
+            self._handle,
+            ctypes.c_uint64(active_mask),
+            self._step_input_buffer,
+            self._step_output_buffer,
+        )
+        return unpack_signal_values_u64_words(self._step_output_buffer, self.output_widths)
+
     def run_batch_raw(self, flat_inputs: Sequence[int], cycles: int) -> Tuple[int, ...]:
         if self._handle is None:
             raise RuntimeError("compiled simulator is closed")
+        if self._multi_clock:
+            raise ValueError("run_batch_raw() is only supported for single-clock modules")
         if cycles < 0:
             raise ValueError("cycles must be non-negative")
         expected_values = cycles * self.input_count
@@ -582,6 +809,8 @@ class CompiledSimulator:
 
         if self._handle is None:
             raise RuntimeError("compiled simulator is closed")
+        if self._multi_clock:
+            raise ValueError("run_batch_buffered() is only supported for single-clock modules")
         if cycles < 0:
             raise ValueError("cycles must be non-negative")
         expected_values = cycles * self.input_word_count
@@ -611,6 +840,8 @@ class CompiledSimulator:
     ) -> Iterator[array]:
         """Stream arbitrarily long batches in bounded chunks."""
 
+        if self._multi_clock:
+            raise ValueError("iter_batch_buffered() is only supported for single-clock modules")
         if chunk_cycles < 1:
             raise ValueError("chunk_cycles must be positive")
         chunk_inputs = array("Q")
@@ -628,6 +859,8 @@ class CompiledSimulator:
             yield self.run_batch_buffered(chunk_inputs, chunk_len)
 
     def run_batch(self, input_rows: Sequence[Sequence[int]]) -> Tuple[Dict[str, int], ...]:
+        if self._multi_clock:
+            raise ValueError("run_batch() is only supported for single-clock modules")
         flat_inputs: List[int] = []
         for row in input_rows:
             if len(row) != self.input_count:
@@ -652,6 +885,8 @@ class CompiledSimulator:
     ) -> np.ndarray:
         """Run a 2D uint64 input matrix and return a 2D uint64 output matrix."""
 
+        if self._multi_clock:
+            raise ValueError("run_batch_matrix() is only supported for single-clock modules")
         if input_rows.dtype != np.uint64:
             raise TypeError("input_rows must have dtype=uint64")
         if input_rows.ndim != 2:
@@ -787,7 +1022,43 @@ class CppBackendScaffold:
     compiler: Optional[str] = None
     cxxflags: Tuple[str, ...] = ("-std=c++17", "-O2")
 
+    def _ensure_supported_clock_domains(self, module: SimModule) -> None:
+        return None
+
+    def _group_seq_assignments_by_domain(
+        self,
+        module: SimModule,
+    ) -> Dict[str, List[Assignment]]:
+        grouped = {domain.name: [] for domain in module.clock_domains}
+        if not module.clock_domains:
+            return grouped
+        default_domain = module.clock_domains[0].name if len(module.clock_domains) == 1 else None
+        for assignment in module.assignments:
+            if assignment.phase != "seq":
+                continue
+            domain_name = assignment.clock_domain or default_domain
+            if domain_name is None:
+                raise ValueError("multi-clock sequential assignment is missing clock_domain")
+            grouped[domain_name].append(assignment)
+        return grouped
+
+    def _group_memory_writes_by_domain(
+        self,
+        module: SimModule,
+    ) -> Dict[str, List[MemoryWrite]]:
+        grouped = {domain.name: [] for domain in module.clock_domains}
+        if not module.clock_domains:
+            return grouped
+        default_domain = module.clock_domains[0].name if len(module.clock_domains) == 1 else None
+        for write in module.memory_writes:
+            domain_name = write.clock_domain or default_domain
+            if domain_name is None:
+                raise ValueError("multi-clock memory write is missing clock_domain")
+            grouped[domain_name].append(write)
+        return grouped
+
     def emit_translation_unit(self, module: SimModule) -> str:
+        self._ensure_supported_clock_domains(module)
         if self._requires_wide_support(module):
             return self._emit_wide_translation_unit(module)
         signal_map = module.signal_map()
@@ -800,8 +1071,14 @@ class CppBackendScaffold:
         latch_assignments = [a for a in module.assignments if a.phase == "latch"]
         seq_assignments = [a for a in module.assignments if a.phase == "seq"]
         memory_writes = list(module.memory_writes)
+        domain_names = [domain.name for domain in module.clock_domains]
+        seq_by_domain = self._group_seq_assignments_by_domain(module)
+        writes_by_domain = self._group_memory_writes_by_domain(module)
+        domain_names = [domain.name for domain in module.clock_domains]
+        seq_by_domain = self._group_seq_assignments_by_domain(module)
+        writes_by_domain = self._group_memory_writes_by_domain(module)
 
-        def emit_comb(indent: str, *, declare: bool) -> List[str]:
+        def emit_comb(indent: str, *, declare: bool, state_expr: str = "state_") -> List[str]:
             block_lines: List[str] = []
             for signal in wire_output_signals:
                 lhs = _cpp_value_name(signal.name)
@@ -813,7 +1090,7 @@ class CppBackendScaffold:
                 target = signal_map[assignment.target]
                 block_lines.append(
                     f"{indent}{_cpp_value_name(assignment.target)} = "
-                    f"({self._emit_expr(assignment.expr, signal_map, memory_map)}) & {_mask_expr(target.width)};"
+                    f"({self._emit_expr(assignment.expr, signal_map, memory_map, state_expr=state_expr)}) & {_mask_expr(target.width)};"
                 )
             return block_lines
 
@@ -850,6 +1127,18 @@ class CppBackendScaffold:
             "",
             f"class {module_ident}Simulator {{",
             " public:",
+        ])
+        if domain_names:
+            for index, domain in enumerate(module.clock_domains):
+                lines.append(f"  static constexpr uint64_t kDomainMask_{_cpp_ident(domain.name)} = 1ull << {index}u;")
+            all_domains_mask = " | ".join(
+                f"kDomainMask_{_cpp_ident(domain.name)}" for domain in module.clock_domains
+            )
+            lines.extend([
+                f"  static constexpr uint64_t kAllClockDomainsMask = {all_domains_mask};",
+                "",
+            ])
+        lines.extend([
             f"  static {module_ident}State initial_state() {{",
             f"    {module_ident}State state{{}};",
         ])
@@ -873,6 +1162,15 @@ class CppBackendScaffold:
             "  }",
             "",
             f"  {module_ident}Outputs step(const {module_ident}Inputs& in) {{",
+        ])
+        if domain_names:
+            lines.extend([
+                "    return step_domains(in, kAllClockDomainsMask);",
+                "  }",
+                "",
+                f"  {module_ident}Outputs step_domains(const {module_ident}Inputs& in, uint64_t active_domains_mask) {{",
+            ])
+        lines.extend([
             f"    {module_ident}State next_state = state_;",
         ])
         lines.extend(emit_comb("    ", declare=True))
@@ -887,7 +1185,58 @@ class CppBackendScaffold:
                 lines.append(
                     f"    state_.{_cpp_ident(assignment.target)} = next_state.{_cpp_ident(assignment.target)};"
                 )
-        if seq_assignments or memory_writes:
+        if domain_names:
+            if seq_assignments or memory_writes:
+                lines.append("")
+            for domain in module.clock_domains:
+                domain_ident = _cpp_ident(domain.name)
+                domain_seq = seq_by_domain[domain.name]
+                domain_writes = writes_by_domain[domain.name]
+                lines.append(f"    if ((active_domains_mask & kDomainMask_{domain_ident}) != 0u) {{")
+                if domain.reset_signal is not None:
+                    reset_expr = f"in.{_cpp_ident(domain.reset_signal)}"
+                    if domain.reset_active_low:
+                        reset_expr = f"!({reset_expr})"
+                    lines.append(f"      if ({reset_expr}) {{")
+                    for assignment in domain_seq:
+                        target = signal_map[assignment.target]
+                        lines.append(
+                            f"        next_state.{_cpp_ident(assignment.target)} = {target.init & target.mask}u;"
+                        )
+                    for write in domain_writes:
+                        memory = memory_map[write.memory]
+                        for idx, value in enumerate(memory.init):
+                            lines.append(
+                                f"        next_state.{_cpp_ident(write.memory)}[{idx}] = {value & memory.mask}u;"
+                            )
+                        if not memory.init:
+                            lines.append(f"        for (uint64_t idx = 0; idx < {memory.depth}u; ++idx) {{")
+                            lines.append(f"          next_state.{_cpp_ident(write.memory)}[idx] = 0u;")
+                            lines.append("        }")
+                    lines.append("      } else {")
+                    indent = "        "
+                else:
+                    indent = "      "
+                for assignment in domain_seq:
+                    target = signal_map[assignment.target]
+                    lines.append(
+                        f"{indent}next_state.{_cpp_ident(assignment.target)} = "
+                        f"({self._emit_expr(assignment.expr, signal_map, memory_map)}) & {_mask_expr(target.width)};"
+                    )
+                for write in domain_writes:
+                    memory = memory_map[write.memory]
+                    addr_expr = self._emit_memory_addr(write.addr, signal_map, memory, memory_map)
+                    enable_expr = self._emit_expr(write.enable, signal_map, memory_map)
+                    lines.append(f"{indent}if ({enable_expr}) {{")
+                    lines.append(
+                        f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
+                        f"({self._emit_expr(write.value, signal_map, memory_map)}) & {_mask_expr(memory.width)};"
+                    )
+                    lines.append(f"{indent}}}")
+                if domain.reset_signal is not None:
+                    lines.append("      }")
+                lines.append("    }")
+        elif seq_assignments or memory_writes:
             lines.append("")
             if module.reset_signal is not None:
                 lines.append(f"    if (in.{_cpp_ident(module.reset_signal)}) {{")
@@ -914,13 +1263,31 @@ class CppBackendScaffold:
                 lines.append(f"{indent}}}")
             if module.reset_signal is not None:
                 lines.append("    }")
+        if module.outputs_post_state:
+            lines.append("")
+            read_first_memories = [memory for memory in module.memories if memory.read_during_write == "read_first"]
+            if read_first_memories:
+                lines.append(f"    {module_ident}State comb_state = next_state;")
+                for write in memory_writes:
+                    memory = memory_map[write.memory]
+                    if memory.read_during_write != "read_first":
+                        continue
+                    addr_expr = self._emit_memory_addr(write.addr, signal_map, memory, memory_map)
+                    enable_expr = self._emit_expr(write.enable, signal_map, memory_map)
+                    lines.append(f"    if ({enable_expr}) {{")
+                    lines.append(
+                        f"      comb_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
+                        f"state_.{_cpp_ident(write.memory)}[{addr_expr}];"
+                    )
+                    lines.append("    }")
+                lines.append("")
+                lines.extend(emit_comb("    ", declare=False, state_expr="comb_state"))
+            else:
+                lines.extend(emit_comb("    ", declare=False, state_expr="next_state"))
         lines.extend([
             "",
             "    state_ = next_state;",
         ])
-        if module.outputs_post_state:
-            lines.append("")
-            lines.extend(emit_comb("    ", declare=False))
         lines.extend([
             "",
             f"    {module_ident}Outputs outputs;",
@@ -978,6 +1345,7 @@ class CppBackendScaffold:
         return "\n".join(lines)
 
     def emit_runtime_translation_unit(self, module: SimModule) -> str:
+        self._ensure_supported_clock_domains(module)
         if self._requires_wide_support(module):
             return self._emit_wide_runtime_translation_unit(module)
         module_ident = _cpp_ident(module.name)
@@ -1011,6 +1379,30 @@ class CppBackendScaffold:
         lines.extend([
             "  auto result = simulator->step(in);",
         ])
+        for idx, output_name in enumerate(module.outputs):
+            signal = signal_map[output_name]
+            lines.append(
+                f"  outputs[{idx}] = result.{_cpp_ident(output_name)} & {_mask_expr(signal.width)};"
+            )
+        lines.extend([
+            "}",
+            "",
+            f"void {symbol_prefix}_step_domains(void* handle, uint64_t active_domains_mask, const uint64_t* inputs, uint64_t* outputs) {{",
+            f"  auto* simulator = static_cast<{self.namespace}::{module_ident}Simulator*>(handle);",
+            f"  {self.namespace}::{module_ident}Inputs in;",
+        ])
+        for idx, signal in enumerate(inputs):
+            lines.append(
+                f"  in.{_cpp_ident(signal.name)} = inputs[{idx}] & {_mask_expr(signal.width)};"
+            )
+        if module.clock_domains:
+            lines.extend([
+                "  auto result = simulator->step_domains(in, active_domains_mask);",
+            ])
+        else:
+            lines.extend([
+                "  auto result = simulator->step(in);",
+            ])
         for idx, output_name in enumerate(module.outputs):
             signal = signal_map[output_name]
             lines.append(
@@ -1158,8 +1550,11 @@ class CppBackendScaffold:
         latch_assignments = [a for a in module.assignments if a.phase == "latch"]
         seq_assignments = [a for a in module.assignments if a.phase == "seq"]
         memory_writes = list(module.memory_writes)
+        domain_names = [domain.name for domain in module.clock_domains]
+        seq_by_domain = self._group_seq_assignments_by_domain(module)
+        writes_by_domain = self._group_memory_writes_by_domain(module)
 
-        def emit_comb(indent: str, *, declare: bool) -> List[str]:
+        def emit_comb(indent: str, *, declare: bool, state_expr: str = "state_") -> List[str]:
             block_lines: List[str] = []
             for signal in wire_output_signals:
                 lhs = _cpp_value_name(signal.name)
@@ -1171,7 +1566,7 @@ class CppBackendScaffold:
                 target = signal_map[assignment.target]
                 block_lines.append(
                     f"{indent}{_cpp_value_name(assignment.target)} = "
-                    f"value_mask({self._emit_wide_expr(assignment.expr, signal_map, memory_map)}, {target.width}u);"
+                    f"value_mask({self._emit_wide_expr(assignment.expr, signal_map, memory_map, state_expr=state_expr)}, {target.width}u);"
                 )
             return block_lines
 
@@ -1504,6 +1899,18 @@ class CppBackendScaffold:
             "",
             f"class {module_ident}Simulator {{",
             " public:",
+        ])
+        if domain_names:
+            for index, domain in enumerate(module.clock_domains):
+                lines.append(f"  static constexpr uint64_t kDomainMask_{_cpp_ident(domain.name)} = 1ull << {index}u;")
+            all_domains_mask = " | ".join(
+                f"kDomainMask_{_cpp_ident(domain.name)}" for domain in module.clock_domains
+            )
+            lines.extend([
+                f"  static constexpr uint64_t kAllClockDomainsMask = {all_domains_mask};",
+                "",
+            ])
+        lines.extend([
             f"  static {module_ident}State initial_state() {{",
             f"    {module_ident}State state{{}};",
         ])
@@ -1529,6 +1936,15 @@ class CppBackendScaffold:
             "  }",
             "",
             f"  {module_ident}Outputs step(const {module_ident}Inputs& in) {{",
+        ])
+        if domain_names:
+            lines.extend([
+                "    return step_domains(in, kAllClockDomainsMask);",
+                "  }",
+                "",
+                f"  {module_ident}Outputs step_domains(const {module_ident}Inputs& in, uint64_t active_domains_mask) {{",
+            ])
+        lines.extend([
             f"    {module_ident}State next_state = state_;",
         ])
         lines.extend(emit_comb("    ", declare=True))
@@ -1543,7 +1959,60 @@ class CppBackendScaffold:
                 lines.append(
                     f"    state_.{_cpp_ident(assignment.target)} = next_state.{_cpp_ident(assignment.target)};"
                 )
-        if seq_assignments or memory_writes:
+        if domain_names:
+            if seq_assignments or memory_writes:
+                lines.append("")
+            for domain in module.clock_domains:
+                domain_ident = _cpp_ident(domain.name)
+                domain_seq = seq_by_domain[domain.name]
+                domain_writes = writes_by_domain[domain.name]
+                lines.append(f"    if ((active_domains_mask & kDomainMask_{domain_ident}) != 0u) {{")
+                if domain.reset_signal is not None:
+                    reset_expr = f"value_nonzero(in.{_cpp_ident(domain.reset_signal)})"
+                    if domain.reset_active_low:
+                        reset_expr = f"!({reset_expr})"
+                    lines.append(f"      if ({reset_expr}) {{")
+                    for assignment in domain_seq:
+                        target = signal_map[assignment.target]
+                        lines.append(
+                            f"        next_state.{_cpp_ident(assignment.target)} = {self._emit_wide_const(target.init, target.width)};"
+                        )
+                    for write in domain_writes:
+                        memory = memory_map[write.memory]
+                        for idx, value in enumerate(memory.init):
+                            lines.append(
+                                f"        next_state.{_cpp_ident(write.memory)}[{idx}] = {self._emit_wide_const(value & memory.mask, memory.width)};"
+                            )
+                        if not memory.init:
+                            lines.append(f"        for (uint64_t idx = 0; idx < {memory.depth}u; ++idx) {{")
+                            lines.append(
+                                f"          next_state.{_cpp_ident(write.memory)}[idx] = {self._emit_wide_const(0, memory.width)};"
+                            )
+                            lines.append("        }")
+                    lines.append("      } else {")
+                    indent = "        "
+                else:
+                    indent = "      "
+                for assignment in domain_seq:
+                    target = signal_map[assignment.target]
+                    lines.append(
+                        f"{indent}next_state.{_cpp_ident(assignment.target)} = "
+                        f"value_mask({self._emit_wide_expr(assignment.expr, signal_map, memory_map)}, {target.width}u);"
+                    )
+                for write in domain_writes:
+                    memory = memory_map[write.memory]
+                    addr_expr = self._emit_wide_memory_addr(write.addr, signal_map, memory_map, memory)
+                    enable_expr = self._emit_wide_expr(write.enable, signal_map, memory_map)
+                    lines.append(f"{indent}if (value_nonzero({enable_expr})) {{")
+                    lines.append(
+                        f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
+                        f"value_mask({self._emit_wide_expr(write.value, signal_map, memory_map)}, {memory.width}u);"
+                    )
+                    lines.append(f"{indent}}}")
+                if domain.reset_signal is not None:
+                    lines.append("      }")
+                lines.append("    }")
+        elif seq_assignments or memory_writes:
             lines.append("")
             if module.reset_signal is not None:
                 lines.append(f"    if (value_nonzero(in.{_cpp_ident(module.reset_signal)})) {{")
@@ -1570,13 +2039,31 @@ class CppBackendScaffold:
                 lines.append(f"{indent}}}")
             if module.reset_signal is not None:
                 lines.append("    }")
+        if module.outputs_post_state:
+            lines.append("")
+            read_first_memories = [memory for memory in module.memories if memory.read_during_write == "read_first"]
+            if read_first_memories:
+                lines.append(f"    {module_ident}State comb_state = next_state;")
+                for write in memory_writes:
+                    memory = memory_map[write.memory]
+                    if memory.read_during_write != "read_first":
+                        continue
+                    addr_expr = self._emit_wide_memory_addr(write.addr, signal_map, memory_map, memory)
+                    enable_expr = self._emit_wide_expr(write.enable, signal_map, memory_map)
+                    lines.append(f"    if (value_nonzero({enable_expr})) {{")
+                    lines.append(
+                        f"      comb_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
+                        f"state_.{_cpp_ident(write.memory)}[{addr_expr}];"
+                    )
+                    lines.append("    }")
+                lines.append("")
+                lines.extend(emit_comb("    ", declare=False, state_expr="comb_state"))
+            else:
+                lines.extend(emit_comb("    ", declare=False, state_expr="next_state"))
         lines.extend([
             "",
             "    state_ = next_state;",
         ])
-        if module.outputs_post_state:
-            lines.append("")
-            lines.extend(emit_comb("    ", declare=False))
         lines.extend([
             "",
             f"    {module_ident}Outputs outputs;",
@@ -1683,6 +2170,36 @@ class CppBackendScaffold:
         lines.extend([
             "}",
             "",
+            f"void {symbol_prefix}_step_domains(void* handle, uint64_t active_domains_mask, const uint64_t* inputs, uint64_t* outputs) {{",
+            f"  auto* simulator = static_cast<{self.namespace}::{module_ident}Simulator*>(handle);",
+            f"  {self.namespace}::{module_ident}Inputs in;",
+        ])
+        input_cursor = 0
+        for signal in inputs:
+            word_count = _word_count(signal.width)
+            lines.append(
+                f"  in.{_cpp_ident(signal.name)} = {self.namespace}::value_mask({self.namespace}::value_from_words(inputs + {input_cursor}u, {word_count}u), {signal.width}u);"
+            )
+            input_cursor += word_count
+        if module.clock_domains:
+            lines.extend([
+                "  auto result = simulator->step_domains(in, active_domains_mask);",
+            ])
+        else:
+            lines.extend([
+                "  auto result = simulator->step(in);",
+            ])
+        output_cursor = 0
+        for output_name in module.outputs:
+            signal = signal_map[output_name]
+            word_count = _word_count(signal.width)
+            lines.append(
+                f"  {self.namespace}::value_to_words(result.{_cpp_ident(output_name)}, outputs + {output_cursor}u, {word_count}u, {signal.width}u);"
+            )
+            output_cursor += word_count
+        lines.extend([
+            "}",
+            "",
             f"void {symbol_prefix}_step_many(",
             "    void* handle,",
             "    uint64_t cycles,",
@@ -1743,6 +2260,8 @@ class CppBackendScaffold:
         expr: Expr,
         signal_map: Dict[str, Signal],
         memory_map: Dict[str, Memory],
+        *,
+        state_expr: str = "state_",
     ) -> str:
         if isinstance(expr, ConstExpr):
             words = [
@@ -1755,19 +2274,22 @@ class CppBackendScaffold:
             if signal.kind == "input":
                 return f"in.{_cpp_ident(expr.name)}"
             if signal.kind == "state":
-                return f"state_.{_cpp_ident(expr.name)}"
+                return f"{state_expr}.{_cpp_ident(expr.name)}"
             return _cpp_value_name(expr.name)
         if isinstance(expr, MemoryReadExpr):
             memory = memory_map[expr.memory]
             return (
-                f"state_.{_cpp_ident(expr.memory)}"
-                f"[{self._emit_wide_memory_addr(expr.addr, signal_map, memory_map, memory)}]"
+                f"{state_expr}.{_cpp_ident(expr.memory)}"
+                f"[{self._emit_wide_memory_addr(expr.addr, signal_map, memory_map, memory, state_expr=state_expr)}]"
             )
         if isinstance(expr, MaskExpr):
-            return f"value_mask({self._emit_wide_expr(expr.value, signal_map, memory_map)}, {expr.width}u)"
+            return (
+                f"value_mask({self._emit_wide_expr(expr.value, signal_map, memory_map, state_expr=state_expr)}, "
+                f"{expr.width}u)"
+            )
         if isinstance(expr, UnaryExpr):
             child_width = _infer_expr_width(expr.value, signal_map, memory_map)
-            child_expr = self._emit_wide_expr(expr.value, signal_map, memory_map)
+            child_expr = self._emit_wide_expr(expr.value, signal_map, memory_map, state_expr=state_expr)
             if expr.op == "!":
                 return f"value_bool(!value_nonzero({child_expr}))"
             if expr.op == "$signed":
@@ -1780,8 +2302,8 @@ class CppBackendScaffold:
                 return f"value_neg({child_expr})"
             return child_expr
         if isinstance(expr, BinaryExpr):
-            lhs_expr = self._emit_wide_expr(expr.lhs, signal_map, memory_map)
-            rhs_expr = self._emit_wide_expr(expr.rhs, signal_map, memory_map)
+            lhs_expr = self._emit_wide_expr(expr.lhs, signal_map, memory_map, state_expr=state_expr)
+            rhs_expr = self._emit_wide_expr(expr.rhs, signal_map, memory_map, state_expr=state_expr)
             if expr.op == "+":
                 return f"value_add({lhs_expr}, {rhs_expr})"
             if expr.op == "-":
@@ -1832,9 +2354,9 @@ class CppBackendScaffold:
                 return f"value_bool({compare_fn}({lhs_expr}, {rhs_expr}) >= 0)"
         if isinstance(expr, MuxExpr):
             return (
-                f"value_select(value_nonzero({self._emit_wide_expr(expr.cond, signal_map, memory_map)}), "
-                f"{self._emit_wide_expr(expr.when_true, signal_map, memory_map)}, "
-                f"{self._emit_wide_expr(expr.when_false, signal_map, memory_map)})"
+                f"value_select(value_nonzero({self._emit_wide_expr(expr.cond, signal_map, memory_map, state_expr=state_expr)}), "
+                f"{self._emit_wide_expr(expr.when_true, signal_map, memory_map, state_expr=state_expr)}, "
+                f"{self._emit_wide_expr(expr.when_false, signal_map, memory_map, state_expr=state_expr)})"
             )
         raise TypeError(f"unsupported expression type: {type(expr)!r}")
 
@@ -1844,8 +2366,13 @@ class CppBackendScaffold:
         signal_map: Dict[str, Signal],
         memory_map: Dict[str, Memory],
         memory: Memory,
+        *,
+        state_expr: str = "state_",
     ) -> str:
-        return f"(value_to_size({self._emit_wide_expr(addr, signal_map, memory_map)}) % {memory.depth}u)"
+        return (
+            f"(value_to_size({self._emit_wide_expr(addr, signal_map, memory_map, state_expr=state_expr)}) "
+            f"% {memory.depth}u)"
+        )
 
     def build(self, module: SimModule, build_dir: Optional[Path | str] = None) -> CompiledSimulator:
         compiler = self._resolve_compiler()
@@ -1881,6 +2408,7 @@ class CppBackendScaffold:
             destroy_fn = getattr(library, f"{symbol_prefix}_destroy")
             reset_fn = getattr(library, f"{symbol_prefix}_reset")
             step_fn = getattr(library, f"{symbol_prefix}_step")
+            step_domains_fn = getattr(library, f"{symbol_prefix}_step_domains")
             step_many_fn = getattr(library, f"{symbol_prefix}_step_many")
             save_state_fn = getattr(library, f"{symbol_prefix}_save_state")
             load_state_fn = getattr(library, f"{symbol_prefix}_load_state")
@@ -1900,6 +2428,13 @@ class CppBackendScaffold:
             ctypes.POINTER(ctypes.c_uint64),
         ]
         step_fn.restype = None
+        step_domains_fn.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+            ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_uint64),
+        ]
+        step_domains_fn.restype = None
         step_many_fn.argtypes = [
             ctypes.c_void_p,
             ctypes.c_uint64,
@@ -1932,6 +2467,7 @@ class CppBackendScaffold:
             destroy_fn=destroy_fn,
             reset_fn=reset_fn,
             step_fn=step_fn,
+            step_domains_fn=step_domains_fn,
             step_many_fn=step_many_fn,
             save_state_fn=save_state_fn,
             load_state_fn=load_state_fn,
@@ -1941,6 +2477,7 @@ class CppBackendScaffold:
             output_widths=[signal.width for signal in output_signals],
             state_names=state_names,
             state_widths=state_widths,
+            clock_domain_names=[domain.name for domain in module.clock_domains],
             artifact_dir=artifact_dir,
             source_path=source_path,
             library_path=library_path,
@@ -1952,6 +2489,8 @@ class CppBackendScaffold:
         expr: Expr,
         signal_map: Dict[str, Signal],
         memory_map: Dict[str, Memory],
+        *,
+        state_expr: str = "state_",
     ) -> str:
         if isinstance(expr, ConstExpr):
             return f"{expr.value & _mask(expr.width)}u"
@@ -1960,19 +2499,22 @@ class CppBackendScaffold:
             if signal.kind == "input":
                 return f"in.{_cpp_ident(expr.name)}"
             if signal.kind == "state":
-                return f"state_.{_cpp_ident(expr.name)}"
+                return f"{state_expr}.{_cpp_ident(expr.name)}"
             return _cpp_value_name(expr.name)
         if isinstance(expr, MemoryReadExpr):
             memory = memory_map[expr.memory]
             return (
-                f"state_.{_cpp_ident(expr.memory)}"
-                f"[{self._emit_memory_addr(expr.addr, signal_map, memory, memory_map)}]"
+                f"{state_expr}.{_cpp_ident(expr.memory)}"
+                f"[{self._emit_memory_addr(expr.addr, signal_map, memory, memory_map, state_expr=state_expr)}]"
             )
         if isinstance(expr, MaskExpr):
-            return f"(({self._emit_expr(expr.value, signal_map, memory_map)}) & {_mask_expr(expr.width)})"
+            return (
+                f"(({self._emit_expr(expr.value, signal_map, memory_map, state_expr=state_expr)}) "
+                f"& {_mask_expr(expr.width)})"
+            )
         if isinstance(expr, UnaryExpr):
             child_width = _infer_expr_width(expr.value, signal_map, memory_map)
-            child_expr = self._emit_expr(expr.value, signal_map, memory_map)
+            child_expr = self._emit_expr(expr.value, signal_map, memory_map, state_expr=state_expr)
             if expr.op == "!":
                 return f"(!({child_expr}))"
             if expr.op == "$signed":
@@ -1988,8 +2530,8 @@ class CppBackendScaffold:
             return f"({expr.op}({child_expr}))"
         if isinstance(expr, BinaryExpr):
             if expr.op == ">>>":
-                lhs_src = self._emit_expr(expr.lhs, signal_map, memory_map)
-                rhs_src = self._emit_expr(expr.rhs, signal_map, memory_map)
+                lhs_src = self._emit_expr(expr.lhs, signal_map, memory_map, state_expr=state_expr)
+                rhs_src = self._emit_expr(expr.rhs, signal_map, memory_map, state_expr=state_expr)
                 if not _expr_is_signed(expr.lhs, signal_map, memory_map):
                     return f"(uint64_t({lhs_src}) >> ({rhs_src}))"
                 lhs_width = _infer_expr_width(expr.lhs, signal_map, memory_map)
@@ -1997,15 +2539,15 @@ class CppBackendScaffold:
                 signed_lhs = _sign_extend_expr(masked_lhs, lhs_width)
                 return f"(uint64_t(({signed_lhs}) >> ({rhs_src})))"
             return (
-                f"(({self._emit_expr(expr.lhs, signal_map, memory_map)}) "
+                f"(({self._emit_expr(expr.lhs, signal_map, memory_map, state_expr=state_expr)}) "
                 f"{expr.op} "
-                f"({self._emit_expr(expr.rhs, signal_map, memory_map)}))"
+                f"({self._emit_expr(expr.rhs, signal_map, memory_map, state_expr=state_expr)}))"
             )
         if isinstance(expr, MuxExpr):
             return (
-                f"(({self._emit_expr(expr.cond, signal_map, memory_map)}) ? "
-                f"({self._emit_expr(expr.when_true, signal_map, memory_map)}) : "
-                f"({self._emit_expr(expr.when_false, signal_map, memory_map)}))"
+                f"(({self._emit_expr(expr.cond, signal_map, memory_map, state_expr=state_expr)}) ? "
+                f"({self._emit_expr(expr.when_true, signal_map, memory_map, state_expr=state_expr)}) : "
+                f"({self._emit_expr(expr.when_false, signal_map, memory_map, state_expr=state_expr)}))"
             )
         raise TypeError(f"unsupported expression type: {type(expr)!r}")
 
@@ -2015,9 +2557,11 @@ class CppBackendScaffold:
         signal_map: Dict[str, Signal],
         memory: Memory,
         memory_map: Optional[Dict[str, Memory]] = None,
+        *,
+        state_expr: str = "state_",
     ) -> str:
         backing_memory_map = memory_map if memory_map is not None else {}
-        expr = self._emit_expr(addr, signal_map, backing_memory_map)
+        expr = self._emit_expr(addr, signal_map, backing_memory_map, state_expr=state_expr)
         return f"(({expr}) % {memory.depth}u)"
 
     def _library_name(self, module: SimModule) -> str:

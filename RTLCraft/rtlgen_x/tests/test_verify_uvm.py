@@ -5,9 +5,12 @@ from pathlib import Path
 
 import pytest
 
+from rtlgen_x.dsl import DslLoweringReport, LoweredDslModule
 from rtlgen_x.sim import (
     Assignment,
     BinaryExpr,
+    ClockDomain,
+    ConstExpr,
     Memory,
     MemoryReadExpr,
     MemoryWrite,
@@ -29,9 +32,23 @@ from rtlgen_x.verify import (
     write_uvm_collateral,
     write_uvm_runtime_bundle,
 )
+from rtlgen_x.verify.uvm import _render_memory, _render_memory_write
 
 
-def _accum_module() -> SimModule:
+def _lowered(module: SimModule) -> LoweredDslModule:
+    return LoweredDslModule(
+        module=module,
+        report=DslLoweringReport(
+            source_module=module.name,
+            flattened_module=module.name,
+            signal_count=len(module.signals),
+            assignment_count=len(module.assignments),
+            outputs_post_state=module.outputs_post_state,
+        ),
+    )
+
+
+def _raw_accum_module() -> SimModule:
     return SimModule(
         name="uvm_accum",
         signals=(
@@ -48,6 +65,10 @@ def _accum_module() -> SimModule:
         outputs=("out",),
         reset_signal="rst_n",
     )
+
+
+def _accum_module() -> LoweredDslModule:
+    return _lowered(_raw_accum_module())
 
 
 def _accum_dut_sv() -> str:
@@ -75,9 +96,54 @@ endmodule
 """.strip() + "\n"
 
 
-class LegacyAccum(Module):
+def _multi_clock_ref_module() -> LoweredDslModule:
+    return _lowered(SimModule(
+        name="uvm_multiclk_ref",
+        signals=(
+            Signal("wr_clk", width=1, kind="input"),
+            Signal("rd_clk", width=1, kind="input"),
+            Signal("wr_rst", width=1, kind="input"),
+            Signal("rd_rst", width=1, kind="input"),
+            Signal("wr_en", width=1, kind="input"),
+            Signal("rd_en", width=1, kind="input"),
+            Signal("wptr", width=4, kind="state"),
+            Signal("rptr", width=4, kind="state"),
+            Signal("out", width=4, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", BinaryExpr("+", SignalRef("wptr"), SignalRef("rptr"))),
+            Assignment(
+                "wptr",
+                MuxExpr(
+                    SignalRef("wr_en"),
+                    BinaryExpr("+", SignalRef("wptr"), ConstExpr(1, 4)),
+                    SignalRef("wptr"),
+                ),
+                phase="seq",
+                clock_domain="wr_clk",
+            ),
+            Assignment(
+                "rptr",
+                MuxExpr(
+                    SignalRef("rd_en"),
+                    BinaryExpr("+", SignalRef("rptr"), ConstExpr(1, 4)),
+                    SignalRef("rptr"),
+                ),
+                phase="seq",
+                clock_domain="rd_clk",
+            ),
+        ),
+        outputs=("out",),
+        clock_domains=(
+            ClockDomain("wr_clk", reset_signal="wr_rst"),
+            ClockDomain("rd_clk", reset_signal="rd_rst"),
+        ),
+    ))
+
+
+class DslAccum(Module):
     def __init__(self):
-        super().__init__("legacy_uvm_accum")
+        super().__init__("dsl_uvm_accum")
         self.clk = Input(1, "clk")
         self.rst = Input(1, "rst")
         self.inp = Input(8, "inp")
@@ -96,9 +162,9 @@ class LegacyAccum(Module):
                 self.acc <<= self.acc + self.inp
 
 
-class LegacyStorage(Module):
+class DslStorage(Module):
     def __init__(self):
-        super().__init__("legacy_storage")
+        super().__init__("dsl_storage")
         self.clk = Input(1, "clk")
         self.rst = Input(1, "rst")
         self.we = Input(1, "we")
@@ -115,6 +181,67 @@ class LegacyStorage(Module):
         def _seq():
             with If(self.we):
                 self.rf[self.addr] <<= self.din
+
+
+class DslMultiClockMailbox(Module):
+    def __init__(self):
+        super().__init__("dsl_multi_clock_mailbox")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+        self.mem = Array(8, 4, "rf")
+        self.wptr = Reg(2, "wptr")
+        self.rptr = Reg(2, "rptr")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.mem[self.rptr]
+
+        @self.seq(self.wr_clk, self.wr_rst)
+        def _wr_seq():
+            with If(self.wr_rst == 1):
+                self.wptr <<= 0
+            with Else():
+                with If(self.wr_en == 1):
+                    self.mem[self.wptr] <<= self.din
+                    self.wptr <<= self.wptr + 1
+
+        @self.seq(self.rd_clk, self.rd_rst)
+        def _rd_seq():
+            with If(self.rd_rst == 1):
+                self.rptr <<= 0
+            with Else():
+                with If(self.rd_en == 1):
+                    self.rptr <<= self.rptr + 1
+
+
+class DslAsyncLowStorage(Module):
+    def __init__(self):
+        super().__init__("dsl_async_low_storage")
+        self.clk = Input(1, "clk")
+        self.rst_n = Input(1, "rst_n")
+        self.we = Input(1, "we")
+        self.addr = Input(2, "addr")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+        self.rf = Array(8, 4, "rf")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.rf[self.addr]
+
+        @self.seq(self.clk, ~self.rst_n)
+        def _seq():
+            with If(~self.rst_n):
+                self.rf[0] <<= 0
+            with Else():
+                with If(self.we == 1):
+                    self.rf[self.addr] <<= self.din
 
 
 def _load_external_module(rel_path: str, class_name: str):
@@ -137,6 +264,11 @@ def test_describe_verification_interface_preserves_signal_order():
     assert interface.outputs[0].width == 8
 
 
+def test_describe_verification_interface_rejects_raw_simmodule():
+    with pytest.raises(TypeError, match="does not accept raw SimModule"):
+        describe_verification_interface(_raw_accum_module())
+
+
 def test_emit_python_reference_model_contains_wrapper_class():
     source = emit_python_reference_model(_accum_module())
 
@@ -145,8 +277,20 @@ def test_emit_python_reference_model_contains_wrapper_class():
     assert "rtlgen_x_ref_runtime.py" in source
     assert "self._sim = PythonSimulator(build_uvm_accum_module())" in source
     assert "def predict(self, transaction: Mapping[str, int]) -> Dict[str, int]:" in source
+    assert "def predict_clocks(self, transaction: Mapping[str, int], active_domains) -> Dict[str, int]:" in source
     assert "def predict_batch(self, transactions):" in source
     assert "self._sim.run_batch(rows)" in source
+
+
+def test_emit_python_reference_model_supports_multi_clock_modules():
+    source = emit_python_reference_model(_multi_clock_ref_module())
+
+    assert 'Generated Python reference model for "uvm_multiclk_ref"' in source
+    assert "ClockDomain(name='wr_clk', reset_signal='wr_rst')" in source
+    assert "ClockDomain(name='rd_clk', reset_signal='rd_rst')" in source
+    assert "clock_domain='wr_clk'" in source
+    assert "clock_domain='rd_clk'" in source
+    assert "def predict_clocks(self, transaction: Mapping[str, int], active_domains) -> Dict[str, int]:" in source
 
 
 def test_generate_uvm_collateral_emits_expected_artifacts(tmp_path):
@@ -276,20 +420,50 @@ def test_generate_uvm_runtime_bundle_emits_runnable_artifacts(tmp_path):
     assert (tmp_path / "uvm_runtime" / "rtlgen_x" / "sim" / "__init__.py").exists()
 
 
-def test_generate_uvm_runtime_bundle_accepts_legacy_dsl_module():
-    bundle = generate_uvm_runtime_bundle(LegacyAccum(), clock_name="clk")
+def test_generate_uvm_runtime_bundle_accepts_dsl_module():
+    bundle = generate_uvm_runtime_bundle(DslAccum(), clock_name="clk")
     artifact_map = bundle.artifact_map()
 
-    assert bundle.dut_module_name == "legacy_uvm_accum"
-    assert "legacy_uvm_accum_dut.sv" in artifact_map
-    assert "legacy_uvm_accum_top.sv" in artifact_map
-    assert "module legacy_uvm_accum" in artifact_map["legacy_uvm_accum_dut.sv"]
-    assert "req.randomize() with { rst == 1'b1; }" in artifact_map["legacy_uvm_accum_smoke_seq.sv"]
-    assert "req.randomize() with { rst == 1'b0; }" in artifact_map["legacy_uvm_accum_smoke_seq.sv"]
+    assert bundle.dut_module_name == "dsl_uvm_accum"
+    assert "dsl_uvm_accum_dut.sv" in artifact_map
+    assert "dsl_uvm_accum_top.sv" in artifact_map
+    assert "module dsl_uvm_accum" in artifact_map["dsl_uvm_accum_dut.sv"]
+    assert "req.randomize() with { rst == 1'b1; }" in artifact_map["dsl_uvm_accum_smoke_seq.sv"]
+    assert "req.randomize() with { rst == 1'b0; }" in artifact_map["dsl_uvm_accum_smoke_seq.sv"]
 
 
-def test_generate_uvm_runtime_bundle_accepts_legacy_latch_module(tmp_path):
-    from rtlgen_x.tests.test_dsl_legacy_import import LatchPass
+def test_generate_uvm_runtime_bundle_preserves_sync_reset_semantics_for_dsl_dut():
+    bundle = generate_uvm_runtime_bundle(
+        DslMultiClockMailbox(),
+        interface_name="dsl_multi_clock_mailbox_if",
+        clock_name="wr_clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"wr_rst": 1, "rd_rst": 1},
+                label="reset",
+                active_domains=("wr_clk", "rd_clk"),
+            ),
+        ),
+    )
+
+    dut_source = bundle.artifact_map()["dsl_multi_clock_mailbox_dut.sv"]
+
+    assert "always_ff @(posedge wr_clk)" in dut_source
+    assert "always_ff @(posedge rd_clk)" in dut_source
+    assert "or negedge wr_rst" not in dut_source
+    assert "or negedge rd_rst" not in dut_source
+
+
+def test_generate_uvm_runtime_bundle_preserves_async_low_reset_semantics_for_dsl_dut():
+    bundle = generate_uvm_runtime_bundle(DslAsyncLowStorage(), clock_name="clk")
+
+    dut_source = bundle.artifact_map()["dsl_async_low_storage_dut.sv"]
+
+    assert "always_ff @(posedge clk or negedge rst_n)" in dut_source
+
+
+def test_generate_uvm_runtime_bundle_accepts_dsl_latch_module(tmp_path):
+    from rtlgen_x.tests.test_dsl_import import LatchPass
 
     bundle = generate_uvm_runtime_bundle(LatchPass(), clock_name="clk")
     artifact_map = bundle.artifact_map()
@@ -407,13 +581,120 @@ def test_generate_uvm_runtime_bundle_accepts_real_simd16_module(tmp_path):
     assert report.predicted == {"vdst": 0, "done": 0}
 
 
-def test_generate_uvm_runtime_bundle_requires_dut_source_for_non_legacy_module():
-    try:
+def test_uvm_collateral_rejects_multi_clock_modules():
+    module = DslMultiClockMailbox()
+
+    with pytest.raises(ValueError, match="requires directed_sequence with explicit active_domains"):
+        generate_uvm_collateral(module, clock_name="wr_clk")
+    with pytest.raises(ValueError, match="requires directed_sequence with explicit active_domains"):
+        generate_uvm_runtime_bundle(module, clock_name="wr_clk")
+
+
+def test_multiclock_uvm_collateral_requires_explicit_active_domains():
+    module = DslMultiClockMailbox()
+
+    with pytest.raises(ValueError, match="must be UvmSequenceStep instances with explicit active_domains"):
+        generate_uvm_collateral(
+            module,
+            clock_name="wr_clk",
+            directed_sequence=(
+                {"wr_rst": 1, "rd_rst": 1},
+            ),
+        )
+
+
+def test_generate_multiclock_uvm_collateral_emits_event_driven_artifacts():
+    collateral = generate_uvm_collateral(
+        DslMultiClockMailbox(),
+        clock_name="wr_clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"wr_rst": 1, "rd_rst": 1},
+                label="reset",
+                active_domains=("wr_clk", "rd_clk"),
+            ),
+            UvmSequenceStep(
+                inputs={"wr_en": 1, "din": 0x11},
+                label="write0",
+                active_domains=("wr_clk",),
+            ),
+            UvmSequenceStep(
+                inputs={"rd_en": 1},
+                label="read0",
+                active_domains=("rd_clk",),
+            ),
+        ),
+    )
+
+    artifact_map = collateral.artifact_map()
+    seq_source = artifact_map["dsl_multi_clock_mailbox_smoke_seq.sv"]
+    if_source = artifact_map["dsl_multi_clock_mailbox_if.sv"]
+    driver_source = artifact_map["dsl_multi_clock_mailbox_driver.sv"]
+    monitor_source = artifact_map["dsl_multi_clock_mailbox_monitor.sv"]
+    scoreboard_source = artifact_map["dsl_multi_clock_mailbox_scoreboard.sv"]
+    dpi_py_source = artifact_map["dsl_multi_clock_mailbox_dpi_bridge.py"]
+
+    assert "interface dsl_multi_clock_mailbox_if;" in if_source
+    assert "logic wr_clk;" in if_source
+    assert "logic rd_clk;" in if_source
+    assert "logic rtlgen_x_active_wr_clk;" in if_source
+    assert "logic rtlgen_x_active_rd_clk;" in if_source
+    assert "event rtlgen_x_step_done;" in if_source
+
+    assert 'create("reset")' in seq_source
+    assert "req.rtlgen_x_active_wr_clk = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_rd_clk = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_rd_clk = 1'b0;" in seq_source
+
+    assert "vif.wr_clk = req.rtlgen_x_active_wr_clk;" in driver_source
+    assert "vif.rd_clk = req.rtlgen_x_active_rd_clk;" in driver_source
+    assert "-> vif.rtlgen_x_step_done;" in driver_source
+
+    assert "@(vif.rtlgen_x_step_done);" in monitor_source
+    assert "txn.rtlgen_x_active_wr_clk = vif.rtlgen_x_active_wr_clk;" in monitor_source
+
+    assert "observed.rtlgen_x_active_wr_clk" in scoreboard_source
+    assert "observed.rtlgen_x_active_rd_clk" in scoreboard_source
+
+    assert "ACTIVE_DOMAIN_FLAGS = ('rtlgen_x_active_wr_clk', 'rtlgen_x_active_rd_clk')" in dpi_py_source
+    assert "outputs = model.predict_clocks(transaction, tuple(active_domains))" in dpi_py_source
+
+
+def test_generate_multiclock_uvm_runtime_bundle_emits_event_driven_top():
+    bundle = generate_uvm_runtime_bundle(
+        DslMultiClockMailbox(),
+        clock_name="wr_clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"wr_rst": 1, "rd_rst": 1},
+                active_domains=("wr_clk", "rd_clk"),
+            ),
+        ),
+    )
+
+    artifact_map = bundle.artifact_map()
+    top_source = artifact_map["dsl_multi_clock_mailbox_top.sv"]
+    dpi_c_source = artifact_map["dsl_multi_clock_mailbox_dpi_bridge.c"]
+
+    assert "dsl_multi_clock_mailbox_if vif();" in top_source
+    assert "always #5 clk = ~clk;" not in top_source
+    assert ".wr_clk(vif.wr_clk)" in top_source
+    assert ".rd_clk(vif.rd_clk)" in top_source
+    assert 'uvm_config_db#(virtual dsl_multi_clock_mailbox_if)::set(null, "*", "vif", vif);' in top_source
+
+    assert "const char* ref_model_path" in dpi_c_source
+    assert "rtlgen_x_active_wr_clk" in dpi_c_source
+    assert "rtlgen_x_active_rd_clk" in dpi_c_source
+
+
+def test_generate_uvm_runtime_bundle_rejects_raw_simmodule():
+    with pytest.raises(TypeError, match="does not accept raw SimModule"):
+        generate_uvm_runtime_bundle(_raw_accum_module(), interface_name="uvm_accum_if", clock_name="clk")
+
+
+def test_generate_uvm_runtime_bundle_requires_authored_dsl_module_when_dut_source_missing():
+    with pytest.raises(TypeError, match="requires the original DSL Module"):
         generate_uvm_runtime_bundle(_accum_module(), interface_name="uvm_accum_if", clock_name="clk")
-    except ValueError as exc:
-        assert "dut_source is required" in str(exc)
-    else:
-        raise AssertionError("expected a dut_source requirement for raw SimModule runtime bundles")
 
 
 def test_generated_reference_model_can_be_loaded_and_smoke_tested(tmp_path):
@@ -441,6 +722,36 @@ def test_generated_reference_model_can_be_loaded_and_smoke_tested(tmp_path):
     assert report.class_name == "UvmAccumReferenceModel"
     assert report.predicted == {"out": 8}
     assert report.batched_predicted == ({"out": 8},)
+    assert report.active_domains == ()
+
+
+def test_generated_reference_model_can_run_explicit_multi_clock_predictions(tmp_path):
+    source = emit_python_reference_model(_multi_clock_ref_module())
+    runtime = Path(__file__).resolve().parents[1] / "verify" / "ref_runtime.py"
+    out_dir = tmp_path / "uvm_multiclk_ref"
+    out_dir.mkdir()
+    ref_model_path = out_dir / "uvm_multiclk_ref_ref_model.py"
+    runtime_path = out_dir / "rtlgen_x_ref_runtime.py"
+    ref_model_path.write_text(source, encoding="utf-8")
+    runtime_path.write_text(runtime.read_text(encoding="utf-8"), encoding="utf-8")
+
+    model = load_generated_reference_model(ref_model_path)
+    model.reset()
+    assert model.predict_clocks(
+        {"wr_rst": 1, "rd_rst": 1},
+        ("wr_clk", "rd_clk"),
+    ) == {"out": 0}
+    assert model.predict_clocks({"wr_en": 1}, ("wr_clk",)) == {"out": 0}
+    assert model.predict_clocks({"rd_en": 1}, ("rd_clk",)) == {"out": 1}
+
+    report = smoke_test_generated_reference_model(
+        ref_model_path,
+        inputs={"wr_en": 1},
+        active_domains=("wr_clk",),
+    )
+    assert report.predicted == {"out": 0}
+    assert report.batched_predicted is None
+    assert report.active_domains == ("wr_clk",)
 
 
 def test_probe_iverilog_uvm_collateral_reports_current_tool_support(tmp_path):
@@ -464,18 +775,18 @@ def test_probe_iverilog_uvm_collateral_reports_current_tool_support(tmp_path):
         assert report.package_stderr
 
 
-def test_verification_collateral_accepts_legacy_dsl_module():
-    interface = describe_verification_interface(LegacyAccum())
-    source = emit_python_reference_model(LegacyAccum())
-    collateral = generate_uvm_collateral(LegacyAccum(), interface_name="legacy_uvm_if", clock_name="clk")
+def test_verification_collateral_accepts_dsl_module():
+    interface = describe_verification_interface(DslAccum())
+    source = emit_python_reference_model(DslAccum())
+    collateral = generate_uvm_collateral(DslAccum(), interface_name="dsl_uvm_if", clock_name="clk")
 
-    assert interface.module_name == "legacy_uvm_accum"
+    assert interface.module_name == "dsl_uvm_accum"
     assert interface.reset_signal == "rst"
     assert interface.reset_active_low is False
     assert [port.name for port in interface.inputs] == ["clk", "rst", "inp"]
     assert "outputs_post_state=True" in source
-    assert collateral.reference_model_class == "LegacyUvmAccumReferenceModel"
-    assert "legacy_uvm_if.sv" in collateral.artifact_map()
+    assert collateral.reference_model_class == "DslUvmAccumReferenceModel"
+    assert "dsl_uvm_if.sv" in collateral.artifact_map()
 
 
 def test_emit_python_reference_model_renders_memory_support():
@@ -490,13 +801,100 @@ def test_emit_python_reference_model_renders_memory_support():
         assignments=(Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),),
         outputs=("dout",),
         memories=(Memory("mem", width=8, depth=4, init=(1, 2, 3, 4)),),
+        memory_writes=(
+            MemoryWrite(
+                "mem",
+                SignalRef("addr"),
+                SignalRef("din"),
+                enable=SignalRef("we"),
+                source_file="uvm_mem.py",
+                source_line=19,
+            ),
+        ),
+        outputs_post_state=True,
+    )
+
+    source = emit_python_reference_model(_lowered(module))
+    assert "MemoryReadExpr('mem', SignalRef('addr'))" in source
+    assert "MemoryWrite('mem', SignalRef('addr'), SignalRef('din'), enable=SignalRef('we')" in source
+    assert "source_file='uvm_mem.py'" in source
+    assert "source_line=19" in source
+
+
+def test_emit_python_reference_model_renders_byte_enable_memory_support():
+    rendered_memory = _render_memory(
+        Memory(
+            "mem",
+            width=32,
+            depth=4,
+            init=(1, 2, 3, 4),
+            byte_enable_granularity=8,
+        )
+    )
+    rendered_write = _render_memory_write(
+        MemoryWrite(
+            "mem",
+            SignalRef("addr"),
+            SignalRef("din"),
+            enable=SignalRef("we"),
+            byte_enable=SignalRef("be"),
+        )
+    )
+
+    assert "byte_enable_granularity=8" in rendered_memory
+    assert "byte_enable=SignalRef('be')" in rendered_write
+
+
+def test_emit_python_reference_model_renders_read_first_memory_policy():
+    module = SimModule(
+        name="uvm_mem_read_first",
+        signals=(
+            Signal("we", width=1, kind="input"),
+            Signal("addr", width=2, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("dout", width=8, kind="output"),
+        ),
+        assignments=(Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),),
+        outputs=("dout",),
+        memories=(Memory("mem", width=8, depth=4, init=(1, 2, 3, 4), read_during_write="read_first"),),
         memory_writes=(MemoryWrite("mem", SignalRef("addr"), SignalRef("din"), enable=SignalRef("we")),),
         outputs_post_state=True,
     )
 
-    source = emit_python_reference_model(module)
-    assert "MemoryReadExpr('mem', SignalRef('addr'))" in source
-    assert "MemoryWrite('mem', SignalRef('addr'), SignalRef('din'), enable=SignalRef('we'))" in source
+    source = emit_python_reference_model(_lowered(module))
+    assert "read_during_write='read_first'" in source
+
+
+def test_render_memory_includes_storage_contract_metadata():
+    rendered = _render_memory(
+        Memory(
+            "mem",
+            width=8,
+            depth=4,
+            init=(1, 2, 3, 4),
+            read_ports=2,
+            write_ports=1,
+            read_style="sync",
+            read_latency=1,
+        )
+    )
+
+    assert "read_ports=2" in rendered
+    assert "read_style='sync'" in rendered
+    assert "read_latency=1" in rendered
+
+
+def test_render_memory_includes_byte_enable_storage_metadata():
+    rendered = _render_memory(
+        Memory(
+            "mem",
+            width=32,
+            depth=4,
+            byte_enable_granularity=8,
+        )
+    )
+
+    assert "byte_enable_granularity=8" in rendered
 
 
 def test_generated_reference_model_supports_latch_phase(tmp_path):
@@ -521,7 +919,7 @@ def test_generated_reference_model_supports_latch_phase(tmp_path):
     )
 
     collateral = generate_uvm_collateral(
-        module,
+        _lowered(module),
         interface_name="uvm_latch_if",
         clock_name="en",
     )
@@ -535,11 +933,11 @@ def test_generated_reference_model_supports_latch_phase(tmp_path):
     assert model.predict({"en": 0, "din": 0x56}) == {"out": 0x34}
 
 
-def test_verification_collateral_accepts_legacy_storage_module():
-    interface = describe_verification_interface(LegacyStorage())
-    source = emit_python_reference_model(LegacyStorage())
+def test_verification_collateral_accepts_dsl_storage_module():
+    interface = describe_verification_interface(DslStorage())
+    source = emit_python_reference_model(DslStorage())
 
-    assert interface.module_name == "legacy_storage"
+    assert interface.module_name == "dsl_storage"
     assert interface.reset_signal == "rst"
     assert interface.reset_active_low is False
     assert [port.name for port in interface.outputs] == ["dout"]
@@ -666,5 +1064,3 @@ def test_iverilog_probe_report_clean_when_no_warnings():
     assert report.has_warnings is False
     assert report.warnings == ()
     assert report.clean is True
-
-

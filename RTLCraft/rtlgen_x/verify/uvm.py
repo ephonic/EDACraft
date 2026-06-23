@@ -15,6 +15,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 from rtlgen_x.sim import (
     Assignment,
     BinaryExpr,
+    ClockDomain,
     ConstExpr,
     MaskExpr,
     Memory,
@@ -26,7 +27,7 @@ from rtlgen_x.sim import (
     SimModule,
     UnaryExpr,
 )
-from rtlgen_x.verify.module_adapter import normalize_executable_module
+from rtlgen_x.verify.module_adapter import normalize_executable_module, require_single_clock_module
 
 
 REFERENCE_RUNTIME_ARTIFACT = "rtlgen_x_ref_runtime.py"
@@ -49,6 +50,7 @@ class VerificationInterface:
     module_name: str
     reset_signal: Optional[str]
     reset_active_low: bool
+    clock_names: Tuple[str, ...]
     inputs: Tuple[VerificationPort, ...]
     outputs: Tuple[VerificationPort, ...]
 
@@ -67,6 +69,7 @@ class UvmSequenceStep:
 
     inputs: Mapping[str, int]
     label: Optional[str] = None
+    active_domains: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -105,7 +108,8 @@ class ReferenceModelSmokeReport:
     class_name: str
     inputs: Mapping[str, int]
     predicted: Mapping[str, int]
-    batched_predicted: Tuple[Mapping[str, int], ...]
+    batched_predicted: Optional[Tuple[Mapping[str, int], ...]]
+    active_domains: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -156,7 +160,15 @@ def describe_verification_interface(module: Any) -> VerificationInterface:
     """Return an ordered verification-facing interface view for a module."""
 
     source_module = module
-    module = normalize_executable_module(module)
+    module = normalize_executable_module(module, context="describe_verification_interface(...)")
+    return _describe_verification_interface_from_executable(module, source_module=source_module)
+
+
+def _describe_verification_interface_from_executable(
+    module: SimModule,
+    *,
+    source_module: Any,
+) -> VerificationInterface:
     inputs = []
     outputs = []
     for signal in module.signals:
@@ -185,6 +197,7 @@ def describe_verification_interface(module: Any) -> VerificationInterface:
         module_name=module.name,
         reset_signal=reset_signal,
         reset_active_low=reset_active_low,
+        clock_names=tuple(domain.name for domain in module.clock_domains),
         inputs=tuple(inputs),
         outputs=tuple(outputs),
     )
@@ -197,7 +210,15 @@ def emit_python_reference_model(
 ) -> str:
     """Emit a Python reference model wrapper backed by the local interpreter."""
 
-    module = normalize_executable_module(module)
+    module = normalize_executable_module(module, context="emit_python_reference_model(...)")
+    return _emit_python_reference_model_from_executable(module, class_name=class_name)
+
+
+def _emit_python_reference_model_from_executable(
+    module: SimModule,
+    *,
+    class_name: Optional[str] = None,
+) -> str:
     model_fn = f"build_{_snake_name(module.name)}_module"
     class_name = class_name or f"{_camel_name(module.name)}ReferenceModel"
     signals_src = _render_collection_block(
@@ -211,6 +232,10 @@ def emit_python_reference_model(
     assignments_src = _render_collection_block(
         f"            {_render_assignment(assignment)}"
         for assignment in module.assignments
+    )
+    clock_domains_src = _render_collection_block(
+        f"            {_render_clock_domain(domain)}"
+        for domain in module.clock_domains
     )
     memory_writes_src = _render_collection_block(
         f"            {_render_memory_write(write)}"
@@ -255,6 +280,7 @@ def emit_python_reference_model(
         "_runtime = _load_runtime_module()\n"
         "Assignment = _runtime.Assignment\n"
         "BinaryExpr = _runtime.BinaryExpr\n"
+        "ClockDomain = _runtime.ClockDomain\n"
         "ConstExpr = _runtime.ConstExpr\n"
         "MaskExpr = _runtime.MaskExpr\n"
         "Memory = _runtime.Memory\n"
@@ -278,6 +304,9 @@ def emit_python_reference_model(
         "        assignments=(\n"
         f"{assignments_src}\n"
         "        ),\n"
+        "        clock_domains=(\n"
+        f"{clock_domains_src}\n"
+        "        ),\n"
         "        memory_writes=(\n"
         f"{memory_writes_src}\n"
         "        ),\n"
@@ -299,6 +328,8 @@ def emit_python_reference_model(
         "        self._sim.reset()\n\n"
         "    def predict(self, transaction: Mapping[str, int]) -> Dict[str, int]:\n"
         "        return self._sim.step(transaction)\n\n"
+        "    def predict_clocks(self, transaction: Mapping[str, int], active_domains) -> Dict[str, int]:\n"
+        "        return self._sim.step_clocks(transaction, active_domains)\n\n"
         "    def predict_batch(self, transactions):\n"
         "        rows = [tuple(int(item.get(name, 0)) for name in self.input_names) for item in transactions]\n"
         "        return tuple(dict(row) for row in self._sim.run_batch(rows))\n"
@@ -316,8 +347,15 @@ def generate_uvm_collateral(
 ) -> UvmCollateral:
     """Generate UVM skeleton collateral and a Python reference-model bridge."""
 
-    module = normalize_executable_module(module)
-    interface = describe_verification_interface(module)
+    source_module = module
+    module = normalize_executable_module(module, context="generate_uvm_collateral(...)")
+    interface = _describe_verification_interface_from_executable(module, source_module=source_module)
+    multi_clock = len(_clock_signal_names(interface, clock_name)) > 1
+    if multi_clock and not directed_sequence:
+        raise ValueError(
+            "generate_uvm_collateral currently requires directed_sequence with explicit "
+            "active_domains for multi-clock modules"
+        )
     stem = _snake_name(module.name)
     class_prefix = class_prefix or stem
     package_name = package_name or f"{stem}_uvm_pkg"
@@ -416,7 +454,7 @@ def generate_uvm_collateral(
         ),
         GeneratedArtifact(
             path=f"{stem}_ref_model.py",
-            contents=emit_python_reference_model(
+            contents=_emit_python_reference_model_from_executable(
                 module,
                 class_name=reference_model_class,
             ),
@@ -458,7 +496,12 @@ def generate_uvm_runtime_bundle(
 ) -> UvmRuntimeBundle:
     """Generate a runnable UVM bundle with DUT/top/filelist/run script."""
 
-    executable = normalize_executable_module(module)
+    executable = normalize_executable_module(module, context="generate_uvm_runtime_bundle(...)")
+    if dut_source is None and not (hasattr(module, "_inputs") and hasattr(module, "_outputs") and hasattr(module, "_seq_blocks")):
+        raise TypeError(
+            "generate_uvm_runtime_bundle(...) requires the original DSL Module when dut_source "
+            "is omitted. Pass the authored DSL module, or provide dut_source explicitly."
+        )
     collateral = generate_uvm_collateral(
         module,
         package_name=package_name,
@@ -476,7 +519,7 @@ def generate_uvm_runtime_bundle(
     test_name = test_name or f"{class_prefix or stem}_test"
     top_module_name = top_module_name or f"{stem}_top"
     if dut_source is None:
-        dut_source = _emit_legacy_dut_sv(module)
+        dut_source = _emit_dsl_dut_sv(module)
         dut_module_name = dut_module_name or _infer_preferred_sv_module_name(dut_source, module, executable)
     else:
         dut_module_name = dut_module_name or _infer_preferred_sv_module_name(dut_source, module, executable)
@@ -610,6 +653,7 @@ def smoke_test_generated_reference_model(
     ref_model_path: Path | str,
     *,
     inputs: Optional[Mapping[str, int]] = None,
+    active_domains: Optional[Sequence[str]] = None,
     class_name: Optional[str] = None,
 ) -> ReferenceModelSmokeReport:
     """Load a generated reference model and execute scalar plus batch predictions."""
@@ -619,15 +663,22 @@ def smoke_test_generated_reference_model(
     if inputs is not None:
         tx.update({name: int(value) for name, value in dict(inputs).items()})
     model.reset()
-    predicted = dict(model.predict(tx))
-    model.reset()
-    batched_predicted = tuple(dict(row) for row in model.predict_batch((tx,)))
+    if active_domains:
+        if not hasattr(model, "predict_clocks"):
+            raise ValueError("generated reference model does not expose predict_clocks(...)")
+        predicted = dict(model.predict_clocks(tx, active_domains))
+        batched_predicted = None
+    else:
+        predicted = dict(model.predict(tx))
+        model.reset()
+        batched_predicted = tuple(dict(row) for row in model.predict_batch((tx,)))
     return ReferenceModelSmokeReport(
         path=Path(ref_model_path),
         class_name=type(model).__name__,
         inputs=tx,
         predicted=predicted,
         batched_predicted=batched_predicted,
+        active_domains=tuple(active_domains or ()),
     )
 
 
@@ -721,16 +772,41 @@ def _render_memory(memory: Memory) -> str:
     ]
     if memory.init:
         parts.append(f"init={memory.init!r}")
+    if memory.read_during_write != "write_first":
+        parts.append(f"read_during_write={memory.read_during_write!r}")
+    if memory.read_ports != 1:
+        parts.append(f"read_ports={memory.read_ports}")
+    if memory.write_ports != 1:
+        parts.append(f"write_ports={memory.write_ports}")
+    if memory.read_style != "async":
+        parts.append(f"read_style={memory.read_style!r}")
+    if memory.read_latency != 0:
+        parts.append(f"read_latency={memory.read_latency}")
+    if memory.byte_enable_granularity is not None:
+        parts.append(
+            f"byte_enable_granularity={memory.byte_enable_granularity}"
+        )
     return f"Memory({', '.join(parts)})"
 
 
 def _render_assignment(assignment: Assignment) -> str:
-    if assignment.phase == "comb":
-        return f"Assignment({assignment.target!r}, {_render_expr(assignment.expr)})"
-    return (
-        f"Assignment({assignment.target!r}, {_render_expr(assignment.expr)}, "
-        f"phase={assignment.phase!r})"
-    )
+    args = [repr(assignment.target), _render_expr(assignment.expr)]
+    if assignment.phase != "comb":
+        args.append(f"phase={assignment.phase!r}")
+    if assignment.clock_domain is not None:
+        args.append(f"clock_domain={assignment.clock_domain!r}")
+    return f"Assignment({', '.join(args)})"
+
+
+def _render_clock_domain(domain: ClockDomain) -> str:
+    args = [f"name={domain.name!r}"]
+    if domain.reset_signal is not None:
+        args.append(f"reset_signal={domain.reset_signal!r}")
+    if domain.reset_async:
+        args.append("reset_async=True")
+    if domain.reset_active_low:
+        args.append("reset_active_low=True")
+    return f"ClockDomain({', '.join(args)})"
 
 
 def _render_memory_write(write: MemoryWrite) -> str:
@@ -741,6 +817,14 @@ def _render_memory_write(write: MemoryWrite) -> str:
     ]
     if not (isinstance(write.enable, ConstExpr) and write.enable.value == 1 and write.enable.width == 1):
         args.append(f"enable={_render_expr(write.enable)}")
+    if write.clock_domain is not None:
+        args.append(f"clock_domain={write.clock_domain!r}")
+    if write.byte_enable is not None:
+        args.append(f"byte_enable={_render_expr(write.byte_enable)}")
+    if write.source_file is not None:
+        args.append(f"source_file={write.source_file!r}")
+    if write.source_line is not None:
+        args.append(f"source_line={write.source_line}")
     return f"MemoryWrite({', '.join(args)})"
 
 
@@ -772,6 +856,19 @@ def _emit_interface_sv(
     interface_name: str,
     clock_name: str,
 ) -> str:
+    clock_names = _clock_signal_names(interface, clock_name)
+    if len(clock_names) > 1:
+        port_lines = [
+            f"  logic {_sv_width(port.width)}{port.name};"
+            for port in interface.inputs + interface.outputs
+        ]
+        meta_lines = [f"  logic {name};" for name in _active_domain_field_names(interface, clock_name)]
+        body = "\n".join(port_lines + meta_lines + ["  event rtlgen_x_step_done;"])
+        return (
+            f"interface {interface_name};\n"
+            f"{body}\n"
+            "endinterface\n"
+        )
     port_lines = [
         f"  logic {_sv_width(port.width)}{port.name};"
         for port in interface.inputs + interface.outputs
@@ -831,7 +928,10 @@ def _emit_sequence_sv(
     clock_name: str,
     directed_sequence: Optional[Sequence[UvmSequenceStep | Mapping[str, int]]] = None,
 ) -> str:
-    normalized_directed = _normalize_directed_sequence(directed_sequence)
+    normalized_directed = _normalize_directed_sequence(
+        directed_sequence,
+        multi_clock=len(_clock_signal_names(interface, clock_name)) > 1,
+    )
     if normalized_directed:
         body = _emit_directed_sequence_body(
             interface,
@@ -852,6 +952,11 @@ def _emit_sequence_sv(
             "endclass\n"
         )
     driven_ports = _transaction_inputs(interface, clock_name)
+    if len(_clock_signal_names(interface, clock_name)) > 1:
+        raise ValueError(
+            "multi-clock UVM collateral currently supports only directed_sequence mode with "
+            "explicit active_domains"
+        )
     reset_name = interface.reset_signal
     semantic_constraints = _default_sequence_constraints(driven_ports, reset_name=reset_name)
     if driven_ports:
@@ -927,15 +1032,28 @@ def _emit_sequence_sv(
 
 def _normalize_directed_sequence(
     directed_sequence: Optional[Sequence[UvmSequenceStep | Mapping[str, int]]],
+    *,
+    multi_clock: bool,
 ) -> Tuple[UvmSequenceStep, ...]:
     if not directed_sequence:
         return ()
     steps = []
     for index, step in enumerate(directed_sequence):
         if isinstance(step, UvmSequenceStep):
-            steps.append(step)
+            steps.append(
+                UvmSequenceStep(
+                    inputs=dict(step.inputs),
+                    label=step.label,
+                    active_domains=tuple(dict.fromkeys(step.active_domains)),
+                )
+            )
             continue
         if isinstance(step, Mapping):
+            if multi_clock:
+                raise ValueError(
+                    "multi-clock directed_sequence entries must be UvmSequenceStep instances "
+                    "with explicit active_domains"
+                )
             steps.append(UvmSequenceStep(inputs=dict(step), label=f"step_{index}"))
             continue
         raise TypeError("directed_sequence entries must be mappings or UvmSequenceStep")
@@ -950,20 +1068,32 @@ def _emit_directed_sequence_body(
 ) -> str:
     driven_ports = _transaction_inputs(interface, clock_name)
     driven_names = {port.name for port in driven_ports}
+    clock_names = _clock_signal_names(interface, clock_name)
+    active_field_names = _active_domain_field_names(interface, clock_name)
     body_lines = []
     for index, step in enumerate(directed_sequence):
         unknown = sorted(set(step.inputs) - driven_names)
         if unknown:
             joined = ", ".join(unknown)
             raise ValueError(f"directed UVM step references unknown driven ports: {joined}")
+        unknown_domains = sorted(set(step.active_domains) - set(clock_names))
+        if unknown_domains:
+            joined = ", ".join(unknown_domains)
+            raise ValueError(f"directed UVM step references unknown active_domains: {joined}")
         instance_name = _sv_string_literal(step.label or f"step_{index}")
-        body_lines.append(f"    {txn_class} req;")
-        body_lines.append(f"    req = {txn_class}::type_id::create({instance_name});")
-        body_lines.append("    start_item(req);")
+        body_lines.append("    begin")
+        body_lines.append(f"      {txn_class} req;")
+        indent = "      "
+        body_lines.append(f"{indent}req = {txn_class}::type_id::create({instance_name});")
+        body_lines.append(f"{indent}start_item(req);")
         for port in driven_ports:
             value = int(step.inputs.get(port.name, 0))
-            body_lines.append(f"    req.{port.name} = {_sv_literal(port.width, value=value)};")
-        body_lines.append("    finish_item(req);")
+            body_lines.append(f"{indent}req.{port.name} = {_sv_literal(port.width, value=value)};")
+        for field_name, domain_name in zip(active_field_names, clock_names):
+            value = 1 if domain_name in step.active_domains else 0
+            body_lines.append(f"{indent}req.{field_name} = 1'b{value};")
+        body_lines.append(f"{indent}finish_item(req);")
+        body_lines.append("    end")
         if index + 1 < len(directed_sequence):
             body_lines.append("")
     if body_lines and body_lines[-1] == "":
@@ -997,6 +1127,48 @@ def _emit_driver_sv(
     driver_class: str,
     clock_name: str,
 ) -> str:
+    if len(_clock_signal_names(interface, clock_name)) > 1:
+        drive_lines = "\n".join(
+            f"      vif.{port.name} = req.{port.name};"
+            for port in _transaction_inputs(interface, clock_name)
+        )
+        meta_drive_lines = "\n".join(
+            f"      vif.{field_name} = req.{field_name};"
+            for field_name in _active_domain_field_names(interface, clock_name)
+        )
+        clock_high_lines = "\n".join(
+            f"      vif.{domain_name} = req.{_active_domain_field_name(domain_name)};"
+            for domain_name in _clock_signal_names(interface, clock_name)
+        )
+        clock_low_lines = "\n".join(
+            f"      vif.{domain_name} = 1'b0;"
+            for domain_name in _clock_signal_names(interface, clock_name)
+        )
+        return (
+            f"class {driver_class} extends uvm_driver #({txn_class});\n"
+            f"  `uvm_component_utils({driver_class})\n\n"
+            f"  virtual {interface_name} vif;\n\n"
+            f"  function new(string name=\"{driver_class}\", uvm_component parent=null);\n"
+            "    super.new(name, parent);\n"
+            "  endfunction\n\n"
+            "  task run_phase(uvm_phase phase);\n"
+            f"    {txn_class} req;\n"
+            "    forever begin\n"
+            "      seq_item_port.get_next_item(req);\n"
+            f"{drive_lines}\n"
+            f"{meta_drive_lines}\n"
+            "      #1step;\n"
+            f"{clock_high_lines}\n"
+            "      #1step;\n"
+            f"{clock_low_lines}\n"
+            "      #1step;\n"
+            "      -> vif.rtlgen_x_step_done;\n"
+            "      #1step;\n"
+            "      seq_item_port.item_done();\n"
+            "    end\n"
+            "  endtask\n"
+            "endclass\n"
+        )
     drive_lines = "\n".join(
         f"      vif.{port.name} <= req.{port.name};"
         for port in _transaction_inputs(interface, clock_name)
@@ -1028,6 +1200,32 @@ def _emit_monitor_sv(
     monitor_class: str,
     clock_name: str,
 ) -> str:
+    if len(_clock_signal_names(interface, clock_name)) > 1:
+        sampling_lines = "\n".join(
+            [f"      txn.{port.name} = vif.{port.name};" for port in _transaction_inputs(interface, clock_name)]
+            + [f"      txn.{field_name} = vif.{field_name};" for field_name in _active_domain_field_names(interface, clock_name)]
+            + [f"      txn.{port.name} = vif.{port.name};" for port in interface.outputs]
+        )
+        return (
+            f"class {monitor_class} extends uvm_component;\n"
+            f"  `uvm_component_utils({monitor_class})\n\n"
+            f"  virtual {interface_name} vif;\n"
+            f"  uvm_analysis_port#({txn_class}) ap;\n\n"
+            f"  function new(string name=\"{monitor_class}\", uvm_component parent=null);\n"
+            "    super.new(name, parent);\n"
+            "    ap = new(\"ap\", this);\n"
+            "  endfunction\n\n"
+            "  task run_phase(uvm_phase phase);\n"
+            f"    {txn_class} txn;\n"
+            "    forever begin\n"
+            "      @(vif.rtlgen_x_step_done);\n"
+            f"      txn = {txn_class}::type_id::create(\"txn\", this);\n"
+            f"{sampling_lines}\n"
+            "      ap.write(txn);\n"
+            "    end\n"
+            "  endtask\n"
+            "endclass\n"
+        )
     sampling_lines = "\n".join(
         f"      txn.{port.name} = vif.{port.name};"
         for port in _transaction_ports(interface, clock_name)
@@ -1109,14 +1307,14 @@ def _emit_scoreboard_sv(
         )
         for port in interface.outputs
     )
-    input_comment = ", ".join(port.name for port in _transaction_inputs(interface, clock_name)) or "none"
+    input_comment = ", ".join(port.name for port in _predict_input_ports(interface, clock_name)) or "none"
     output_comment = ", ".join(port.name for port in interface.outputs) or "none"
     predict_assign_lines = "\n".join(
         f"    expected.{port.name} = predicted_{port.name};"
         for port in interface.outputs
     )
     predict_args = ", ".join(
-        [f"observed.{port.name}" for port in _transaction_inputs(interface, clock_name)]
+        [f"observed.{port.name}" for port in _predict_input_ports(interface, clock_name)]
         + [f"predicted_{port.name}" for port in interface.outputs]
     )
     return (
@@ -1254,14 +1452,36 @@ def _transaction_ports(
     interface: VerificationInterface,
     clock_name: str,
 ) -> Tuple[VerificationPort, ...]:
-    return tuple(port for port in interface.inputs + interface.outputs if port.name != clock_name)
+    return (
+        _transaction_inputs(interface, clock_name)
+        + _active_domain_ports(interface, clock_name)
+        + interface.outputs
+    )
 
 
 def _transaction_inputs(
     interface: VerificationInterface,
     clock_name: str,
 ) -> Tuple[VerificationPort, ...]:
-    return tuple(port for port in interface.inputs if port.name != clock_name)
+    clock_names = set(_clock_signal_names(interface, clock_name))
+    return tuple(port for port in interface.inputs if port.name not in clock_names)
+
+
+def _active_domain_ports(
+    interface: VerificationInterface,
+    clock_name: str,
+) -> Tuple[VerificationPort, ...]:
+    return tuple(
+        VerificationPort(name=field_name, width=1, direction="input")
+        for field_name in _active_domain_field_names(interface, clock_name)
+    )
+
+
+def _predict_input_ports(
+    interface: VerificationInterface,
+    clock_name: str,
+) -> Tuple[VerificationPort, ...]:
+    return _transaction_inputs(interface, clock_name) + _active_domain_ports(interface, clock_name)
 
 
 def _sv_predict_locals(interface: VerificationInterface) -> str:
@@ -1277,7 +1497,7 @@ def _sv_predict_dpi_ports(
 ) -> str:
     lines = [
         f"    input bit {_sv_width(port.width)}{port.name},"
-        for port in _transaction_inputs(interface, clock_name)
+        for port in _predict_input_ports(interface, clock_name)
     ]
     output_ports = list(interface.outputs)
     for idx, port in enumerate(output_ports):
@@ -1330,9 +1550,9 @@ def _infer_reset_behavior(
     if reset_signal is not None:
         return reset_signal, False
     if hasattr(module, "_seq_blocks"):
-        legacy_reset = _infer_legacy_reset_behavior(module)
-        if legacy_reset is not None:
-            return legacy_reset
+        dsl_reset = _infer_dsl_reset_behavior(module)
+        if dsl_reset is not None:
+            return dsl_reset
     input_names = {port.name: port for port in inputs if port.width == 1}
     for candidate in ("rst", "reset", "rst_n", "reset_n"):
         if candidate in input_names:
@@ -1340,13 +1560,13 @@ def _infer_reset_behavior(
     return None, False
 
 
-def _infer_legacy_reset_behavior(module: Any) -> Optional[Tuple[str, bool]]:
+def _infer_dsl_reset_behavior(module: Any) -> Optional[Tuple[str, bool]]:
     reset_name = None
     active_low = False
     for seq_item in getattr(module, "_seq_blocks", ()):
         if len(seq_item) < 2:
             continue
-        inferred = _legacy_reset_expr_info(seq_item[1])
+        inferred = _dsl_reset_expr_info(seq_item[1])
         if inferred is None:
             continue
         name, low = inferred
@@ -1361,7 +1581,7 @@ def _infer_legacy_reset_behavior(module: Any) -> Optional[Tuple[str, bool]]:
     return reset_name, active_low
 
 
-def _legacy_reset_expr_info(expr: Any) -> Optional[Tuple[str, bool]]:
+def _dsl_reset_expr_info(expr: Any) -> Optional[Tuple[str, bool]]:
     direct_name = getattr(expr, "name", None)
     if direct_name:
         return direct_name, False
@@ -1386,17 +1606,50 @@ def _emit_uvm_top_sv(
     test_name: str,
     clock_name: str,
 ) -> str:
-    driven_inputs = tuple(port for port in interface.inputs if port.name != clock_name)
+    clock_names = _clock_signal_names(interface, clock_name)
+    multi_clock = len(clock_names) > 1
+    driven_inputs = tuple(port for port in interface.inputs if port.name not in set(clock_names))
     init_lines = "\n".join(f"    vif.{port.name} = '0;" for port in driven_inputs)
+    if multi_clock:
+        clock_init_lines = "\n".join(f"    vif.{name} = 1'b0;" for name in clock_names)
+        meta_init_lines = "\n".join(
+            f"    vif.{name} = 1'b0;" for name in _active_domain_field_names(interface, clock_name)
+        )
+        init_block_lines = "\n".join(
+            line for line in (clock_init_lines, init_lines, meta_init_lines) if line
+        )
+    else:
+        init_block_lines = init_lines
     port_lines = []
     for port in interface.inputs:
-        if port.name == clock_name:
+        if multi_clock:
+            port_lines.append(f"    .{port.name}(vif.{port.name})")
+        elif port.name == clock_name:
             port_lines.append(f"    .{port.name}(clk)")
         else:
             port_lines.append(f"    .{port.name}(vif.{port.name})")
     for port in interface.outputs:
         port_lines.append(f"    .{port.name}(vif.{port.name})")
     port_map = ",\n".join(port_lines)
+    if multi_clock:
+        return (
+            "`timescale 1ns/1ps\n\n"
+            f"module {top_module_name};\n"
+            "  import uvm_pkg::*;\n"
+            f"  import {package_name}::*;\n\n"
+            f"  {interface_name} vif();\n\n"
+            "  initial begin\n"
+            f"{init_block_lines}\n"
+            "  end\n\n"
+            f"  {dut_module_name} dut (\n"
+            f"{port_map}\n"
+            "  );\n\n"
+            "  initial begin\n"
+            f"    uvm_config_db#(virtual {interface_name})::set(null, \"*\", \"vif\", vif);\n"
+            f"    run_test(\"{test_name}\");\n"
+            "  end\n"
+            "endmodule\n"
+        )
     return (
         "`timescale 1ns/1ps\n\n"
         f"module {top_module_name};\n"
@@ -1406,7 +1659,7 @@ def _emit_uvm_top_sv(
         f"  {interface_name} vif(clk);\n\n"
         "  initial begin\n"
         "    clk = 1'b0;\n"
-        f"{init_lines}\n"
+        f"{init_block_lines}\n"
         "  end\n\n"
         "  always #5 clk = ~clk;\n\n"
         f"  {dut_module_name} dut (\n"
@@ -1470,9 +1723,9 @@ def _emit_vcs_run_script(
     )
 
 
-def _emit_legacy_dut_sv(module: Any) -> str:
+def _emit_dsl_dut_sv(module: Any) -> str:
     if not (hasattr(module, "_inputs") and hasattr(module, "_outputs") and hasattr(module, "_seq_blocks")):
-        raise ValueError("dut_source is required unless module is a legacy DSL module")
+        raise ValueError("dut_source is required unless module is a DSL module")
     emitter_cls = None
     profile_cls = None
 
@@ -1523,6 +1776,8 @@ def _emit_dpi_bridge_python(
     clock_name: str,
 ) -> str:
     input_names = tuple(port.name for port in _transaction_inputs(interface, clock_name))
+    active_domain_flags = tuple(_active_domain_field_names(interface, clock_name))
+    active_domain_names = _clock_signal_names(interface, clock_name) if active_domain_flags else ()
     output_names = tuple(port.name for port in interface.outputs)
     return (
         f'"""Generated Python DPI helper for "{interface.module_name}"."""\n\n'
@@ -1532,6 +1787,8 @@ def _emit_dpi_bridge_python(
         "from pathlib import Path\n\n"
         f"REFERENCE_MODEL_CLASS = {reference_model_class!r}\n"
         f"TRANSACTION_INPUTS = {input_names!r}\n"
+        f"ACTIVE_DOMAIN_FLAGS = {active_domain_flags!r}\n"
+        f"ACTIVE_DOMAIN_NAMES = {active_domain_names!r}\n"
         f"OUTPUT_NAMES = {output_names!r}\n"
         "MODEL_CACHE = {}\n\n"
         "def _resolve_ref_model_path(ref_model_path: str) -> Path:\n"
@@ -1567,23 +1824,32 @@ def _emit_dpi_bridge_python(
         "        MODEL_CACHE[resolved] = model\n"
         "    return model\n\n"
         "def predict_flat(ref_model_path: str, *input_values: int):\n"
-        "    if len(input_values) != len(TRANSACTION_INPUTS):\n"
+        "    expected_inputs = len(TRANSACTION_INPUTS) + len(ACTIVE_DOMAIN_FLAGS)\n"
+        "    if len(input_values) != expected_inputs:\n"
         "        raise ValueError(\n"
-        "            f\"expected {len(TRANSACTION_INPUTS)} inputs, got {len(input_values)}\"\n"
+        "            f\"expected {expected_inputs} inputs, got {len(input_values)}\"\n"
         "        )\n"
         "    model = get_reference_model(ref_model_path)\n"
         "    transaction = {name: 0 for name in getattr(model, \"input_names\", ())}\n"
         "    for idx, name in enumerate(TRANSACTION_INPUTS):\n"
         "        transaction[name] = int(input_values[idx])\n"
-        "    outputs = model.predict(transaction)\n"
+        "    if ACTIVE_DOMAIN_FLAGS:\n"
+        "        active_domains = [\n"
+        "            ACTIVE_DOMAIN_NAMES[idx]\n"
+        "            for idx, flag_name in enumerate(ACTIVE_DOMAIN_FLAGS)\n"
+        "            if int(input_values[len(TRANSACTION_INPUTS) + idx])\n"
+        "        ]\n"
+        "        outputs = model.predict_clocks(transaction, tuple(active_domains))\n"
+        "    else:\n"
+        "        outputs = model.predict(transaction)\n"
         "    return tuple(int(outputs[name]) for name in OUTPUT_NAMES)\n\n"
         "def main(argv=None) -> int:\n"
         "    args = sys.argv[1:] if argv is None else list(argv)\n"
-        "    expected_args = 1 + len(TRANSACTION_INPUTS)\n"
+        "    expected_args = 1 + len(TRANSACTION_INPUTS) + len(ACTIVE_DOMAIN_FLAGS)\n"
         "    if len(args) != expected_args:\n"
         "        raise SystemExit(\n"
         "            f\"usage: {Path(__file__).name} <ref_model.py> \"\n"
-        "            + \" \".join(TRANSACTION_INPUTS)\n"
+        "            + \" \".join(TRANSACTION_INPUTS + ACTIVE_DOMAIN_FLAGS)\n"
         "        )\n"
         "    outputs = predict_flat(args[0], *(int(value, 0) for value in args[1:]))\n"
         "    print(\" \".join(str(value) for value in outputs))\n"
@@ -1602,7 +1868,7 @@ def _emit_dpi_bridge_c(
     stem: str,
     clock_name: str,
 ) -> str:
-    inputs = _transaction_inputs(interface, clock_name)
+    inputs = _predict_input_ports(interface, clock_name)
     outputs = interface.outputs
     func_args = ",\n".join(
         ["    const char* ref_model_path"]
@@ -1768,6 +2034,24 @@ def _render_collection_block(lines: Sequence[str]) -> str:
     if not items:
         return ""
     return ",\n".join(items) + ","
+
+
+def _clock_signal_names(interface: VerificationInterface, clock_name: str) -> Tuple[str, ...]:
+    return interface.clock_names if interface.clock_names else (clock_name,)
+
+
+def _active_domain_field_name(domain_name: str) -> str:
+    return f"rtlgen_x_active_{domain_name}"
+
+
+def _active_domain_field_names(
+    interface: VerificationInterface,
+    clock_name: str,
+) -> Tuple[str, ...]:
+    clock_names = _clock_signal_names(interface, clock_name)
+    if len(clock_names) <= 1:
+        return ()
+    return tuple(_active_domain_field_name(name) for name in clock_names)
 
 
 def _infer_sv_module_name(source: str) -> Optional[str]:

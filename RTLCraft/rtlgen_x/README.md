@@ -16,7 +16,7 @@ the engines.
 
 One concrete worked example now lives in [../sfu/README.md](../sfu/README.md):
 a fully pipelined FP16 SFU that uses LUT-backed second-order interpolation and
-is regression-locked across the legacy DSL simulator, lowered executable model,
+is regression-locked across the DSL simulator, lowered executable model,
 and emitted RTL path.
 
 ## What `rtlgen_x` is
@@ -59,7 +59,7 @@ control plane.
 ```text
 rtlgen_x/
   archsim/   lightweight architecture simulators and exploration helpers
-  dsl/       executable modeling surfaces and legacy DSL import/lowering
+  dsl/       executable modeling surfaces and DSL import/lowering
   sim/       Python runtime, C++ backend, parity, trace, benchmark, cosim
   verify/    directed tests, streaming checks, Python UVM, SV/UVM export
   ppa/       structural/runtime PPA analysis, calibration, report parsing
@@ -74,8 +74,8 @@ the detailed simulator stack.
 ### Main detailed-design path
 
 ```text
-legacy DSL module or rtlgen_x native builder
-  -> lowered executable SimModule
+DSL module
+  -> lowered internal executable model (`SimModule`)
   -> PythonSimulator
   -> compiled C++ simulator
   -> verification / cosim / benchmark / PPA consumers
@@ -87,6 +87,7 @@ legacy DSL module or rtlgen_x native builder
 ArchitectureModel + Workload
   -> BehaviorSimulator
   -> CycleSimulator
+  -> summarize_architecture_report / emit_architecture_report_markdown
   -> sweep / bottleneck ranking / architecture-side PPA analysis
 ```
 
@@ -107,7 +108,7 @@ more executable, less ceremony.
 
 ## Fully Pipelined RTL Pattern
 
-When building a true throughput-1 pipeline in the legacy DSL, use a valid-bit
+When building a true throughput-1 pipeline in the DSL, use a valid-bit
 shift chain plus per-stage payload gating. This is the RTL-stable pattern for
 both bundled simulation and emitted RTL.
 
@@ -211,6 +212,11 @@ Exploration helpers:
 9. `rank_queue_depth_upgrades(...)`
 10. `rank_bandwidth_upgrades(...)`
 
+Report helpers:
+
+1. `summarize_architecture_report(...)`
+2. `emit_architecture_report_markdown(...)`
+
 Inference and calibration helpers:
 
 1. `infer_architecture_from_module(...)`
@@ -223,25 +229,37 @@ Notes:
    pressure
 2. behavior-level mode is fast and good for throughput reasoning
 3. cycle-level mode is better for backpressure, queue pressure, and contention
+4. `summarize_architecture_report(...)` condenses flow/stage/sweep evidence into
+   one agent-friendly object
+5. `emit_architecture_report_markdown(...)` turns that summary into a compact
+   report for design review or agent feedback loops
 
 ### 2. Executable design modeling: `rtlgen_x.dsl`
 
-`dsl` provides two practical entry styles.
+`rtlgen_x.dsl` is the supported hardware-authoring surface in `rtlgen_x`.
+Designs are written in the DSL, then lowered into the internal executable model
+(`SimModule`) for execution, verification, and PPA analysis.
 
-#### 2.1 Legacy DSL compatibility surface
+The recommended public boundary is:
 
-`rtlgen_x.dsl` re-exports the existing legacy RTL DSL under the `rtlgen_x`
-namespace so current module-authoring patterns can keep working.
+1. author designs as DSL `Module`
+2. use `LoweredDslModule` only for lowering inspection/debug
+3. treat raw `SimModule` as an internal low-level executable object
+4. pass DSL `Module` or `LoweredDslModule` to public verify/PPA/UVM helpers;
+   raw `SimModule` is intentionally rejected there
+
+For the current stable/partial boundary, see:
+
+1. [DSL support matrix](./DSL_SUPPORT_MATRIX.md)
+2. [DSL semantic contract](./DSL_SEMANTICS.md)
 
 Important entry points:
 
 1. `VerilogEmitter`
-2. `Simulator`
-3. `DSLSimValidator`
-4. `lower_legacy_module_to_sim(...)`
-5. `build_compiled_simulator_from_legacy(...)`
+2. `lower_dsl_module_to_sim(...)`
+3. `build_compiled_simulator_from_dsl(...)`
 
-Useful legacy constructs are also re-exported, including:
+Key constructs include:
 
 1. `Module`, `Input`, `Output`, `Reg`, `Wire`, `Array`
 2. `If`, `Else`, `Elif`, `Switch`, `When`
@@ -250,26 +268,21 @@ Useful legacy constructs are also re-exported, including:
 5. `AXI4`, `AXI4Lite`, `AXI4Stream`, `APB`, `AHBLite`, `Wishbone`
 6. `SinglePortRAM`, `SimpleDualPortRAM`
 
-#### 2.2 Small native executable builder
+Authoring-level domain helpers now also exist:
 
-`rtlgen_x.dsl.native` provides a small direct builder that lowers straight into
-`SimModule`.
+1. `reset_domain(...)`
+2. `clock_domain(...)`
+3. `seq_domain(...)`
+4. `ClockDomainSpec`
+5. `ResetDomainSpec`
 
-Important entry points:
+The removed AST/JIT simulator surface and `DSLSimValidator` are no longer part
+of `rtlgen_x`. DSL modules are expected to lower into the internal executable
+model and run on `PythonSimulator` or the compiled C++ backend.
 
-1. `NativeModuleBuilder`
-2. `NativeSignal`
-3. `NativeMemory`
-4. `NativeValue`
-5. `const(...)`
-6. `mux(...)`
+#### 2.2 Lowering semantics
 
-This surface is intentionally small and useful when an agent wants a precise,
-editable executable model without bringing in the full legacy DSL style.
-
-#### 2.3 Lowering semantics
-
-Legacy DSL modules can be lowered into `SimModule` for use by the new simulator
+DSL modules lower into the internal executable model used by the simulator
 stack.
 
 The lowering path currently supports:
@@ -281,24 +294,61 @@ The lowering path currently supports:
 5. dynamic bit/slice/part-select updates
 6. latch blocks
 
+Current boundary:
+
+1. single-clock lowering is the default and most mature path
+2. authoring can now declare reusable domain intent explicitly with
+   `clock_domain(...)` / `reset_domain(...)` and bind sequential logic through
+   `seq_domain(...)`
+3. multi-clock DSL modules can now lower into an executable model with
+   `clock_domains=...` when each sequential block cleanly belongs to one
+   clock/reset domain
+4. conflicting reset semantics on the same clock still fail fast during
+   lowering
+5. declared domain specs also fail fast if a later sequential block disagrees
+   with the declared reset semantics for that clock
+6. multi-clock verification support is intentionally split: local Python-UVM
+   can run explicit domain-event sequences, while generated verification
+   collateral and generic batch helpers remain intentionally constrained
+7. generated Python reference models also support explicit multi-clock
+   `predict_clocks(...)` / smoke execution, which helps validate generated
+   predictors before any external simulator handoff
+8. generated SV/UVM collateral now supports an explicit multi-clock
+   event-driven path when you provide `directed_sequence` steps annotated with
+   `active_domains`
+9. emitted RTL plus an external simulator flow is still the preferred closure
+   path for broader generated multi-clock UVM work beyond this directed mode
+10. generated DSL DUT runtime bundles preserve the module's original reset
+   semantics, so a synchronous `@self.seq(clk, rst)` block stays synchronous and
+   an explicit async-low `@self.seq(clk, ~rst_n)` block stays async-low after
+   SV/UVM export
+
 Recent latch closure is important here:
 
-1. legacy DSL `with self.latch:` is preserved
+1. DSL `with self.latch:` is preserved
 2. latch assignments are represented with `phase="latch"`
 3. Python runtime, compiled runtime, and generated reference models all support
    latch behavior
-4. generated legacy DUT SystemVerilog now emits `always_latch` / `always_ff` /
+4. generated DSL DUT SystemVerilog now emits `always_latch` / `always_ff` /
    `always_comb` when exporting SV collateral
 5. nested `Slice(Slice(...))` chains are flattened across multiple levels, and
    slices rooted at `BinOp` / `UnaryOp` / `Mux` / `Concat` expressions fall
    back to shift+mask emission when direct part-select syntax would break
    `iverilog`
-6. `Memory(..., init_data=...)` now stays consistent across emitted RTL, legacy
-   AST simulation, legacy JIT, and lowered `SimModule` execution
-7. arithmetic right shift via `SRA(...)` lowers and emits consistently
-8. combinational assignments are topologically ordered during lowering so
+6. `Memory(..., init_data=...)` now stays consistent across emitted RTL and
+   lowered executable-model execution
+7. `Memory(..., read_during_write=...)` now carries same-address read/write
+   intent through lowering, Python simulation, compiled simulation, and
+   generated Python reference models
+8. `Memory(..., read_ports=..., write_ports=..., read_style=..., read_latency=...)`
+   now makes storage intent explicit, and lowering/executable runtimes fail fast
+   when that intent exceeds the current executable storage subset
+9. `Memory(..., byte_enable_granularity=...)` and `mem.write(..., byte_enable=...)`
+   now make partial-write intent explicit, and non-closed backends fail fast
+10. arithmetic right shift via `SRA(...)` lowers and emits consistently
+11. combinational assignments are topologically ordered during lowering so
    dependent wire chains evaluate correctly in the executable model
-9. lowered multiply expressions preserve full product width instead of truncating
+12. lowered multiply expressions preserve full product width instead of truncating
    to the larger operand width
 
 ### 3. Detailed simulation: `rtlgen_x.sim`
@@ -308,13 +358,26 @@ Recent latch closure is important here:
 1. `PythonSimulator` for easy reference execution
 2. `CompiledSimulator` for fast compiled execution via generated C++
 
-Core executable model objects:
+Current multi-clock boundary inside `sim`:
+
+1. lowered multi-clock DSL models can be executed on both `PythonSimulator`
+   and `CompiledSimulator` through `step_clocks(...)`
+2. lowered multi-clock DSL now preserves clock-domain metadata into the
+   new runtime
+3. multi-clock support is currently scalar-step oriented: `step(...)` and batch
+   helpers stay fail-fast so callers do not accidentally assume a hidden clock
+   schedule
+4. local Python-UVM shares that same explicit event model through
+   `PythonUvmSequenceItem(..., active_domains=(...))`
+
+Core executable-model objects:
 
 1. `SimModule`
 2. `Signal`
 3. `Memory`
 4. `Assignment`
 5. `MemoryWrite`
+6. `ClockDomain`
 
 Expression nodes:
 
@@ -353,9 +416,9 @@ Current detailed-sim feature coverage includes:
 8. sequential multiply inside `seq` blocks, preserving full product width
    through lowering, Python sim, and compiled sim
 
-A unified `reset_simulator(...)` helper resets either the new
-(`PythonSimulator` / `CompiledSimulator`) or the legacy simulator frontend, so
-test harnesses need not branch on the concrete simulator class.
+A unified `reset_simulator(...)` helper resets the `rtlgen_x` runtimes and can
+also tolerate external compatibility-style simulators that still use a
+`reset(rst=None, cycles=2)` signature.
 
 High-throughput batch helpers:
 
@@ -387,12 +450,51 @@ Trace and parity helpers:
 
 RTL differential checking:
 
-1. `run_legacy_rtl_cosim(...)`
+1. `run_dsl_rtl_cosim(...)`
+2. `run_dsl_multiclock_rtl_cosim(...)`
 
 This path compares compiled execution against emitted RTL using `iverilog` when
 available. For valid-gated pipelines, use `valid_signal`, `flush_cycles`, and
 `flush_inputs` so the helper only checks architecturally meaningful output
 beats.
+
+For explicit multi-clock event stepping, use
+`run_dsl_multiclock_rtl_cosim(...)`. Each vector is either a plain input
+mapping or an `(inputs, active_domains)` tuple, where `active_domains`
+identifies which clock domains receive one edge on that step. This keeps RTL
+cosim aligned with `PythonSimulator.step_clocks(...)` and
+`CompiledSimulator.step_clocks(...)`.
+
+Storage initialization boundary:
+
+1. `Memory(..., init_zero=True)` and `Memory(..., init_data=...)` export
+   explicit RTL initialization and stay aligned with lowered execution
+2. `Array(...)` is convenient for unpacked register-file style storage, but its
+   emitted RTL does not inject implicit initialization
+3. `Memory(..., read_during_write="write_first" | "read_first")` controls
+   same-address read/write behavior in the lowered Python simulator, compiled
+   simulator, and generated Python reference model
+4. `Memory(..., read_ports=..., write_ports=..., read_style=..., read_latency=...)`
+   is now explicit metadata on the DSL/storage model, but the executable subset
+   still only accepts `read_ports=1`, `write_ports=1`, `read_style="async"`,
+   and `read_latency=0`
+5. `Memory(..., byte_enable_granularity=...)` plus
+   `mem.write(addr, value, byte_enable=...)` now make byte-enable intent
+   explicit, but current executable runtimes and emitted RTL still fail fast
+   instead of silently degrading the write into a full-word store
+6. lowered Python and compiled simulators still start from concrete storage
+   values, so local RTL cosim may expose `x/z` on an early read even when the
+   executable model returns a number
+7. when that happens, `run_dsl_multiclock_rtl_cosim(...)` now raises
+   `CosimUnknownValueError` with the signal and cycle instead of failing with an
+   opaque missing-key error
+8. if initial contents matter for RTL parity, prefer
+   `Memory(..., init_zero=True)`, explicit init blocks, or reset/write coverage
+   before the first architecturally meaningful read
+9. `read_during_write` is currently the only first-class storage collision
+   policy closed across the main executable path; richer port-count, style,
+   byte-enable, and latency contracts are now explicit but still only partially
+   executable
 
 For hand-written or generated streaming RTL cosim, keep two practical rules in
 mind:
@@ -405,6 +507,68 @@ mind:
 ### 4. Verification capability: `rtlgen_x.verify`
 
 `verify` provides three layers of verification.
+
+#### 4.0 CDC preflight for clock/reset-domain hazards
+
+Before local UVM, emitted RTL cosim, or remote VCS/UVM on a multi-clock DUT,
+run the static CDC check first. Also run it on single-clock DUTs that use
+asynchronous reset, because reset release is analyzed too.
+
+Core entry points:
+
+1. `analyze_cdc(...)`
+2. `emit_cdc_report_markdown(...)`
+
+This CDC pass is analysis-first. It does not rewrite the DUT for you. Instead
+it points at likely hazards and suggests the right primitive or protocol shape.
+
+Current checks include:
+
+1. `single_bit_crossing`
+2. `pulse_crossing`
+3. `multi_bit_crossing`
+4. `memory_crossing`
+5. `multi_writer_state`
+6. `multi_writer_memory`
+7. `reset_release_crossing`
+
+Current safe-pattern recognition includes:
+
+1. `SyncCell`
+2. `PulseSynchronizer`
+3. `AsyncFIFO`
+4. `AsyncResetRel`
+5. hand-written two-flop level synchronizers
+6. hand-written async-assert / sync-release reset synchronizers, including
+   deeper multi-stage release chains
+
+Practical guidance:
+
+1. run `analyze_cdc(...)` on the original DSL `Module` when you have it;
+   that path has the best visibility into safe CDC helper instances
+2. the checker also runs on the lowered multi-clock executable model
+3. when source metadata exists, findings carry file/line context for the
+   producer and consumer side of the crossing
+4. `reset_release_crossing` is a `warning` that specifically asks you to add a
+   per-domain reset-release synchronizer or move the raw async reset behind an
+   existing one
+5. same-clock DSL designs are allowed to use one raw-reset block to
+   build `rst_sync` and separate functional blocks that consume that
+   synchronized reset
+6. the lowered executable model may point `ClockDomain.reset_signal` at a
+   locally generated synchronized reset, not only a top-level input
+7. treat `error` findings as redesign-required and `warning` findings as
+   synchronizer/protocol-review-required
+
+Minimal example:
+
+```python
+from rtlgen_x.verify import analyze_cdc, emit_cdc_report_markdown
+
+report = analyze_cdc(module)
+print(report.error_count, report.warning_count)
+print(emit_cdc_report_markdown(report, title="CDC Preflight"))
+```
 
 #### 4.1 Directed and streaming checks
 
@@ -440,7 +604,7 @@ This environment can run on:
 
 1. `PythonSimulator`
 2. `CompiledSimulator`
-3. lowered legacy DSL modules
+3. lowered DSL modules
 
 It supports:
 
@@ -450,6 +614,37 @@ It supports:
 4. optional batch execution
 5. coverage collection
 6. triage JSON export
+7. explicit multi-clock event sequences when each item names `active_domains`
+
+For multi-clock local Python-UVM, drive transactions as explicit domain events:
+
+```python
+from rtlgen_x.verify import PythonUvmSequenceItem, run_python_uvm_test
+
+sequence = (
+    PythonUvmSequenceItem(
+        inputs={"wr_rst": 1, "rd_rst": 1},
+        active_domains=("wr_clk", "rd_clk"),
+        label="reset",
+    ),
+    PythonUvmSequenceItem(
+        inputs={"wr_en": 1, "din": 11},
+        active_domains=("wr_clk",),
+        label="write0",
+    ),
+    PythonUvmSequenceItem(
+        inputs={"rd_en": 1},
+        active_domains=("rd_clk",),
+        label="read0",
+    ),
+)
+
+report = run_python_uvm_test(module, sequence, name="multiclk_local_uvm")
+```
+
+When `active_domains` is present, the driver and default local reference model
+step via `step_clocks(...)`. Batch execution intentionally falls back to
+per-item stepping for such sequences so the event order stays explicit.
 
 #### 4.3 Protocol-aware sequences and reference models
 
@@ -511,6 +706,19 @@ Generated collateral includes:
 13. Python DPI helper
 14. C DPI bridge
 
+Generated reference-model boundary:
+
+1. generated Python reference models now support explicit multi-clock
+   `predict_clocks(...)` when the lowered/executable model carries
+   `clock_domains`
+2. `smoke_test_generated_reference_model(...)` can exercise that path with an
+   explicit `active_domains=(...)` schedule
+3. generated SV/UVM collateral now supports a directed multi-clock path where
+   each generated `UvmSequenceStep` names explicit `active_domains`
+4. randomized / generic multi-clock UVM collateral remains out of scope today,
+   so broader multi-clock closure still prefers emitted RTL plus an external
+   simulator flow
+
 Runtime bundle generation adds:
 
 1. `dut.sv`
@@ -529,15 +737,19 @@ Important current behavior:
    bridge hook
 3. generated reset smoke sequences understand reset polarity when the executable
    model exposes it
-4. legacy DSL latch modules can now be exported through the runtime-bundle path
+4. DSL latch modules can now be exported through the runtime-bundle path
 5. runtime bundles no longer require the DUT itself to expose a real clock input;
    a synthetic verification clock can drive the UVM environment while the DUT
    only sees its actual ports
+6. DSL DUT export preserves reset semantics during runtime-bundle generation
+   instead of forcing a profile-wide async-low reset style, which is important
+   for correct multi-clock directed UVM closure around reset release
 
 #### 4.5 Remote VCS/UVM execution
 
 For real SV/UVM closure on a remote host with VCS:
 
+0. `probe_remote_uvm_environment(...)`
 1. `run_remote_uvm_probe(...)`
 2. `run_remote_uvm_regression(...)`
 3. `write_remote_uvm_regression_report(...)`
@@ -547,8 +759,28 @@ For real SV/UVM closure on a remote host with VCS:
 
 Helper scripts also exist:
 
-1. [scripts/run_remote_uvm_probe.py](../scripts/run_remote_uvm_probe.py)
-2. [scripts/run_remote_uvm_regression.py](../scripts/run_remote_uvm_regression.py)
+1. [scripts/probe_remote_uvm_environment.py](../scripts/probe_remote_uvm_environment.py)
+2. [scripts/run_remote_uvm_probe.py](../scripts/run_remote_uvm_probe.py)
+3. [scripts/run_remote_uvm_regression.py](../scripts/run_remote_uvm_regression.py)
+
+The helper scripts now accept JSON-driven directed sequences and target lists:
+
+1. `run_remote_uvm_probe.py --directed-sequence-json path/to/steps.json`
+2. `run_remote_uvm_regression.py --targets-json path/to/targets.json`
+3. `run_remote_uvm_regression.py --directed-sequence-json path/to/shared_steps.json`
+
+This matters for multi-clock closure, because generated SV/UVM collateral only
+supports the explicit event-driven path when each step names `active_domains`.
+The same path is regression-covered locally and through a real remote VCS probe,
+so the intended usage is to keep reset/write/read ordering explicit instead of
+assuming an implicit clock schedule.
+
+Recommended remote order:
+
+1. run `probe_remote_uvm_environment(...)` first to confirm SSH + `source_script`
+   + `vcs`
+2. run one `run_remote_uvm_probe(...)`
+3. scale out with `run_remote_uvm_regression(...)`
 
 Current practical split:
 
@@ -565,20 +797,39 @@ diagnostics are not hidden behind a successful compile.
 `ppa` is currently analysis-first. It helps the agent decide what to rewrite or
 restructure.
 
+Like `archsim`, `ppa` is report-oriented. It produces recommendations and
+evidence for the agent or designer to read; it does not push structured changes
+directly into the DSL layer.
+
 Structural/runtime analysis:
 
 1. `analyze_module_ppa(...)`
 2. `analyze_architecture_ppa(...)`
 3. `advise_ppa(...)`
 
+Public module-side PPA helpers are DSL-facing:
+
+1. pass the original DSL `Module` when you have it
+2. pass `LoweredDslModule` only when you already have a lowering wrapper
+3. keep raw `SimModule` for low-level executable helpers such as architecture
+   inference or rewrite evaluation internals
+
 Core report objects:
 
 1. `PpaGoals`
 2. `PpaReport`
-3. `PpaRecommendation`
-4. `PpaTransformCandidate`
-5. `ModulePpaStats`
-6. `ArchitecturePpaStats`
+3. `PpaReportSummary`
+4. `PpaRecommendation`
+5. `PpaRecommendationSummary`
+6. `PpaTrustSummary`
+7. `PpaTransformCandidate`
+8. `ModulePpaStats`
+9. `ArchitecturePpaStats`
+
+Report helpers:
+
+1. `summarize_ppa_report(...)`
+2. `emit_ppa_report_markdown(...)`
 
 Calibration helpers:
 
@@ -616,8 +867,19 @@ Important current behavior:
    `critical_assignment_target`, `critical_assignment_phase`,
    `critical_assignment_source_file`, `critical_assignment_source_line`,
    `critical_expr_kind`, `critical_expr_op`, and operand-width metadata
-2. this makes it possible to point the agent at a concrete module/signal/site
-   without giving rewrite authority to the tool itself
+2. module-side area/power stats now carry explicit breakdown terms and named
+   hotspots, including `largest_memory_name`, `largest_memory_bits`,
+   `largest_state_name`, `dominant_area_bucket`, `dominant_power_bucket`,
+   `area_breakdown`, and `power_breakdown`
+3. architecture-side stage stats now also expose lightweight area/power proxies
+   such as `stage_bytes_moved`, `stage_activity_proxy`,
+   `stage_queue_occupancy_proxy`, `stage_area_proxy`, and `stage_power_proxy`
+4. this makes it possible to point the agent at a concrete module/signal/site,
+   storage hotspot, or architectural stage without giving rewrite authority to
+   the tool itself
+5. `summarize_ppa_report(...)` / `emit_ppa_report_markdown(...)` now preserve
+   precise hotspot targets such as `module.signal @ file:line` and surface the
+   first concrete follow-up actions directly in the report
 
 ## Recommended design flow
 
@@ -630,16 +892,16 @@ This is the recommended way to use the current framework.
 3. run `BehaviorSimulator().run(...)`
 4. run `CycleSimulator().run(...)`
 5. sweep likely bottlenecks
-6. feed results into `analyze_architecture_ppa(...)` or `advise_ppa(...)`
-7. push changes back into the architectural structure or detailed design
+6. generate `analyze_architecture_ppa(...)` or `advise_ppa(...)` reports
+7. let the agent or designer read the report and edit the design manually
 
 This is the preferred loop for early CPU/GPU/NPU/controller/datapath tradeoff
 work.
 
 ### Flow B: executable detailed design
 
-1. write a module in the legacy DSL, or use `NativeModuleBuilder`
-2. obtain a `SimModule` directly or through `lower_legacy_module_to_sim(...)`
+1. write a module in the DSL
+2. lower it through `lower_dsl_module_to_sim(...)`
 3. run `PythonSimulator` for quick semantics checks
 4. build a `CompiledSimulator` for fast regression
 5. run parity, fuzz, trace, and benchmark helpers as needed
@@ -654,7 +916,9 @@ This is the preferred loop for design development.
    large regressions
 3. use `run_python_uvm_test(...)` when you want sequences, scoreboards,
    coverage, and triage output
-4. use protocol sequence builders when the interface matches one of the
+4. for multi-clock local verification, express each transaction as an explicit
+   domain event with `active_domains`
+5. use protocol sequence builders when the interface matches one of the
    supported buses
 
 This is the preferred loop for fast local bug finding.
@@ -673,11 +937,16 @@ in a standard simulator flow.
 
 ### Flow E: PPA-guided refinement
 
-1. run `analyze_module_ppa(...)` on the executable design
+1. run `analyze_module_ppa(...)` on the original DSL module or a
+   `LoweredDslModule`
 2. run `analyze_architecture_ppa(...)` on the architecture model if applicable
 3. use `advise_ppa(...)` to obtain recommendations and transform candidates
-4. if you have implementation reports, parse and calibrate them
-5. let the agent rewrite the design, then rerun simulation and verification
+4. use `summarize_ppa_report(...)` or `emit_ppa_report_markdown(...)` to turn
+   the result into an agent-readable report with precise hotspot targets and
+   next actions
+5. if you have implementation reports, parse and calibrate them
+6. let the agent rewrite the design after reading the report, then rerun
+   simulation and verification
 
 This is the preferred loop for timing/area/power-driven iteration.
 
@@ -696,34 +965,26 @@ print(behavior.makespan_cycles)
 print(cycle.total_cycles)
 ```
 
-### Example 2: build a small executable module directly
+### Example 2: lower a DSL module into the executable model
 
 ```python
-from rtlgen_x.dsl import NativeModuleBuilder, const
+from rtlgen_x.dsl import lower_dsl_module_to_sim
 from rtlgen_x.sim import PythonSimulator
 
-b = NativeModuleBuilder("accum_native")
-inp = b.input("inp", width=8)
-acc = b.state("acc", width=8, init=3)
-out = b.output("out", width=8)
-
-b.comb(out, acc + inp)
-b.seq(acc, out)
-
-module = b.build(outputs_post_state=False)
-sim = PythonSimulator(module)
+lowered = lower_dsl_module_to_sim(module)
+sim = PythonSimulator(lowered.module)
 
 print(sim.step({"inp": 5}))  # {'out': 8}
 print(sim.step({"inp": 2}))  # {'out': 10}
 ```
 
-### Example 3: lower a legacy DSL module to compiled simulation
+### Example 3: build compiled simulation from a DSL module
 
 ```python
-from rtlgen_x.dsl import build_compiled_simulator_from_legacy
+from rtlgen_x.dsl import build_compiled_simulator_from_dsl
 
-# module is a legacy DSL Module instance
-with build_compiled_simulator_from_legacy(module, build_dir="build/my_module") as sim:
+# module is a DSL Module instance
+with build_compiled_simulator_from_dsl(module, build_dir="build/my_module") as sim:
     sim.reset()
     print(sim.step({"clk": 0, "rst": 1, "inp": 0}))
     print(sim.step({"clk": 0, "rst": 0, "inp": 5}))
@@ -742,6 +1003,29 @@ sequence = (
 
 report = run_python_uvm_test(module, sequence, name="smoke")
 print(report.passed, report.total_cycles)
+```
+
+Multi-clock local verification uses the same API, but each sequence item must
+carry `active_domains`:
+
+```python
+sequence = (
+    PythonUvmSequenceItem(
+        inputs={"wr_rst": 1, "rd_rst": 1},
+        active_domains=("wr_clk", "rd_clk"),
+    ),
+    PythonUvmSequenceItem(
+        inputs={"wr_en": 1, "din": 11},
+        active_domains=("wr_clk",),
+    ),
+    PythonUvmSequenceItem(
+        inputs={"rd_en": 1},
+        active_domains=("rd_clk",),
+    ),
+)
+
+report = run_python_uvm_test(module, sequence, name="multiclk_smoke")
+print(report.traces[-1].active_domains)
 ```
 
 ### Example 5: generate runnable SV/UVM collateral
@@ -769,7 +1053,7 @@ Run the example regressions with:
 
 ```bash
 python -m pytest sfu/tests/test_functional.py -q
-python -m pytest rtlgen_x/tests/test_dsl_legacy_import.py sfu/tests/test_functional.py -q -rA
+python -m pytest rtlgen_x/tests/test_dsl_*.py sfu/tests/test_functional.py -q -rA
 python sfu/iverilog_cosim.py
 ```
 
@@ -791,14 +1075,40 @@ For emitted RTL closure, the current best practice is:
 
 1. use the dedicated `sfu/iverilog_cosim.py` harness for valid-aware streaming
    parity when you want DUT-specific checks or larger stress runs
-2. use `run_legacy_rtl_cosim(...)` for both cycle-aligned interfaces and
+2. use `run_dsl_rtl_cosim(...)` for both cycle-aligned interfaces and
    straightforward valid-gated streaming parity
+3. use `run_dsl_multiclock_rtl_cosim(...)` when the DUT is multi-clock and
+   you want an explicit domain-step event schedule rather than a custom harness
+
+### Example 7: GPU-SM-style architecture plus PPA feedback
+
+The repository also includes a mixed compute/memory worked example in
+`../gpu_sm/`:
+
+1. dispatch, shared memory, SIMD ALU, SFU, GEMM-style compute, and writeback
+2. lowered executable simulation plus emitted RTL cosim
+3. architecture reporting through `summarize_architecture_report(...)`
+4. PPA and calibration reporting through `emit_ppa_report_markdown(...)`
+
+Start with:
+
+```bash
+python -m pytest gpu_sm/tests/test_functional.py -q
+python gpu_sm/iverilog_cosim.py
+```
+
+And use [../gpu_sm/README.md](../gpu_sm/README.md) as the worked example for:
+
+1. building an architecture-side model
+2. generating a readable architecture report
+3. generating a readable PPA and calibration report
+4. deciding what to rewrite in the DSL next
 
 ## Tutorials
 
 For full step-by-step flows, use the standalone tutorials:
 
-1. [TUTORIAL_UVM.md](./TUTORIAL_UVM.md): legacy DSL -> executable validation ->
+1. [TUTORIAL_UVM.md](./TUTORIAL_UVM.md): DSL -> executable validation ->
    generated SV/UVM collateral -> remote VCS/UVM
 2. [TUTORIAL_ARCH_PPA.md](./TUTORIAL_ARCH_PPA.md): architecture exploration ->
    stage sweeps -> PPA analysis -> design feedback loop
@@ -810,7 +1120,7 @@ For full step-by-step flows, use the standalone tutorials:
 The current stack has explicit test coverage across:
 
 1. architecture simulation presets and sweeps
-2. legacy DSL lowering into `SimModule`
+2. DSL lowering into the executable model
 3. Python vs compiled simulator parity
 4. dynamic slice and part-select lowering
 5. init-block derived initialization
@@ -827,21 +1137,23 @@ Recent regression locks also cover:
 1. nested-slice Verilog emission on widened combinational expressions
 2. back-to-back streaming verification on a real pipelined arithmetic DUT
 3. module-side PPA hotspot attribution with file/line metadata
-4. legacy memory `init_data` propagation through AST sim, JIT, and lowered
-   executable simulation
+4. DSL memory `init_data` propagation through lowered executable simulation
+   and emitted RTL
 5. arithmetic right shift round-trip through lowering, simulation, and Verilog
    emission
 6. a fully pipelined LUT-backed FP16 SFU across directed and random streaming
    verification
 7. sequential multiply inside `seq` blocks across truncation, sliced-product,
    and full-width product-register forms (Python and compiled paths agree)
-8. `LegacyLoweringError` diagnostics naming the offending port/kind and the
+8. `DslLoweringError` diagnostics naming the offending port/kind and the
    recommended shadow-register pattern for Output targets in sequential blocks
 9. generated reference models loading their runtime via an env override or the
    `runtime_path` kwarg when the model and runtime are separated
 10. iverilog probe reports surfacing width-mismatch and other warning lines
-11. a unified `reset_simulator(...)` adapter that resets both the legacy and the
-    new simulator frontends
+11. a unified `reset_simulator(...)` adapter that resets the `rtlgen_x`
+    runtimes and tolerates compatibility-style reset signatures when needed
+12. module-side PPA area/power breakdowns and named memory/state/multiplier
+    hotspot evidence
 
 ## Recent fixes (audit0621-kimi)
 
@@ -854,7 +1166,7 @@ friction points. The ones that translated into code changes are summarized here.
    only truncated at the assignment target, so registered products no longer
    silently collapse to zero. Regression tests lock all three forms.
 
-2. **`LegacyLoweringError` diagnostics** for unsupported assignment targets now
+2. **`DslLoweringError` diagnostics** for unsupported assignment targets now
    report the signal kind (for example `output 'out'`) and, for an Output in a
    sequential block, spell out the recommended shadow-register pattern:
 
@@ -875,10 +1187,9 @@ friction points. The ones that translated into code changes are summarized here.
    gate when lint discipline matters.
 
 5. **`reset_simulator(...)`** (in `rtlgen_x.sim`) provides one entry point that
-   resets either frontend: it calls the no-arg `reset()` on the new
-   `PythonSimulator` / `CompiledSimulator`, and forwards `rst` / `cycles` to the
-   legacy `Simulator.reset(rst=None, cycles=2)`. Test harnesses no longer need
-   to branch on the concrete simulator class.
+   resets the `rtlgen_x` runtimes and can also forward `rst` / `cycles` to
+   external compatibility-style reset frontends when needed. Test harnesses no longer
+   need to branch on the concrete simulator class.
 
 The remaining audit note is a modeling-discipline item rather than a framework
 bug: the Python-UVM scoreboard compares outputs cycle-by-cycle, so a reference
@@ -892,13 +1203,50 @@ The current framework is strong, but it still has clear boundaries.
 
 1. `archsim` is lightweight by design; it is for exploration, not full
    microarchitectural golden modeling
-2. the native executable DSL is intentionally small; the legacy DSL is still the
-   richer modeling surface
+2. `rtlgen_x` no longer exposes the removed AST/JIT simulator path; the supported
+   execution loop is lowering plus `PythonSimulator` / compiled simulation
 3. `iverilog` can be used for local RTL/collateral smoke, but full UVM closure
    still depends on an external simulator environment
 4. PPA is analysis-first; rewrite authority should remain with the agent or the
    human designer
 5. there is no mandatory top-level SoC workflow engine here by design
+
+## Multi-clock support snapshot
+
+For the full construct-by-construct support matrix, see
+[DSL_SUPPORT_MATRIX.md](./DSL_SUPPORT_MATRIX.md). For the detailed semantic
+boundary, see [DSL_SEMANTICS.md](./DSL_SEMANTICS.md).
+
+| Surface | Single-clock | Multi-clock | Notes |
+| --- | --- | --- | --- |
+| DSL authoring | Yes | Yes | Authoring surface can describe multiple domains |
+| `lower_dsl_module_to_sim(...)` | Yes | Partial | Multi-clock lowers when reset semantics are consistent per domain; conflicting same-clock reset definitions fail fast |
+| `PythonSimulator` | Yes | Partial | Multi-clock works via `step_clocks(...)`; generic `step(...)` and batch helpers stay single-clock |
+| `CompiledSimulator` | Yes | Partial | Multi-clock works via `step_clocks(...)`; generic `step(...)` and batch helpers stay single-clock |
+| Emitted RTL | Yes | Yes | Preferred path for multi-clock designs |
+| `run_dsl_rtl_cosim(...)` | Yes | No | Intended for single-clock or simple valid-gated checks |
+| `run_dsl_multiclock_rtl_cosim(...)` | No | Partial | Supports explicit domain-step event cosim for multi-clock DSL DUTs |
+| `run_python_uvm_test(...)` | Yes | Partial | Multi-clock works for explicit `active_domains` event sequences on local Python/compiled simulators; batch remains single-clock |
+| Generated Python reference model | Yes | Partial | Explicit multi-clock `predict_clocks(...)` / smoke is supported; batch remains single-clock |
+| Generated SV/UVM collateral | Yes | Partial | Explicit directed multi-clock event closure works via `directed_sequence` + `active_domains`; randomized/generic multi-clock UVM remains out of scope |
+
+For multi-clock designs today, the intended closure paths are:
+
+```text
+DSL -> lower_dsl_module_to_sim(...) -> explicit multi-clock stepping
+DSL -> run_dsl_multiclock_rtl_cosim(...) -> lowered Python / compiled / emitted RTL parity
+DSL -> run_python_uvm_test(...) with explicit `active_domains`
+DSL -> emit_python_reference_model(...) -> predict_clocks(...) / multi-clock smoke
+DSL -> generate_uvm_runtime_bundle(..., directed_sequence=[UvmSequenceStep(..., active_domains=...)]) -> directed multi-clock UVM bundle
+DSL -> emitted RTL -> external simulator / UVM flow
+```
+
+Practical recommendation for multi-clock storage-heavy DUTs:
+
+1. use `Array(...)` when the storage is naturally reset or overwritten before
+   any architecturally meaningful read
+2. use `Memory(..., init_zero=True)` or `init_data` when initial contents matter
+   to RTL parity, local cosim, or remote UVM scoreboarding
 
 ## Bottom line
 

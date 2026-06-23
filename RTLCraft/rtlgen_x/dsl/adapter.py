@@ -1,4 +1,4 @@
-"""Adapters from the imported legacy DSL into rtlgen_x executable models."""
+"""Adapters from the DSL surface into rtlgen_x executable models."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set
 
-from rtlgen_x.dsl.legacy.core import (
+from rtlgen_x.dsl.core import (
     ArrayRead,
     ArrayWrite,
-    Assign as LegacyAssign,
+    Assign as DslAssign,
     BinOp,
     BitSelect,
     Concat,
@@ -79,6 +79,7 @@ except ImportError:  # pragma: no cover - rtlgen may be absent in some deploymen
 from rtlgen_x.sim import (
     Assignment,
     BinaryExpr,
+    ClockDomain,
     CompiledSimulator,
     ConstExpr,
     CppBackendScaffold,
@@ -94,13 +95,13 @@ from rtlgen_x.sim import (
 )
 
 
-class LegacyLoweringError(ValueError):
-    """Raised when a legacy DSL construct is outside the supported lowering subset."""
+class DslLoweringError(ValueError):
+    """Raised when a DSL construct is outside the supported lowering subset."""
 
 
 @dataclass(frozen=True)
-class LegacyLoweringReport:
-    """Summary of a legacy DSL lowering step."""
+class DslLoweringReport:
+    """Summary of a DSL lowering step."""
 
     source_module: str
     flattened_module: str
@@ -110,20 +111,20 @@ class LegacyLoweringReport:
 
 
 @dataclass(frozen=True)
-class LoweredLegacyModule:
+class LoweredDslModule:
     """Pair the lowered executable module with a small lowering report."""
 
     module: SimModule
-    report: LegacyLoweringReport
+    report: DslLoweringReport
 
 
-def lower_legacy_module_to_sim(
+def lower_dsl_module_to_sim(
     module,
     *,
     flatten: bool = True,
     outputs_post_state: bool = True,
-) -> LoweredLegacyModule:
-    """Lower a legacy DSL ``Module`` into the compiled-simulator executable model.
+) -> LoweredDslModule:
+    """Lower a DSL ``Module`` into the compiled-simulator executable model.
 
     The current bridge intentionally supports a focused subset:
 
@@ -138,6 +139,7 @@ def lower_legacy_module_to_sim(
     flatten_fn = _select_flatten_module(module)
     lowered_source = flatten_fn(module) if flatten else module
     _reject_unsupported_module_features(lowered_source)
+    clock_domains = _collect_clock_domains(lowered_source)
     _register_implicit_signals(lowered_source)
     state_inits, memory_inits = _collect_initial_values(module)
     if lowered_source is not module and getattr(lowered_source, "_init_blocks", None):
@@ -175,12 +177,19 @@ def lower_legacy_module_to_sim(
     memories: List[Memory] = []
     memory_names: Dict[str, Memory] = {}
     for source_memory in lowered_source._memories.values():
+        _validate_supported_storage_contract(source_memory)
         init = memory_inits.get(source_memory.name, ())
         sim_memory = Memory(
             name=source_memory.name,
             width=source_memory.width,
             depth=source_memory.depth,
             init=init,
+            read_during_write=getattr(source_memory, "read_during_write", "write_first"),
+            read_ports=int(getattr(source_memory, "read_ports", 1)),
+            write_ports=int(getattr(source_memory, "write_ports", 1)),
+            read_style=getattr(source_memory, "read_style", "async"),
+            read_latency=int(getattr(source_memory, "read_latency", 0)),
+            byte_enable_granularity=getattr(source_memory, "byte_enable_granularity", None),
         )
         memories.append(sim_memory)
         memory_names[source_memory.name] = sim_memory
@@ -190,6 +199,12 @@ def lower_legacy_module_to_sim(
             width=source_array.width,
             depth=source_array.depth,
             init=memory_inits.get(source_array.name, ()),
+            read_during_write="write_first",
+            read_ports=1,
+            write_ports=1,
+            read_style="async",
+            read_latency=0,
+            byte_enable_granularity=None,
         )
         memories.append(sim_memory)
         memory_names[source_array.name] = sim_memory
@@ -215,8 +230,9 @@ def lower_legacy_module_to_sim(
     for index, seq_item in enumerate(lowered_source._seq_blocks):
         clk, rst, reset_async, reset_active_low, body = seq_item
         if clk is None:
-            raise LegacyLoweringError("sequential block is missing clock")
-        env = _LoweringEnv(signal_map, memory_names)
+            raise DslLoweringError("sequential block is missing clock")
+        clock_domain_name = getattr(clk, "name", str(clk)) if clock_domains else None
+        env = _LoweringEnv(signal_map, memory_names, clock_domain=clock_domain_name)
         _lower_stmt_list(body, phase="seq", env=env)
         assignments.extend(env.finalize_phase())
         memory_writes.extend(env.finalize_memory_writes())
@@ -230,20 +246,21 @@ def lower_legacy_module_to_sim(
         outputs=tuple(lowered_source._outputs.keys()),
         memories=tuple(memories),
         memory_writes=tuple(memory_writes),
+        clock_domains=clock_domains,
         reset_signal=None,
         outputs_post_state=outputs_post_state,
     )
-    report = LegacyLoweringReport(
+    report = DslLoweringReport(
         source_module=module.name,
         flattened_module=lowered_source.name,
         signal_count=len(signals),
         assignment_count=len(assignments) + len(memory_writes),
         outputs_post_state=outputs_post_state,
     )
-    return LoweredLegacyModule(module=sim_module, report=report)
+    return LoweredDslModule(module=sim_module, report=report)
 
 
-def build_compiled_simulator_from_legacy(
+def build_compiled_simulator_from_dsl(
     module,
     *,
     flatten: bool = True,
@@ -251,15 +268,44 @@ def build_compiled_simulator_from_legacy(
     builder: Optional[CppBackendScaffold] = None,
     build_dir: Optional[Path | str] = None,
 ) -> CompiledSimulator:
-    """Lower a legacy DSL module and build the compiled simulator runtime."""
+    """Lower a DSL module and build the compiled simulator runtime."""
 
-    lowered = lower_legacy_module_to_sim(
+    lowered = lower_dsl_module_to_sim(
         module,
         flatten=flatten,
         outputs_post_state=outputs_post_state,
     )
     runtime_builder = builder if builder is not None else CppBackendScaffold()
     return runtime_builder.build(lowered.module, build_dir=build_dir)
+
+
+def _validate_supported_storage_contract(source_memory) -> None:
+    read_ports = int(getattr(source_memory, "read_ports", 1))
+    write_ports = int(getattr(source_memory, "write_ports", 1))
+    read_style = getattr(source_memory, "read_style", "async")
+    read_latency = int(getattr(source_memory, "read_latency", 0))
+    byte_enable_granularity = getattr(source_memory, "byte_enable_granularity", None)
+
+    problems: List[str] = []
+    if read_ports != 1:
+        problems.append(f"read_ports={read_ports}")
+    if write_ports != 1:
+        problems.append(f"write_ports={write_ports}")
+    if read_style != "async":
+        problems.append(f"read_style={read_style!r}")
+    if read_latency != 0:
+        problems.append(f"read_latency={read_latency}")
+    if byte_enable_granularity is not None:
+        problems.append(f"byte_enable_granularity={int(byte_enable_granularity)}")
+    if not problems:
+        return
+    details = ", ".join(problems)
+    raise DslLoweringError(
+        f"memory '{getattr(source_memory, 'name', '<memory>')}' uses unsupported storage "
+        f"contract for executable lowering ({details}); current executable subset requires "
+        "read_ports=1, write_ports=1, read_style='async', read_latency=0, "
+        "and no byte-enable lanes"
+    )
 
 
 def _collect_initial_values(module) -> tuple[Dict[str, int], Dict[str, tuple[int, ...]]]:
@@ -283,6 +329,65 @@ def _collect_initial_values(module) -> tuple[Dict[str, int], Dict[str, tuple[int
     for body in module._init_blocks:
         _eval_initial_stmt_list(body, signal_defs, signal_values, memory_defs, memory_values)
     return signal_values, {name: tuple(values) for name, values in memory_values.items()}
+
+
+def _collect_clock_domains(module) -> tuple[ClockDomain, ...]:
+    declared_specs_by_clock: Dict[str, tuple[Optional[str], bool, bool, str]] = {}
+    for domain_spec in getattr(module, "_clock_domain_specs", {}).values():
+        clk_name = getattr(domain_spec.clock, "name", str(domain_spec.clock))
+        rst_signal = getattr(domain_spec, "reset_signal", None)
+        rst_name = getattr(rst_signal, "name", str(rst_signal)) if rst_signal is not None else None
+        spec = (
+            rst_name,
+            bool(getattr(domain_spec, "reset_async", False)),
+            bool(getattr(domain_spec, "reset_active_low", False)),
+            getattr(domain_spec, "name", clk_name),
+        )
+        previous = declared_specs_by_clock.get(clk_name)
+        if previous is not None and previous != spec:
+            raise DslLoweringError(
+                "declared clock domains cannot assign conflicting reset semantics to "
+                f"clock '{clk_name}': previous={previous[:3]}, current={spec[:3]}"
+            )
+        declared_specs_by_clock[clk_name] = spec
+
+    clock_specs: Dict[str, tuple[Optional[str], bool, bool]] = {}
+    ordered_clock_names: List[str] = []
+    for clk, rst, reset_async, reset_active_low, _body in getattr(module, "_seq_blocks", ()):
+        if clk is None:
+            continue
+        clk_name = getattr(clk, "name", str(clk))
+        rst_name = getattr(rst, "name", str(rst)) if rst is not None else None
+        spec = (rst_name, bool(reset_async), bool(reset_active_low))
+        declared = declared_specs_by_clock.get(clk_name)
+        if declared is not None and spec != declared[:3]:
+            raise DslLoweringError(
+                "lower_dsl_module_to_sim found a sequential block whose reset semantics "
+                f"disagree with declared clock domain '{declared[3]}' for clock '{clk_name}': "
+                f"declared={declared[:3]}, observed={spec}"
+            )
+        previous = clock_specs.get(clk_name)
+        if previous is None:
+            ordered_clock_names.append(clk_name)
+            clock_specs[clk_name] = spec
+            continue
+        if previous != spec:
+            raise DslLoweringError(
+                "lower_dsl_module_to_sim cannot merge sequential blocks that share "
+                f"clock '{clk_name}' but disagree on reset semantics: "
+                f"previous={previous}, current={spec}"
+            )
+    if len(ordered_clock_names) <= 1:
+        return ()
+    return tuple(
+        ClockDomain(
+            name=clock_name,
+            reset_signal=clock_specs[clock_name][0],
+            reset_async=clock_specs[clock_name][1],
+            reset_active_low=clock_specs[clock_name][2],
+        )
+        for clock_name in ordered_clock_names
+    )
 
 
 def _eval_initial_stmt_list(
@@ -354,7 +459,7 @@ def _eval_initial_stmt_list(
             continue
         if type(stmt).__name__ == "Comment":
             continue
-        raise LegacyLoweringError(f"unsupported initial-block statement type '{type(stmt).__name__}'")
+        raise DslLoweringError(f"unsupported initial-block statement type '{type(stmt).__name__}'")
 
 
 def _eval_initial_assign(
@@ -368,7 +473,7 @@ def _eval_initial_assign(
     if isinstance(target, _SIGNAL_TYPES):
         signal = signal_defs.get(target.name)
         if signal is None:
-            raise LegacyLoweringError(
+            raise DslLoweringError(
                 f"initial block assignment only supports register targets, got '{target.name}'"
             )
         signal_values[target.name] = _eval_initial_expr(
@@ -387,7 +492,7 @@ def _eval_initial_assign(
     if isinstance(target, _PARTSELECT_TYPES):
         _eval_initial_bit_or_range_assign(target, value, signal_defs, signal_values, memory_defs, memory_values)
         return
-    raise LegacyLoweringError(
+    raise DslLoweringError(
         f"unsupported initial-block assignment target '{type(target).__name__}'"
     )
 
@@ -402,10 +507,10 @@ def _eval_initial_bit_or_range_assign(
 ) -> None:
     operand = getattr(target, "operand", None)
     if not isinstance(operand, _REF_TYPES):
-        raise LegacyLoweringError("initial block bit-range assignment must target a register")
+        raise DslLoweringError("initial block bit-range assignment must target a register")
     signal = signal_defs.get(operand.signal.name)
     if signal is None:
-        raise LegacyLoweringError(
+        raise DslLoweringError(
             f"initial block bit-range assignment only supports register targets, got '{operand.signal.name}'"
         )
     base_value = signal_values.get(operand.signal.name, 0) & _mask_for_width(signal.width)
@@ -433,7 +538,7 @@ def _eval_initial_bit_or_range_assign(
     lo = target.lo
     hi = target.hi
     if not isinstance(lo, int) or not isinstance(hi, int):
-        raise LegacyLoweringError("unsupported non-static slice target in initial block")
+        raise DslLoweringError("unsupported non-static slice target in initial block")
     signal_values[operand.signal.name] = _replace_python_bit_range(
         base_value,
         lo,
@@ -454,10 +559,10 @@ def _eval_initial_memory_write(
 ) -> None:
     memory = memory_defs.get(memory_name)
     if memory is None:
-        raise LegacyLoweringError(f"initial block writes unknown memory '{memory_name}'")
+        raise DslLoweringError(f"initial block writes unknown memory '{memory_name}'")
     addr = int(_eval_initial_expr(addr_expr, signal_defs, signal_values, memory_defs, memory_values))
     if addr < 0 or addr >= memory.depth:
-        raise LegacyLoweringError(
+        raise DslLoweringError(
             f"initial block write to '{memory_name}' is outside depth {memory.depth}: addr={addr}"
         )
     value = _eval_initial_expr(value_expr, signal_defs, signal_values, memory_defs, memory_values)
@@ -475,7 +580,7 @@ def _eval_initial_expr(
         return int(expr)
     if isinstance(expr, _SIGNAL_TYPES):
         if expr.name not in signal_values:
-            raise LegacyLoweringError(
+            raise DslLoweringError(
                 f"initial block expression references non-register signal '{expr.name}'"
             )
         return int(signal_values[expr.name]) & _mask_for_width(expr.width)
@@ -484,7 +589,7 @@ def _eval_initial_expr(
     if isinstance(expr, _REF_TYPES):
         signal = expr.signal
         if signal.name not in signal_values:
-            raise LegacyLoweringError(
+            raise DslLoweringError(
                 f"initial block expression references non-register signal '{signal.name}'"
             )
         return int(signal_values[signal.name]) & _mask_for_width(signal.width)
@@ -509,7 +614,7 @@ def _eval_initial_expr(
             return _to_signed(operand, width)
         if expr.op == "$unsigned":
             return operand & _mask_for_width(width)
-        raise LegacyLoweringError(f"unsupported unary op '{expr.op}' in initial block")
+        raise DslLoweringError(f"unsupported unary op '{expr.op}' in initial block")
     if isinstance(expr, _BINOP_TYPES):
         lhs = _eval_initial_expr(expr.lhs, signal_defs, signal_values, memory_defs, memory_values)
         rhs = _eval_initial_expr(expr.rhs, signal_defs, signal_values, memory_defs, memory_values)
@@ -544,7 +649,7 @@ def _eval_initial_expr(
             return int(lhs > rhs)
         if expr.op == ">=":
             return int(lhs >= rhs)
-        raise LegacyLoweringError(f"unsupported binary op '{expr.op}' in initial block")
+        raise DslLoweringError(f"unsupported binary op '{expr.op}' in initial block")
     if isinstance(expr, _MUX_TYPES):
         cond = _eval_initial_expr(expr.cond, signal_defs, signal_values, memory_defs, memory_values)
         branch = expr.true_expr if cond else expr.false_expr
@@ -569,7 +674,7 @@ def _eval_initial_expr(
             part = _eval_initial_expr(operand, signal_defs, signal_values, memory_defs, memory_values)
             value = (value << operand.width) | (part & _mask_for_width(operand.width))
         return value & _mask_for_width(expr.width)
-    raise LegacyLoweringError(f"unsupported initial-block expression type '{type(expr).__name__}'")
+    raise DslLoweringError(f"unsupported initial-block expression type '{type(expr).__name__}'")
 
 
 def _expr_eval_width(expr, signal_defs: Mapping[str, object], memory_defs: Mapping[str, object]) -> int:
@@ -587,7 +692,7 @@ def _expr_eval_width(expr, signal_defs: Mapping[str, object], memory_defs: Mappi
         return memory_defs[expr.array_name].width
     if hasattr(expr, "width"):
         return int(expr.width)
-    raise LegacyLoweringError(f"cannot derive width for initial-block expression '{type(expr).__name__}'")
+    raise DslLoweringError(f"cannot derive width for initial-block expression '{type(expr).__name__}'")
 
 
 def _to_signed(value: int, width: int) -> int:
@@ -599,9 +704,9 @@ def _to_signed(value: int, width: int) -> int:
 
 def _replace_python_bit_range(base_value: int, lo: int, width: int, replacement_value: int, base_width: int) -> int:
     if width < 1:
-        raise LegacyLoweringError("bit range width must be positive")
+        raise DslLoweringError("bit range width must be positive")
     if lo < 0 or lo + width > base_width:
-        raise LegacyLoweringError("bit range assignment is outside the target signal width")
+        raise DslLoweringError("bit range assignment is outside the target signal width")
     range_mask = ((1 << width) - 1) << lo
     keep_mask = _mask_for_width(base_width) ^ range_mask
     return (
@@ -654,9 +759,9 @@ def _compiled_expr_complexity(expr) -> int:
 
 def _reject_unsupported_module_features(module) -> None:
     if module._submodules:
-        raise LegacyLoweringError("legacy lowering expects a flattened module")
+        raise DslLoweringError("DSL lowering expects a flattened module")
     if getattr(module, "_beh_func", None) is not None:
-        raise LegacyLoweringError("behavioral callback modules are not supported")
+        raise DslLoweringError("behavioral callback modules are not supported")
     unsupported_top = [
         type(stmt).__name__
         for stmt in module._top_level
@@ -664,13 +769,20 @@ def _reject_unsupported_module_features(module) -> None:
     ]
     if unsupported_top:
         kinds = ", ".join(sorted(set(unsupported_top)))
-        raise LegacyLoweringError(f"unsupported top-level statement types: {kinds}")
+        raise DslLoweringError(f"unsupported top-level statement types: {kinds}")
 
 
 class _LoweringEnv:
-    def __init__(self, signal_map: Mapping[str, SimSignal], memory_map: Mapping[str, Memory]):
+    def __init__(
+        self,
+        signal_map: Mapping[str, SimSignal],
+        memory_map: Mapping[str, Memory],
+        *,
+        clock_domain: Optional[str] = None,
+    ):
         self._signal_map = signal_map
         self._memory_map = memory_map
+        self._clock_domain = clock_domain
         self._assigned: MutableMapping[str, object] = {}
         self._assignment_sources: MutableMapping[str, tuple[Optional[str], Optional[int]]] = {}
         self._memory_writes: List[MemoryWrite] = []
@@ -688,32 +800,32 @@ class _LoweringEnv:
     def read_memory(self, memory_name: str, addr_expr):
         memory = self._memory_map.get(memory_name)
         if memory is None:
-            raise LegacyLoweringError(f"expression references unknown memory '{memory_name}'")
+            raise DslLoweringError(f"expression references unknown memory '{memory_name}'")
         return MemoryReadExpr(memory_name, addr_expr)
 
     def assign(self, target, expr, *, phase: str, source_file: Optional[str] = None, source_line: Optional[int] = None) -> None:
         signal = self._signal_map.get(target.name)
         if signal is None:
-            raise LegacyLoweringError(f"assignment targets unknown signal '{target.name}'")
+            raise DslLoweringError(f"assignment targets unknown signal '{target.name}'")
         if phase == "comb" and signal.kind not in {"wire", "output"}:
-            raise LegacyLoweringError(
+            raise DslLoweringError(
                 f"combinational lowering only supports wire/output targets, got {signal.kind} '{target.name}'. "
                 "Register updates belong in a sequential ('seq') block, not a combinational ('comb') block."
             )
         if phase == "latch" and signal.kind != "state":
-            raise LegacyLoweringError(
+            raise DslLoweringError(
                 f"latch lowering only supports reg targets, got {signal.kind} '{target.name}'. "
                 "Latch blocks may only hold state in registers."
             )
         if phase == "seq" and signal.kind != "state":
             if signal.kind == "output":
-                raise LegacyLoweringError(
+                raise DslLoweringError(
                     f"sequential lowering only supports reg targets, got output '{target.name}'. "
                     "Drive an Output by registering it first: assign the value to a Reg inside the seq block, "
                     "then assign the Output from that Reg in a comb block "
                     "(e.g. self.out_reg <<= value inside seq; self.out <<= self.out_reg inside comb)."
                 )
-            raise LegacyLoweringError(
+            raise DslLoweringError(
                 f"sequential lowering only supports reg targets, got {signal.kind} '{target.name}'. "
                 "Sequential blocks may only update registers."
             )
@@ -721,22 +833,41 @@ class _LoweringEnv:
         self._assignment_sources[target.name] = (source_file, source_line)
         self._phase = phase
 
-    def write_memory(self, memory_name: str, addr_expr, value_expr, *, phase: str) -> None:
+    def write_memory(
+        self,
+        memory_name: str,
+        addr_expr,
+        value_expr,
+        *,
+        phase: str,
+        byte_enable_expr=None,
+        source_file: Optional[str] = None,
+        source_line: Optional[int] = None,
+    ) -> None:
         memory = self._memory_map.get(memory_name)
         if memory is None:
-            raise LegacyLoweringError(f"memory write targets unknown memory '{memory_name}'")
+            raise DslLoweringError(f"memory write targets unknown memory '{memory_name}'")
         if phase != "seq":
-            raise LegacyLoweringError(
+            raise DslLoweringError(
                 f"storage write lowering only supports sequential phase, got write to '{memory_name}' in {phase}"
             )
         enable = self._path_enable()
         self._memory_writes.append(
-            MemoryWrite(memory_name, addr_expr, value_expr, enable=enable)
+            MemoryWrite(
+                memory_name,
+                addr_expr,
+                value_expr,
+                enable=enable,
+                clock_domain=self._clock_domain,
+                byte_enable=byte_enable_expr,
+                source_file=source_file,
+                source_line=source_line,
+            )
         )
         self._phase = phase
 
     def branch(self) -> "_LoweringEnv":
-        child = _LoweringEnv(self._signal_map, self._memory_map)
+        child = _LoweringEnv(self._signal_map, self._memory_map, clock_domain=self._clock_domain)
         child._assigned = dict(self._assigned)
         child._assignment_sources = dict(self._assignment_sources)
         child._memory_writes = list(self._memory_writes)
@@ -796,6 +927,7 @@ class _LoweringEnv:
                 target=name,
                 expr=expr,
                 phase=self._phase,
+                clock_domain=self._clock_domain if self._phase == "seq" else None,
                 source_file=self._assignment_sources.get(name, (None, None))[0],
                 source_line=self._assignment_sources.get(name, (None, None))[1],
             )
@@ -930,7 +1062,7 @@ def _lower_stmt_list(stmts: Iterable[object], *, phase: str, env: _LoweringEnv) 
         stmt_name = type(stmt).__name__
         if stmt_name == "Comment":
             continue
-        raise LegacyLoweringError(f"unsupported statement type '{stmt_name}'")
+        raise DslLoweringError(f"unsupported statement type '{stmt_name}'")
 
 
 def _lower_if(stmt: IfNode, *, phase: str, env: _LoweringEnv) -> None:
@@ -963,7 +1095,7 @@ def _lower_if(stmt: IfNode, *, phase: str, env: _LoweringEnv) -> None:
 
 def _lower_switch(stmt: SwitchNode, *, phase: str, env: _LoweringEnv) -> None:
     if stmt.kind != "case":
-        raise LegacyLoweringError(f"unsupported switch kind '{stmt.kind}'")
+        raise DslLoweringError(f"unsupported switch kind '{stmt.kind}'")
     selector = _lower_expr(stmt.expr, env)
     case_values = [_lower_expr(value, env) for value, _ in stmt.cases]
     case_conds = [BinaryExpr("==", selector, value_expr) for value_expr in case_values]
@@ -1036,7 +1168,7 @@ def _lower_expr(expr, env: _LoweringEnv):
         return env.read_memory(expr.array_name, _lower_expr(expr.index, env))
     if isinstance(expr, _UNARY_TYPES):
         if expr.op not in {"~", "-", "!", "$signed", "$unsigned"}:
-            raise LegacyLoweringError(f"unsupported unary op '{expr.op}'")
+            raise DslLoweringError(f"unsupported unary op '{expr.op}'")
         lowered_operand = _lower_expr(expr.operand, env)
         lowered_unary = UnaryExpr(expr.op, lowered_operand)
         if expr.op == "~":
@@ -1060,7 +1192,7 @@ def _lower_expr(expr, env: _LoweringEnv):
             ">",
             ">=",
         }:
-            raise LegacyLoweringError(f"unsupported binary op '{expr.op}'")
+            raise DslLoweringError(f"unsupported binary op '{expr.op}'")
         return BinaryExpr(expr.op, _lower_expr(expr.lhs, env), _lower_expr(expr.rhs, env))
     if isinstance(expr, _MUX_TYPES):
         return MuxExpr(
@@ -1091,7 +1223,7 @@ def _lower_expr(expr, env: _LoweringEnv):
     if isinstance(expr, _CONCAT_TYPES):
         operands = list(expr.operands)
         if not operands:
-            raise LegacyLoweringError("empty concat is not supported")
+            raise DslLoweringError("empty concat is not supported")
         acc = _lower_expr(operands[0], env)
         running_width = operands[0].width
         for operand in operands[1:]:
@@ -1104,7 +1236,7 @@ def _lower_expr(expr, env: _LoweringEnv):
             )
             acc = MaskExpr(acc, running_width)
         return MaskExpr(acc, running_width)
-    raise LegacyLoweringError(f"unsupported expression type '{type(expr).__name__}'")
+    raise DslLoweringError(f"unsupported expression type '{type(expr).__name__}'")
 
 
 def _lower_assign(target, value, *, phase: str, env: _LoweringEnv, source_location=None) -> None:
@@ -1158,7 +1290,7 @@ def _lower_assign(target, value, *, phase: str, env: _LoweringEnv, source_locati
             source_line=source_line,
         )
         return
-    raise LegacyLoweringError(
+    raise DslLoweringError(
         f"lowering only supports signal and bit-range assignment targets, got {type(target).__name__}"
     )
 
@@ -1177,11 +1309,19 @@ def _lower_indexed_assign(stmt: IndexedAssign, *, phase: str, env: _LoweringEnv)
 
 
 def _lower_memory_write(stmt: MemWrite, *, phase: str, env: _LoweringEnv) -> None:
+    source_location = getattr(stmt, "source_location", None)
     env.write_memory(
         stmt.mem_name,
         _lower_expr(stmt.addr, env),
         _lower_expr(stmt.value, env),
         phase=phase,
+        byte_enable_expr=(
+            _lower_expr(stmt.byte_enable, env)
+            if getattr(stmt, "byte_enable", None) is not None
+            else None
+        ),
+        source_file=getattr(source_location, "file", None),
+        source_line=getattr(source_location, "line", None),
     )
 
 
@@ -1204,7 +1344,7 @@ def _lower_slice_assign(
     source_line: Optional[int] = None,
 ) -> None:
     if not isinstance(target.operand, _REF_TYPES):
-        raise LegacyLoweringError("slice assignment must target a signal")
+        raise DslLoweringError("slice assignment must target a signal")
     base_signal = target.operand.signal
     replacement_value = _lower_expr(value, env)
     if isinstance(target.hi, int) and isinstance(target.lo, int):
@@ -1242,7 +1382,7 @@ def _lower_bitselect_assign(
     source_line: Optional[int] = None,
 ) -> None:
     if not isinstance(target.operand, _REF_TYPES):
-        raise LegacyLoweringError("bit-select assignment must target a signal")
+        raise DslLoweringError("bit-select assignment must target a signal")
     base_signal = target.operand.signal
     index = _const_int(target.index)
     if index is None:
@@ -1279,7 +1419,7 @@ def _lower_partselect_assign(
     source_line: Optional[int] = None,
 ) -> None:
     if not isinstance(target.operand, _REF_TYPES):
-        raise LegacyLoweringError("part-select assignment must target a signal")
+        raise DslLoweringError("part-select assignment must target a signal")
     base_signal = target.operand.signal
     offset = _const_int(target.offset)
     if offset is None:
@@ -1309,9 +1449,9 @@ def _lower_partselect_assign(
 
 def _replace_bit_range_expr(base, lo: int, width: int, value, base_width: int):
     if width < 1:
-        raise LegacyLoweringError("bit range width must be positive")
+        raise DslLoweringError("bit range width must be positive")
     if lo < 0 or lo + width > base_width:
-        raise LegacyLoweringError("bit range assignment is outside the target signal width")
+        raise DslLoweringError("bit range assignment is outside the target signal width")
     range_mask = ((1 << width) - 1) << lo
     keep_mask = ((1 << base_width) - 1) ^ range_mask
     cleared = BinaryExpr("&", base, ConstExpr(keep_mask, base_width))
@@ -1343,7 +1483,7 @@ def _expr_equal_compiled(lhs, rhs) -> bool:
     return repr(lhs) == repr(rhs)
 
 
-_ASSIGN_TYPES = (LegacyAssign,) + ((RtlgenAssign,) if RtlgenAssign else ())
+_ASSIGN_TYPES = (DslAssign,) + ((RtlgenAssign,) if RtlgenAssign else ())
 _ARRAY_READ_TYPES = (ArrayRead,) + ((RtlgenArrayRead,) if RtlgenArrayRead else ())
 _ARRAY_WRITE_TYPES = (ArrayWrite,) + ((RtlgenArrayWrite,) if RtlgenArrayWrite else ())
 _BINOP_TYPES = (BinOp,) + ((RtlgenBinOp,) if RtlgenBinOp else ())
