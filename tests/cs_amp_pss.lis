@@ -2,15 +2,15 @@
 ****** harmonic balance + osdi ******
 ****** version 0.2 ******
 
-$ netlist: rfsim end-to-end: BSIM4 NMOS common-source amplifier @ 1MHz
-$ source: .\bsim4_cs_pss.sp
+$ netlist: rfsim PSS waveform test — common source BSIM4 amplifier
+$ source: G:\vibe-codeing\simulator\tests\cs_amp_pss.sp
 
 $rfsim ============================================================
 $  node table
 $rfsim ============================================================
 
   nodes (excl. gnd): 3
-  [1] vdd
-  [2] d
-  [3] g
+  [1] 1
+  [2] 2
+  [3] 3
 

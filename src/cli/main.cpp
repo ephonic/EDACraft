@@ -400,6 +400,26 @@ int run(const std::string& path, const std::string& libSearchDir) {
                 if (!finite) break;
             }
             if (finite) {
+                // 导出 CSV 波形（供 waveview.py 查看）
+                std::string basePath2 = path;
+                size_t dot2 = basePath2.find_last_of('.');
+                if (dot2 != std::string::npos) basePath2 = basePath2.substr(0, dot2);
+                std::string csvPath = basePath2 + "_pss.csv";
+                std::ofstream csvf(csvPath);
+                if (csvf) {
+                    csvf << "time";
+                    for (uint32_t n = 1; n <= fac.totalNodes; ++n)
+                        csvf << ",v" << n;
+                    for (uint32_t b = 0; b < pss.waveform.numBranches; ++b)
+                        csvf << ",i" << b;
+                    csvf << "\n";
+                    for (const auto& tp : pss.waveform.points) {
+                        csvf << tp.time;
+                        for (double xi : tp.x) csvf << "," << xi;
+                        csvf << "\n";
+                    }
+                    std::cout << "  PSS waveform written to: " << csvPath << "\n";
+                }
                 auto hb = rfsim::shootingToHarmonics(pss, fac.totalNodes, nh, f0);
                 if (hb.ok) {
                     rfsim::writeHb(std::cout, c, hb, true);

@@ -3,7 +3,7 @@
 ****** version 0.2 ******
 
 $ netlist: rfsim HB 验证: 正弦驱动 RC 低通
-$ source: tests\netlists\hb_rc.sp
+$ source: hb_rc.sp
 
 $rfsim ============================================================
 $  node table

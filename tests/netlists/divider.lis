@@ -2,15 +2,14 @@
 ****** harmonic balance + osdi ******
 ****** version 0.2 ******
 
-$ netlist: rfsim end-to-end: BSIM4 NMOS common-source amplifier @ 1MHz
-$ source: .\bsim4_cs_pss.sp
+$ netlist: rfsim DC 工作点验证: 电阻分压器 + 电流源
+$ source: .\divider.sp
 
 $rfsim ============================================================
 $  node table
 $rfsim ============================================================
 
-  nodes (excl. gnd): 3
-  [1] vdd
-  [2] d
-  [3] g
+  nodes (excl. gnd): 2
+  [1] in
+  [2] mid
 

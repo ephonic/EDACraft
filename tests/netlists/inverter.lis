@@ -2,8 +2,8 @@
 ****** harmonic balance + osdi ******
 ****** version 0.2 ******
 
-$ netlist: rfsim end-to-end: BSIM4 NMOS common-source amplifier @ 1MHz
-$ source: .\bsim4_cs_pss.sp
+$ netlist: rfsim M1 示例网表: CMOS 反相器 + 子电路 + .param 表达式
+$ source: .\inverter.sp
 
 $rfsim ============================================================
 $  node table
@@ -11,6 +11,6 @@ $rfsim ============================================================
 
   nodes (excl. gnd): 3
   [1] vdd
-  [2] d
-  [3] g
+  [2] in
+  [3] out
 
