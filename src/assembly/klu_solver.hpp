@@ -61,6 +61,7 @@ private:
     void* sym_    = nullptr;   // klu_symbolic*
     void* num_    = nullptr;   // klu_numeric*
     void* common_ = nullptr;   // klu_common*
+    bool analyzed_ = false;     // 方案2: symbolic 是否已建（pattern 复用）
 
     // V2-γ C3: 累计计时（solve 标 const，故 mutable）
     // L2: mutable 仅用于 bench 计时，非线程安全——勿跨线程共享 KluSolver

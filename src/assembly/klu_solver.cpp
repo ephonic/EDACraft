@@ -53,6 +53,7 @@ KluSolver::KluSolver(KluSolver&& o) noexcept {
     common_ = o.common_; o.common_ = nullptr;
     factorMs_ = o.factorMs_; o.factorMs_ = 0.0;  // L1: 转移 bench 计时器
     solveMs_ = o.solveMs_; o.solveMs_ = 0.0;
+    analyzed_ = o.analyzed_; o.analyzed_ = false;
 }
 
 KluSolver& KluSolver::operator=(KluSolver&& o) noexcept {
@@ -68,6 +69,7 @@ KluSolver& KluSolver::operator=(KluSolver&& o) noexcept {
         common_ = o.common_; o.common_ = nullptr;
         factorMs_ = o.factorMs_; o.factorMs_ = 0.0;  // L1
         solveMs_ = o.solveMs_; o.solveMs_ = 0.0;
+        analyzed_ = o.analyzed_; o.analyzed_ = false;
     }
     return *this;
 }
@@ -83,6 +85,7 @@ void KluSolver::freeFactors() noexcept {
         klu_free_symbolic(&p, cmn(common_));
     }
     sym_ = nullptr;
+    analyzed_ = false;  // 方案2: 重置 symbolic 状态
 }
 
 bool KluSolver::factorize(const SparseMatrix& A) {
@@ -124,8 +127,8 @@ bool KluSolver::factorize(const SparseMatrix& A) {
         }
     }
 
-    // ---- 符号因子化（H9: 每次重建——(n,nnz) 匹配不保证 pattern 相同）---
-    {
+    // ---- 符号因子化（方案2: pattern 不变时复用 symbolic）---
+    if (!analyzed_) {
         if (sym_) {
             klu_symbolic* p = sym(sym_);
             klu_free_symbolic(&p, cmn(common_));
@@ -136,22 +139,27 @@ bool KluSolver::factorize(const SparseMatrix& A) {
             if (benchJsonEnabled()) factorMs_ += tFact.elapsedMs();
             return false;
         }
+        analyzed_ = true;
     }
 
-    // ---- 数值因子化 ----------------------------------------------------------
+    // ---- 数值因子化（方案2: 尝试 refactor，失败则 full factor）---
     if (num_) {
+        // pattern 相同——尝试 klu_refactor（只做数值更新，省 symbolic）
         klu_numeric* p = num(num_);
-        klu_free_numeric(&p, cmn(common_));
-        num_ = nullptr;
+        int ok = klu_refactor(Ap_.data(), Ai_.data(), Ax_.data(),
+                              sym(sym_), p, cmn(common_));
+        if (!ok || cmn(common_)->status != KLU_OK) {
+            // refactor 失败——重新 factor
+            klu_free_numeric(&p, cmn(common_));
+            num_ = nullptr;
+        }
     }
-    num_ = klu_factor(Ap_.data(), Ai_.data(), Ax_.data(), sym(sym_), cmn(common_));
     if (!num_) {
-        if (benchJsonEnabled()) factorMs_ += tFact.elapsedMs();
-        return false;
-    }
-    if (cmn(common_)->status != KLU_OK) {
-        if (benchJsonEnabled()) factorMs_ += tFact.elapsedMs();
-        return false;
+        num_ = klu_factor(Ap_.data(), Ai_.data(), Ax_.data(), sym(sym_), cmn(common_));
+        if (!num_ || cmn(common_)->status != KLU_OK) {
+            if (benchJsonEnabled()) factorMs_ += tFact.elapsedMs();
+            return false;
+        }
     }
     if (benchJsonEnabled()) factorMs_ += tFact.elapsedMs();
     return true;
