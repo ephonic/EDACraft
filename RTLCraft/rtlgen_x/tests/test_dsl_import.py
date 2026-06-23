@@ -1126,6 +1126,29 @@ def test_emit_profile_review_axilite_register_bank_matches_readability_snapshot(
         last_index = index
 
 
+def test_emit_profile_review_skid_buffer_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(SkidBuffer(16))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg buf_valid;",
+        "reg [15:0] buf_data;",
+        "// Combinational logic",
+        "always @(*) begin",
+        "in_ready = (buf_valid == 1'd0) | out_ready;",
+        "out_valid = buf_valid | in_valid;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
 def test_ready_valid_bundle_supports_flip_and_protocol_aware_port_map():
     sink = ReadyValid(32, name="sink")
     source = sink.flip()
