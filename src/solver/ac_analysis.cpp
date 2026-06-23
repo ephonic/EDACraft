@@ -6,6 +6,7 @@
 #include "ac_analysis.hpp"
 #include "../model/builtin_devices.hpp"
 #include "../model/osdi_model.hpp"
+#include "../model/sparam_device.hpp"
 #include "../assembly/sparse_cmpl_matrix.hpp"
 #include "../assembly/klu_z_solver.hpp"
 #include <algorithm>
@@ -117,6 +118,20 @@ AcResult solveAc(uint32_t numNodes,
                     if (n1 != 0) G.add(n1 - 1, n1 - 1, y);
                     if (n2 != 0) G.add(n2 - 1, n2 - 1, y);
                     if (n1 != 0 && n2 != 0) { G.add(n1 - 1, n2 - 1, -y); G.add(n2 - 1, n1 - 1, -y); }
+                } else if (auto* sp = dynamic_cast<const SParamDevice*>(d.get())) {
+                    // S 参数器件：N×N Y 矩阵 stamp
+                    auto Y = sp->admittanceMatrix(omega);
+                    uint32_t N = sp->numPorts();
+                    for (uint32_t i = 0; i < N; ++i) {
+                        NodeId ni = nds[i];
+                        if (ni == 0) continue;
+                        for (uint32_t j = 0; j < N; ++j) {
+                            NodeId nj = nds[j];
+                            if (nj == 0) continue;
+                            Complex yij = Y[i * N + j];
+                            G.add(ni - 1, nj - 1, yij);
+                        }
+                    }
                 }
             }
             G.finalize();
@@ -139,6 +154,20 @@ AcResult solveAc(uint32_t numNodes,
                     if (n1 != 0) G.addCommitted(n1 - 1, n1 - 1, y);
                     if (n2 != 0) G.addCommitted(n2 - 1, n2 - 1, y);
                     if (n1 != 0 && n2 != 0) { G.addCommitted(n1 - 1, n2 - 1, -y); G.addCommitted(n2 - 1, n1 - 1, -y); }
+                } else if (auto* sp = dynamic_cast<const SParamDevice*>(d.get())) {
+                    // S 参数器件：N×N Y 矩阵 stamp（committed 路径）
+                    auto Y = sp->admittanceMatrix(omega);
+                    uint32_t N = sp->numPorts();
+                    for (uint32_t i = 0; i < N; ++i) {
+                        NodeId ni = nds[i];
+                        if (ni == 0) continue;
+                        for (uint32_t j = 0; j < N; ++j) {
+                            NodeId nj = nds[j];
+                            if (nj == 0) continue;
+                            Complex yij = Y[i * N + j];
+                            G.addCommitted(ni - 1, nj - 1, yij);
+                        }
+                    }
                 }
             }
         }

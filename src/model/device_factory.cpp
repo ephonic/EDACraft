@@ -2,6 +2,7 @@
 #include "device_factory.hpp"
 #include "builtin_devices.hpp"
 #include "osdi_model.hpp"
+#include "sparam_device.hpp"
 #include "../parser/expression.hpp"
 
 #include <cmath>
@@ -215,6 +216,29 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
             diags.error(fd.loc, fd.name + ": inductor missing value"); return nullptr; }
         try { return std::make_unique<Inductor>(fd.name, fd.nodes[0], fd.nodes[1], ind); }
         catch (const std::exception& e) { diags.error(fd.loc, fd.name + ": " + e.what()); return nullptr; }
+    }
+
+    // S 参数器件 K: name n1 n2 ... file="device.sNp" z0=50
+    if (c == 'k') {
+        if (fd.nodes.size() < 2) { diags.error(fd.loc, fd.name + ": s-param device needs >= 2 nodes"); return nullptr; }
+        std::string touchstonePath;
+        double z0 = 50.0;
+        for (const auto& [pn, pv] : fd.params) {
+            if (pn == "file" && pv.kind != ParamValue::Kind::Number && !pv.str.empty())
+                touchstonePath = pv.str;
+            else if (pn == "z0" && pv.kind == ParamValue::Kind::Number)
+                z0 = pv.num;
+        }
+        if (touchstonePath.empty()) {
+            diags.error(fd.loc, fd.name + ": s-param device needs file=\"path.sNp\"");
+            return nullptr;
+        }
+        try {
+            return std::make_unique<SParamDevice>(fd.name, fd.nodes, touchstonePath, z0);
+        } catch (const std::exception& e) {
+            diags.error(fd.loc, fd.name + ": " + e.what());
+            return nullptr;
+        }
     }
 
     // 半导体器件 (M/Q/D/Z/J/S/B) → OsdiModel

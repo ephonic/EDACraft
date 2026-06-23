@@ -19,6 +19,7 @@ set(RFSIM_CIRCUIT_SOURCES
 set(RFSIM_MODEL_SOURCES
     model/builtin_devices.cpp
     model/osdi_model.cpp
+    model/sparam_device.cpp
     model/device_factory.cpp
     model/osdi/osdi_library.cpp
     model/osdi/osdi_client.cpp
@@ -46,6 +47,11 @@ set(RFSIM_OUTPUT_SOURCES
     output/hspice_out.cpp
 )
 
+# S 参数工具
+set(RFSIM_SPARAM_SOURCES
+    sparam/touchstone.cpp
+)
+
 # V2-γ C3: 性能计数器（RFSIM_BENCH_JSON=1 启用；Windows 用 Psapi 取 RSS）
 set(RFSIM_UTIL_SOURCES
     util/bench.cpp
@@ -56,6 +62,7 @@ add_library(rfsim_core STATIC
     ${RFSIM_CIRCUIT_SOURCES}
     ${RFSIM_MODEL_SOURCES}
     ${RFSIM_ASSEMBLY_SOURCES}
+    ${RFSIM_SPARAM_SOURCES}
     ${RFSIM_SOLVER_SOURCES}
     ${RFSIM_OUTPUT_SOURCES}
     ${RFSIM_UTIL_SOURCES}

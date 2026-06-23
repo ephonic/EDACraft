@@ -357,8 +357,11 @@ private:
 
         // 半导体器件(M/Q/D/Z/J/S/B)：先收集节点，达到预期节点数后下一个 Word 为模型名。
         // 线性器件(R/L/C/V/I)：节点数为 2，无模型名，后续 Word/Number 为参数。
+        // S 参数器件(K)：变长节点，收集到 file= 参数前都是节点
         const bool semi = isSemiconductor(d.firstLetter);
-        const int expectedNodes = semi ? maxNodes(d.firstLetter) : 2;
+        const bool isSparam = (d.firstLetter == 'k');
+        int expectedNodes = semi ? maxNodes(d.firstLetter) : 2;
+        if (isSparam) expectedNodes = 999;  // 变长：收集到 file= 前都是节点
         bool modelSeen = !semi; // 线性器件不需要模型名
 
         for (size_t i = 1; i < toks.size(); ++i) {
@@ -368,6 +371,9 @@ private:
             if (i + 2 < toks.size() && toks[i+1].kind == TokenKind::Equal) {
                 d.params.emplace_back(t.text, tokenToParamValue(toks[i+2]));
                 i += 2;
+                // S 参数器件遇到 file= 时停止收集节点
+                if (isSparam && (t.text == "file" || t.text == "z0"))
+                    expectedNodes = static_cast<int>(d.nodes.size());
                 continue;
             }
             if (t.kind == TokenKind::Number) {
