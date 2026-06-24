@@ -1,15 +1,10 @@
 """
-rtlgen_x.dsl.legacy.dsl_sim — DSL Module Simulation-Based Validation
+rtlgen_x.dsl.dsl_sim — removed historical simulation-based validation surface
 
-Validates DSL Module ASTs via Python simulation before RTL emission.
-Catches incomplete logic: undriven outputs, static signals, X/Z values,
-missing assignments, and unconnected submodule ports.
-
-Usage:
-    validator = DSLSimValidator(modules=leaf_targets, output_dir="dsl_sim_reports")
-    report = validator.validate_all()
-    for mod in report.modules:
-        print(f"[{'OK' if mod.simulation_ok else 'FAIL'}] {mod.module_name}")
+This module is kept only to provide a clear removal error. `rtlgen_x` no longer
+supports the historical AST/JIT simulator path or the validator built on top of it.
+Use `lower_dsl_module_to_sim(...)` together with `PythonSimulator` or the
+compiled simulator path instead.
 """
 from __future__ import annotations
 
@@ -19,7 +14,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from rtlgen_x.dsl.legacy.core import (
+from rtlgen_x.dsl.core import (
     Assign,
     ArrayRead,
     ArrayWrite,
@@ -47,6 +42,7 @@ from rtlgen_x.dsl.legacy.core import (
     UnaryOp,
     Wire,
 )
+from rtlgen_x.dsl.unsupported import raise_dsl_sim_removed
 
 
 # -----------------------------------------------------------------
@@ -353,6 +349,7 @@ class DSLSimValidator:
         default_cycles: int = 50,
         use_xz: bool = True,
     ):
+        raise_dsl_sim_removed()
         self._modules = modules
         self._output_dir = output_dir
         self._default_cycles = default_cycles
@@ -392,7 +389,7 @@ class DSLSimValidator:
         module_name: Optional[str] = None,
         vectors: Optional[List[Dict[str, Any]]] = None,
     ) -> ModuleSimResult:
-        from rtlgen_x.dsl.legacy.sim import Simulator, SimValue
+        from rtlgen_x.dsl.sim import Simulator, SimValue
 
         result = ModuleSimResult(module_name=module_name or mod.name)
 

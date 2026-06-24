@@ -140,11 +140,17 @@ Current contract:
 1. clock-domain membership is carried into the lowered executable model
 2. author-declared domain specs must agree with observed sequential-block reset
    semantics during lowering
-3. sync and explicit async-low reset styles are preserved on the supported RTL
+3. reusing one reset signal with conflicting declared semantics is rejected at
+   the DSL declaration layer rather than deferred to later phases
+4. domain-name lookup failures report the currently known declared domains to
+   keep multi-clock authoring errors local and actionable
+5. explicitly declared single-clock domain intent is preserved through lowering
+   rather than being discarded as unnamed default timing
+6. sync and explicit async-low reset styles are preserved on the supported RTL
    export path
-4. multi-clock execution is explicit: callers must use domain-aware stepping
+7. multi-clock execution is explicit: callers must use domain-aware stepping
    rather than assuming an implicit schedule
-5. CDC and reset-release analysis are report-oriented: the tools describe the
+8. CDC and reset-release analysis are report-oriented: the tools describe the
    issue and point at likely fixes, including recognized primitive and
    hand-written sync patterns, but they do not rewrite the DSL
 
@@ -172,22 +178,28 @@ What is already part of the current contract:
 5. `Memory(..., read_ports=..., write_ports=..., read_style=..., read_latency=...)`
    is now explicit authoring/runtime metadata, and unsupported executable
    storage shapes fail fast instead of silently collapsing into the default
-   comb-read / seq-write model
+   comb-read / seq-write model; the executable lowering path now also
+   normalizes single-read/single-write `read_style="sync"/read_latency=1`
+   memories into explicit sampled state
 6. `Memory(..., byte_enable_granularity=...)` and
-   `mem.write(..., byte_enable=...)` now make partial-write intent explicit
-   across authoring, lowering, and generated reference-model rendering
+   `mem.write(..., byte_enable=...)` now make partial-write intent explicit and
+   close across authoring, lowering, Python execution, compiled execution,
+   emitted RTL, generated reference-model rendering, and RTL cosim for the
+   executable storage subset
 
 What is still incomplete:
 
-1. full executable byte-enable semantics across the Python runtime, C++
-   runtime, and emitted RTL
-2. full executable closure for richer port-count, style, latency, and macro
+1. full executable closure for richer port-count, style, latency, and macro
    mapping policy
-3. richer storage-port shape behavior beyond the current comb-read / seq-write
+2. richer storage-port shape behavior beyond the current comb-read / seq-write
    executable subset
+3. emitted RTL closure for sync-read memories without requiring authors to
+   write the sampled-output structure explicitly themselves
 
 These remaining gaps are why generic storage policy is still marked `partial`
-in the support matrix even though `read_during_write` is now closed.
+in the support matrix even though `read_during_write` and byte-enable writes
+are now closed in the main executable subset, and `sync-read/read_latency=1`
+is executable through lowering.
 
 ## 8. Verification and analysis contract
 

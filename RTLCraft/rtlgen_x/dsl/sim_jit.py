@@ -1,19 +1,15 @@
 """
-rtlgen_x.dsl.legacy.sim_jit — JIT-compiled simulation backend
+rtlgen_x.dsl.sim_jit — removed historical JIT simulation surface
 
-Compiles rtlgen AST into flat Python closures for ~50-500x speedup over
-AST interpretation.  Signals are stored in a flat list[int]; expressions
-become direct arithmetic on list indices.
-
-Fallback: if compilation fails (e.g. unsupported node), the caller should
-use the standard Simulator AST interpreter.
+This module is kept only to provide a clear removal error. `rtlgen_x` no longer
+supports the historical AST/JIT simulator path.
 """
 from __future__ import annotations
 
 import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from rtlgen_x.dsl.legacy.core import (
+from rtlgen_x.dsl.core import (
     ArrayRead,
     ArrayWrite,
     Assign,
@@ -43,6 +39,7 @@ from rtlgen_x.dsl.legacy.core import (
     UnaryOp,
     _subst_genvar_in_stmt,
 )
+from rtlgen_x.dsl.unsupported import raise_dsl_sim_removed
 
 
 def _mask(width: int) -> int:
@@ -68,6 +65,7 @@ class JITModule:
         use_xz: bool = False,
         param_overrides: Optional[Dict[str, Any]] = None,
     ):
+        raise_dsl_sim_removed()
         if use_xz:
             raise NotImplementedError("JIT mode does not support X/Z simulation")
 
@@ -333,7 +331,7 @@ class JITModule:
                                 self.comb_fns.append(fn)
                         elif port_name in stmt.module._outputs:
                             # expr may be a Signal; use its _expr for Assign value
-                            from rtlgen_x.dsl.legacy.core import _to_expr
+                            from rtlgen_x.dsl.core import _to_expr
                             val_expr = _to_expr(expr) if isinstance(expr, Signal) else expr
                             assign = Assign(val_expr, child_sig._expr, blocking=True)
                             fn = self._compile_stmt(assign, prefix, mode="comb")
@@ -518,7 +516,7 @@ class JITModule:
             if expr.name == "clog2":
                 return lambda: max((arg_fns[0]() - 1).bit_length(), 1)
             if expr.name == "bits":
-                from rtlgen_x.dsl.legacy.core import _to_expr
+                from rtlgen_x.dsl.core import _to_expr
                 w = _to_expr(expr.args[0]).width if expr.args else 0
                 return lambda: w
             # Generic function call: return first argument (passthrough)

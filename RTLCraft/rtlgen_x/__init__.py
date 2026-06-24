@@ -1,5 +1,16 @@
 """Clean-core reboot package for RTLCraft hard capabilities."""
 
+from rtlgen_x.stdlib_catalog import (
+    STDLIB_CATALOG,
+    STDLIB_KINDS,
+    STDLIB_STATUS_LEVELS,
+    STDLIB_SUPPORT_LEVELS,
+    StdlibEntry,
+    StdlibSupport,
+    emit_stdlib_support_matrix_markdown,
+    get_stdlib_entry,
+    list_stdlib_entries,
+)
 from rtlgen_x.archsim import (
     ArchitectureModel,
     ArchitectureFlowSummary,
@@ -198,6 +209,7 @@ from rtlgen_x.ppa import (
     PpaReportSummary,
     PpaTransformCandidate,
     PpaTrustSummary,
+    RewriteProposalSummary,
     RewriteEdit,
     RewriteEvaluation,
     RewriteProposal,
@@ -482,6 +494,12 @@ __all__ = [
     "WishboneRegisterBank",
     "WishboneTransfer",
     "InterruptEvent",
+    "STDLIB_CATALOG",
+    "STDLIB_KINDS",
+    "STDLIB_STATUS_LEVELS",
+    "STDLIB_SUPPORT_LEVELS",
+    "StdlibEntry",
+    "StdlibSupport",
     "pack_u64_numpy_rows",
     "PpaGoals",
     "PpaRecommendation",
@@ -489,6 +507,7 @@ __all__ = [
     "PpaReport",
     "PpaReportSummary",
     "PpaTrustSummary",
+    "RewriteProposalSummary",
     "ProtocolCheckReport",
     "ProtocolViolation",
     "RemoteUvmEnvironmentReport",
@@ -623,6 +642,9 @@ __all__ = [
     "write_uvm_collateral",
     "write_uvm_runtime_bundle",
     "smoke_test_generated_reference_model",
+    "emit_stdlib_support_matrix_markdown",
+    "get_stdlib_entry",
+    "list_stdlib_entries",
     "comment",
     "connect_interfaces",
 ]

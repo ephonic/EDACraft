@@ -497,6 +497,50 @@ class PythonSimulator:
         reset_value = bool(values.get(domain.reset_signal, 0))
         return not reset_value if domain.reset_active_low else reset_value
 
+    def _expr_references_signal(self, expr: Expr, signal_name: Optional[str]) -> bool:
+        if not signal_name:
+            return False
+        if isinstance(expr, ConstExpr):
+            return False
+        if isinstance(expr, SignalRef):
+            return expr.name == signal_name
+        if isinstance(expr, MemoryReadExpr):
+            return self._expr_references_signal(expr.addr, signal_name)
+        if isinstance(expr, MaskExpr):
+            return self._expr_references_signal(expr.value, signal_name)
+        if isinstance(expr, UnaryExpr):
+            return self._expr_references_signal(expr.value, signal_name)
+        if isinstance(expr, BinaryExpr):
+            return self._expr_references_signal(expr.lhs, signal_name) or self._expr_references_signal(
+                expr.rhs,
+                signal_name,
+            )
+        if isinstance(expr, MuxExpr):
+            return (
+                self._expr_references_signal(expr.cond, signal_name)
+                or self._expr_references_signal(expr.when_true, signal_name)
+                or self._expr_references_signal(expr.when_false, signal_name)
+            )
+        return False
+
+    def _assignment_handles_domain_reset(self, assignment: Assignment, reset_signal: Optional[str]) -> bool:
+        return self._expr_references_signal(assignment.expr, reset_signal)
+
+    def _memory_write_handles_domain_reset(
+        self,
+        write: MemoryWrite,
+        reset_signal: Optional[str],
+    ) -> bool:
+        return (
+            self._expr_references_signal(write.addr, reset_signal)
+            or self._expr_references_signal(write.value, reset_signal)
+            or self._expr_references_signal(write.enable, reset_signal)
+            or (
+                write.byte_enable is not None
+                and self._expr_references_signal(write.byte_enable, reset_signal)
+            )
+        )
+
     def step(self, inputs: Mapping[str, int]) -> Dict[str, int]:
         if self._multi_clock:
             raise ValueError("multi-clock modules must use step_clocks(...) with explicit active domains")
@@ -571,40 +615,65 @@ class PythonSimulator:
             state_updates: Dict[str, int] = {}
             pending_writes = []
             pending_memory_resets = set()
-            reset_domains = {
-                domain_name
-                for domain_name in active_domains
-                if self._domain_reset_active(domain_name, values)
-            }
             for domain_name in active_domains:
-                if domain_name in reset_domains:
-                    for target_name in self._state_targets_by_domain.get(domain_name, ()):
-                        state_updates[target_name] = self._state_init[target_name]
-                    for memory_name in self._memories_by_domain.get(domain_name, ()):
-                        pending_memory_resets.add(memory_name)
-                    continue
+                domain = self._clock_domains[domain_name]
+                reset_active = self._domain_reset_active(domain_name, values)
                 for assignment in self._seq_assignments_by_domain.get(domain_name, ()):
                     signal = self._signal_map[assignment.target]
+                    if reset_active and not self._assignment_handles_domain_reset(
+                        assignment,
+                        domain.reset_signal,
+                    ):
+                        state_updates[assignment.target] = self._state_init[assignment.target]
+                        continue
                     state_updates[assignment.target] = self._eval_expr(assignment.expr, values) & signal.mask
-                pending_writes.extend(
-                    self._compute_memory_writes(values, self._memory_writes_by_domain.get(domain_name, ()))
-                )
+                domain_writes = self._memory_writes_by_domain.get(domain_name, ())
+                if reset_active:
+                    handled_memories = set()
+                    for write in domain_writes:
+                        if not self._memory_write_handles_domain_reset(write, domain.reset_signal):
+                            continue
+                        pending_writes.extend(self._compute_memory_writes(values, (write,)))
+                        handled_memories.add(write.memory)
+                    for memory_name in self._memories_by_domain.get(domain_name, ()):
+                        if memory_name not in handled_memories:
+                            pending_memory_resets.add(memory_name)
+                else:
+                    pending_writes.extend(
+                        self._compute_memory_writes(values, domain_writes)
+                    )
             next_state.update(state_updates)
         else:
             reset_active = False
+            handled_memories = set()
             if self.module.reset_signal is not None:
                 reset_active = bool(values[self.module.reset_signal])
+            for assignment in self._seq_assignments:
+                signal = self._signal_map[assignment.target]
+                if reset_active and not self._assignment_handles_domain_reset(
+                    assignment,
+                    self.module.reset_signal,
+                ):
+                    next_state[assignment.target] = self._state_init[assignment.target]
+                    continue
+                next_state[assignment.target] = self._eval_expr(assignment.expr, values) & signal.mask
             if reset_active:
-                next_state = dict(self._state_init)
+                computed_writes = []
+                for write in self.module.memory_writes:
+                    if not self._memory_write_handles_domain_reset(write, self.module.reset_signal):
+                        continue
+                    computed_writes.extend(self._compute_memory_writes(values, (write,)))
+                    handled_memories.add(write.memory)
+                pending_writes = tuple(computed_writes)
             else:
-                for assignment in self._seq_assignments:
-                    signal = self._signal_map[assignment.target]
-                    next_state[assignment.target] = self._eval_expr(assignment.expr, values) & signal.mask
                 pending_writes = self._compute_memory_writes(values)
         read_first_overrides = self._capture_read_first_memory_overrides(pending_writes)
         self._state = next_state
         if not self._clock_domains and reset_active:
-            self._memories = {name: list(values) for name, values in self._memory_init.items()}
+            for memory_name, init_values in self._memory_init.items():
+                if memory_name in handled_memories:
+                    continue
+                self._memories[memory_name] = list(init_values)
         else:
             for memory_name in pending_memory_resets if self._clock_domains else ():
                 self._memories[memory_name] = list(self._memory_init[memory_name])

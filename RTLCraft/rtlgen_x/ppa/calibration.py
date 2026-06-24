@@ -453,34 +453,11 @@ def _module_timing_score(stats: ModulePpaStats) -> float:
 
 
 def _module_area_score(stats: ModulePpaStats) -> float:
-    return max(
-        (
-            stats.state_bits
-            + 0.125 * stats.memory_bits
-            + 0.25 * (stats.input_bits + stats.output_bits)
-            + 24.0 * stats.arithmetic_ops
-            + 10.0 * stats.compare_ops
-            + 14.0 * stats.mux_ops
-            + 8.0 * stats.memory_writes
-            + 6.0 * stats.comb_assignments
-            + 4.0 * stats.seq_assignments
-        ),
-        1.0,
-    )
+    return max(stats.estimated_area_score, 1.0)
 
 
 def _module_power_score(stats: ModulePpaStats) -> float:
-    return max(
-        (
-            0.02 * stats.state_bits
-            + 0.002 * stats.memory_bits
-            + 0.2 * stats.arithmetic_ops
-            + 0.08 * stats.compare_ops
-            + 0.1 * stats.mux_ops
-            + 0.04 * stats.memory_writes
-        ),
-        1.0,
-    )
+    return max(stats.estimated_power_score, 1.0)
 
 
 def _merge_stage_override(

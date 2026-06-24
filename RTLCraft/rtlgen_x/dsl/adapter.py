@@ -237,6 +237,15 @@ def lower_dsl_module_to_sim(
         assignments.extend(env.finalize_phase())
         memory_writes.extend(env.finalize_memory_writes())
 
+    signals, memories, assignments = _lower_sync_read_memories_into_executable_subset(
+        lowered_source,
+        signals,
+        signal_map,
+        memories,
+        assignments,
+        memory_writes,
+        clock_domains,
+    )
     assignments = _topologically_order_comb_assignments(assignments, signal_map)
 
     sim_module = SimModule(
@@ -291,20 +300,20 @@ def _validate_supported_storage_contract(source_memory) -> None:
         problems.append(f"read_ports={read_ports}")
     if write_ports != 1:
         problems.append(f"write_ports={write_ports}")
-    if read_style != "async":
+    if read_style not in {"async", "sync"}:
         problems.append(f"read_style={read_style!r}")
-    if read_latency != 0:
+    if read_style == "async" and read_latency != 0:
         problems.append(f"read_latency={read_latency}")
-    if byte_enable_granularity is not None:
-        problems.append(f"byte_enable_granularity={int(byte_enable_granularity)}")
+    if read_style == "sync" and read_latency != 1:
+        problems.append(f"read_latency={read_latency}")
     if not problems:
         return
     details = ", ".join(problems)
     raise DslLoweringError(
         f"memory '{getattr(source_memory, 'name', '<memory>')}' uses unsupported storage "
         f"contract for executable lowering ({details}); current executable subset requires "
-        "read_ports=1, write_ports=1, read_style='async', read_latency=0, "
-        "and no byte-enable lanes"
+        "read_ports=1, write_ports=1, plus either read_style='async'/read_latency=0 "
+        "or read_style='sync'/read_latency=1"
     )
 
 
@@ -336,7 +345,9 @@ def _collect_clock_domains(module) -> tuple[ClockDomain, ...]:
     for domain_spec in getattr(module, "_clock_domain_specs", {}).values():
         clk_name = getattr(domain_spec.clock, "name", str(domain_spec.clock))
         rst_signal = getattr(domain_spec, "reset_signal", None)
-        rst_name = getattr(rst_signal, "name", str(rst_signal)) if rst_signal is not None else None
+        rst_name = _normalize_optional_signal_name(
+            getattr(rst_signal, "name", str(rst_signal)) if rst_signal is not None else None
+        )
         spec = (
             rst_name,
             bool(getattr(domain_spec, "reset_async", False)),
@@ -357,7 +368,7 @@ def _collect_clock_domains(module) -> tuple[ClockDomain, ...]:
         if clk is None:
             continue
         clk_name = getattr(clk, "name", str(clk))
-        rst_name = getattr(rst, "name", str(rst)) if rst is not None else None
+        rst_name = _normalize_optional_signal_name(getattr(rst, "name", str(rst)) if rst is not None else None)
         spec = (rst_name, bool(reset_async), bool(reset_active_low))
         declared = declared_specs_by_clock.get(clk_name)
         if declared is not None and spec != declared[:3]:
@@ -377,7 +388,7 @@ def _collect_clock_domains(module) -> tuple[ClockDomain, ...]:
                 f"clock '{clk_name}' but disagree on reset semantics: "
                 f"previous={previous}, current={spec}"
             )
-    if len(ordered_clock_names) <= 1:
+    if not ordered_clock_names:
         return ()
     return tuple(
         ClockDomain(
@@ -388,6 +399,13 @@ def _collect_clock_domains(module) -> tuple[ClockDomain, ...]:
         )
         for clock_name in ordered_clock_names
     )
+
+
+def _normalize_optional_signal_name(name: Optional[str]) -> Optional[str]:
+    if name is None:
+        return None
+    normalized = str(name).strip()
+    return normalized or None
 
 
 def _eval_initial_stmt_list(
@@ -1027,6 +1045,359 @@ def _topologically_order_comb_assignments(
         ordered_by_original_pos[position] = assignment
 
     return [ordered_by_original_pos[idx] for idx in range(len(assignments))]
+
+
+def _lower_sync_read_memories_into_executable_subset(
+    source_module,
+    signals: List[SimSignal],
+    signal_map: Dict[str, SimSignal],
+    memories: List[Memory],
+    assignments: List[Assignment],
+    memory_writes: List[MemoryWrite],
+    clock_domains: Sequence[ClockDomain],
+) -> tuple[List[SimSignal], List[Memory], List[Assignment]]:
+    sync_memories = [memory for memory in memories if memory.read_style == "sync" and memory.read_latency == 1]
+    if not sync_memories:
+        return signals, memories, assignments
+
+    memory_reads = _collect_dsl_memory_reads(source_module)
+    domain_names = {domain.name for domain in clock_domains}
+    default_domain = clock_domains[0].name if len(clock_domains) == 1 else None
+    new_assignments = list(assignments)
+    new_memories: List[Memory] = []
+
+    for memory in memories:
+        if memory.read_style == "sync" and memory.read_latency == 1:
+            new_memories.append(
+                Memory(
+                    name=memory.name,
+                    width=memory.width,
+                    depth=memory.depth,
+                    init=memory.init,
+                    read_during_write=memory.read_during_write,
+                    read_ports=memory.read_ports,
+                    write_ports=memory.write_ports,
+                    read_style="async",
+                    read_latency=0,
+                    byte_enable_granularity=memory.byte_enable_granularity,
+                )
+            )
+        else:
+            new_memories.append(memory)
+
+    assignment_by_target = {assignment.target: assignment for assignment in assignments}
+    memory_write_domains = _memory_write_domains(memory_writes, default_domain=default_domain)
+    appended_targets: set[str] = set()
+
+    for memory in sync_memories:
+        reads = memory_reads.get(memory.name, ())
+        if not reads:
+            continue
+        write_domain = memory_write_domains.get(memory.name)
+        for read in reads:
+            output_signal = signal_map.get(read.target_name)
+            if output_signal is None:
+                raise DslLoweringError(
+                    f"sync-read lowering could not resolve target '{read.target_name}'"
+                )
+            state_name = f"__sync_rd_{memory.name}_{read.target_name}"
+            addr_state_name = f"{state_name}_addr"
+            if state_name not in signal_map:
+                state_signal = SimSignal(
+                    name=state_name,
+                    width=memory.width,
+                    kind="state",
+                    init=memory.init[0] if memory.init else 0,
+                )
+                addr_signal = SimSignal(
+                    name=addr_state_name,
+                    width=memory.addr_width,
+                    kind="state",
+                    init=0,
+                )
+                signals.append(state_signal)
+                signals.append(addr_signal)
+                signal_map[state_name] = state_signal
+                signal_map[addr_state_name] = addr_signal
+
+            original = assignment_by_target.get(read.target_name)
+            if original is None:
+                raise DslLoweringError(
+                    f"sync-read lowering expected a comb assignment driving '{read.target_name}'"
+                )
+            new_assignments = [a for a in new_assignments if a is not original]
+            new_assignments.append(
+                Assignment(
+                    target=read.target_name,
+                    expr=SignalRef(state_name),
+                    phase="comb",
+                    source_file=original.source_file,
+                    source_line=original.source_line,
+                )
+            )
+            if state_name in appended_targets:
+                continue
+            read_domain = _resolve_sync_read_domain(
+                source_module,
+                read.target_name,
+                write_domain=write_domain,
+                domain_names=domain_names,
+                default_domain=default_domain,
+            )
+            new_assignments.append(
+                Assignment(
+                    target=addr_state_name,
+                    expr=MaskExpr(read.addr_expr, memory.addr_width),
+                    phase="seq",
+                    clock_domain=read_domain,
+                    source_file=original.source_file,
+                    source_line=original.source_line,
+                )
+            )
+            new_assignments.append(
+                Assignment(
+                    target=state_name,
+                    expr=MemoryReadExpr(memory.name, SignalRef(addr_state_name)),
+                    phase="seq",
+                    clock_domain=read_domain,
+                    source_file=original.source_file,
+                    source_line=original.source_line,
+                )
+            )
+            appended_targets.add(state_name)
+
+    return signals, new_memories, new_assignments
+
+
+@dataclass(frozen=True)
+class _SyncMemoryReadUse:
+    memory_name: str
+    target_name: str
+    addr_expr: object
+
+
+def _collect_dsl_memory_reads(module) -> Dict[str, tuple[_SyncMemoryReadUse, ...]]:
+    uses: Dict[str, List[_SyncMemoryReadUse]] = {}
+
+    def visit_expr(expr, target_name: Optional[str]) -> None:
+        if expr is None or isinstance(expr, int):
+            return
+        if isinstance(expr, _MEM_READ_TYPES):
+            if target_name is None:
+                raise DslLoweringError(
+                    f"sync-read lowering requires memory read '{expr.mem_name}[...]' to drive a named signal"
+                )
+            uses.setdefault(expr.mem_name, []).append(
+                _SyncMemoryReadUse(expr.mem_name, target_name, _lower_ast_expr_no_env(expr.addr))
+            )
+            visit_expr(expr.addr, None)
+            return
+        if isinstance(expr, _ARRAY_READ_TYPES):
+            visit_expr(expr.index, None)
+            return
+        if isinstance(expr, _REF_TYPES):
+            return
+        if isinstance(expr, _SIGNAL_TYPES):
+            inner = getattr(expr, "_expr", None)
+            if inner is not None and inner is not expr:
+                visit_expr(inner, target_name)
+            return
+        if isinstance(expr, _BINOP_TYPES):
+            visit_expr(expr.lhs, None)
+            visit_expr(expr.rhs, None)
+            return
+        if isinstance(expr, _UNARY_TYPES):
+            visit_expr(expr.operand, None)
+            return
+        if isinstance(expr, _MUX_TYPES):
+            visit_expr(expr.cond, None)
+            visit_expr(expr.true_expr, target_name)
+            visit_expr(expr.false_expr, target_name)
+            return
+        if isinstance(expr, _SLICE_TYPES):
+            visit_expr(expr.operand, target_name)
+            if not isinstance(expr.lo, int):
+                visit_expr(expr.lo, None)
+            return
+        if isinstance(expr, _PARTSELECT_TYPES):
+            visit_expr(expr.operand, target_name)
+            visit_expr(expr.offset, None)
+            return
+        if isinstance(expr, _BITSELECT_TYPES):
+            visit_expr(expr.operand, target_name)
+            visit_expr(expr.index, None)
+            return
+        if isinstance(expr, _CONCAT_TYPES):
+            for operand in expr.operands:
+                visit_expr(operand, target_name)
+
+    def visit_stmt(stmt) -> None:
+        if isinstance(stmt, _ASSIGN_TYPES):
+            target_name = None
+            if isinstance(stmt.target, _SIGNAL_TYPES):
+                target_name = stmt.target.name
+            elif isinstance(stmt.target, _REF_TYPES):
+                target_name = stmt.target.signal.name
+            visit_expr(stmt.value, target_name)
+            return
+        if isinstance(stmt, _IF_TYPES):
+            visit_expr(stmt.cond, None)
+            for nested in stmt.then_body:
+                visit_stmt(nested)
+            for _cond, body in stmt.elif_bodies:
+                for nested in body:
+                    visit_stmt(nested)
+            for nested in stmt.else_body:
+                visit_stmt(nested)
+            return
+        if isinstance(stmt, _SWITCH_TYPES):
+            visit_expr(stmt.expr, None)
+            for _value, body in stmt.cases:
+                for nested in body:
+                    visit_stmt(nested)
+            for nested in stmt.default_body:
+                visit_stmt(nested)
+            return
+        if isinstance(stmt, _WHEN_TYPES):
+            for cond, body in stmt.branches:
+                if cond is not None:
+                    visit_expr(cond, None)
+                for nested in body:
+                    visit_stmt(nested)
+
+    for body in getattr(module, "_comb_blocks", ()):
+        for stmt in body:
+            visit_stmt(stmt)
+    for stmt in getattr(module, "_top_level", ()):
+        visit_stmt(stmt)
+    return {name: tuple(entries) for name, entries in uses.items()}
+
+
+def _lower_ast_expr_no_env(expr):
+    if isinstance(expr, int):
+        width = max(expr.bit_length(), 1)
+        return ConstExpr(expr, width)
+    if isinstance(expr, _SIGNAL_TYPES):
+        return SignalRef(expr.name)
+    if isinstance(expr, _CONST_TYPES):
+        return ConstExpr(expr.value, expr.width)
+    if isinstance(expr, _REF_TYPES):
+        return SignalRef(expr.signal.name)
+    if isinstance(expr, _UNARY_TYPES):
+        lowered_operand = _lower_ast_expr_no_env(expr.operand)
+        lowered_unary = UnaryExpr(expr.op, lowered_operand)
+        if expr.op == "~":
+            return MaskExpr(lowered_unary, expr.width)
+        return lowered_unary
+    if isinstance(expr, _BINOP_TYPES):
+        return BinaryExpr(
+            expr.op,
+            _lower_ast_expr_no_env(expr.lhs),
+            _lower_ast_expr_no_env(expr.rhs),
+        )
+    if isinstance(expr, _MUX_TYPES):
+        return MuxExpr(
+            _lower_ast_expr_no_env(expr.cond),
+            _lower_ast_expr_no_env(expr.true_expr),
+            _lower_ast_expr_no_env(expr.false_expr),
+        )
+    if isinstance(expr, _SLICE_TYPES):
+        if not isinstance(expr.hi, int) or not isinstance(expr.lo, int):
+            return MaskExpr(
+                BinaryExpr(">>", _lower_ast_expr_no_env(expr.operand), _lower_ast_expr_no_env(expr.lo)),
+                expr.width,
+            )
+        return MaskExpr(
+            BinaryExpr(
+                ">>",
+                _lower_ast_expr_no_env(expr.operand),
+                ConstExpr(expr.lo, max(expr.lo.bit_length(), 1)),
+            ),
+            expr.width,
+        )
+    if isinstance(expr, _PARTSELECT_TYPES):
+        return MaskExpr(
+            BinaryExpr(">>", _lower_ast_expr_no_env(expr.operand), _lower_ast_expr_no_env(expr.offset)),
+            expr.width,
+        )
+    if isinstance(expr, _BITSELECT_TYPES):
+        return MaskExpr(
+            BinaryExpr(">>", _lower_ast_expr_no_env(expr.operand), _lower_ast_expr_no_env(expr.index)),
+            1,
+        )
+    raise DslLoweringError(
+        f"sync-read lowering does not support address expression type '{type(expr).__name__}'"
+    )
+
+
+def _memory_write_domains(
+    memory_writes: Sequence[MemoryWrite],
+    *,
+    default_domain: Optional[str],
+) -> Dict[str, Optional[str]]:
+    domains: Dict[str, Optional[str]] = {}
+    for write in memory_writes:
+        domains[write.memory] = write.clock_domain or default_domain
+    return domains
+
+
+def _resolve_sync_read_domain(
+    source_module,
+    target_name: str,
+    *,
+    write_domain: Optional[str],
+    domain_names: Set[str],
+    default_domain: Optional[str],
+) -> Optional[str]:
+    if not domain_names:
+        return None
+    target_domains: Set[str] = set()
+    for clk, _rst, _reset_async, _reset_active_low, body in getattr(source_module, "_seq_blocks", ()):
+        clk_name = getattr(clk, "name", str(clk)) if clk is not None else None
+        if clk_name is None:
+            continue
+        if _seq_body_writes_target(body, target_name):
+            target_domains.add(clk_name)
+    if len(target_domains) > 1:
+        joined = ", ".join(sorted(target_domains))
+        raise DslLoweringError(
+            f"sync-read lowering cannot infer a unique sampling clock for target '{target_name}'; "
+            f"observed sequential consumers on multiple domains: {joined}"
+        )
+    if len(target_domains) == 1:
+        return next(iter(target_domains))
+    return write_domain or default_domain
+
+
+def _seq_body_writes_target(body: Sequence[object], target_name: str) -> bool:
+    for stmt in body:
+        if isinstance(stmt, _ASSIGN_TYPES):
+            if isinstance(stmt.target, _SIGNAL_TYPES) and stmt.target.name == target_name:
+                return True
+            if isinstance(stmt.target, _REF_TYPES) and stmt.target.signal.name == target_name:
+                return True
+            continue
+        if isinstance(stmt, _IF_TYPES):
+            if _seq_body_writes_target(stmt.then_body, target_name):
+                return True
+            if _seq_body_writes_target(stmt.else_body, target_name):
+                return True
+            for _cond, elif_body in stmt.elif_bodies:
+                if _seq_body_writes_target(elif_body, target_name):
+                    return True
+            continue
+        if isinstance(stmt, _SWITCH_TYPES):
+            for _value, case_body in stmt.cases:
+                if _seq_body_writes_target(case_body, target_name):
+                    return True
+            if _seq_body_writes_target(stmt.default_body, target_name):
+                return True
+            continue
+        if isinstance(stmt, _WHEN_TYPES):
+            for _cond, branch_body in stmt.branches:
+                if _seq_body_writes_target(branch_body, target_name):
+                    return True
+    return False
 
 
 def _lower_stmt_list(stmts: Iterable[object], *, phase: str, env: _LoweringEnv) -> None:

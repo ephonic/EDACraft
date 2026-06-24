@@ -15,6 +15,7 @@ from rtlgen_x.sim.python_runtime import PythonSimulator
 class TraceStep:
     cycle: int
     inputs: Mapping[str, int]
+    active_domains: Tuple[str, ...]
     outputs: Mapping[str, int]
     state: Mapping[str, int]
 
@@ -61,7 +62,7 @@ class RandomParityHarnessReport:
 
 def capture_execution_trace(
     simulator,
-    vectors: Sequence[Mapping[str, int]],
+    vectors: Sequence[object],
     *,
     module_name: Optional[str] = None,
     backend: Optional[str] = None,
@@ -71,13 +72,20 @@ def capture_execution_trace(
     steps = []
     resolved_module_name = module_name or getattr(getattr(simulator, "module", None), "name", "unknown")
     resolved_backend = backend or type(simulator).__name__
-    for cycle, inputs in enumerate(vectors):
-        outputs = dict(simulator.step(dict(inputs)))
+    for cycle, vector in enumerate(vectors):
+        inputs, active_domains = _decode_trace_vector(vector)
+        if active_domains:
+            if not hasattr(simulator, "step_clocks"):
+                raise ValueError("trace vector requested active clock domains but simulator has no step_clocks()")
+            outputs = dict(simulator.step_clocks(dict(inputs), active_domains))
+        else:
+            outputs = dict(simulator.step(dict(inputs)))
         state = _snapshot_state_dict(simulator)
         steps.append(
             TraceStep(
                 cycle=cycle,
                 inputs={name: int(value) for name, value in dict(inputs).items()},
+                active_domains=tuple(active_domains),
                 outputs={name: int(value) for name, value in outputs.items()},
                 state=state,
             )
@@ -97,7 +105,12 @@ def replay_execution_trace(
 
     mismatches = []
     for step in trace.steps:
-        outputs = dict(simulator.step(dict(step.inputs)))
+        if step.active_domains:
+            if not hasattr(simulator, "step_clocks"):
+                raise ValueError("trace step requested active clock domains but simulator has no step_clocks()")
+            outputs = dict(simulator.step_clocks(dict(step.inputs), step.active_domains))
+        else:
+            outputs = dict(simulator.step(dict(step.inputs)))
         for name, expected in step.outputs.items():
             actual = int(outputs.get(name, 0))
             if actual != int(expected):
@@ -128,7 +141,7 @@ def replay_execution_trace(
 
 def compare_python_and_compiled(
     module: SimModule,
-    vectors: Sequence[Mapping[str, int]],
+    vectors: Sequence[object],
     *,
     builder: Optional[CppBackendScaffold] = None,
     build_dir: Optional[Path | str] = None,
@@ -224,3 +237,28 @@ def _snapshot_state_dict(simulator) -> Dict[str, int]:
         name: int(state[idx])
         for idx, name in enumerate(getattr(simulator, "state_names", ()))
     }
+
+
+def _decode_trace_vector(
+    vector: object,
+) -> Tuple[Mapping[str, int], Tuple[str, ...]]:
+    if (
+        isinstance(vector, tuple)
+        and len(vector) == 2
+        and isinstance(vector[0], Mapping)
+    ):
+        inputs = vector[0]
+        active_domains = _normalize_active_domains(vector[1])
+        return inputs, active_domains
+    if isinstance(vector, Mapping):
+        return vector, ()
+    raise TypeError("trace vectors must be input mappings or (inputs, active_domains) tuples")
+
+
+def _normalize_active_domains(active_domains: object) -> Tuple[str, ...]:
+    if isinstance(active_domains, Mapping):
+        selected = [name for name, enabled in active_domains.items() if enabled]
+        return tuple(str(name) for name in selected)
+    if isinstance(active_domains, Sequence) and not isinstance(active_domains, (str, bytes, bytearray)):
+        return tuple(str(name) for name in active_domains)
+    raise TypeError("active_domains must be a sequence of names or a name->bool mapping")

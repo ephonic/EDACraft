@@ -1,5 +1,16 @@
 """Minimal verification helpers built directly on the compiled simulator."""
 
+from rtlgen_x.stdlib_catalog import (
+    STDLIB_CATALOG,
+    STDLIB_KINDS,
+    STDLIB_STATUS_LEVELS,
+    STDLIB_SUPPORT_LEVELS,
+    StdlibEntry,
+    StdlibSupport,
+    emit_stdlib_support_matrix_markdown,
+    get_stdlib_entry,
+    list_stdlib_entries,
+)
 from rtlgen_x.verify.cdc import (
     CdcEndpoint,
     CdcFinding,
@@ -80,6 +91,13 @@ from rtlgen_x.verify.protocol_checkers import (
     check_wishbone_trace,
     emit_protocol_check_report_markdown,
 )
+from rtlgen_x.verify.protocol_kit import (
+    PROTOCOL_VIP_KITS,
+    ProtocolVipKit,
+    get_protocol_vip_kit,
+    list_protocol_vip_kits,
+    protocol_transfers_to_uvm_sequence_steps,
+)
 from rtlgen_x.verify.remote_uvm import (
     coerce_uvm_sequence_steps,
     RemoteUvmEnvironmentReport,
@@ -147,7 +165,10 @@ __all__ = [
     "PythonUvmSequencer",
     "ReferenceModelSmokeReport",
     "ProtocolCheckReport",
+    "ProtocolVipKit",
     "ProtocolViolation",
+    "StdlibEntry",
+    "StdlibSupport",
     "RemoteUvmEnvironmentReport",
     "RemoteUvmRegressionEntry",
     "RemoteUvmRegressionReport",
@@ -208,6 +229,17 @@ __all__ = [
     "check_ready_valid_trace",
     "check_wishbone_trace",
     "emit_protocol_check_report_markdown",
+    "get_stdlib_entry",
+    "list_stdlib_entries",
+    "emit_stdlib_support_matrix_markdown",
+    "STDLIB_CATALOG",
+    "STDLIB_KINDS",
+    "STDLIB_STATUS_LEVELS",
+    "STDLIB_SUPPORT_LEVELS",
+    "get_protocol_vip_kit",
+    "list_protocol_vip_kits",
+    "protocol_transfers_to_uvm_sequence_steps",
+    "PROTOCOL_VIP_KITS",
     "wishbone_clocked_protocol_sequence",
     "wishbone_clocked_reference_model",
     "wishbone_protocol_sequence",

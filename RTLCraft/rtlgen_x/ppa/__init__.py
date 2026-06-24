@@ -39,6 +39,14 @@ from rtlgen_x.ppa.reports import (
     parse_power_report,
     parse_timing_report,
 )
+from rtlgen_x.ppa.report import (
+    PpaRecommendationSummary,
+    PpaReportSummary,
+    PpaTrustSummary,
+    RewriteProposalSummary,
+    emit_ppa_report_markdown,
+    summarize_ppa_report,
+)
 from rtlgen_x.ppa.rewrite import (
     RewriteEdit,
     RewriteEvaluation,
@@ -66,8 +74,12 @@ __all__ = [
     "PowerReportSummary",
     "PpaGoals",
     "PpaRecommendation",
+    "PpaRecommendationSummary",
     "PpaReport",
+    "PpaReportSummary",
     "PpaTransformCandidate",
+    "PpaTrustSummary",
+    "RewriteProposalSummary",
     "RewriteEdit",
     "RewriteEvaluation",
     "RewriteProposal",
@@ -85,6 +97,7 @@ __all__ = [
     "derive_architecture_calibration_targets",
     "estimate_calibrated_architecture_ppa",
     "estimate_calibrated_module_ppa",
+    "emit_ppa_report_markdown",
     "fit_architecture_ppa_calibration",
     "fit_module_ppa_calibration",
     "evaluate_rewrite_proposal",
@@ -92,4 +105,5 @@ __all__ = [
     "parse_area_report",
     "parse_power_report",
     "parse_timing_report",
+    "summarize_ppa_report",
 ]

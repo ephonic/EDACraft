@@ -11,9 +11,24 @@ import re
 import subprocess
 import tarfile
 import tempfile
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
-from rtlgen_x.verify.uvm import generate_uvm_runtime_bundle, write_uvm_runtime_bundle
+from rtlgen_x.verify.uvm import UvmSequenceStep, generate_uvm_runtime_bundle, write_uvm_runtime_bundle
+
+
+class RemoteUvmError(RuntimeError):
+    """One actionable remote-UVM execution failure."""
+
+
+@dataclass(frozen=True)
+class RemoteUvmEnvironmentReport:
+    host: str
+    source_script: str
+    returncode: int
+    stdout: str
+    stderr: str
+    vcs_path: Optional[str]
+    environment_ok: bool
 
 
 @dataclass(frozen=True)
@@ -42,6 +57,7 @@ class RemoteUvmTarget:
     module_file: Path
     module_class: str
     clock_name: str = "clk"
+    directed_sequence: Optional[tuple[UvmSequenceStep, ...]] = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +122,111 @@ def load_module_instance(module_file: Path | str, class_name: str) -> Any:
     return cls()
 
 
+def coerce_uvm_sequence_steps(
+    payload: Optional[Sequence[UvmSequenceStep | Mapping[str, object]]],
+) -> Optional[tuple[UvmSequenceStep, ...]]:
+    """Normalize JSON- or API-supplied directed steps into UvmSequenceStep objects."""
+
+    if payload is None:
+        return None
+    steps = []
+    for index, step in enumerate(payload):
+        if isinstance(step, UvmSequenceStep):
+            steps.append(
+                UvmSequenceStep(
+                    inputs=dict(step.inputs),
+                    label=step.label,
+                    active_domains=tuple(dict.fromkeys(step.active_domains)),
+                )
+            )
+            continue
+        if not isinstance(step, Mapping):
+            raise TypeError(f"directed sequence step {index} must be a mapping or UvmSequenceStep")
+        if any(key in step for key in ("inputs", "label", "active_domains")):
+            inputs_payload = step.get("inputs")
+            if not isinstance(inputs_payload, Mapping):
+                raise TypeError(
+                    f"directed sequence step {index} must provide an 'inputs' mapping when using "
+                    "structured step payloads"
+                )
+            label_payload = step.get("label")
+            active_domains = _coerce_active_domains_payload(step.get("active_domains", ()), index=index)
+            steps.append(
+                UvmSequenceStep(
+                    inputs=_coerce_input_mapping(inputs_payload, index=index),
+                    label=None if label_payload is None else str(label_payload),
+                    active_domains=active_domains,
+                )
+            )
+            continue
+        steps.append(
+            UvmSequenceStep(
+                inputs=_coerce_input_mapping(step, index=index),
+            )
+        )
+    return tuple(steps)
+
+
+def load_uvm_sequence_steps_json(path: Path | str) -> tuple[UvmSequenceStep, ...]:
+    """Load one directed-sequence JSON file for remote UVM helpers/scripts."""
+
+    json_path = Path(path)
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    if isinstance(payload, Mapping):
+        if "directed_sequence" in payload:
+            payload = payload["directed_sequence"]
+        elif "steps" in payload:
+            payload = payload["steps"]
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes, bytearray)):
+        raise TypeError(
+            f"directed sequence JSON must be a list of steps or an object containing "
+            f"'directed_sequence'/'steps': {json_path}"
+        )
+    normalized = coerce_uvm_sequence_steps(payload)
+    return normalized or ()
+
+
+def load_remote_uvm_targets_json(path: Path | str) -> tuple[RemoteUvmTarget, ...]:
+    """Load regression targets from JSON target specs or prior regression reports."""
+
+    json_path = Path(path)
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    raw_targets: object = payload
+    if isinstance(payload, Mapping):
+        if "targets" in payload:
+            raw_targets = payload["targets"]
+        elif "entries" in payload:
+            raw_targets = [entry["target"] for entry in payload["entries"]]
+        elif {"name", "module_file", "module_class"} <= set(payload):
+            raw_targets = [payload]
+    if not isinstance(raw_targets, Sequence) or isinstance(raw_targets, (str, bytes, bytearray)):
+        raise TypeError(
+            f"remote UVM targets JSON must be a list, a 'targets' object, or a regression "
+            f"report 'entries' object: {json_path}"
+        )
+    targets = []
+    for index, entry in enumerate(raw_targets):
+        if not isinstance(entry, Mapping):
+            raise TypeError(f"remote UVM target {index} must be a mapping")
+        missing = [field for field in ("name", "module_file", "module_class") if field not in entry]
+        if missing:
+            joined = ", ".join(missing)
+            raise ValueError(f"remote UVM target {index} is missing required fields: {joined}")
+        sequence_payload = entry.get("directed_sequence")
+        targets.append(
+            RemoteUvmTarget(
+                name=str(entry["name"]),
+                module_file=Path(str(entry["module_file"])),
+                module_class=str(entry["module_class"]),
+                clock_name=str(entry.get("clock_name", entry.get("clock", "clk"))),
+                directed_sequence=coerce_uvm_sequence_steps(sequence_payload)
+                if sequence_payload is not None
+                else None,
+            )
+        )
+    return tuple(targets)
+
+
 def summarize_uvm_output(output: str) -> RemoteUvmSummary:
     """Extract a compact pass/fail summary from VCS/UVM stdout."""
 
@@ -137,6 +258,48 @@ def default_remote_dir(module_name: str) -> str:
     return f"$HOME/rtlgen_x/uvm_probe_{stem}"
 
 
+def probe_remote_uvm_environment(
+    *,
+    host: str,
+    source_script: str = "/apps/EDAs/syn.bash",
+) -> RemoteUvmEnvironmentReport:
+    """Check SSH reachability plus remote simulator environment readiness."""
+
+    command = (
+        f"bash -lc 'source {source_script} >/dev/null 2>&1 && "
+        "if command -v vcs >/dev/null 2>&1; then "
+        "printf \"RTLGEN_X_VCS=%s\\n\" \"$(command -v vcs)\"; "
+        "else "
+        "echo RTLGEN_X_VCS=; "
+        "exit 2; "
+        "fi'"
+    )
+    completed = _run_remote_ssh(
+        host,
+        command,
+        step="probe remote UVM environment",
+        check=False,
+        text=True,
+    )
+    stdout = _decode_remote_stream(completed.stdout)
+    stderr = _decode_remote_stream(completed.stderr)
+    vcs_path = None
+    for line in stdout.splitlines():
+        if line.startswith("RTLGEN_X_VCS="):
+            candidate = line.split("=", 1)[1].strip()
+            vcs_path = candidate or None
+            break
+    return RemoteUvmEnvironmentReport(
+        host=host,
+        source_script=source_script,
+        returncode=completed.returncode,
+        stdout=stdout,
+        stderr=stderr,
+        vcs_path=vcs_path,
+        environment_ok=completed.returncode == 0 and bool(vcs_path),
+    )
+
+
 def run_remote_uvm_probe(
     module: Any,
     *,
@@ -147,14 +310,17 @@ def run_remote_uvm_probe(
     local_bundle_dir: Optional[Path | str] = None,
     dut_source: Optional[str] = None,
     dut_module_name: Optional[str] = None,
+    directed_sequence: Optional[Sequence[UvmSequenceStep | Mapping[str, int]]] = None,
 ) -> RemoteUvmRunResult:
     """Generate, upload, and execute one UVM/VCS probe on a remote host."""
 
+    normalized_directed_sequence = coerce_uvm_sequence_steps(directed_sequence)
     bundle = generate_uvm_runtime_bundle(
         module,
         clock_name=clock_name,
         dut_source=dut_source,
         dut_module_name=dut_module_name,
+        directed_sequence=normalized_directed_sequence,
     )
     if local_bundle_dir is None:
         local_dir = Path(tempfile.mkdtemp(prefix=f"rtlgen_x_remote_uvm_{bundle.module_name}_"))
@@ -165,17 +331,17 @@ def run_remote_uvm_probe(
     remote_dir = remote_dir or default_remote_dir(bundle.module_name)
     archive = _tar_directory(local_dir)
 
-    subprocess.run(
-        ["ssh", host, f"mkdir -p {remote_dir}"],
-        check=True,
-        capture_output=True,
-        text=True,
+    _run_remote_ssh(
+        host,
+        f"mkdir -p {remote_dir}",
+        step="prepare remote work directory",
     )
-    subprocess.run(
-        ["ssh", host, f"tar xzf - -C {remote_dir}"],
-        input=archive,
-        check=True,
-        capture_output=True,
+    _run_remote_ssh(
+        host,
+        f"tar xzf - -C {remote_dir}",
+        step="upload UVM runtime bundle",
+        input_data=archive,
+        text=False,
     )
     run_cmd = (
         f"source {source_script} && "
@@ -183,9 +349,11 @@ def run_remote_uvm_probe(
         "chmod +x run_vcs.sh && "
         "./run_vcs.sh"
     )
-    completed = subprocess.run(
-        ["ssh", host, f"bash -lc '{run_cmd}'"],
-        capture_output=True,
+    completed = _run_remote_ssh(
+        host,
+        f"bash -lc '{run_cmd}'",
+        step="run remote VCS/UVM probe",
+        check=False,
         text=True,
     )
     summary = summarize_uvm_output(completed.stdout)
@@ -222,6 +390,7 @@ def run_remote_uvm_regression(
                 remote_dir=default_remote_dir(getattr(module, "name", target.name)),
                 source_script=source_script,
                 local_bundle_dir=local_bundle_dir,
+                directed_sequence=target.directed_sequence,
             )
         except Exception as exc:
             entries.append(
@@ -258,6 +427,18 @@ def _entry_to_dict(entry: RemoteUvmRegressionEntry) -> dict[str, object]:
             "module_file": str(entry.target.module_file),
             "module_class": entry.target.module_class,
             "clock_name": entry.target.clock_name,
+            "directed_sequence": (
+                [
+                    {
+                        "inputs": dict(step.inputs),
+                        "label": step.label,
+                        "active_domains": list(step.active_domains),
+                    }
+                    for step in entry.target.directed_sequence
+                ]
+                if entry.target.directed_sequence is not None
+                else None
+            ),
         },
         "status": entry.status,
         "passed": entry.passed,
@@ -274,3 +455,113 @@ def _entry_to_dict(entry: RemoteUvmRegressionEntry) -> dict[str, object]:
             "stderr": entry.result.stderr,
         }
     return payload
+
+
+def _run_remote_ssh(
+    host: str,
+    command: str,
+    *,
+    step: str,
+    input_data: bytes | None = None,
+    text: bool = True,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+    completed = subprocess.run(
+        ["ssh", host, command],
+        input=input_data,
+        capture_output=True,
+        text=text,
+    )
+    if check and completed.returncode != 0:
+        raise RemoteUvmError(_format_remote_failure(host, step, command, completed))
+    return completed
+
+
+def _format_remote_failure(
+    host: str,
+    step: str,
+    command: str,
+    completed: subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes],
+) -> str:
+    stdout = _decode_remote_stream(completed.stdout)
+    stderr = _decode_remote_stream(completed.stderr)
+    details = []
+    if stdout:
+        details.append(f"stdout:\n{stdout}")
+    if stderr:
+        details.append(f"stderr:\n{stderr}")
+    hint = _remote_failure_hint(stdout=stdout, stderr=stderr)
+    parts = [
+        f"remote UVM step failed: {step}",
+        f"host: {host}",
+        f"command: {command}",
+        f"returncode: {completed.returncode}",
+    ]
+    if hint:
+        parts.append(f"hint: {hint}")
+    if details:
+        parts.extend(details)
+    return "\n".join(parts)
+
+
+def _decode_remote_stream(stream: object) -> str:
+    if stream is None:
+        return ""
+    if isinstance(stream, bytes):
+        return stream.decode("utf-8", errors="replace").strip()
+    return str(stream).strip()
+
+
+def _remote_failure_hint(*, stdout: str, stderr: str) -> str:
+    haystack = f"{stdout}\n{stderr}".lower()
+    if "permission denied" in haystack or "publickey" in haystack:
+        return "SSH authentication failed; confirm this environment can access your ssh-agent/key for the target host."
+    if "could not resolve hostname" in haystack or "name or service not known" in haystack:
+        return "SSH hostname resolution failed; check network reachability and host spelling."
+    if "no such file or directory" in haystack and "syn.bash" in haystack:
+        return "The remote source_script path is missing; verify /apps/EDAs/syn.bash or pass the correct setup script."
+    if "vcs not found" in haystack:
+        return "VCS was not found after sourcing the remote environment; verify the setup script and license/tool installation."
+    if "license" in haystack and "vcs" in haystack:
+        return "VCS appears to have a licensing/setup problem on the remote host."
+    return ""
+
+
+def _coerce_input_mapping(payload: Mapping[str, object], *, index: int) -> dict[str, int]:
+    normalized = {}
+    for name, value in payload.items():
+        signal_name = str(name)
+        if isinstance(value, bool):
+            normalized[signal_name] = int(value)
+            continue
+        if isinstance(value, int):
+            normalized[signal_name] = int(value)
+            continue
+        if isinstance(value, str):
+            try:
+                normalized[signal_name] = int(value, 0)
+            except ValueError as exc:
+                raise TypeError(
+                    f"directed sequence step {index} input '{signal_name}' must be an int/bool or "
+                    "a base-10/base-16 integer string"
+                ) from exc
+            continue
+        raise TypeError(
+            f"directed sequence step {index} input '{signal_name}' must be an int/bool or integer string"
+        )
+    return normalized
+
+
+def _coerce_active_domains_payload(payload: object, index: int) -> tuple[str, ...]:
+    if payload is None:
+        return ()
+    if isinstance(payload, Mapping):
+        selected = [str(name) for name, enabled in payload.items() if enabled]
+        return tuple(dict.fromkeys(selected))
+    if isinstance(payload, str):
+        return (payload,)
+    if isinstance(payload, Sequence) and not isinstance(payload, (bytes, bytearray)):
+        return tuple(dict.fromkeys(str(name) for name in payload))
+    raise TypeError(
+        f"directed sequence step {index} active_domains must be a sequence of names or a name->bool mapping"
+    )

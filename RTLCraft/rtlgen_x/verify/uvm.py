@@ -102,6 +102,31 @@ class UvmRuntimeBundle:
         return {artifact.path: artifact.contents for artifact in self.artifacts}
 
 
+def _format_active_domain_guidance(clock_names: Sequence[str]) -> str:
+    joined = ", ".join(clock_names) if clock_names else "<module clock domains>"
+    example = ", ".join(repr(name) for name in clock_names[:2]) if clock_names else "'domain_name'"
+    return (
+        f"Known clock domains: {joined}. "
+        f"Use UvmSequenceStep(..., active_domains=({example},)) for multi-clock directed sequences."
+    )
+
+
+def _coerce_directed_step_active_domains(payload: object) -> Tuple[str, ...]:
+    if payload is None:
+        return ()
+    if isinstance(payload, Mapping):
+        selected = [str(name) for name, enabled in payload.items() if enabled]
+        return tuple(dict.fromkeys(selected))
+    if isinstance(payload, str):
+        return (payload,)
+    if isinstance(payload, Sequence) and not isinstance(payload, (bytes, bytearray)):
+        return tuple(dict.fromkeys(str(name) for name in payload))
+    raise TypeError(
+        "structured directed_sequence entries must provide active_domains as a sequence "
+        "of names or a name->bool mapping"
+    )
+
+
 @dataclass(frozen=True)
 class ReferenceModelSmokeReport:
     path: Path
@@ -352,9 +377,10 @@ def generate_uvm_collateral(
     interface = _describe_verification_interface_from_executable(module, source_module=source_module)
     multi_clock = len(_clock_signal_names(interface, clock_name)) > 1
     if multi_clock and not directed_sequence:
+        guidance = _format_active_domain_guidance(_clock_signal_names(interface, clock_name))
         raise ValueError(
             "generate_uvm_collateral currently requires directed_sequence with explicit "
-            "active_domains for multi-clock modules"
+            f"active_domains for multi-clock modules. {guidance}"
         )
     stem = _snake_name(module.name)
     class_prefix = class_prefix or stem
@@ -1049,10 +1075,35 @@ def _normalize_directed_sequence(
             )
             continue
         if isinstance(step, Mapping):
+            if any(key in step for key in ("inputs", "label", "active_domains")):
+                inputs_payload = step.get("inputs")
+                if not isinstance(inputs_payload, Mapping):
+                    raise TypeError(
+                        "structured directed_sequence entries must provide an 'inputs' mapping"
+                    )
+                label_payload = step.get("label")
+                active_domains = _coerce_directed_step_active_domains(
+                    step.get("active_domains", ())
+                )
+                if multi_clock and not active_domains:
+                    guidance = _format_active_domain_guidance(())
+                    raise ValueError(
+                        "multi-clock directed_sequence entries must provide explicit active_domains. "
+                        f"{guidance}"
+                    )
+                steps.append(
+                    UvmSequenceStep(
+                        inputs=dict(inputs_payload),
+                        label=None if label_payload is None else str(label_payload),
+                        active_domains=active_domains,
+                    )
+                )
+                continue
             if multi_clock:
+                guidance = _format_active_domain_guidance(())
                 raise ValueError(
-                    "multi-clock directed_sequence entries must be UvmSequenceStep instances "
-                    "with explicit active_domains"
+                    "multi-clock directed_sequence entries must be UvmSequenceStep instances or "
+                    f"structured step mappings with explicit active_domains. {guidance}"
                 )
             steps.append(UvmSequenceStep(inputs=dict(step), label=f"step_{index}"))
             continue
@@ -1079,7 +1130,10 @@ def _emit_directed_sequence_body(
         unknown_domains = sorted(set(step.active_domains) - set(clock_names))
         if unknown_domains:
             joined = ", ".join(unknown_domains)
-            raise ValueError(f"directed UVM step references unknown active_domains: {joined}")
+            guidance = _format_active_domain_guidance(clock_names)
+            raise ValueError(
+                f"directed UVM step references unknown active_domains: {joined}. {guidance}"
+            )
         instance_name = _sv_string_literal(step.label or f"step_{index}")
         body_lines.append("    begin")
         body_lines.append(f"      {txn_class} req;")
@@ -1566,7 +1620,8 @@ def _infer_dsl_reset_behavior(module: Any) -> Optional[Tuple[str, bool]]:
     for seq_item in getattr(module, "_seq_blocks", ()):
         if len(seq_item) < 2:
             continue
-        inferred = _dsl_reset_expr_info(seq_item[1])
+        seq_active_low = bool(seq_item[3]) if len(seq_item) >= 4 else False
+        inferred = _dsl_reset_expr_info(seq_item[1], reset_active_low=seq_active_low)
         if inferred is None:
             continue
         name, low = inferred
@@ -1581,10 +1636,10 @@ def _infer_dsl_reset_behavior(module: Any) -> Optional[Tuple[str, bool]]:
     return reset_name, active_low
 
 
-def _dsl_reset_expr_info(expr: Any) -> Optional[Tuple[str, bool]]:
+def _dsl_reset_expr_info(expr: Any, *, reset_active_low: bool = False) -> Optional[Tuple[str, bool]]:
     direct_name = getattr(expr, "name", None)
     if direct_name:
-        return direct_name, False
+        return direct_name, bool(reset_active_low)
     inner = getattr(expr, "_expr", None)
     if getattr(inner, "op", None) != "~":
         return None

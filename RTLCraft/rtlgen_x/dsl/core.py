@@ -1747,6 +1747,36 @@ class Module(IREntity, metaclass=ModuleMeta):
         self._parent: Optional["Module"] = None
         self._design_intent: Optional[IntentContext] = None
 
+    @staticmethod
+    def _format_reset_semantics(*, reset_async: bool, reset_active_low: bool) -> str:
+        edge = "async" if reset_async else "sync"
+        polarity = "active-low" if reset_active_low else "active-high"
+        return f"{edge}, {polarity}"
+
+    def _known_reset_domain_names(self) -> str:
+        names = tuple(self._reset_domain_specs.keys())
+        return ", ".join(names) if names else "none"
+
+    def _known_clock_domain_names(self) -> str:
+        names = tuple(self._clock_domain_specs.keys())
+        return ", ".join(names) if names else "none"
+
+    def _find_matching_reset_domain(
+        self,
+        reset: Signal,
+        *,
+        reset_async: bool,
+        reset_active_low: bool,
+    ) -> Optional[ResetDomainSpec]:
+        for spec in self._reset_domain_specs.values():
+            if (
+                spec.signal.name == reset.name
+                and spec.reset_async == reset_async
+                and spec.reset_active_low == reset_active_low
+            ):
+                return spec
+        return None
+
     def add_comment(self, text: str):
         """向模块添加顶层注释，生成 Verilog 时会被放在模块头部。"""
         self._module_comments.append(text)
@@ -2717,8 +2747,28 @@ class Module(IREntity, metaclass=ModuleMeta):
         existing = self._reset_domain_specs.get(name)
         if existing is not None and existing != spec:
             raise ValueError(
-                f"reset domain '{name}' is already declared with different semantics"
+                f"reset domain '{name}' is already declared on module '{self.name}' as "
+                f"signal '{existing.signal.name}' "
+                f"({self._format_reset_semantics(reset_async=existing.reset_async, reset_active_low=existing.reset_active_low)}); "
+                f"cannot redeclare it as signal '{reset.name}' "
+                f"({self._format_reset_semantics(reset_async=spec.reset_async, reset_active_low=spec.reset_active_low)})"
             )
+        for other_name, other in self._reset_domain_specs.items():
+            if other_name == name:
+                continue
+            if other.signal.name != reset.name:
+                continue
+            if (
+                other.reset_async != spec.reset_async
+                or other.reset_active_low != spec.reset_active_low
+            ):
+                raise ValueError(
+                    f"reset signal '{reset.name}' is already declared by reset domain "
+                    f"'{other_name}' on module '{self.name}' with "
+                    f"{self._format_reset_semantics(reset_async=other.reset_async, reset_active_low=other.reset_active_low)} "
+                    f"semantics; cannot redeclare it in reset domain '{name}' as "
+                    f"{self._format_reset_semantics(reset_async=spec.reset_async, reset_active_low=spec.reset_active_low)}"
+                )
         self._reset_domain_specs[name] = spec
         return spec
 
@@ -2726,7 +2776,7 @@ class Module(IREntity, metaclass=ModuleMeta):
         self,
         name: str,
         clock: Signal,
-        reset: Optional[Union[Signal, ResetDomainSpec]] = None,
+        reset: Optional[Union[Signal, ResetDomainSpec, str]] = None,
         *,
         reset_async: bool = False,
         reset_active_low: bool = False,
@@ -2740,27 +2790,61 @@ class Module(IREntity, metaclass=ModuleMeta):
                     "reset_async/reset_active_low must not be overridden when reset is a ResetDomainSpec"
                 )
             reset_spec = reset
+        elif isinstance(reset, str):
+            if reset_async or reset_active_low:
+                raise ValueError(
+                    "reset_async/reset_active_low must not be overridden when reset is a declared reset-domain name"
+                )
+            reset_spec = self._reset_domain_specs.get(reset)
+            if reset_spec is None:
+                raise ValueError(
+                    f"reset domain '{reset}' must be declared on module '{self.name}' before use. "
+                    f"Known reset domains: {self._known_reset_domain_names()}"
+                )
         elif reset is None:
             reset_spec = None
         else:
-            reset_spec = self.reset_domain(
-                f"{name}_reset",
+            reset_spec = self._find_matching_reset_domain(
                 reset,
                 reset_async=reset_async,
                 reset_active_low=reset_active_low,
             )
+            if reset_spec is None:
+                reset_spec = self.reset_domain(
+                    f"{name}_reset",
+                    reset,
+                    reset_async=reset_async,
+                    reset_active_low=reset_active_low,
+                )
         spec = ClockDomainSpec(name=name, clock=clock, reset=reset_spec)
         existing = self._clock_domain_specs.get(name)
         if existing is not None and existing != spec:
             raise ValueError(
-                f"clock domain '{name}' is already declared with different semantics"
+                f"clock domain '{name}' is already declared on module '{self.name}' as "
+                f"clock '{existing.clock.name}'"
+                + (
+                    f", reset '{existing.reset_signal.name}' "
+                    f"({self._format_reset_semantics(reset_async=existing.reset_async, reset_active_low=existing.reset_active_low)})"
+                    if existing.reset_signal is not None
+                    else ", without reset"
+                )
+                + "; cannot redeclare it as "
+                + f"clock '{clock.name}'"
+                + (
+                    f", reset '{spec.reset_signal.name}' "
+                    f"({self._format_reset_semantics(reset_async=spec.reset_async, reset_active_low=spec.reset_active_low)})"
+                    if spec.reset_signal is not None
+                    else ", without reset"
+                )
             )
         for other_name, other in self._clock_domain_specs.items():
             if other_name == name:
                 continue
             if other.clock.name == clock.name:
                 raise ValueError(
-                    f"clock signal '{clock.name}' is already owned by declared clock domain '{other_name}'"
+                    f"clock signal '{clock.name}' is already owned by declared clock domain "
+                    f"'{other_name}' on module '{self.name}'. Reuse that domain via "
+                    f"seq_domain('{other_name}') instead of redeclaring it."
                 )
         self._clock_domain_specs[name] = spec
         return spec
@@ -2808,13 +2892,15 @@ class Module(IREntity, metaclass=ModuleMeta):
             declared = self._clock_domain_specs.get(domain)
             if declared is None:
                 raise ValueError(
-                    f"clock domain '{domain}' must be declared on module '{self.name}' before use"
+                    f"clock domain '{domain}' must be declared on module '{self.name}' before use. "
+                    f"Known clock domains: {self._known_clock_domain_names()}"
                 )
         else:
             declared = self._clock_domain_specs.get(domain.name)
             if declared is None or declared != domain:
                 raise ValueError(
-                    f"clock domain '{domain.name}' must be declared on module '{self.name}' before use"
+                    f"clock domain '{domain.name}' must be declared on module '{self.name}' before use. "
+                    f"Known clock domains: {self._known_clock_domain_names()}"
                 )
         return _SeqContext(
             self,

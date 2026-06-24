@@ -1,7 +1,7 @@
 """
-rtlgen_x.dsl.legacy.lint — Verilog Linter & Auto-Fixer
+rtlgen_x.dsl.lint — Verilog Linter & Auto-Fixer
 
-针对 rtlgen_x.dsl.legacy.codegen 生成的 Verilog 进行后处理验证与自动修复。
+针对 rtlgen_x.dsl.codegen 生成的 Verilog 进行后处理验证与自动修复。
 支持规则：
     - implicit_wire             : 隐式 wire 检测并补声明
     - multi_driven              : 多重驱动检测

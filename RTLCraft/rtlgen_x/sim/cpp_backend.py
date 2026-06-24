@@ -406,17 +406,13 @@ def _validate_executable_memory_contract(memory: Memory) -> None:
         problems.append(f"read_style={memory.read_style!r}")
     if memory.read_latency != 0:
         problems.append(f"read_latency={memory.read_latency}")
-    if memory.byte_enable_granularity is not None:
-        problems.append(
-            f"byte_enable_granularity={memory.byte_enable_granularity}"
-        )
     if not problems:
         return
     details = ", ".join(problems)
     raise ValueError(
         f"memory '{memory.name}' is outside the executable storage subset ({details}); "
         "supported executable memories currently require read_ports=1, "
-        "write_ports=1, read_style='async', read_latency=0, and no byte-enable lanes"
+        "write_ports=1, and read_style='async', read_latency=0"
     )
 
 
@@ -432,6 +428,30 @@ def _mask_expr(width: int) -> str:
     if width == 64:
         return "UINT64_MAX"
     return f"((uint64_t(1) << {width}) - 1u)"
+
+
+def _expr_references_signal(expr: Expr, signal_name: Optional[str]) -> bool:
+    if not signal_name:
+        return False
+    if isinstance(expr, ConstExpr):
+        return False
+    if isinstance(expr, SignalRef):
+        return expr.name == signal_name
+    if isinstance(expr, MemoryReadExpr):
+        return _expr_references_signal(expr.addr, signal_name)
+    if isinstance(expr, MaskExpr):
+        return _expr_references_signal(expr.value, signal_name)
+    if isinstance(expr, UnaryExpr):
+        return _expr_references_signal(expr.value, signal_name)
+    if isinstance(expr, BinaryExpr):
+        return _expr_references_signal(expr.lhs, signal_name) or _expr_references_signal(expr.rhs, signal_name)
+    if isinstance(expr, MuxExpr):
+        return (
+            _expr_references_signal(expr.cond, signal_name)
+            or _expr_references_signal(expr.when_true, signal_name)
+            or _expr_references_signal(expr.when_false, signal_name)
+        )
+    return False
 
 
 def _sign_extend_expr(expr: str, width: int) -> str:
@@ -1200,19 +1220,76 @@ class CppBackendScaffold:
                     lines.append(f"      if ({reset_expr}) {{")
                     for assignment in domain_seq:
                         target = signal_map[assignment.target]
-                        lines.append(
-                            f"        next_state.{_cpp_ident(assignment.target)} = {target.init & target.mask}u;"
-                        )
+                        if _expr_references_signal(assignment.expr, domain.reset_signal):
+                            lines.append(
+                                f"        next_state.{_cpp_ident(assignment.target)} = "
+                                f"({self._emit_expr(assignment.expr, signal_map, memory_map)}) & {_mask_expr(target.width)};"
+                            )
+                        else:
+                            lines.append(
+                                f"        next_state.{_cpp_ident(assignment.target)} = {target.init & target.mask}u;"
+                            )
                     for write in domain_writes:
                         memory = memory_map[write.memory]
-                        for idx, value in enumerate(memory.init):
-                            lines.append(
-                                f"        next_state.{_cpp_ident(write.memory)}[{idx}] = {value & memory.mask}u;"
+                        if (
+                            _expr_references_signal(write.addr, domain.reset_signal)
+                            or _expr_references_signal(write.value, domain.reset_signal)
+                            or _expr_references_signal(write.enable, domain.reset_signal)
+                            or (
+                                write.byte_enable is not None
+                                and _expr_references_signal(write.byte_enable, domain.reset_signal)
                             )
-                        if not memory.init:
-                            lines.append(f"        for (uint64_t idx = 0; idx < {memory.depth}u; ++idx) {{")
-                            lines.append(f"          next_state.{_cpp_ident(write.memory)}[idx] = 0u;")
+                        ):
+                            addr_expr = self._emit_memory_addr(write.addr, signal_map, memory, memory_map)
+                            enable_expr = self._emit_expr(write.enable, signal_map, memory_map)
+                            value_expr = self._emit_expr(write.value, signal_map, memory_map)
+                            lines.append(f"        if ({enable_expr}) {{")
+                            if memory.byte_enable_granularity is None:
+                                lines.append(
+                                    f"          next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
+                                    f"({value_expr}) & {_mask_expr(memory.width)};"
+                                )
+                            else:
+                                assert write.byte_enable is not None
+                                be_expr = self._emit_expr(write.byte_enable, signal_map, memory_map)
+                                lane_width = memory.byte_enable_granularity
+                                lane_count = memory.byte_enable_width
+                                assert lane_count is not None
+                                lines.append(
+                                    f"          uint64_t merged_write = "
+                                    f"next_state.{_cpp_ident(write.memory)}[{addr_expr}];"
+                                )
+                                lines.append(
+                                    f"          const uint64_t write_value = "
+                                    f"({value_expr}) & {_mask_expr(memory.width)};"
+                                )
+                                lines.append(f"          const uint64_t be_value = {be_expr};")
+                                for lane_idx in range(lane_count):
+                                    shift = lane_idx * lane_width
+                                    lane_mask = _mask(lane_width)
+                                    full_mask = lane_mask << shift
+                                    lines.append(
+                                        f"          if (((be_value >> {lane_idx}u) & 1u) != 0u) {{"
+                                    )
+                                    lines.append(
+                                        f"            merged_write = "
+                                        f"(merged_write & ~0x{full_mask:x}ull) | "
+                                        f"(((write_value >> {shift}u) & 0x{lane_mask:x}ull) << {shift}u);"
+                                    )
+                                    lines.append("          }")
+                                lines.append(
+                                    f"          next_state.{_cpp_ident(write.memory)}[{addr_expr}] = merged_write;"
+                                )
                             lines.append("        }")
+                        else:
+                            for idx, value in enumerate(memory.init):
+                                lines.append(
+                                    f"        next_state.{_cpp_ident(write.memory)}[{idx}] = {value & memory.mask}u;"
+                                )
+                            if not memory.init:
+                                lines.append(f"        for (uint64_t idx = 0; idx < {memory.depth}u; ++idx) {{")
+                                lines.append(f"          next_state.{_cpp_ident(write.memory)}[idx] = 0u;")
+                                lines.append("        }")
                     lines.append("      } else {")
                     indent = "        "
                 else:
@@ -1227,11 +1304,44 @@ class CppBackendScaffold:
                     memory = memory_map[write.memory]
                     addr_expr = self._emit_memory_addr(write.addr, signal_map, memory, memory_map)
                     enable_expr = self._emit_expr(write.enable, signal_map, memory_map)
+                    value_expr = self._emit_expr(write.value, signal_map, memory_map)
                     lines.append(f"{indent}if ({enable_expr}) {{")
-                    lines.append(
-                        f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
-                        f"({self._emit_expr(write.value, signal_map, memory_map)}) & {_mask_expr(memory.width)};"
-                    )
+                    if memory.byte_enable_granularity is None:
+                        lines.append(
+                            f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
+                            f"({value_expr}) & {_mask_expr(memory.width)};"
+                        )
+                    else:
+                        assert write.byte_enable is not None
+                        be_expr = self._emit_expr(write.byte_enable, signal_map, memory_map)
+                        lane_width = memory.byte_enable_granularity
+                        lane_count = memory.byte_enable_width
+                        assert lane_count is not None
+                        lines.append(
+                            f"{indent}  uint64_t merged_write = "
+                            f"next_state.{_cpp_ident(write.memory)}[{addr_expr}];"
+                        )
+                        lines.append(
+                            f"{indent}  const uint64_t write_value = "
+                            f"({value_expr}) & {_mask_expr(memory.width)};"
+                        )
+                        lines.append(f"{indent}  const uint64_t be_value = {be_expr};")
+                        for lane_idx in range(lane_count):
+                            shift = lane_idx * lane_width
+                            lane_mask = _mask(lane_width)
+                            full_mask = lane_mask << shift
+                            lines.append(
+                                f"{indent}  if (((be_value >> {lane_idx}u) & 1u) != 0u) {{"
+                            )
+                            lines.append(
+                                f"{indent}    merged_write = "
+                                f"(merged_write & ~0x{full_mask:x}ull) | "
+                                f"(((write_value >> {shift}u) & 0x{lane_mask:x}ull) << {shift}u);"
+                            )
+                            lines.append(f"{indent}  }}")
+                        lines.append(
+                            f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = merged_write;"
+                        )
                     lines.append(f"{indent}}}")
                 if domain.reset_signal is not None:
                     lines.append("      }")
@@ -1240,7 +1350,82 @@ class CppBackendScaffold:
             lines.append("")
             if module.reset_signal is not None:
                 lines.append(f"    if (in.{_cpp_ident(module.reset_signal)}) {{")
-                lines.append("      next_state = initial_state();")
+                handled_memories = set()
+                for assignment in seq_assignments:
+                    target = signal_map[assignment.target]
+                    if _expr_references_signal(assignment.expr, module.reset_signal):
+                        lines.append(
+                            f"      next_state.{_cpp_ident(assignment.target)} = "
+                            f"({self._emit_expr(assignment.expr, signal_map, memory_map)}) & {_mask_expr(target.width)};"
+                        )
+                    else:
+                        lines.append(
+                            f"      next_state.{_cpp_ident(assignment.target)} = {target.init & target.mask}u;"
+                        )
+                for write in memory_writes:
+                    memory = memory_map[write.memory]
+                    if (
+                        _expr_references_signal(write.addr, module.reset_signal)
+                        or _expr_references_signal(write.value, module.reset_signal)
+                        or _expr_references_signal(write.enable, module.reset_signal)
+                        or (
+                            write.byte_enable is not None
+                            and _expr_references_signal(write.byte_enable, module.reset_signal)
+                        )
+                    ):
+                        handled_memories.add(write.memory)
+                        addr_expr = self._emit_memory_addr(write.addr, signal_map, memory)
+                        enable_expr = self._emit_expr(write.enable, signal_map, memory_map)
+                        value_expr = self._emit_expr(write.value, signal_map, memory_map)
+                        lines.append(f"      if ({enable_expr}) {{")
+                        if memory.byte_enable_granularity is None:
+                            lines.append(
+                                f"        next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
+                                f"({value_expr}) & {_mask_expr(memory.width)};"
+                            )
+                        else:
+                            assert write.byte_enable is not None
+                            be_expr = self._emit_expr(write.byte_enable, signal_map, memory_map)
+                            lane_width = memory.byte_enable_granularity
+                            lane_count = memory.byte_enable_width
+                            assert lane_count is not None
+                            lines.append(
+                                f"        uint64_t merged_write = "
+                                f"next_state.{_cpp_ident(write.memory)}[{addr_expr}];"
+                            )
+                            lines.append(
+                                f"        const uint64_t write_value = "
+                                f"({value_expr}) & {_mask_expr(memory.width)};"
+                            )
+                            lines.append(f"        const uint64_t be_value = {be_expr};")
+                            for lane_idx in range(lane_count):
+                                shift = lane_idx * lane_width
+                                lane_mask = _mask(lane_width)
+                                full_mask = lane_mask << shift
+                                lines.append(
+                                    f"        if (((be_value >> {lane_idx}u) & 1u) != 0u) {{"
+                                )
+                                lines.append(
+                                    f"          merged_write = "
+                                    f"(merged_write & ~0x{full_mask:x}ull) | "
+                                    f"(((write_value >> {shift}u) & 0x{lane_mask:x}ull) << {shift}u);"
+                                )
+                                lines.append("        }")
+                            lines.append(
+                                f"        next_state.{_cpp_ident(write.memory)}[{addr_expr}] = merged_write;"
+                            )
+                        lines.append("      }")
+                for memory in module.memories:
+                    if memory.name in handled_memories:
+                        continue
+                    for idx, value in enumerate(memory.init):
+                        lines.append(
+                            f"      next_state.{_cpp_ident(memory.name)}[{idx}] = {value & memory.mask}u;"
+                        )
+                    if not memory.init:
+                        lines.append(f"      for (uint64_t idx = 0; idx < {memory.depth}u; ++idx) {{")
+                        lines.append(f"        next_state.{_cpp_ident(memory.name)}[idx] = 0u;")
+                        lines.append("      }")
                 lines.append("    } else {")
                 indent = "      "
             else:
@@ -1255,11 +1440,44 @@ class CppBackendScaffold:
                 memory = memory_map[write.memory]
                 addr_expr = self._emit_memory_addr(write.addr, signal_map, memory)
                 enable_expr = self._emit_expr(write.enable, signal_map, memory_map)
+                value_expr = self._emit_expr(write.value, signal_map, memory_map)
                 lines.append(f"{indent}if ({enable_expr}) {{")
-                lines.append(
-                    f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
-                    f"({self._emit_expr(write.value, signal_map, memory_map)}) & {_mask_expr(memory.width)};"
-                )
+                if memory.byte_enable_granularity is None:
+                    lines.append(
+                        f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
+                        f"({value_expr}) & {_mask_expr(memory.width)};"
+                    )
+                else:
+                    assert write.byte_enable is not None
+                    be_expr = self._emit_expr(write.byte_enable, signal_map, memory_map)
+                    lane_width = memory.byte_enable_granularity
+                    lane_count = memory.byte_enable_width
+                    assert lane_count is not None
+                    lines.append(
+                        f"{indent}  uint64_t merged_write = "
+                        f"next_state.{_cpp_ident(write.memory)}[{addr_expr}];"
+                    )
+                    lines.append(
+                        f"{indent}  const uint64_t write_value = "
+                        f"({value_expr}) & {_mask_expr(memory.width)};"
+                    )
+                    lines.append(f"{indent}  const uint64_t be_value = {be_expr};")
+                    for lane_idx in range(lane_count):
+                        shift = lane_idx * lane_width
+                        lane_mask = _mask(lane_width)
+                        full_mask = lane_mask << shift
+                        lines.append(
+                            f"{indent}  if (((be_value >> {lane_idx}u) & 1u) != 0u) {{"
+                        )
+                        lines.append(
+                            f"{indent}    merged_write = "
+                            f"(merged_write & ~0x{full_mask:x}ull) | "
+                            f"(((write_value >> {shift}u) & 0x{lane_mask:x}ull) << {shift}u);"
+                        )
+                        lines.append(f"{indent}  }}")
+                    lines.append(
+                        f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = merged_write;"
+                    )
                 lines.append(f"{indent}}}")
             if module.reset_signal is not None:
                 lines.append("    }")
@@ -1475,6 +1693,10 @@ class CppBackendScaffold:
                     self._estimate_wide_expr_bits(write.enable, signal_map, memory_map),
                 )
             )
+            if write.byte_enable is not None:
+                expr_bits.append(
+                    self._estimate_wide_expr_bits(write.byte_enable, signal_map, memory_map)
+                )
         needed = max([1, *object_bits, *expr_bits])
         return _word_count(needed + 64) * 64
 
@@ -1706,6 +1928,40 @@ class CppBackendScaffold:
             "    out.words[idx] = lhs.words[idx] | rhs.words[idx];",
             "  }",
             "  return out;",
+            "}",
+            "",
+            "inline Value value_memory_byte_merge(",
+            "    const Value& prior,",
+            "    const Value& value,",
+            "    const Value& byte_enable,",
+            "    std::size_t width,",
+            "    std::size_t lane_width) {",
+            "  Value out = value_mask(prior, width);",
+            "  const Value masked_value = value_mask(value, width);",
+            "  if (lane_width == 0u) {",
+            "    return out;",
+            "  }",
+            "  const std::size_t lane_count = width / lane_width;",
+            "  for (std::size_t lane_idx = 0; lane_idx < lane_count; ++lane_idx) {",
+            "    const std::size_t be_word = lane_idx / 64u;",
+            "    const std::size_t be_bit = lane_idx % 64u;",
+            "    if (((byte_enable.words[be_word] >> be_bit) & 1u) == 0u) {",
+            "      continue;",
+            "    }",
+            "    const std::size_t start = lane_idx * lane_width;",
+            "    for (std::size_t bit = 0; bit < lane_width; ++bit) {",
+            "      const std::size_t abs_bit = start + bit;",
+            "      const std::size_t word_idx = abs_bit / 64u;",
+            "      const std::size_t bit_idx = abs_bit % 64u;",
+            "      const uint64_t mask = uint64_t(1) << bit_idx;",
+            "      if ((masked_value.words[word_idx] & mask) != 0u) {",
+            "        out.words[word_idx] |= mask;",
+            "      } else {",
+            "        out.words[word_idx] &= ~mask;",
+            "      }",
+            "    }",
+            "  }",
+            "  return value_mask(out, width);",
             "}",
             "",
             "inline Value value_xor(const Value& lhs, const Value& rhs) {",
@@ -2003,10 +2259,23 @@ class CppBackendScaffold:
                     memory = memory_map[write.memory]
                     addr_expr = self._emit_wide_memory_addr(write.addr, signal_map, memory_map, memory)
                     enable_expr = self._emit_wide_expr(write.enable, signal_map, memory_map)
+                    value_expr = self._emit_wide_expr(write.value, signal_map, memory_map)
                     lines.append(f"{indent}if (value_nonzero({enable_expr})) {{")
+                    if memory.byte_enable_granularity is None:
+                        write_expr = f"value_mask({value_expr}, {memory.width}u)"
+                    else:
+                        assert write.byte_enable is not None
+                        byte_enable_expr = self._emit_wide_expr(write.byte_enable, signal_map, memory_map)
+                        write_expr = (
+                            f"value_memory_byte_merge("
+                            f"next_state.{_cpp_ident(write.memory)}[{addr_expr}], "
+                            f"{value_expr}, "
+                            f"{byte_enable_expr}, "
+                            f"{memory.width}u, "
+                            f"{memory.byte_enable_granularity}u)"
+                        )
                     lines.append(
-                        f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
-                        f"value_mask({self._emit_wide_expr(write.value, signal_map, memory_map)}, {memory.width}u);"
+                        f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = {write_expr};"
                     )
                     lines.append(f"{indent}}}")
                 if domain.reset_signal is not None:
@@ -2016,7 +2285,64 @@ class CppBackendScaffold:
             lines.append("")
             if module.reset_signal is not None:
                 lines.append(f"    if (value_nonzero(in.{_cpp_ident(module.reset_signal)})) {{")
-                lines.append("      next_state = initial_state();")
+                handled_memories = set()
+                for assignment in seq_assignments:
+                    target = signal_map[assignment.target]
+                    if _expr_references_signal(assignment.expr, module.reset_signal):
+                        lines.append(
+                            f"      next_state.{_cpp_ident(assignment.target)} = "
+                            f"value_mask({self._emit_wide_expr(assignment.expr, signal_map, memory_map)}, {target.width}u);"
+                        )
+                    else:
+                        lines.append(
+                            f"      next_state.{_cpp_ident(assignment.target)} = {self._emit_wide_const(target.init, target.width)};"
+                        )
+                for write in memory_writes:
+                    memory = memory_map[write.memory]
+                    if (
+                        _expr_references_signal(write.addr, module.reset_signal)
+                        or _expr_references_signal(write.value, module.reset_signal)
+                        or _expr_references_signal(write.enable, module.reset_signal)
+                        or (
+                            write.byte_enable is not None
+                            and _expr_references_signal(write.byte_enable, module.reset_signal)
+                        )
+                    ):
+                        handled_memories.add(write.memory)
+                        addr_expr = self._emit_wide_memory_addr(write.addr, signal_map, memory_map, memory)
+                        enable_expr = self._emit_wide_expr(write.enable, signal_map, memory_map)
+                        value_expr = self._emit_wide_expr(write.value, signal_map, memory_map)
+                        lines.append(f"      if (value_nonzero({enable_expr})) {{")
+                        if memory.byte_enable_granularity is None:
+                            write_expr = f"value_mask({value_expr}, {memory.width}u)"
+                        else:
+                            assert write.byte_enable is not None
+                            byte_enable_expr = self._emit_wide_expr(write.byte_enable, signal_map, memory_map)
+                            write_expr = (
+                                f"value_memory_byte_merge("
+                                f"next_state.{_cpp_ident(write.memory)}[{addr_expr}], "
+                                f"{value_expr}, "
+                                f"{byte_enable_expr}, "
+                                f"{memory.width}u, "
+                                f"{memory.byte_enable_granularity}u)"
+                            )
+                        lines.append(
+                            f"        next_state.{_cpp_ident(write.memory)}[{addr_expr}] = {write_expr};"
+                        )
+                        lines.append("      }")
+                for memory in module.memories:
+                    if memory.name in handled_memories:
+                        continue
+                    for idx, value in enumerate(memory.init):
+                        lines.append(
+                            f"      next_state.{_cpp_ident(memory.name)}[{idx}] = {self._emit_wide_const(value & memory.mask, memory.width)};"
+                        )
+                    if not memory.init:
+                        lines.append(f"      for (uint64_t idx = 0; idx < {memory.depth}u; ++idx) {{")
+                        lines.append(
+                            f"        next_state.{_cpp_ident(memory.name)}[idx] = {self._emit_wide_const(0, memory.width)};"
+                        )
+                        lines.append("      }")
                 lines.append("    } else {")
                 indent = "      "
             else:
@@ -2031,10 +2357,23 @@ class CppBackendScaffold:
                 memory = memory_map[write.memory]
                 addr_expr = self._emit_wide_memory_addr(write.addr, signal_map, memory_map, memory)
                 enable_expr = self._emit_wide_expr(write.enable, signal_map, memory_map)
+                value_expr = self._emit_wide_expr(write.value, signal_map, memory_map)
                 lines.append(f"{indent}if (value_nonzero({enable_expr})) {{")
+                if memory.byte_enable_granularity is None:
+                    write_expr = f"value_mask({value_expr}, {memory.width}u)"
+                else:
+                    assert write.byte_enable is not None
+                    byte_enable_expr = self._emit_wide_expr(write.byte_enable, signal_map, memory_map)
+                    write_expr = (
+                        f"value_memory_byte_merge("
+                        f"next_state.{_cpp_ident(write.memory)}[{addr_expr}], "
+                        f"{value_expr}, "
+                        f"{byte_enable_expr}, "
+                        f"{memory.width}u, "
+                        f"{memory.byte_enable_granularity}u)"
+                    )
                 lines.append(
-                    f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = "
-                    f"value_mask({self._emit_wide_expr(write.value, signal_map, memory_map)}, {memory.width}u);"
+                    f"{indent}  next_state.{_cpp_ident(write.memory)}[{addr_expr}] = {write_expr};"
                 )
                 lines.append(f"{indent}}}")
             if module.reset_signal is not None:

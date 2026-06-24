@@ -52,10 +52,22 @@ from rtlgen_x.archsim.primitives import (
     queue_stage,
     warp_cluster,
 )
+from rtlgen_x.archsim.report import (
+    ArchitectureFlowSummary,
+    ArchitectureReportSummary,
+    ArchitectureStageSummary,
+    ArchitectureSweepSummary,
+    emit_architecture_report_markdown,
+    summarize_architecture_report,
+)
 
 __all__ = [
     "ArchitectureModel",
+    "ArchitectureFlowSummary",
+    "ArchitectureReportSummary",
     "ArchitectureScenario",
+    "ArchitectureStageSummary",
+    "ArchitectureSweepSummary",
     "BehaviorReport",
     "BehaviorSimulator",
     "CalibrationTarget",
@@ -86,6 +98,7 @@ __all__ = [
     "dataflow_array",
     "datapath_stage",
     "dma_engine",
+    "emit_architecture_report_markdown",
     "infer_architecture_from_module",
     "infer_flow_from_module",
     "interconnect_stage",
@@ -102,5 +115,6 @@ __all__ = [
     "run_stage_initiation_interval_sweep",
     "run_stage_latency_sweep",
     "run_stage_queue_depth_sweep",
+    "summarize_architecture_report",
     "warp_cluster",
 ]

@@ -41,7 +41,7 @@ def test_sim_module_rejects_duplicate_signal_names():
 def test_sim_module_rejects_unsupported_storage_contract():
     with pytest.raises(ValueError, match="outside the executable storage subset"):
         SimModule(
-            name="sync_mem",
+            name="sync_mem_unsupported",
             signals=(
                 Signal("addr", width=2, kind="input"),
                 Signal("dout", width=8, kind="output"),
@@ -56,31 +56,47 @@ def test_sim_module_rejects_unsupported_storage_contract():
                     read_ports=1,
                     write_ports=1,
                     read_style="sync",
-                    read_latency=1,
+                    read_latency=2,
                 ),
             ),
         )
 
 
-def test_sim_module_rejects_byte_enable_storage_contract():
-    with pytest.raises(ValueError, match="outside the executable storage subset"):
-        SimModule(
-            name="byte_enable_mem",
-            signals=(
-                Signal("addr", width=2, kind="input"),
-                Signal("dout", width=32, kind="output"),
+def test_sim_module_supports_byte_enable_storage_contract():
+    module = SimModule(
+        name="byte_enable_mem",
+        signals=(
+            Signal("we", width=1, kind="input"),
+            Signal("be", width=4, kind="input"),
+            Signal("addr", width=2, kind="input"),
+            Signal("din", width=32, kind="input"),
+            Signal("dout", width=32, kind="output"),
+        ),
+        assignments=(Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),),
+        outputs=("dout",),
+        memories=(
+            Memory(
+                "mem",
+                width=32,
+                depth=4,
+                byte_enable_granularity=8,
             ),
-            assignments=(Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),),
-            outputs=("dout",),
-            memories=(
-                Memory(
-                    "mem",
-                    width=32,
-                    depth=4,
-                    byte_enable_granularity=8,
-                ),
+        ),
+        memory_writes=(
+            MemoryWrite(
+                "mem",
+                SignalRef("addr"),
+                SignalRef("din"),
+                enable=SignalRef("we"),
+                byte_enable=SignalRef("be"),
             ),
-        )
+        ),
+        outputs_post_state=True,
+    )
+
+    python_sim = PythonSimulator(module)
+    assert python_sim.step({"we": 1, "be": 0xF, "addr": 2, "din": 0x11223344}) == {"dout": 0x11223344}
+    assert python_sim.step({"we": 1, "be": 0x3, "addr": 2, "din": 0xAABBCCDD}) == {"dout": 0x1122CCDD}
 
 
 def test_sim_module_rejects_mismatched_byte_enable_write_metadata():
@@ -225,6 +241,34 @@ def test_compiled_simulator_honors_reset_input(tmp_path):
         assert sim.step({"rst": 0, "inp": 1}) == {"out": 4}
 
 
+def test_compiled_simulator_honors_reset_branch_value_not_just_init(tmp_path):
+    module = SimModule(
+        name="accum_with_reset_branch_value",
+        signals=(
+            Signal("rst", width=1, kind="input"),
+            Signal("inp", width=8, kind="input"),
+            Signal("state", width=8, kind="state", init=0),
+            Signal("out", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", SignalRef("state")),
+            Assignment(
+                "state",
+                MuxExpr(SignalRef("rst"), ConstExpr(7, 8), SignalRef("inp")),
+                phase="seq",
+            ),
+        ),
+        outputs=("out",),
+        reset_signal="rst",
+        outputs_post_state=True,
+    )
+
+    with CppBackendScaffold(namespace="testrstbranch").build(module, tmp_path) as sim:
+        assert sim.step({"rst": 0, "inp": 9}) == {"out": 9}
+        assert sim.step({"rst": 1, "inp": 2}) == {"out": 7}
+        assert sim.step({"rst": 0, "inp": 5}) == {"out": 5}
+
+
 def _dual_clock_fifo_like_module() -> SimModule:
     return SimModule(
         name="cpp_multi_clock",
@@ -349,6 +393,42 @@ def test_compiled_simulator_can_recompute_outputs_after_state_commit(tmp_path):
     with CppBackendScaffold(namespace="testpost").build(module, tmp_path) as sim:
         assert sim.step({"inp": 5}) == {"out": 5}
         assert sim.step({"inp": 2}) == {"out": 7}
+
+
+def test_compiled_simulator_supports_byte_enable_memory_writes(tmp_path):
+    module = SimModule(
+        name="byte_enable_runtime",
+        signals=(
+            Signal("we", width=1, kind="input"),
+            Signal("be", width=4, kind="input"),
+            Signal("addr", width=2, kind="input"),
+            Signal("din", width=32, kind="input"),
+            Signal("dout", width=32, kind="output"),
+        ),
+        assignments=(Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),),
+        outputs=("dout",),
+        memories=(Memory("mem", width=32, depth=4, byte_enable_granularity=8),),
+        memory_writes=(
+            MemoryWrite(
+                "mem",
+                SignalRef("addr"),
+                SignalRef("din"),
+                enable=SignalRef("we"),
+                byte_enable=SignalRef("be"),
+            ),
+        ),
+        outputs_post_state=True,
+    )
+
+    python_sim = PythonSimulator(module)
+    with CppBackendScaffold(namespace="testbyteenable").build(module, tmp_path) as sim:
+        vec0 = {"we": 1, "be": 0xF, "addr": 1, "din": 0x11223344}
+        vec1 = {"we": 1, "be": 0x3, "addr": 1, "din": 0xAABBCCDD}
+        vec2 = {"we": 1, "be": 0x8, "addr": 1, "din": 0x55667788}
+
+        assert sim.step(vec0) == python_sim.step(vec0)
+        assert sim.step(vec1) == python_sim.step(vec1)
+        assert sim.step(vec2) == python_sim.step(vec2)
 
 
 def test_compiled_simulator_supports_latch_phase_state_holding(tmp_path):

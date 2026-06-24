@@ -55,7 +55,7 @@ from rtlgen_x.dsl import (
     WishboneRegisterBank,
     Wire,
 )
-from rtlgen_x.dsl.lib import AsyncResetRel, Counter, GrayCounter, MultiCycleFSM, PipelineShift, PulseSynchronizer, SyncCell, EdgeDetector, PipelineInterlock, BypassNetwork, MultiCyclePath, MAC, SignedMultiplier, RegisterFile
+from rtlgen_x.dsl.lib import AsyncResetRel, Counter, GrayCounter, MultiCycleFSM, PipelineShift, PulseSynchronizer, SyncCell, EdgeDetector, PipelineInterlock, BypassNetwork, MultiCyclePath, MAC, SignedMultiplier, RegisterFile, DualPortRAM, LUT
 from rtlgen_x.dsl.pipeline import ShiftReg, ValidPipe
 from rtlgen_x.sim.python_runtime import PythonSimulator
 from rtlgen_x.dsl.unsupported import DslSimulationRemovedError
@@ -1753,6 +1753,116 @@ def test_emit_profile_review_multicyclepath_matches_readability_snapshot():
         "mcp_0 <= data_in;",
         "if (en == 1'd1) begin",
         "mcp_2 <= mcp_1;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_mac_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(MAC(8))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [7:0] pipe_a;",
+        "reg [15:0] prod;",
+        "// Comb: acc_out, valid",
+        "assign acc_out = acc;",
+        "assign valid = 1'd1;",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "pipe_a <= $signed(a);",
+        "prod <= $signed(pipe_a) * $signed(pipe_b);",
+        "acc <= acc + prod;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_signedmultiplier_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(SignedMultiplier(8, 3))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg mpv_0;",
+        "reg [15:0] mpd_2;",
+        "// Comb: in_ready",
+        "assign in_ready = (mpv_2 == 1'd0) | out_ready;",
+        "// Comb: out_valid, product",
+        "assign product = mpd_2;",
+        "assign out_valid = mpv_2;",
+        "// Seq: mpd_0, mpd_1, mpd_2 (+3)",
+        "if (mpv_1 & ((mpv_2 == 1'd0) | out_ready)) begin",
+        "mpd_0 <= $signed(a) * $signed(b);",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_registerfile_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(RegisterFile(8, 4, 2, 1))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [7:0] rf_0;",
+        "reg [7:0] rf_3;",
+        "// Comb: rd_data_0, rd_data_1",
+        "rd_data_0 = 8'd0;",
+        "if (rd_addr_1 == 2'd3) begin",
+        "rd_data_1 = rf_3;",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "if (wr_en_0) begin",
+        "rf_3 <= wr_data_0;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_dualportram_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(DualPortRAM(8, 8))
+
+    expected_markers = (
+        "// Storage declarations",
+        "reg [7:0] mem [0:7];",
+        "// Comb: a_rdata, b_rdata",
+        "assign a_rdata = mem[a_addr];",
+        "assign b_rdata = mem[b_addr];",
+        "// Seq timing: clk=clk, reset=none",
+        "if (a_wen) begin",
+        "mem[a_addr] <= a_wdata;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_lut_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(LUT(8, depth=8))
+
+    expected_markers = (
+        "// Storage declarations",
+        "reg [7:0] lut [0:7];",
+        "initial begin",
+        "lut[7] = 8'd0;",
+        "// Comb: dout",
+        "assign dout = lut[addr];",
     )
     last_index = -1
     for marker in expected_markers:

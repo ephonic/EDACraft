@@ -305,7 +305,9 @@ catalog:
 
 That catalog is the code-side source of truth for the current protocol /
 component / VIP public surface and its conservative `stable` / `partial`
-status.
+status. It now also tracks a separate `Readable RTL` dimension so review-profile
+snapshot coverage is visible in the same matrix as lowering/simulation/verify
+closure.
 
 Important entry points:
 
@@ -335,10 +337,11 @@ declared multi-clock mailbox structure, `SyncCell`, `PulseSynchronizer`,
 `RoundRobinArbiter`, `Divider`, `ShiftReg`, `ValidPipe`, `PipelineShift`,
 `Counter`, `MultiCycleFSM`, `GrayCounter`, `Decoder`, `PriorityEncoder`,
 `BarrelShifter`, `LFSR`, `EdgeDetector`, `PipelineInterlock`,
-`BypassNetwork`, `MultiCyclePath`, and the main register-bank / ready-valid
-stdlib helpers. That gives emitter changes a concrete guardrail on
-CDC/FIFO/pipeline/control-oriented RTL readability instead of relying on ad
-hoc visual inspection.
+`BypassNetwork`, `MultiCyclePath`, `MAC`, `SignedMultiplier`, `RegisterFile`,
+`DualPortRAM`, `LUT`, and the main register-bank / ready-valid stdlib helpers.
+That gives emitter changes a concrete guardrail on CDC/FIFO/pipeline/control-
+oriented and arithmetic/storage-oriented RTL readability instead of relying on
+ad hoc visual inspection.
 
 For review-profile readability specifically, emitter normalization now also
 prefers target-local helper naming for repeated sub-expressions. In practice
@@ -1110,8 +1113,9 @@ Core report objects:
 5. `PpaRecommendationSummary`
 6. `PpaTrustSummary`
 7. `PpaTransformCandidate`
-8. `ModulePpaStats`
-9. `ArchitecturePpaStats`
+8. `RewriteProposalSummary`
+9. `ModulePpaStats`
+10. `ArchitecturePpaStats`
 
 Report helpers:
 
@@ -1167,6 +1171,51 @@ Important current behavior:
 5. `summarize_ppa_report(...)` / `emit_ppa_report_markdown(...)` now preserve
    precise hotspot targets such as `module.signal @ file:line` and surface the
    first concrete follow-up actions directly in the report
+6. multiplier/memory/state recommendations now also carry lightweight pattern
+   hints such as `signed_multiplier_pipeline`, `mac_style`, `lut_rom`, or
+   `register_file_rows`, and those hints now also appear in the summarized
+   markdown report so the agent can choose a more fitting rewrite path
+7. queue/control-plane stdlib blocks now also surface protocol-shaped pattern
+   hints such as `handshake_payload_state`, `fifo_queue_storage`,
+   `queue_metadata_arrays`, `control_register_bank`, and
+   `register_bank_control_state`, so FIFO / ready-valid / register-bank reports
+   read like hardware guidance instead of generic storage advice
+8. module-side `transform_candidates` now also cover storage-oriented first
+   moves such as `register_file_to_ram_wrapper`, `compare_ram_wrapper_vs_flops`,
+   or `pack_rows_or_share_banks` for `RegisterFile` / `DualPortRAM` / `LUT`-like
+   hotspots
+9. arithmetic-oriented first moves are also surfaced now, for example
+   `split_operands_product_accumulate`,
+   `retime_product_stages_keep_valid_shell`, or
+   `tile_or_share_wide_multipliers` for `MAC` / `SignedMultiplier` /
+   multi-multiplier datapaths
+10. queue/control-plane stdlib blocks now also get first-move transform
+    candidates such as `update_payload_only_on_handshake`,
+    `compare_fifo_storage_impls`, `bundle_queue_sideband_fields`,
+    `partition_or_pack_register_bank`, and
+    `split_capture_and_response_state`
+11. `derive_rewrite_proposals(...)` can now turn part of those arithmetic timing
+    candidates into concrete pipeline-style rewrite scaffolds that already target
+    the reported multiply assignment instead of only the deepest generic path
+12. some protocol-aware stdlib candidates now also produce scaffold-only rewrite
+    proposals, for example handshake payload-hold enables, queue sideband
+    bundling placeholders, or register-bank capture/response partition markers;
+    these are intentionally advisory and point the agent at the exact payload or
+    control state without pretending the whole protocol rewrite is automatic
+13. storage-oriented candidates can also produce wrapper/banking/packing
+    proposal scaffolds now; some of those, such as `RegisterFile`-to-RAM wrapper
+    sketches, are intentionally scaffold-first and may sit outside the current
+    executable-memory subset until the designer or agent completes the rewrite
+14. each rewrite proposal now carries explicit applicability metadata:
+    `direct_apply` proposals may be fed into `apply_rewrite_proposal(...)` /
+    `validate_rewrite_proposal(...)`, while `scaffold_only` proposals are
+    advisory skeletons with an explicit reason string describing what still
+    needs manual completion
+15. `advise_ppa(...)` now also attaches derived rewrite proposals to the
+    returned `PpaReport`, and `summarize_ppa_report(...)` /
+    `emit_ppa_report_markdown(...)` surface compact rewrite-proposal summaries
+    so the report itself already tells the agent which ideas are directly
+    applicable and which are scaffold-only
 
 ## Recommended design flow
 
@@ -1230,7 +1279,7 @@ in a standard simulator flow.
 3. use `advise_ppa(...)` to obtain recommendations and transform candidates
 4. use `summarize_ppa_report(...)` or `emit_ppa_report_markdown(...)` to turn
    the result into an agent-readable report with precise hotspot targets and
-   next actions
+   next actions, rewrite applicability, and scaffold-only notes
 5. if you have implementation reports, parse and calibrate them
 6. let the agent rewrite the design after reading the report, then rerun
    simulation and verification

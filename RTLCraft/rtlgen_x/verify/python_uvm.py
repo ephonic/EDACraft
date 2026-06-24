@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 from rtlgen_x.sim import PythonSimulator, SimModule
 from rtlgen_x.verify.directed import StepVector, TraceSample, VerificationFailure
-from rtlgen_x.verify.module_adapter import normalize_executable_module
+from rtlgen_x.verify.module_adapter import normalize_executable_module, require_single_clock_module
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,7 @@ class PythonUvmSequenceItem:
     inputs: Mapping[str, int]
     expected: Optional[Mapping[str, int]] = None
     label: Optional[str] = None
+    active_domains: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,13 @@ class PythonUvmReferenceModel:
 
     def predict(self, inputs: Mapping[str, int]) -> Dict[str, int]:
         return self._sim.step(inputs)
+
+    def predict_clocks(
+        self,
+        inputs: Mapping[str, int],
+        active_domains: Sequence[str],
+    ) -> Dict[str, int]:
+        return self._sim.step_clocks(inputs, active_domains)
 
     def predict_batch(
         self,
@@ -102,6 +110,12 @@ class PythonUvmDriver:
             self.simulator.reset()
 
     def drive(self, item: PythonUvmSequenceItem) -> Dict[str, int]:
+        if item.active_domains:
+            if not hasattr(self.simulator, "step_clocks"):
+                raise ValueError(
+                    "multi-clock Python UVM items require a simulator exposing step_clocks(...)"
+                )
+            return dict(self.simulator.step_clocks(dict(item.inputs), item.active_domains))
         return dict(self.simulator.step(dict(item.inputs)))
 
     def supports_batch(self) -> bool:
@@ -111,7 +125,7 @@ class PythonUvmDriver:
         self,
         items: Sequence[PythonUvmSequenceItem],
     ) -> Optional[Tuple[Dict[str, int], ...]]:
-        if not self.supports_batch():
+        if not self.supports_batch() or any(item.active_domains for item in items):
             return None
         input_names = tuple(self.simulator.input_names)
         rows = [
@@ -119,6 +133,42 @@ class PythonUvmDriver:
             for item in items
         ]
         return tuple(dict(row) for row in self.simulator.run_batch(rows))
+
+
+def _normalize_active_domains_payload(payload: object) -> Tuple[str, ...]:
+    if payload is None:
+        return ()
+    if isinstance(payload, Mapping):
+        selected = [str(name) for name, enabled in payload.items() if enabled]
+        return tuple(dict.fromkeys(selected))
+    if isinstance(payload, str):
+        return (payload,)
+    if isinstance(payload, Sequence) and not isinstance(payload, (bytes, bytearray)):
+        return tuple(dict.fromkeys(str(name) for name in payload))
+    raise TypeError(
+        "structured Python UVM items must provide active_domains as a sequence of names "
+        "or a name->bool mapping"
+    )
+
+
+def _validate_sequence_active_domains(
+    module: SimModule,
+    sequence: Sequence[PythonUvmSequenceItem],
+) -> None:
+    known_domains = tuple(domain.name for domain in module.clock_domains)
+    known_set = set(known_domains)
+    for item in sequence:
+        if not item.active_domains:
+            continue
+        unknown_domains = sorted(set(item.active_domains) - known_set)
+        if unknown_domains:
+            joined = ", ".join(unknown_domains)
+            known_joined = ", ".join(known_domains) if known_domains else "<module clock domains>"
+            raise ValueError(
+                "run_python_uvm_test multi-clock sequences reference unknown active_domains: "
+                f"{joined}. Known clock domains: {known_joined}. "
+                "Wrap each step in PythonUvmSequenceItem(..., active_domains=(...))."
+            )
 
 
 @dataclass
@@ -137,6 +187,7 @@ class PythonUvmMonitor:
             inputs=dict(item.inputs),
             outputs=dict(outputs),
             expected=dict(expected),
+            active_domains=tuple(item.active_domains),
         )
 
 
@@ -203,8 +254,21 @@ class PythonUvmScoreboard:
             return dict(item.expected)
         if self.expected_fn is not None:
             return dict(self.expected_fn(cycle, dict(item.inputs)))
-        if self.reference_model is not None and hasattr(self.reference_model, "predict"):
-            return dict(self.reference_model.predict(dict(item.inputs)))
+        if self.reference_model is not None:
+            if item.active_domains:
+                if hasattr(self.reference_model, "predict_clocks"):
+                    return dict(
+                        self.reference_model.predict_clocks(
+                            dict(item.inputs),
+                            item.active_domains,
+                        )
+                    )
+                raise ValueError(
+                    "multi-clock Python UVM items require a reference model exposing "
+                    "predict_clocks(...)"
+                )
+            if hasattr(self.reference_model, "predict"):
+                return dict(self.reference_model.predict(dict(item.inputs)))
         raise ValueError("expected values require item.expected, expected_fn, or reference_model")
 
     def resolve_expected_batch(
@@ -212,7 +276,7 @@ class PythonUvmScoreboard:
         cycle_base: int,
         items: Sequence[PythonUvmSequenceItem],
     ) -> Optional[Tuple[Dict[str, int], ...]]:
-        if any(item.expected is not None for item in items):
+        if any(item.expected is not None or item.active_domains for item in items):
             return None
         if self.expected_fn is not None:
             return tuple(
@@ -230,7 +294,7 @@ class PythonUvmScoreboard:
         self,
         items: Sequence[PythonUvmSequenceItem],
     ) -> bool:
-        if any(item.expected is not None for item in items):
+        if any(item.expected is not None or item.active_domains for item in items):
             return False
         if self.expected_fn is not None:
             return True
@@ -365,7 +429,22 @@ def run_python_uvm_test(
 ) -> PythonUvmReport:
     """Run a lightweight UVM-style verification flow on the local simulator stack."""
 
-    module = normalize_executable_module(module)
+    module = normalize_executable_module(module, context="run_python_uvm_test(...)")
+    multi_clock = len(module.clock_domains) > 1
+    normalized_sequence = tuple(
+        sequence if isinstance(sequence, PythonUvmSequenceLibrary) else PythonUvmSequencer(sequence)
+    )
+    if multi_clock:
+        if any(not item.active_domains for item in normalized_sequence):
+            domain_names = ", ".join(domain.name for domain in module.clock_domains)
+            raise ValueError(
+                "run_python_uvm_test multi-clock sequences must provide explicit "
+                f"active_domains for every item; module domains: {domain_names}. "
+                "Wrap each step in PythonUvmSequenceItem(..., active_domains=(...))."
+            )
+        _validate_sequence_active_domains(module, normalized_sequence)
+    else:
+        require_single_clock_module(module, context="run_python_uvm_test")
     simulator = simulator if simulator is not None else PythonSimulator(module)
     reference_model = (
         reference_model
@@ -382,12 +461,14 @@ def run_python_uvm_test(
         reset_before_run=reset_before_run,
         batch_cycles=batch_cycles,
     )
-    return env.run(sequence, name=name)
+    return env.run(normalized_sequence, name=name)
 
 
 def dump_python_uvm_triage(
     report: PythonUvmReport,
     output_path: Path | str,
+    *,
+    protocol_checks: Optional[Sequence[object]] = None,
 ) -> Path:
     """Write a compact JSON triage bundle for a Python-side UVM run."""
 
@@ -413,10 +494,29 @@ def dump_python_uvm_triage(
                 "inputs": dict(trace.inputs),
                 "outputs": dict(trace.outputs),
                 "expected": dict(trace.expected),
+                "active_domains": list(trace.active_domains),
             }
             for trace in report.traces
         ],
     }
+    if protocol_checks is not None:
+        payload["protocol_checks"] = [
+            {
+                "protocol": getattr(check, "protocol", "unknown"),
+                "passed": bool(getattr(check, "passed", False)),
+                "violations": [
+                    {
+                        "cycle": violation.cycle,
+                        "rule": violation.rule,
+                        "severity": violation.severity,
+                        "message": violation.message,
+                        "signal_values": dict(violation.signal_values),
+                    }
+                    for violation in getattr(check, "violations", ())
+                ],
+            }
+            for check in protocol_checks
+        ]
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return path
 
@@ -429,9 +529,29 @@ def _normalize_item(
             inputs=dict(item.inputs),
             expected=None if item.expected is None else dict(item.expected),
             label=item.label,
+            active_domains=tuple(item.active_domains),
         )
     if isinstance(item, StepVector):
         return PythonUvmSequenceItem(inputs=dict(item.inputs), expected=dict(item.expected))
     if isinstance(item, Mapping):
+        if any(key in item for key in ("inputs", "expected", "label", "active_domains")):
+            inputs_payload = item.get("inputs")
+            if not isinstance(inputs_payload, Mapping):
+                raise TypeError(
+                    "structured Python UVM items must provide an 'inputs' mapping"
+                )
+            expected_payload = item.get("expected")
+            if expected_payload is not None and not isinstance(expected_payload, Mapping):
+                raise TypeError(
+                    "structured Python UVM items must provide an 'expected' mapping when present"
+                )
+            label_payload = item.get("label")
+            active_domains = _normalize_active_domains_payload(item.get("active_domains", ()))
+            return PythonUvmSequenceItem(
+                inputs=dict(inputs_payload),
+                expected=None if expected_payload is None else dict(expected_payload),
+                label=None if label_payload is None else str(label_payload),
+                active_domains=active_domains,
+            )
         return PythonUvmSequenceItem(inputs=dict(item))
     raise TypeError(f"unsupported sequence item type: {type(item)!r}")

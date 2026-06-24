@@ -1,15 +1,16 @@
 """
-rtlgen_x.dsl.legacy.sim — Python AST 仿真后端
+rtlgen_x.dsl.sim — removed older AST simulation surface
 
-直接在 Python 中解释执行 pyRTL 构建的 AST，用于快速单元测试。
-支持多时钟域、X/Z 四态逻辑（可选）、时间/延迟模型、子模块递归仿真。
+This module is kept only to provide a clear removal error. `rtlgen_x` now
+standardizes on lowered `SimModule` execution through `PythonSimulator` and the
+compiled C++ backend.
 """
 from __future__ import annotations
 
 import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from rtlgen_x.dsl.legacy.core import (
+from rtlgen_x.dsl.core import (
     Array,
     ArrayRead,
     ArrayWrite,
@@ -44,6 +45,7 @@ from rtlgen_x.dsl.legacy.core import (
     _subst_genvar_in_expr,
     _subst_genvar_in_stmt,
 )
+from rtlgen_x.dsl.unsupported import raise_dsl_sim_removed
 
 
 # -----------------------------------------------------------------
@@ -117,6 +119,7 @@ class Simulator:
         clock_period_ns: float = 10.0,
         param_overrides: Optional[Dict[str, Any]] = None,
     ):
+        raise_dsl_sim_removed()
         self.module = module
         self.use_xz = use_xz
         self.clock_period_ns = clock_period_ns
@@ -247,7 +250,7 @@ class Simulator:
         if self.use_xz:
             return
         try:
-            from rtlgen_x.dsl.legacy.sim_jit import JITModule
+            from rtlgen_x.dsl.sim_jit import JITModule
             self._jit = JITModule(self.module, param_overrides=self._param_overrides)
             # Sync JIT state back to Simulator dict for peek/poke/trace
             self._sync_from_jit()
@@ -956,7 +959,7 @@ class Simulator:
                 # 额外：设置同名键供_eval_expr查找
                 # 避免对 BitSelect/PartSelect 覆盖父模块向量信号
                 # 同时避免覆盖父模块中与子模块端口同名的不同信号
-                from rtlgen_x.dsl.legacy.core import Ref
+                from rtlgen_x.dsl.core import Ref
                 if isinstance(expr, Ref):
                     parent_sig_name = expr.signal.name
                     # Only set alias if parent signal name matches port name
@@ -977,7 +980,7 @@ class Simulator:
             return _make_xz(expr, max(expr.bit_length(), 1)) if self.use_xz else expr
         if isinstance(expr, Const):
             return _make_xz(expr.value, expr.width) if self.use_xz else int(expr.value)
-        from rtlgen_x.dsl.legacy.core import Signal
+        from rtlgen_x.dsl.core import Signal
         if isinstance(expr, Signal):
             return self._eval_parent_expr(expr._expr, loop_vars)
         if isinstance(expr, Ref):
@@ -1505,7 +1508,7 @@ class Simulator:
             if self.use_xz:
                 return SimValue(expr.value, width=expr.width)
             return int(expr.value)
-        from rtlgen_x.dsl.legacy.core import Signal
+        from rtlgen_x.dsl.core import Signal
         if isinstance(expr, Signal):
             return self._eval_expr(expr._expr, loop_vars)
         if isinstance(expr, Ref):
@@ -1614,7 +1617,7 @@ class Simulator:
                     return max((v - 1).bit_length(), 1)
                 return 0
             if expr.name == "bits":
-                from rtlgen_x.dsl.legacy.core import _to_expr
+                from rtlgen_x.dsl.core import _to_expr
                 w = _to_expr(expr.args[0]).width if expr.args else 0
                 return w
             return args[0] if args else 0

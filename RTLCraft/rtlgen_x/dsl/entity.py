@@ -1,4 +1,4 @@
-"""Minimal local entity base for the imported legacy DSL kernel."""
+"""Minimal local entity base for the current DSL kernel."""
 
 from __future__ import annotations
 

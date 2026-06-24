@@ -25,6 +25,10 @@ def infer_architecture_from_module(
     prefix: Optional[str] = None,
 ) -> ArchitectureModel:
     prefix = prefix or module.name
+    heuristic_note = (
+        "heuristic early-estimate inferred from executable-module structure; "
+        "not a recovered microarchitecture and not a substitute for hand-built archsim models"
+    )
     comb_count = sum(1 for assignment in module.assignments if assignment.phase == "comb")
     seq_count = sum(1 for assignment in module.assignments if assignment.phase == "seq")
     input_signals = tuple(signal for signal in module.signals if signal.kind == "input")
@@ -38,7 +42,7 @@ def infer_architecture_from_module(
                 initiation_interval=1,
                 capacity=max(1, min(4, len(input_signals))),
                 queue_depth=max(1, len(input_signals)),
-                metadata={"inferred_from": "inputs"},
+                metadata={"inferred_from": "inputs", "estimation": heuristic_note},
             )
         )
     if module.memories:
@@ -51,7 +55,7 @@ def infer_architecture_from_module(
                 capacity=max(1, len(module.memories)),
                 queue_depth=max(2, len(module.memories) * 2),
                 bandwidth_bytes_per_cycle=max(16, len(module.memories) * 16),
-                metadata={"inferred_from": "memories"},
+                metadata={"inferred_from": "memories", "estimation": heuristic_note},
             )
         )
     stages.append(
@@ -62,7 +66,7 @@ def infer_architecture_from_module(
             initiation_interval=max(1, min(4, seq_count or 1)),
             capacity=max(1, min(4, max(1, comb_count // 2 or 1))),
             queue_depth=max(1, seq_count or 1),
-            metadata={"inferred_from": "assignments"},
+            metadata={"inferred_from": "assignments", "estimation": heuristic_note},
         )
     )
     stages.append(
@@ -74,7 +78,7 @@ def infer_architecture_from_module(
             capacity=max(1, len(module.outputs)),
             queue_depth=max(1, len(module.outputs)),
             bandwidth_bytes_per_cycle=max(8, sum(module.signal_map()[name].width for name in module.outputs) // 8 or 1),
-            metadata={"inferred_from": "outputs"},
+            metadata={"inferred_from": "outputs", "estimation": heuristic_note},
         )
     )
     return ArchitectureModel(stages)

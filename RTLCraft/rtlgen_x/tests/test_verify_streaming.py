@@ -1,12 +1,28 @@
 import time
 import json
 
-from rtlgen_x.sim import Assignment, BinaryExpr, Signal, SignalRef, SimModule
+import pytest
+
+from rtlgen_x.dsl import DslLoweringReport, LoweredDslModule
+from rtlgen_x.sim import Assignment, BinaryExpr, ClockDomain, ConstExpr, MuxExpr, Signal, SignalRef, SimModule
 from rtlgen_x.verify import StepVector, run_streaming_check, run_streaming_check_adaptive, run_streaming_test
 from rtlgen_x.verify.sinks import CsvTraceSink, JsonlTraceSink
 
 
-def _stream_accum_module() -> SimModule:
+def _lowered(module: SimModule) -> LoweredDslModule:
+    return LoweredDslModule(
+        module=module,
+        report=DslLoweringReport(
+            source_module=module.name,
+            flattened_module=module.name,
+            signal_count=len(module.signals),
+            assignment_count=len(module.assignments),
+            outputs_post_state=module.outputs_post_state,
+        ),
+    )
+
+
+def _raw_stream_accum_module() -> SimModule:
     return SimModule(
         name="verify_stream_accum",
         signals=(
@@ -20,6 +36,55 @@ def _stream_accum_module() -> SimModule:
         ),
         outputs=("out",),
     )
+
+
+def _stream_accum_module() -> LoweredDslModule:
+    return _lowered(_raw_stream_accum_module())
+
+
+def _stream_multiclk_module() -> LoweredDslModule:
+    return _lowered(SimModule(
+        name="verify_stream_multiclk",
+        signals=(
+            Signal("wr_clk", width=1, kind="input"),
+            Signal("rd_clk", width=1, kind="input"),
+            Signal("wr_rst", width=1, kind="input"),
+            Signal("rd_rst", width=1, kind="input"),
+            Signal("wr_en", width=1, kind="input"),
+            Signal("rd_en", width=1, kind="input"),
+            Signal("wptr", width=4, kind="state"),
+            Signal("rptr", width=4, kind="state"),
+            Signal("out", width=4, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", BinaryExpr("+", SignalRef("wptr"), SignalRef("rptr"))),
+            Assignment(
+                "wptr",
+                MuxExpr(
+                    SignalRef("wr_en"),
+                    BinaryExpr("+", SignalRef("wptr"), ConstExpr(1, 4)),
+                    SignalRef("wptr"),
+                ),
+                phase="seq",
+                clock_domain="wr_clk",
+            ),
+            Assignment(
+                "rptr",
+                MuxExpr(
+                    SignalRef("rd_en"),
+                    BinaryExpr("+", SignalRef("rptr"), ConstExpr(1, 4)),
+                    SignalRef("rptr"),
+                ),
+                phase="seq",
+                clock_domain="rd_clk",
+            ),
+        ),
+        outputs=("out",),
+        clock_domains=(
+            ClockDomain("wr_clk", reset_signal="wr_rst"),
+            ClockDomain("rd_clk", reset_signal="rd_rst"),
+        ),
+    ))
 
 
 def test_streaming_verification_scales_without_trace_materialization(tmp_path):
@@ -51,6 +116,16 @@ def test_streaming_verification_scales_without_trace_materialization(tmp_path):
     assert elapsed > 0.0
 
 
+def test_streaming_test_rejects_raw_simmodule(tmp_path):
+    with pytest.raises(TypeError, match="does not accept raw SimModule"):
+        run_streaming_test(
+            _raw_stream_accum_module(),
+            (StepVector(inputs={"inp": 5}, expected={"out": 8}),),
+            build_dir=str(tmp_path / "raw_stream"),
+            chunk_cycles=8,
+        )
+
+
 def test_streaming_check_supports_online_expected_function(tmp_path):
     module = _stream_accum_module()
     cycles = 1024
@@ -79,6 +154,36 @@ def test_streaming_check_supports_online_expected_function(tmp_path):
     assert report.passed is True
     assert report.total_cycles == cycles
     assert report.failures == ()
+
+
+def test_streaming_check_rejects_multi_clock_modules(tmp_path):
+    module = _stream_multiclk_module()
+
+    def input_stream():
+        yield {"wr_en": 0, "rd_en": 0}
+
+    with pytest.raises(ValueError, match="single-clock executable models"):
+        run_streaming_check(
+            module,
+            input_stream(),
+            lambda _cycle, _inputs: {"out": 0},
+            build_dir=str(tmp_path / "stream_multiclk"),
+        )
+
+
+def test_streaming_check_adaptive_rejects_multi_clock_modules(tmp_path):
+    module = _stream_multiclk_module()
+
+    def input_stream():
+        yield {"wr_en": 0, "rd_en": 0}
+
+    with pytest.raises(ValueError, match="single-clock executable models"):
+        run_streaming_check_adaptive(
+            module,
+            input_stream(),
+            lambda _cycle, _inputs: {"out": 0},
+            build_dir=str(tmp_path / "stream_multiclk_adapt"),
+        )
 
 
 def test_streaming_check_supports_failure_budget_and_trace_sampling(tmp_path):

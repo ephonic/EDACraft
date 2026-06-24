@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 from rtlgen_x.sim import CppBackendScaffold, SimModule
-from rtlgen_x.verify.module_adapter import normalize_executable_module
+from rtlgen_x.verify.module_adapter import normalize_executable_module, require_single_clock_module
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,7 @@ class TraceSample:
     inputs: Dict[str, int]
     outputs: Dict[str, int]
     expected: Dict[str, int]
+    active_domains: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,8 @@ def run_directed_test(
 ) -> DirectedTestReport:
     """Compile the module, run directed vectors, and collect mismatches."""
 
-    module = normalize_executable_module(module)
+    module = normalize_executable_module(module, context="run_directed_test(...)")
+    require_single_clock_module(module, context="run_directed_test")
     runtime_builder = builder if builder is not None else CppBackendScaffold()
     traces = []
     failures = []
@@ -123,7 +125,8 @@ def run_streaming_test(
         raise ValueError("trace_stride must be positive when provided")
     if failure_block_cycles is not None and failure_block_cycles < 1:
         raise ValueError("failure_block_cycles must be positive when provided")
-    module = normalize_executable_module(module)
+    module = normalize_executable_module(module, context="run_streaming_test(...)")
+    require_single_clock_module(module, context="run_streaming_test")
     runtime_builder = builder if builder is not None else CppBackendScaffold()
     failures = []
     sampled_traces = []
@@ -231,7 +234,8 @@ def run_streaming_check(
         raise ValueError("trace_stride must be positive when provided")
     if failure_block_cycles is not None and failure_block_cycles < 1:
         raise ValueError("failure_block_cycles must be positive when provided")
-    module = normalize_executable_module(module)
+    module = normalize_executable_module(module, context="run_streaming_check(...)")
+    require_single_clock_module(module, context="run_streaming_check")
     runtime_builder = builder if builder is not None else CppBackendScaffold()
     failures = []
     sampled_traces = []
@@ -339,7 +343,8 @@ def run_streaming_check_adaptive(
     if trace_stride is not None and trace_stride < 1:
         raise ValueError("trace_stride must be positive when provided")
 
-    module = normalize_executable_module(module)
+    module = normalize_executable_module(module, context="run_streaming_check_adaptive(...)")
+    require_single_clock_module(module, context="run_streaming_check_adaptive")
     runtime_builder = builder if builder is not None else CppBackendScaffold()
     failures = []
     sampled_traces = []

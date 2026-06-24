@@ -25,7 +25,7 @@ You need one of:
 
 1. a preset architecture scenario
 2. a custom `ArchitectureModel` plus `Workload`
-3. optionally, a detailed executable `SimModule` if you also want module-side PPA analysis
+3. optionally, a DSL module if you also want module-side PPA analysis
 
 ## End-to-end path
 
@@ -38,6 +38,10 @@ scenario or architecture model
   -> optional module-side PPA and implementation evidence
   -> redesign and rerun
 ```
+
+`archsim` and `ppa` are report-oriented in this flow. They do not emit an
+explicit DSL handoff IR. The agent or designer reads the reports, then edits the
+DSL or RTL structure directly.
 
 ## Step 1: choose the starting point
 
@@ -90,18 +94,25 @@ workload = Workload.from_flows(
 
 ### Option C: infer a rough architecture from a detailed module
 
-If you already have a `SimModule`, you can use inference helpers to bootstrap a
-first-pass architecture view.
+If you already have a DSL module, lower it first and then use inference helpers
+to bootstrap a first-pass architecture view. This is a low-level executable
+helper path; it is separate from the DSL-facing public PPA helpers.
 
 ```python
 from rtlgen_x.archsim import infer_architecture_from_module, infer_flow_from_module
+from rtlgen_x.dsl import lower_dsl_module_to_sim
 
+sim_module = lower_dsl_module_to_sim(module).module
 model = infer_architecture_from_module(sim_module)
 workload = infer_flow_from_module(sim_module)
 ```
 
 This is useful when you want to move from a concrete module toward coarse-grain
 architecture reasoning without hand-writing the first model from scratch.
+Treat it as a bootstrap only: the inferred model is a heuristic early estimate
+from executable structure, not a recovered true microarchitecture. Prefer
+hand-authored `ArchitectureModel` instances before making architectural
+tradeoff decisions, and use inferred reports mainly for first-pass triage.
 
 ## Step 2: run behavior-level simulation
 
@@ -231,6 +242,48 @@ print(rank_queue_depth_upgrades(model, workload))
 These rankers are useful for triage when the design space is large and you need
 to prioritize only the top few next experiments.
 
+## Step 6.5: collapse raw evidence into one report
+
+Before moving on to PPA, it is often useful to collapse the raw behavior,
+cycle, and sweep artifacts into one summary that an agent or reviewer can read
+quickly.
+
+```python
+from rtlgen_x.archsim import (
+    emit_architecture_report_markdown,
+    rank_bandwidth_upgrades,
+    summarize_architecture_report,
+)
+
+summary = summarize_architecture_report(
+    model,
+    workload,
+    behavior_report=behavior,
+    cycle_report=cycle,
+    sweep_reports=(bandwidth_sweep, capacity_sweep, latency_sweep, queue_sweep, ii_sweep),
+    upgrade_candidates=rank_bandwidth_upgrades(model, workload),
+)
+
+markdown = emit_architecture_report_markdown(summary, title="Architecture Exploration Report")
+print(markdown)
+```
+
+The summary object is intended to answer, in one place:
+
+1. which flow is throughput-limited
+2. which stage has the most queue pressure or utilization
+3. which explored knob actually moved total cycles
+4. which ranked upgrade is the best next experiment
+
+On the PPA side, the matching architecture stats now also carry lightweight
+stage proxies for:
+
+1. bytes moved
+2. activity pressure
+3. queue occupancy pressure
+4. compute pressure
+5. stage-level area/power proxy totals
+
 ## Step 7: turn the evidence into PPA advice
 
 Now feed the simulation evidence into the PPA advisor.
@@ -262,12 +315,15 @@ This is the point where raw simulator output becomes design guidance.
 
 ## Step 8: combine architecture and module-side analysis
 
-If you also have a detailed executable module, add structural analysis.
+If you also have a DSL module, add structural analysis. Public module-side PPA
+helpers are DSL-facing: pass the original DSL `Module`, or pass the full
+`LoweredDslModule` wrapper if you already have it. Do not pass raw
+`lowered.module` into `analyze_module_ppa(...)` or `advise_ppa(...)`.
 
 ```python
 from rtlgen_x.ppa import analyze_module_ppa, advise_ppa
 
-module_stats = analyze_module_ppa(sim_module)
+module_stats = analyze_module_ppa(module)
 print(module_stats.max_expr_depth)
 print(module_stats.state_bits)
 print(module_stats.memory_bits)
@@ -276,9 +332,13 @@ print(module_stats.critical_assignment_source_file)
 print(module_stats.critical_assignment_source_line)
 print(module_stats.critical_expr_op)
 print(module_stats.critical_expr_operand_widths)
+print(module_stats.largest_memory_name, module_stats.largest_memory_bits)
+print(module_stats.largest_state_name, module_stats.largest_state_bits)
+print(module_stats.dominant_area_bucket, module_stats.dominant_power_bucket)
+print(module_stats.area_memory_score, module_stats.power_memory_score)
 
 ppa_report = advise_ppa(
-    module=sim_module,
+    module=module,
     model=model,
     workload=workload,
     behavior_report=behavior,
@@ -299,8 +359,25 @@ datapaths:
 4. `max_memory_width`
 5. `max_memory_depth`
 6. `small_memory_count`
-7. `widest_multiplier_operand_widths`
-8. `widest_multiplier_assignment_target`
+7. `largest_memory_name`
+8. `largest_memory_bits`
+9. `largest_state_name`
+10. `largest_state_bits`
+11. `dominant_area_bucket`
+12. `dominant_power_bucket`
+13. `widest_multiplier_operand_widths`
+14. `widest_multiplier_assignment_target`
+
+The recommendation evidence now also carries `area_breakdown` and
+`power_breakdown`, so an agent can tell whether a warning is being driven more
+by state, memory, arithmetic, muxing, or write activity before deciding what to
+rewrite.
+
+When you render the report through `summarize_ppa_report(...)` or
+`emit_ppa_report_markdown(...)`, those hotspots are also collapsed into a
+precise target label such as `module.signal @ file:line` plus the first
+concrete next actions. This makes it much easier to hand the result back to an
+editing agent without another custom adapter layer.
 
 This is especially useful when:
 
@@ -325,7 +402,7 @@ reports = load_implementation_report_bundle(
 )
 
 ppa_report = advise_ppa(
-    module=sim_module,
+    module=module,
     model=model,
     workload=workload,
     behavior_report=behavior,
@@ -356,6 +433,60 @@ Use calibration when:
 1. you want better prediction before running the next implementation job
 2. you already have a body of prior synthesis or signoff evidence
 3. design families are similar enough for scaling laws to help
+
+Typical calibration loop:
+
+```python
+from rtlgen_x.ppa import (
+    build_architecture_ppa_calibration_sample,
+    build_module_ppa_calibration_sample,
+    emit_ppa_report_markdown,
+    fit_architecture_ppa_calibration,
+    fit_module_ppa_calibration,
+    load_implementation_report_bundle,
+)
+
+reports = load_implementation_report_bundle(
+    (
+        "path/to/timing.rpt",
+        "path/to/area.rpt",
+        "path/to/power.rpt",
+    )
+)
+
+module_calibration = fit_module_ppa_calibration(
+    (build_module_ppa_calibration_sample(module, reports),)
+)
+architecture_calibration = fit_architecture_ppa_calibration(
+    (
+        build_architecture_ppa_calibration_sample(
+            model,
+            workload,
+            measured_total_cycles=cycle.total_cycles * 1.10,
+            measured_makespan_cycles=behavior.makespan_cycles * 1.05,
+        ),
+    )
+)
+
+calibrated_report = advise_ppa(
+    module=module,
+    model=model,
+    workload=workload,
+    behavior_report=behavior,
+    cycle_report=cycle,
+    module_calibration=module_calibration,
+    architecture_calibration=architecture_calibration,
+)
+
+print(emit_ppa_report_markdown(calibrated_report, title="Calibrated PPA Report"))
+```
+
+Practical trust rule:
+
+1. no calibration samples: use heuristic scores and hotspot attribution only for relative triage
+2. one calibration sample: use calibrated estimates directionally inside the same flow
+3. two calibration samples: prefer calibrated ranking for similar variants, but keep checking new reports
+4. three or more samples: calibrated estimates can be the default ranking signal for nearby designs
 
 ## Step 11: push changes back into the design
 
@@ -401,10 +532,21 @@ For module-side timing work, prefer recommendations that identify all of:
 1. hotspot target name
 2. source file and line
 3. operator kind and operand widths
+4. at least one concrete next action
 
 That level of attribution makes it much easier for an agent to decide whether a
 path wants pipelining, decomposition, banking, or a different arithmetic
 structure.
+
+For area/power work, also check:
+
+1. `dominant_area_bucket` and `dominant_power_bucket`
+2. `largest_memory_*` for storage-heavy modules
+3. `largest_state_*` for register-heavy modules
+4. `area_breakdown["arithmetic"]` plus multiplier hotspot evidence for wide
+   fixed-point datapaths
+5. architecture-side `dominant_area_stage` / `dominant_power_stage` when the
+   report says one stage is carrying a disproportionate share of the proxy cost
 
 For LUT-backed fixed-point units, the most useful rule of thumb is:
 

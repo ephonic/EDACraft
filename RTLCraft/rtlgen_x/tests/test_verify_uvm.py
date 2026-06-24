@@ -19,16 +19,21 @@ from rtlgen_x.sim import (
     SignalRef,
     SimModule,
 )
-from rtlgen_x.dsl import Array, Else, If, Input, Module, Output, Reg
+from rtlgen_x.dsl import APBRegisterBank, AXI4LiteRegisterBank, Array, Else, If, Input, Module, Output, Reg, WishboneRegisterBank
 from rtlgen_x.verify import (
+    ApbTransfer,
+    AxiLiteTransfer,
+    AxiStreamTransfer,
     describe_verification_interface,
     emit_python_reference_model,
     generate_uvm_collateral,
     generate_uvm_runtime_bundle,
     load_generated_reference_model,
+    protocol_transfers_to_uvm_sequence_steps,
     probe_iverilog_uvm_collateral,
     smoke_test_generated_reference_model,
     UvmSequenceStep,
+    WishboneTransfer,
     write_uvm_collateral,
     write_uvm_runtime_bundle,
 )
@@ -91,6 +96,24 @@ module uvm_accum (
 
   always_comb begin
     out = acc + inp;
+  end
+endmodule
+""".strip() + "\n"
+
+
+def _axis_ready_dut_sv() -> str:
+    return """
+module uvm_axis_ready (
+    input logic clk,
+    input logic rst,
+    input logic [15:0] tdata,
+    input logic tvalid,
+    input logic tlast,
+    input logic [1:0] tkeep,
+    output logic tready
+);
+  always_comb begin
+    tready = tvalid;
   end
 endmodule
 """.strip() + "\n"
@@ -584,16 +607,21 @@ def test_generate_uvm_runtime_bundle_accepts_real_simd16_module(tmp_path):
 def test_uvm_collateral_rejects_multi_clock_modules():
     module = DslMultiClockMailbox()
 
-    with pytest.raises(ValueError, match="requires directed_sequence with explicit active_domains"):
+    with pytest.raises(ValueError) as excinfo:
         generate_uvm_collateral(module, clock_name="wr_clk")
-    with pytest.raises(ValueError, match="requires directed_sequence with explicit active_domains"):
+    assert "requires directed_sequence with explicit active_domains" in str(excinfo.value)
+    assert "Known clock domains: wr_clk, rd_clk" in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
         generate_uvm_runtime_bundle(module, clock_name="wr_clk")
+    assert "requires directed_sequence with explicit active_domains" in str(excinfo.value)
+    assert "Known clock domains: wr_clk, rd_clk" in str(excinfo.value)
 
 
 def test_multiclock_uvm_collateral_requires_explicit_active_domains():
     module = DslMultiClockMailbox()
 
-    with pytest.raises(ValueError, match="must be UvmSequenceStep instances with explicit active_domains"):
+    with pytest.raises(ValueError) as excinfo:
         generate_uvm_collateral(
             module,
             clock_name="wr_clk",
@@ -601,6 +629,8 @@ def test_multiclock_uvm_collateral_requires_explicit_active_domains():
                 {"wr_rst": 1, "rd_rst": 1},
             ),
         )
+    assert "must be UvmSequenceStep instances or structured step mappings with explicit active_domains" in str(excinfo.value)
+    assert "Use UvmSequenceStep(..., active_domains=" in str(excinfo.value)
 
 
 def test_generate_multiclock_uvm_collateral_emits_event_driven_artifacts():
@@ -658,6 +688,71 @@ def test_generate_multiclock_uvm_collateral_emits_event_driven_artifacts():
 
     assert "ACTIVE_DOMAIN_FLAGS = ('rtlgen_x_active_wr_clk', 'rtlgen_x_active_rd_clk')" in dpi_py_source
     assert "outputs = model.predict_clocks(transaction, tuple(active_domains))" in dpi_py_source
+
+
+def test_generate_multiclock_uvm_collateral_accepts_structured_directed_steps():
+    collateral = generate_uvm_collateral(
+        DslMultiClockMailbox(),
+        clock_name="wr_clk",
+        directed_sequence=(
+            {
+                "inputs": {"wr_rst": 1, "rd_rst": 1},
+                "label": "reset",
+                "active_domains": ("wr_clk", "rd_clk"),
+            },
+            {
+                "inputs": {"wr_en": 1, "din": 0x11},
+                "label": "write0",
+                "active_domains": ("wr_clk",),
+            },
+            {
+                "inputs": {"rd_en": 1},
+                "label": "read0",
+                "active_domains": ("rd_clk",),
+            },
+        ),
+    )
+
+    seq_source = collateral.artifact_map()["dsl_multi_clock_mailbox_smoke_seq.sv"]
+
+    assert "create(\"reset\")" in seq_source
+    assert "req.rtlgen_x_active_wr_clk = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_rd_clk = 1'b1;" in seq_source
+    assert "create(\"write0\")" in seq_source
+    assert "create(\"read0\")" in seq_source
+
+
+def test_generate_multiclock_uvm_collateral_accepts_mapping_active_domains():
+    collateral = generate_uvm_collateral(
+        DslMultiClockMailbox(),
+        clock_name="wr_clk",
+        directed_sequence=(
+            {
+                "inputs": {"wr_rst": 1, "rd_rst": 1},
+                "label": "reset",
+                "active_domains": {"wr_clk": True, "rd_clk": True},
+            },
+            {
+                "inputs": {"wr_en": 1, "din": 0x11},
+                "label": "write0",
+                "active_domains": {"wr_clk": True, "rd_clk": False},
+            },
+            {
+                "inputs": {"rd_en": 1},
+                "label": "read0",
+                "active_domains": {"wr_clk": False, "rd_clk": True},
+            },
+        ),
+    )
+
+    seq_source = collateral.artifact_map()["dsl_multi_clock_mailbox_smoke_seq.sv"]
+
+    assert "create(\"reset\")" in seq_source
+    assert "req.rtlgen_x_active_wr_clk = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_rd_clk = 1'b1;" in seq_source
+    assert "create(\"write0\")" in seq_source
+    assert "req.rtlgen_x_active_rd_clk = 1'b0;" in seq_source
+    assert "create(\"read0\")" in seq_source
 
 
 def test_generate_multiclock_uvm_runtime_bundle_emits_event_driven_top():
@@ -969,6 +1064,135 @@ def test_verification_collateral_accepts_real_sram256k_module():
     assert "logic [31:0] prdata;" in artifact_map["earphone_sram_if.sv"]
     assert "Memory('mem', width=32, depth=65536" in artifact_map["earphone_sram256k_ref_model.py"]
     assert "MemoryWrite('mem'" in artifact_map["earphone_sram256k_ref_model.py"]
+
+
+def test_verification_collateral_accepts_apb_register_bank():
+    interface = describe_verification_interface(APBRegisterBank(depth=8))
+    collateral = generate_uvm_collateral(
+        APBRegisterBank(depth=8),
+        interface_name="apbregisterbank_if",
+        clock_name="pclk",
+    )
+    artifact_map = collateral.artifact_map()
+
+    assert interface.module_name == "APBRegisterBank"
+    assert interface.reset_signal == "presetn"
+    assert interface.reset_active_low is True
+    assert [port.name for port in interface.inputs[:5]] == ["pclk", "presetn", "psel", "penable", "pwrite"]
+    assert [port.name for port in interface.outputs] == ["prdata", "pready", "pslverr"]
+    assert "apbregisterbank_if.sv" in artifact_map
+    assert "apbregisterbank_ref_model.py" in artifact_map
+    assert "logic presetn;" in artifact_map["apbregisterbank_if.sv"]
+    assert "logic [31:0] paddr;" in artifact_map["apbregisterbank_if.sv"]
+    assert "logic [31:0] prdata;" in artifact_map["apbregisterbank_if.sv"]
+    assert "byte_enable_granularity=8" in artifact_map["apbregisterbank_ref_model.py"]
+    assert "MemoryWrite('regmem'" in artifact_map["apbregisterbank_ref_model.py"]
+
+
+def test_generate_uvm_runtime_bundle_accepts_apb_register_bank():
+    bundle = generate_uvm_runtime_bundle(APBRegisterBank(depth=8), clock_name="pclk")
+    artifact_map = bundle.artifact_map()
+
+    assert bundle.module_name == "APBRegisterBank"
+    assert bundle.dut_module_name == "APBRegisterBank"
+    assert "apbregisterbank_dut.sv" in artifact_map
+    assert "apbregisterbank_top.sv" in artifact_map
+    assert "module APBRegisterBank" in artifact_map["apbregisterbank_dut.sv"]
+    assert "req.randomize() with { presetn == 1'b0; }" in artifact_map["apbregisterbank_smoke_seq.sv"]
+    assert "req.randomize() with { presetn == 1'b1; }" in artifact_map["apbregisterbank_smoke_seq.sv"]
+
+
+def test_generate_uvm_runtime_bundle_accepts_protocol_transfer_bridge_for_apb():
+    directed_sequence = protocol_transfers_to_uvm_sequence_steps(
+        "apb",
+        (ApbTransfer(addr=0x10, write=False, expected_rdata=0x1234, label="apb_rd"),),
+    )
+    bundle = generate_uvm_runtime_bundle(
+        APBRegisterBank(depth=8),
+        clock_name="pclk",
+        directed_sequence=directed_sequence,
+    )
+    artifact_map = bundle.artifact_map()
+
+    assert "apbregisterbank_smoke_seq.sv" in artifact_map
+    assert "req.paddr = 32'h10;" in artifact_map["apbregisterbank_smoke_seq.sv"]
+    assert "req.psel = 1'b1;" in artifact_map["apbregisterbank_smoke_seq.sv"]
+    assert "req.penable = 1'b0;" in artifact_map["apbregisterbank_smoke_seq.sv"]
+
+
+def test_generate_uvm_runtime_bundle_accepts_protocol_transfer_bridge_for_axilite():
+    directed_sequence = protocol_transfers_to_uvm_sequence_steps(
+        "axilite",
+        (AxiLiteTransfer(addr=0x10, write=False, expected_rdata=0x1234, label="axil_rd"),),
+    )
+    bundle = generate_uvm_runtime_bundle(
+        AXI4LiteRegisterBank(depth=8),
+        clock_name="clk",
+        directed_sequence=directed_sequence,
+    )
+    artifact_map = bundle.artifact_map()
+
+    assert "axi4literegisterbank_smoke_seq.sv" in artifact_map
+    assert "req.araddr = 32'h10;" in artifact_map["axi4literegisterbank_smoke_seq.sv"]
+    assert "req.arvalid = 1'b1;" in artifact_map["axi4literegisterbank_smoke_seq.sv"]
+    assert "req.rready = 1'b1;" in artifact_map["axi4literegisterbank_smoke_seq.sv"]
+    assert "req.awvalid = 1'b0;" in artifact_map["axi4literegisterbank_smoke_seq.sv"]
+
+
+def test_generate_uvm_runtime_bundle_accepts_protocol_transfer_bridge_for_wishbone_clocked():
+    directed_sequence = protocol_transfers_to_uvm_sequence_steps(
+        "wishbone_clocked",
+        (WishboneTransfer(addr=0x10, write=False, expected_rdata=0x1234, label="wb_rd"),),
+    )
+    bundle = generate_uvm_runtime_bundle(
+        WishboneRegisterBank(depth=8),
+        clock_name="clk_i",
+        directed_sequence=directed_sequence,
+    )
+    artifact_map = bundle.artifact_map()
+
+    assert "wishboneregisterbank_smoke_seq.sv" in artifact_map
+    assert "req.adr_i = 32'h10;" in artifact_map["wishboneregisterbank_smoke_seq.sv"]
+    assert "req.cyc_i = 1'b1;" in artifact_map["wishboneregisterbank_smoke_seq.sv"]
+    assert "req.stb_i = 1'b1;" in artifact_map["wishboneregisterbank_smoke_seq.sv"]
+    assert 'create("wb_rd_gap")' in artifact_map["wishboneregisterbank_smoke_seq.sv"]
+
+
+def test_generate_uvm_runtime_bundle_accepts_protocol_transfer_bridge_for_axistream_with_explicit_dut_source():
+    module = _lowered(
+        SimModule(
+            name="uvm_axis_ready",
+            signals=(
+                Signal("clk", width=1, kind="input"),
+                Signal("rst", width=1, kind="input"),
+                Signal("tdata", width=16, kind="input"),
+                Signal("tvalid", width=1, kind="input"),
+                Signal("tlast", width=1, kind="input"),
+                Signal("tkeep", width=2, kind="input"),
+                Signal("tready", width=1, kind="output"),
+            ),
+            assignments=(Assignment("tready", SignalRef("tvalid")),),
+            outputs=("tready",),
+        )
+    )
+    directed_sequence = protocol_transfers_to_uvm_sequence_steps(
+        "axis",
+        (AxiStreamTransfer(data=0xABCD, last=1, keep=0x3, expected_ready=1, label="axis0"),),
+    )
+    bundle = generate_uvm_runtime_bundle(
+        module,
+        clock_name="clk",
+        dut_module_name="uvm_axis_ready",
+        dut_source=_axis_ready_dut_sv(),
+        directed_sequence=directed_sequence,
+    )
+    artifact_map = bundle.artifact_map()
+
+    assert "uvm_axis_ready_smoke_seq.sv" in artifact_map
+    assert "req.tdata = 16'habcd;" in artifact_map["uvm_axis_ready_smoke_seq.sv"].lower()
+    assert "req.tvalid = 1'b1;" in artifact_map["uvm_axis_ready_smoke_seq.sv"]
+    assert "req.tlast = 1'b1;" in artifact_map["uvm_axis_ready_smoke_seq.sv"]
+    assert "req.tkeep = 2'h3;" in artifact_map["uvm_axis_ready_smoke_seq.sv"]
 
 
 def test_generated_reference_model_loads_runtime_via_env_override(tmp_path):

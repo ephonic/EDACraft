@@ -450,6 +450,58 @@ class ReadyValidFIFO(Module):
                         self._count <<= self._count - 1
 
 
+class ReadyValidAsyncBridge(Module):
+    """Multi-clock ready/valid bridge backed by an internal AsyncFIFO."""
+
+    def __init__(self, width: int = 32, depth: int = 4, name: str = "ReadyValidAsyncBridge"):
+        if int(depth) < 2:
+            raise ValueError("ReadyValidAsyncBridge depth must be >= 2")
+        super().__init__(name)
+        self.width = int(width)
+        self.depth = int(depth)
+
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+
+        self.in_data = Input(self.width, "in_data")
+        self.in_valid = Input(1, "in_valid")
+        self.in_ready = Output(1, "in_ready")
+
+        self.out_data = Output(self.width, "out_data")
+        self.out_valid = Output(1, "out_valid")
+        self.out_ready = Input(1, "out_ready")
+        self._rd_fire = Wire(1, "rd_fire")
+        self._fifo_dout = Wire(self.width, "fifo_dout")
+        self._fifo_full = Wire(1, "fifo_full")
+        self._fifo_empty = Wire(1, "fifo_empty")
+        self._fifo = AsyncFIFO(width=self.width, depth=self.depth)
+
+        self.instantiate(
+            self._fifo,
+            "u_fifo",
+            port_map={
+                "wr_clk": self.wr_clk,
+                "rd_clk": self.rd_clk,
+                "wr_rst": self.wr_rst,
+                "rd_rst": self.rd_rst,
+                "din": self.in_data,
+                "wr_en": self.in_valid & self.in_ready,
+                "rd_en": self._rd_fire,
+                "dout": self._fifo_dout,
+                "full": self._fifo_full,
+                "empty": self._fifo_empty,
+            },
+        )
+
+        with self.comb:
+            self.in_ready <<= ~self._fifo_full
+            self.out_valid <<= ~self._fifo_empty
+            self.out_data <<= self._fifo_dout
+            self._rd_fire <<= self.out_valid & self.out_ready
+
+
 class ReqRspQueue(Module):
     """Single-clock request queue with direct response passthrough.
 
@@ -1970,15 +2022,22 @@ class AsyncFIFO(Module):
 
         ptr_w = aw
         wr_next = Wire(aw + 1, "wr_nxt")
+        wr_next_gray = Wire(aw + 1, "wr_nxt_gray")
         with self.comb:
             wr_next <<= self._wr_ptr + 1
-            self.full <<= ((wr_next[ptr_w:0] == self._wr_sync[1][ptr_w:0]) &
-                          (wr_next[aw] != self._wr_sync[1][aw]))
+            wr_next_gray <<= wr_next ^ (wr_next >> 1)
+            if aw > 1:
+                self.full <<= wr_next_gray == Cat(
+                    ~self._rd_sync[1][aw:aw-1],
+                    self._rd_sync[1][aw-2:0],
+                )
+            else:
+                self.full <<= wr_next_gray == ~self._rd_sync[1][aw:aw-1]
 
         rd_next = Wire(aw + 1, "rd_nxt")
         with self.comb:
             rd_next <<= self._rd_ptr + 1
-            self.empty <<= (rd_next == self._rd_sync[1])
+            self.empty <<= self._rd_gray == self._wr_sync[1]
 
         with self.seq(self.wr_clk, self.wr_rst):
             with If(self.wr_rst == 1):

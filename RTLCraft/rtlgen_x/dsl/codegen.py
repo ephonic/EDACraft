@@ -177,7 +177,8 @@ class VerilogEmitter:
         self._validate_storage_codegen_subset(module)
         self.lines = []
         self._extra_port_wires: List[Tuple[str, str]] = []
-        self._port_expr_counter: int = 0
+        self._port_expr_names: set[str] = set()
+        self._port_expr_map: Dict[Tuple[str, str], str] = {}
         self._memory_decl_map: Dict[str, Any] = {}
         # Build mapping from submodule port signal id to instance name.
         # This lets us emit prefixed names (e.g. u_valu_wid) when a submodule
@@ -516,21 +517,27 @@ class VerilogEmitter:
             self._emit_section_comment("Internal declarations")
         self._emit_internal_decls(module)
 
-        # Emit extra port wires for complex slice expressions in submodule instances
-        for decl_line, assign_line in self._extra_port_wires:
-            self.lines.append(decl_line)
-            self.lines.append(assign_line)
-        if self._extra_port_wires:
-            self._append_blank_line()
-
         # Audit Fix 0522 — Section 2.2: Resolve cross-module assignments
         # (e.g., ifu.clk <<= self.clk) into proper submodule port connections
         # instead of redundant "assign clk = clk;" statements.
         self._resolve_cross_module_assignments(module)
 
+        # Pre-collect helper wires so review output can present them before
+        # the instance list that consumes them.
+        self._collect_structural_port_helpers(module)
+
         # 顶层语句（assign、子模块实例等）
         if module._top_level or module._submodules:
             self._emit_section_comment("Structural wiring and instances")
+
+        # Helper wires for complex submodule port expressions live with structural wiring.
+        if self._extra_port_wires:
+            self.lines.append("    // Port connection helpers")
+            for decl_line, assign_line in self._extra_port_wires:
+                self.lines.append(decl_line)
+                self.lines.append(assign_line)
+            self._append_blank_line()
+
         for stmt in module._top_level:
             self._emit_toplevel_stmt(stmt)
 
@@ -872,12 +879,12 @@ class VerilogEmitter:
             self._append_blank_line()
 
         # internal signals (use logic so they can be driven in both assign and always)
-        for sig in set(module._wires.values()):
+        for sig in self._ordered_unique_signals(module._wires.values()):
             # Skip signals that belong to an Array (declared as 2D array below)
             if getattr(sig, '_array_parent', None) is None:
                 self.lines.append(self._sig_decl("logic", sig))
         # regs
-        for sig in set(module._regs.values()):
+        for sig in self._ordered_unique_signals(module._regs.values()):
             if getattr(sig, '_array_parent', None) is None:
                 self.lines.append(self._sig_decl("reg", sig))
         # arrays
@@ -912,6 +919,18 @@ class VerilogEmitter:
         if module._wires or module._regs or module._arrays or undeclared:
             self._append_blank_line()
 
+    @staticmethod
+    def _ordered_unique_signals(signals):
+        seen = set()
+        ordered = []
+        for sig in signals:
+            key = id(sig)
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(sig)
+        return ordered
+
     def _sig_decl(self, vtype: str, sig: Signal, name_override: Optional[str] = None) -> str:
         init_part = ""
         if isinstance(sig, Reg) and getattr(sig, 'init_value', None) is not None:
@@ -920,6 +939,49 @@ class VerilogEmitter:
         if sig.width == 1:
             return f"    {vtype} {name}{init_part};"
         return f"    {vtype} [{sig.width - 1}:0] {name}{init_part};"
+
+    def _stable_port_expr_wire_name(self, inst_name: str, port_name: str) -> str:
+        base = f"{inst_name}_{port_name}_expr"
+        candidate = base
+        suffix = 1
+        while candidate in self._port_expr_names:
+            suffix += 1
+            candidate = f"{base}_{suffix}"
+        self._port_expr_names.add(candidate)
+        return candidate
+
+    @staticmethod
+    def _submodule_port_expr_needs_helper(expr: Expr) -> bool:
+        if isinstance(expr, (Slice, PartSelect)):
+            op = expr.operand
+            if isinstance(op, (Concat, BinOp)):
+                return True
+        return False
+
+    def _append_port_expr_helper(self, inst_name: str, port_name: str, expr_obj: Expr) -> None:
+        key = (inst_name, port_name)
+        wire_name = self._port_expr_map.get(key)
+        if wire_name is None:
+            wire_name = self._stable_port_expr_wire_name(inst_name, port_name)
+            self._port_expr_map[key] = wire_name
+        helper_decl = f"    wire [{expr_obj.width-1}:0] {wire_name};"
+        helper_assign = f"    assign {wire_name} = {self._emit_expr(expr_obj)};"
+        pair = (helper_decl, helper_assign)
+        if pair not in self._extra_port_wires:
+            self._extra_port_wires.append(pair)
+
+    def _collect_submodule_port_helpers(self, stmt: SubmoduleInst) -> None:
+        for port_name, expr in stmt.port_map.items():
+            if expr is None:
+                continue
+            expr_obj = _to_expr(expr) if isinstance(expr, Signal) else expr
+            if self._submodule_port_expr_needs_helper(expr_obj):
+                self._append_port_expr_helper(stmt.name, port_name, expr_obj)
+
+    def _collect_structural_port_helpers(self, module: Module) -> None:
+        for stmt in module._top_level:
+            if isinstance(stmt, SubmoduleInst):
+                self._collect_submodule_port_helpers(stmt)
 
     # -----------------------------------------------------------------
     # Statements
@@ -1665,13 +1727,6 @@ class VerilogEmitter:
         else:
             self.lines.append(f"{prefix}{mod_name} {stmt.name} (")
 
-        def _needs_port_wire(expr):
-            if isinstance(expr, (Slice, PartSelect)):
-                op = expr.operand
-                if isinstance(op, (Concat, BinOp)):
-                    return True
-            return False
-
         port_map = stmt.port_map
         items = [(k, v) for k, v in port_map.items() if v is not None]
         output_ports = set(stmt.module._outputs.keys())
@@ -1682,13 +1737,9 @@ class VerilogEmitter:
         for i, (port_name, expr) in enumerate(items):
             comma = "," if i < len(items) - 1 else ""
             expr_obj = _to_expr(expr) if isinstance(expr, Signal) else expr
-            if _needs_port_wire(expr_obj):
-                wire_name = f"_port_expr_{self._port_expr_counter}"
-                self._port_expr_counter += 1
+            if self._submodule_port_expr_needs_helper(expr_obj):
+                wire_name = self._port_expr_map[(stmt.name, port_name)]
                 width = expr_obj.width
-                decl = f"    wire [{width-1}:0] {wire_name};"
-                assign = f"    assign {wire_name} = {self._emit_expr(expr_obj)};"
-                self._extra_port_wires.append((decl, assign))
                 expr_obj = Ref(Wire(width, wire_name))
             # For output ports, emit bare name without $signed() wrapper
             # because Verilog does not allow $signed() in output port connections
@@ -1945,6 +1996,7 @@ class VerilogEmitter:
     _COMPLEXITY_DEPTH_LIMIT = 4      # max tree depth before extraction
     _COMPLEXITY_CHAR_LIMIT = 300     # max emitted chars before extraction
     _COMPLEXITY_NODE_LIMIT = 20      # max AST nodes before extraction
+    _READABILITY_CHAIN_TERM_LIMIT = 4
 
     def _expr_depth(self, expr: Any) -> int:
         """Maximum nesting depth of an expression tree."""
@@ -2015,6 +2067,10 @@ class VerilogEmitter:
         if not self._is_too_complex(expr):
             return expr
 
+        chain_expr = self._extract_readable_associative_chain(target_name, expr, body, wire_counter)
+        if chain_expr is not None:
+            return chain_expr
+
         # Recurse first (deepest-first extraction)
         if isinstance(expr, BinOp):
             new_lhs = self._extract_sub_exprs(target_name, expr.lhs, body, wire_counter)
@@ -2073,6 +2129,207 @@ class VerilogEmitter:
         ref.signal = wire  # ensure signal is set
         return ref
 
+    def _make_signal_ref(self, sig: Signal) -> Ref:
+        ref = Ref(sig)
+        ref.signal = sig
+        return ref
+
+    def _flatten_associative_binop(self, expr: Any, op: str) -> List[Any]:
+        if isinstance(expr, BinOp) and expr.op == op:
+            return self._flatten_associative_binop(expr.lhs, op) + self._flatten_associative_binop(expr.rhs, op)
+        return [expr]
+
+    def _build_left_assoc_binop(self, op: str, operands: List[Any], width: int) -> Any:
+        if not operands:
+            raise ValueError("operands must not be empty")
+        result = operands[0]
+        for operand in operands[1:]:
+            result = BinOp(op, result, operand, width)
+        return result
+
+    def _extract_readable_associative_chain(
+        self,
+        target_name: str,
+        expr: Any,
+        body: List[Any],
+        wire_counter: List[int],
+    ) -> Any | None:
+        if not isinstance(expr, BinOp) or expr.op not in {"^", "&", "|"}:
+            return None
+        operands = self._flatten_associative_binop(expr, expr.op)
+        if len(operands) <= self._READABILITY_CHAIN_TERM_LIMIT:
+            return None
+
+        simplified_operands = [
+            self._extract_sub_exprs(target_name, operand, body, wire_counter)
+            for operand in operands
+        ]
+        current_operands = simplified_operands
+        while len(current_operands) > self._READABILITY_CHAIN_TERM_LIMIT:
+            next_operands: List[Any] = []
+            for index in range(0, len(current_operands), self._READABILITY_CHAIN_TERM_LIMIT):
+                chunk = current_operands[index : index + self._READABILITY_CHAIN_TERM_LIMIT]
+                if len(chunk) == 1:
+                    next_operands.append(chunk[0])
+                    continue
+                wire_name = f"_{target_name}_ex{wire_counter[0]}"
+                wire_counter[0] += 1
+                wire = Wire(getattr(expr, "width", 1), wire_name)
+                chunk_expr = self._build_left_assoc_binop(expr.op, chunk, expr.width)
+                body.append(Assign(wire, chunk_expr, blocking=True))
+                next_operands.append(self._make_signal_ref(wire))
+            current_operands = next_operands
+        return self._build_left_assoc_binop(expr.op, current_operands, expr.width)
+
+    def _complexity_target_name(self, target: Any) -> str:
+        """Best-effort stable basename for review-profile helper wires."""
+        if isinstance(target, Signal):
+            return target.name
+        if isinstance(target, Ref):
+            return self._complexity_target_name(target.signal)
+        if isinstance(target, (Slice, PartSelect, BitSelect)):
+            return self._complexity_target_name(target.operand)
+        direct_name = getattr(target, "name", None)
+        if direct_name:
+            return str(direct_name)
+        return "tmp"
+
+    def _collect_repeated_subexpr_candidates(
+        self,
+        expr: Any,
+        counts: Dict[tuple, List[Any]],
+    ) -> None:
+        if expr is None or isinstance(expr, (int, Const, GenVar, Signal, Ref)):
+            return
+        if isinstance(expr, (BinOp, UnaryOp, Mux, Concat)):
+            sig = self._expr_signature(expr)
+            if sig in counts:
+                counts[sig][1] += 1
+            else:
+                counts[sig] = [expr, 1]
+        if isinstance(expr, BinOp):
+            self._collect_repeated_subexpr_candidates(expr.lhs, counts)
+            self._collect_repeated_subexpr_candidates(expr.rhs, counts)
+            return
+        if isinstance(expr, UnaryOp):
+            self._collect_repeated_subexpr_candidates(expr.operand, counts)
+            return
+        if isinstance(expr, Mux):
+            self._collect_repeated_subexpr_candidates(expr.cond, counts)
+            self._collect_repeated_subexpr_candidates(expr.true_expr, counts)
+            self._collect_repeated_subexpr_candidates(expr.false_expr, counts)
+            return
+        if isinstance(expr, Concat):
+            for operand in expr.operands:
+                self._collect_repeated_subexpr_candidates(operand, counts)
+            return
+        if isinstance(expr, Slice):
+            self._collect_repeated_subexpr_candidates(expr.operand, counts)
+            return
+        if isinstance(expr, PartSelect):
+            self._collect_repeated_subexpr_candidates(expr.operand, counts)
+            self._collect_repeated_subexpr_candidates(expr.offset, counts)
+            return
+        if isinstance(expr, BitSelect):
+            self._collect_repeated_subexpr_candidates(expr.operand, counts)
+            self._collect_repeated_subexpr_candidates(expr.index, counts)
+
+    def _replace_expr_by_signature(
+        self,
+        expr: Any,
+        replacements: Dict[tuple, Wire],
+        *,
+        skip_sig: Optional[tuple] = None,
+    ) -> Any:
+        if expr is None or isinstance(expr, (int, Const, GenVar, Signal, Ref)):
+            return expr
+        sig = self._expr_signature(expr)
+        if sig != skip_sig and sig in replacements:
+            return Ref(replacements[sig])
+        if isinstance(expr, BinOp):
+            return BinOp(
+                expr.op,
+                self._replace_expr_by_signature(expr.lhs, replacements, skip_sig=skip_sig),
+                self._replace_expr_by_signature(expr.rhs, replacements, skip_sig=skip_sig),
+                expr.width,
+            )
+        if isinstance(expr, UnaryOp):
+            return UnaryOp(
+                expr.op,
+                self._replace_expr_by_signature(expr.operand, replacements, skip_sig=skip_sig),
+                expr.width,
+            )
+        if isinstance(expr, Mux):
+            return Mux(
+                self._replace_expr_by_signature(expr.cond, replacements, skip_sig=skip_sig),
+                self._replace_expr_by_signature(expr.true_expr, replacements, skip_sig=skip_sig),
+                self._replace_expr_by_signature(expr.false_expr, replacements, skip_sig=skip_sig),
+                expr.width,
+            )
+        if isinstance(expr, Concat):
+            return Concat(
+                [self._replace_expr_by_signature(op, replacements, skip_sig=skip_sig) for op in expr.operands],
+                expr.width,
+            )
+        if isinstance(expr, Slice):
+            return Slice(
+                self._replace_expr_by_signature(expr.operand, replacements, skip_sig=skip_sig),
+                expr.hi,
+                expr.lo,
+            )
+        if isinstance(expr, PartSelect):
+            return PartSelect(
+                self._replace_expr_by_signature(expr.operand, replacements, skip_sig=skip_sig),
+                self._replace_expr_by_signature(expr.offset, replacements, skip_sig=skip_sig),
+                expr.width,
+            )
+        if isinstance(expr, BitSelect):
+            return BitSelect(
+                self._replace_expr_by_signature(expr.operand, replacements, skip_sig=skip_sig),
+                self._replace_expr_by_signature(expr.index, replacements, skip_sig=skip_sig),
+            )
+        return expr
+
+    def _extract_repeated_sub_exprs(
+        self,
+        target_name: str,
+        expr: Any,
+        body: List[Any],
+        wire_counter: List[int],
+    ) -> Any:
+        """Extract repeated non-trivial sub-expressions with review-friendly names."""
+        counts: Dict[tuple, List[Any]] = {}
+        self._collect_repeated_subexpr_candidates(expr, counts)
+        duplicates = [
+            (sig, counted_expr)
+            for sig, (counted_expr, count) in counts.items()
+            if count > 1
+        ]
+        if not duplicates:
+            return expr
+        duplicates.sort(
+            key=lambda item: (
+                self._expr_depth(item[1]),
+                self._expr_node_count(item[1]),
+                self._emit_expr(item[1]),
+            )
+        )
+        replacements: Dict[tuple, Wire] = {}
+        for sig, repeated_expr in duplicates:
+            wire_name = f"_{target_name}_ex{wire_counter[0]}"
+            wire_counter[0] += 1
+            replacements[sig] = Wire(getattr(repeated_expr, "width", 1), wire_name)
+        for sig, repeated_expr in duplicates:
+            wire = replacements[sig]
+            body.append(
+                Assign(
+                    wire,
+                    self._replace_expr_by_signature(repeated_expr, replacements, skip_sig=sig),
+                    blocking=True,
+                )
+            )
+        return self._replace_expr_by_signature(expr, replacements)
+
     def _needs_complexity_extraction(self, body: List[Any]) -> bool:
         """Quick check: does any assignment in body have a complex RHS?"""
         for stmt in body:
@@ -2115,15 +2372,17 @@ class VerilogEmitter:
                 new_body.append(stmt)
                 continue
 
-            target_name = getattr(target, 'name', 'tmp')
-            before_count = len(new_body)
+            target_name = self._complexity_target_name(target)
 
             if self._is_too_complex(stmt.value):
-                simplified = extract_with_tracking(target_name, stmt.value, new_body, wire_counter)
+                local_body: List[Any] = []
+                deduped = self._extract_repeated_sub_exprs(target_name, stmt.value, local_body, wire_counter)
+                simplified = extract_with_tracking(target_name, deduped, local_body, wire_counter)
                 # Collect wires added during extraction
-                for s in new_body[before_count:]:
+                for s in local_body:
                     if isinstance(s, Assign) and isinstance(s.target, Wire):
                         extracted_wires.append(s.target)
+                new_body.extend(local_body)
                 new_body.append(Assign(target, simplified, blocking=True))
             else:
                 new_body.append(stmt)

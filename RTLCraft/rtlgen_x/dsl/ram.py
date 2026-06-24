@@ -1,12 +1,12 @@
 """
-rtlgen_x.dsl.legacy.ram — RAM 封装器
+rtlgen_x.dsl.ram — RAM 封装器
 
 提供单口/双口 RAM 的标准封装，生成可综合的 Verilog memory 数组。
 """
 from __future__ import annotations
 
-from rtlgen_x.dsl.legacy.core import Input, Memory, Module, Output, Reg
-from rtlgen_x.dsl.legacy.logic import If
+from rtlgen_x.dsl.core import Input, Memory, Module, Output, Reg
+from rtlgen_x.dsl.logic import If
 
 
 class SinglePortRAM(Module):

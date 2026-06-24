@@ -1,5 +1,5 @@
 """
-rtlgen_x.dsl.legacy.pipeline — 流水线引擎
+rtlgen_x.dsl.pipeline — 流水线引擎
 
 提供 Pipeline / Stage / Handshake，支持自动生成级间寄存器与 valid/ready 握手。
 """
@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from rtlgen_x.dsl.legacy.core import Array, Context, Input, Module, Output, Reg, Signal, Wire
-from rtlgen_x.dsl.legacy.logic import Else, If, Mux
+from rtlgen_x.dsl.core import Array, Context, Input, Module, Output, Reg, Signal, Wire
+from rtlgen_x.dsl.logic import Else, If, Mux
 
 
 class Handshake:

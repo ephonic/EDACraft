@@ -1,5 +1,5 @@
 """
-rtlgen_x.dsl.legacy.logic — 硬件控制流与表达式辅助函数
+rtlgen_x.dsl.logic — 硬件控制流与表达式辅助函数
 
 提供 If / Else / Switch / Case / Default 等上下文管理器，
 以及 Mux、Cat、Rep 等常用硬件表达式构造器。
@@ -9,9 +9,9 @@ from __future__ import annotations
 from typing import Any, List
 import inspect
 
-from rtlgen_x.dsl.legacy.core import Module
+from rtlgen_x.dsl.core import Module
 
-from rtlgen_x.dsl.legacy.core import (
+from rtlgen_x.dsl.core import (
     Assign,
     Comment,
     Concat as _ConcatExpr,
@@ -85,7 +85,7 @@ class Else:
     """If / GenIf 的 else 分支，必须紧跟在 with If(...) 或 with GenIf(...) 之后使用。"""
 
     def __init__(self):
-        from rtlgen_x.dsl.legacy.core import GenIfNode
+        from rtlgen_x.dsl.core import GenIfNode
         ctx = Context.current()
         container = ctx.stmt_container if ctx else None
         self.node = None
@@ -350,7 +350,7 @@ def SRA(signal: Any, shift: Any) -> Signal:
     示例:
         y = SRA(x, 3)   # Verilog: x >>> 3
     """
-    from rtlgen_x.dsl.legacy.core import _make_binop
+    from rtlgen_x.dsl.core import _make_binop
     return _make_binop(">>>", signal, shift, width=_to_expr(signal).width)
 
 
@@ -388,7 +388,7 @@ def Select(signals, idx):
         signals: List[Signal] 或 Vector，从中选择
         idx: Signal / int，索引值
     """
-    from rtlgen_x.dsl.legacy.core import Vector
+    from rtlgen_x.dsl.core import Vector
     if isinstance(signals, Vector):
         sigs = [signals[i] for i in range(len(signals))]
     else:
@@ -441,7 +441,7 @@ class GenIf:
     """
 
     def __init__(self, condition: Any):
-        from rtlgen_x.dsl.legacy.core import GenIfNode
+        from rtlgen_x.dsl.core import GenIfNode
         self.node = GenIfNode(cond=_to_expr(condition))
         ctx = Context.current()
         if ctx and ctx.stmt_container is not None:
@@ -468,7 +468,7 @@ class GenElse:
     """GenIf 的 else 分支，必须紧跟在 with GenIf(...) 之后使用。"""
 
     def __init__(self):
-        from rtlgen_x.dsl.legacy.core import GenIfNode
+        from rtlgen_x.dsl.core import GenIfNode
         ctx = Context.current()
         container = ctx.stmt_container if ctx else None
         self.node = None
@@ -563,7 +563,7 @@ class Foreach:
     """
     
     def __init__(self, signals, var_name: str = "i"):
-        from rtlgen_x.dsl.legacy.core import Vector
+        from rtlgen_x.dsl.core import Vector
         if isinstance(signals, Vector):
             self._signals = [signals[i] for i in range(len(signals))]
         else:
@@ -601,7 +601,7 @@ class _ForeachElemProxy:
     def __getitem__(self, key):
         if key == self._var_name:
             # Return a Select expression that picks the right signal based on genvar
-            from rtlgen_x.dsl.legacy.core import _make_binop
+            from rtlgen_x.dsl.core import _make_binop
             result = self._signals[0]
             for i in range(1, len(self._signals)):
                 result = Mux(GenVar(self._var_name) == i, self._signals[i], result)

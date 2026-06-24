@@ -14,10 +14,17 @@ from rtlgen_x.sim.benchmark import (
     run_stress_sweep,
     write_stress_sweep_report,
 )
-from rtlgen_x.sim.cosim import CosimMismatch, LegacyRtlCosimReport, run_legacy_rtl_cosim
+from rtlgen_x.sim.cosim import (
+    CosimUnknownValueError,
+    CosimMismatch,
+    DslRtlCosimReport,
+    run_dsl_multiclock_rtl_cosim,
+    run_dsl_rtl_cosim,
+)
 from rtlgen_x.sim.cpp_backend import (
     Assignment,
     BinaryExpr,
+    ClockDomain,
     ConstExpr,
     CompiledSimulator,
     CppBuildError,
@@ -56,6 +63,7 @@ from rtlgen_x.sim.trace import (
 __all__ = [
     "Assignment",
     "BinaryExpr",
+    "ClockDomain",
     "CompiledSimulator",
     "ConstExpr",
     "CppBuildError",
@@ -89,20 +97,22 @@ __all__ = [
     "benchmark_streaming_capacity",
     "build_stress_module",
     "build_fuzz_templates",
+    "CosimUnknownValueError",
     "CosimMismatch",
     "generate_stress_input_buffer",
     "generate_stress_inputs",
     "iter_stress_input_rows",
     "run_stress_sweep",
     "write_stress_sweep_report",
-    "LegacyRtlCosimReport",
+    "DslRtlCosimReport",
     "pack_u64_words",
     "unpack_signal_values_u64_words",
     "capture_execution_trace",
     "compare_python_and_compiled",
     "replay_execution_trace",
     "run_fuzz_suite",
+    "run_dsl_multiclock_rtl_cosim",
     "run_random_parity_fuzz",
-    "run_legacy_rtl_cosim",
+    "run_dsl_rtl_cosim",
     "reset_simulator",
 ]

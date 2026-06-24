@@ -1,6 +1,9 @@
+import pytest
+
 from rtlgen_x.sim import (
     Assignment,
     BinaryExpr,
+    ClockDomain,
     ConstExpr,
     CppBackendScaffold,
     MaskExpr,
@@ -33,6 +36,56 @@ def _accum_module() -> SimModule:
         ),
         outputs=("out",),
         reset_signal="rst",
+    )
+
+
+def _dual_clock_fifo_like_module() -> SimModule:
+    return SimModule(
+        name="python_dual_clock_fifo_like",
+        signals=(
+            Signal("wr_clk", width=1, kind="input"),
+            Signal("rd_clk", width=1, kind="input"),
+            Signal("wr_rst", width=1, kind="input"),
+            Signal("rd_rst", width=1, kind="input"),
+            Signal("wr_en", width=1, kind="input"),
+            Signal("rd_en", width=1, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("wr_ptr", width=2, kind="state", init=0),
+            Signal("rd_ptr", width=2, kind="state", init=0),
+            Signal("rd_data", width=8, kind="state", init=0),
+            Signal("dout", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("dout", SignalRef("rd_data")),
+            Assignment(
+                "wr_ptr",
+                MuxExpr(SignalRef("wr_en"), BinaryExpr("+", SignalRef("wr_ptr"), ConstExpr(1, 2)), SignalRef("wr_ptr")),
+                phase="seq",
+                clock_domain="wr_clk",
+            ),
+            Assignment(
+                "rd_ptr",
+                MuxExpr(SignalRef("rd_en"), BinaryExpr("+", SignalRef("rd_ptr"), ConstExpr(1, 2)), SignalRef("rd_ptr")),
+                phase="seq",
+                clock_domain="rd_clk",
+            ),
+            Assignment(
+                "rd_data",
+                MuxExpr(SignalRef("rd_en"), MemoryReadExpr("fifo_mem", SignalRef("rd_ptr")), SignalRef("rd_data")),
+                phase="seq",
+                clock_domain="rd_clk",
+            ),
+        ),
+        outputs=("dout",),
+        memories=(Memory("fifo_mem", width=8, depth=4),),
+        memory_writes=(
+            MemoryWrite("fifo_mem", SignalRef("wr_ptr"), SignalRef("din"), enable=SignalRef("wr_en"), clock_domain="wr_clk"),
+        ),
+        clock_domains=(
+            ClockDomain("wr_clk", reset_signal="wr_rst"),
+            ClockDomain("rd_clk", reset_signal="rd_rst"),
+        ),
+        outputs_post_state=True,
     )
 
 
@@ -146,6 +199,58 @@ def test_python_reference_supports_comb_read_seq_write_memory():
     assert python_sim.step({"rst": 1, "we": 0, "addr": 2, "din": 0}) == {"dout": 3}
 
 
+def test_python_reference_honors_reset_branch_value_not_just_init():
+    module = SimModule(
+        name="python_reset_branch_value",
+        signals=(
+            Signal("rst", width=1, kind="input"),
+            Signal("inp", width=8, kind="input"),
+            Signal("state", width=8, kind="state", init=0),
+            Signal("out", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", SignalRef("state")),
+            Assignment(
+                "state",
+                MuxExpr(SignalRef("rst"), ConstExpr(7, 8), SignalRef("inp")),
+                phase="seq",
+            ),
+        ),
+        outputs=("out",),
+        reset_signal="rst",
+        outputs_post_state=True,
+    )
+
+    python_sim = PythonSimulator(module)
+    assert python_sim.step({"rst": 0, "inp": 9}) == {"out": 9}
+    assert python_sim.step({"rst": 1, "inp": 2}) == {"out": 7}
+    assert python_sim.step({"rst": 0, "inp": 5}) == {"out": 5}
+
+
+def test_python_reference_supports_read_first_memory_policy():
+    module = SimModule(
+        name="python_mem_read_first",
+        signals=(
+            Signal("we", width=1, kind="input"),
+            Signal("addr", width=2, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("dout", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("dout", MemoryReadExpr("mem", SignalRef("addr"))),
+        ),
+        outputs=("dout",),
+        memories=(Memory("mem", width=8, depth=4, init=(1, 2, 3, 4), read_during_write="read_first"),),
+        memory_writes=(MemoryWrite("mem", SignalRef("addr"), SignalRef("din"), enable=SignalRef("we")),),
+        outputs_post_state=True,
+    )
+
+    python_sim = PythonSimulator(module)
+    assert python_sim.step({"we": 0, "addr": 2, "din": 0}) == {"dout": 3}
+    assert python_sim.step({"we": 1, "addr": 2, "din": 99}) == {"dout": 3}
+    assert python_sim.step({"we": 0, "addr": 2, "din": 0}) == {"dout": 99}
+
+
 def test_python_reference_supports_signed_unsigned_and_arithmetic_shift():
     module = SimModule(
         name="python_signed_ops",
@@ -234,6 +339,29 @@ def test_python_reference_wide_buffered_state_round_trip():
     assert python_sim.snapshot_state_values() == state_snapshot
 
 
+def test_python_reference_supports_explicit_multi_clock_domains():
+    module = _dual_clock_fifo_like_module()
+    python_sim = PythonSimulator(module)
+
+    with pytest.raises(ValueError, match="step_clocks"):
+        python_sim.step({"wr_en": 0, "rd_en": 0, "din": 0})
+
+    assert python_sim.step_clocks({"wr_en": 1, "din": 11}, ("wr_clk",)) == {"dout": 0}
+    assert python_sim.step_clocks({"wr_en": 1, "din": 22}, ("wr_clk",)) == {"dout": 0}
+    assert python_sim.step_clocks({"rd_en": 1}, ("rd_clk",)) == {"dout": 11}
+    assert python_sim.step_clocks({"rd_en": 1}, ("rd_clk",)) == {"dout": 22}
+    assert python_sim.step_clocks({"rd_rst": 1}, ("rd_clk",)) == {"dout": 0}
+
+
+def test_python_reference_multi_clock_batch_paths_fail_fast():
+    python_sim = PythonSimulator(_dual_clock_fifo_like_module())
+
+    with pytest.raises(ValueError, match="single-clock"):
+        python_sim.run_batch_raw((0, 0, 0, 0, 0, 0, 0), 1)
+    with pytest.raises(ValueError, match="single-clock"):
+        python_sim.run_batch(((0, 0, 0, 0, 0, 0, 0),))
+
+
 def test_reset_simulator_adapter_handles_new_runtime_no_args():
     """Finding #6: reset_simulator() must reset the new PythonSimulator (no-arg
     reset) and ignore rst/cycles arguments it does not understand."""
@@ -251,13 +379,13 @@ def test_reset_simulator_adapter_handles_new_runtime_no_args():
     assert sim.snapshot_state_values() == (3,)
 
 
-def test_reset_simulator_adapter_forwards_legacy_rst_cycles():
-    """Finding #6: reset_simulator() must forward rst/cycles to a legacy-style
+def test_reset_simulator_adapter_forwards_older_rst_cycles():
+    """Finding #6: reset_simulator() must forward rst/cycles to a older-style
     simulator whose reset() accepts those parameters."""
     from rtlgen_x.sim import reset_simulator
 
-    class LegacyFakeSim:
-        """Minimal stand-in for the legacy Simulator reset() signature."""
+    class CompatFakeSim:
+        """Minimal stand-in for the older Simulator reset() signature."""
 
         def __init__(self):
             self.last_kwargs = {}
@@ -265,11 +393,10 @@ def test_reset_simulator_adapter_forwards_legacy_rst_cycles():
         def reset(self, rst=None, cycles=2):
             self.last_kwargs = {"rst": rst, "cycles": cycles}
 
-    legacy = LegacyFakeSim()
-    reset_simulator(legacy, rst="rst_n", cycles=4)
-    assert legacy.last_kwargs == {"rst": "rst_n", "cycles": 4}
+    compat = CompatFakeSim()
+    reset_simulator(compat, rst="rst_n", cycles=4)
+    assert compat.last_kwargs == {"rst": "rst_n", "cycles": 4}
 
-    # Calling with no overrides still works and uses the legacy defaults.
-    reset_simulator(legacy)
-    assert legacy.last_kwargs == {"rst": None, "cycles": 2}
-
+    # Calling with no overrides still works and uses the older defaults.
+    reset_simulator(compat)
+    assert compat.last_kwargs == {"rst": None, "cycles": 2}
