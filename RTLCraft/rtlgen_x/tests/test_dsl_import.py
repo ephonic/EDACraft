@@ -10,6 +10,7 @@ from rtlgen_x.dsl import (
     APB,
     APBRegisterBank,
     Array,
+    AsyncFIFO,
     AXI4Stream,
     AXI4Lite,
     AXI4LiteRegisterBank,
@@ -31,22 +32,31 @@ from rtlgen_x.dsl import (
     PadLeft,
     PortConnection,
     ReadyValid,
+    ReadyValidAsyncBridge,
     ReadyValidFIFO,
     ReadyValidRegister,
     ReqRsp,
     ReqRspQueue,
     Reg,
     ResetDomainSpec,
+    RoundRobinArbiter,
     SRA,
     SkidBuffer,
     SignalDriver,
+    SyncFIFO,
     StateWriter,
+    Divider,
+    Decoder,
+    PriorityEncoder,
+    BarrelShifter,
+    LFSR,
     VerilogEmitter,
     Wishbone,
     WishboneRegisterBank,
     Wire,
 )
-from rtlgen_x.dsl.lib import AsyncResetRel, SyncCell
+from rtlgen_x.dsl.lib import AsyncResetRel, Counter, GrayCounter, MultiCycleFSM, PipelineShift, PulseSynchronizer, SyncCell, EdgeDetector, PipelineInterlock, BypassNetwork, MultiCyclePath, MAC, SignedMultiplier, RegisterFile
+from rtlgen_x.dsl.pipeline import ShiftReg, ValidPipe
 from rtlgen_x.sim.python_runtime import PythonSimulator
 from rtlgen_x.dsl.unsupported import DslSimulationRemovedError
 
@@ -457,6 +467,67 @@ class ExplicitTop(Module):
         self.instantiate(leaf, "u_leaf", port_map={"din": self.a, "dout": self.y})
 
 
+class PortExprLeaf(Module):
+    def __init__(self):
+        super().__init__("PortExprLeaf")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.din
+
+
+class PortExprTop(Module):
+    def __init__(self):
+        super().__init__("PortExprTop")
+        self.a = Input(8, "a")
+        self.b = Input(8, "b")
+        self.y = Output(8, "y")
+        leaf = PortExprLeaf()
+        self.instantiate(
+            leaf,
+            "u_leaf",
+            port_map={
+                "din": (self.a + self.b)[7:0],
+                "dout": self.y,
+            },
+        )
+
+
+class ReadyValidAsyncBridgeTop(Module):
+    def __init__(self):
+        super().__init__("ReadyValidAsyncBridgeTop")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.in_data = Input(8, "in_data")
+        self.in_valid = Input(1, "in_valid")
+        self.in_ready = Output(1, "in_ready")
+        self.out_data = Output(8, "out_data")
+        self.out_valid = Output(1, "out_valid")
+        self.out_ready = Input(1, "out_ready")
+        self.bridge = ReadyValidAsyncBridge(width=8, depth=4, name="bridge")
+
+        self.instantiate(
+            self.bridge,
+            "u_bridge",
+            port_map={
+                "wr_clk": self.wr_clk,
+                "rd_clk": self.rd_clk,
+                "wr_rst": self.wr_rst,
+                "rd_rst": self.rd_rst,
+                "in_data": self.in_data,
+                "in_valid": self.in_valid,
+                "in_ready": self.in_ready,
+                "out_data": self.out_data,
+                "out_valid": self.out_valid,
+                "out_ready": self.out_ready,
+            },
+        )
+
+
 class FlattenLeaf(Module):
     def __init__(self):
         super().__init__("FlattenLeaf")
@@ -573,6 +644,48 @@ class DeclaredDomainMailboxByName(Module):
             with Else():
                 with If(self.wr_en == 1):
                     self.mem[self.wptr] <<= self.din
+                    self.wptr <<= self.wptr + 1
+
+        @self.seq_domain("read")
+        def _rd_seq():
+            with If(self.rd_rst_n == 0):
+                self.rptr <<= 0
+            with Else():
+                with If(self.rd_en == 1):
+                    self.rptr <<= self.rptr + 1
+
+
+class DeclaredDomainMailboxByResetName(Module):
+    def __init__(self):
+        super().__init__("DeclaredDomainMailboxByResetName")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst_n = Input(1, "rd_rst_n")
+        self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+        self.mailbox_mem = Array(8, 4, "mailbox_mem")
+        self.wptr = Reg(2, "wptr")
+        self.rptr = Reg(2, "rptr")
+
+        self.reset_domain("wr_reset", self.wr_rst)
+        self.reset_domain("rd_reset", self.rd_rst_n, reset_async=True, reset_active_low=True)
+        self.clock_domain("write", self.wr_clk, "wr_reset")
+        self.clock_domain("read", self.rd_clk, "rd_reset")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.mailbox_mem[self.rptr]
+
+        @self.seq_domain("write")
+        def _wr_seq():
+            with If(self.wr_rst == 1):
+                self.wptr <<= 0
+            with Else():
+                with If(self.wr_en == 1):
+                    self.mailbox_mem[self.wptr] <<= self.din
                     self.wptr <<= self.wptr + 1
 
         @self.seq_domain("read")
@@ -881,6 +994,16 @@ def test_emit_profile_review_and_compact_change_readability_contract():
     assert "_cse_" in compact_text
 
 
+def test_emit_profile_review_extracts_repeated_subexpressions_with_target_local_names():
+    review_text = VerilogEmitter(profile=EmitProfile.review()).emit(ReadableRepeatedExpr())
+
+    assert "assign _out_ex0 = a + b;" in review_text
+    assert "assign _out_ex1 = _out_ex0 ^ _out_ex0" in review_text
+    assert "assign out = _out_ex" in review_text
+    assert "assign out = _out_ex1 ^ _out_ex2 ^ _out_ex3;" in review_text
+    assert "assign _out_ex0 = a + b ^ a + b" not in review_text
+
+
 def test_emit_profile_systemverilog_uses_sv_always_keywords():
     emitted = VerilogEmitter(profile=EmitProfile.systemverilog()).emit(ReadableCombSeq())
 
@@ -907,6 +1030,25 @@ def test_emit_profile_review_readability_contract_avoids_duplicated_block_prefix
     assert "// Seq: rptr" in emitted
     assert "Comb: Comb:" not in emitted
     assert "Seq: Seq:" not in emitted
+
+
+def test_emit_profile_review_places_port_expression_helpers_in_structural_section():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(PortExprTop())
+
+    expected_markers = (
+        "// Structural wiring and instances",
+        "// Port connection helpers",
+        "wire [7:0] u_leaf_din_expr;",
+        "assign u_leaf_din_expr = ((a + b) & 8'd255);",
+        "PortExprLeaf u_leaf (",
+        ".din(u_leaf_din_expr)",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
 
 
 def test_emit_profile_review_declared_domain_mailbox_matches_readability_snapshot():
@@ -972,6 +1114,121 @@ def test_emit_profile_review_asyncresetrel_matches_readability_snapshot():
         "// Seq timing: clk=clk, reset=rst_async (async, active-high)",
         "// Seq: ar_ff1, ar_ff2",
         "always @(posedge clk or posedge rst_async) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_pulsesynchronizer_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(PulseSynchronizer())
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg toggle_src;",
+        "reg sync_0;",
+        "reg sync_1;",
+        "reg sync_2;",
+        "// Combinational logic",
+        "assign pulse_out = sync_1 ^ sync_2;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk_src, reset=rst (sync, active-high)",
+        "// Seq: toggle_src",
+        "always @(posedge clk_src) begin",
+        "// Seq timing: clk=clk_dst, reset=rst (sync, active-high)",
+        "// Seq: sync_0, sync_1, sync_2",
+        "always @(posedge clk_dst) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_ready_valid_async_bridge_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(ReadyValidAsyncBridge())
+
+    expected_markers = (
+        "// Internal declarations",
+        "logic rd_fire;",
+        "logic [31:0] fifo_dout;",
+        "logic fifo_full;",
+        "logic fifo_empty;",
+        "// Structural wiring and instances",
+        "AsyncFIFO u_fifo (",
+        ".wr_en(in_valid & in_ready)",
+        ".rd_en(rd_fire)",
+        ".dout(fifo_dout)",
+        ".full(fifo_full)",
+        ".empty(fifo_empty)",
+        "// Combinational logic",
+        "assign in_ready = ~fifo_full;",
+        "assign out_valid = ~fifo_empty;",
+        "assign out_data = fifo_dout;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_async_fifo_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(AsyncFIFO(width=8, depth=4))
+
+    expected_markers = (
+        "// Storage declarations",
+        "reg [7:0] af_mem [0:3];",
+        "// Internal declarations",
+        "logic [2:0] rd_nxt;",
+        "logic [2:0] wr_nxt;",
+        "logic [2:0] wr_nxt_gray;",
+        "reg [2:0] wr_ptr;",
+        "reg [2:0] rd_ptr;",
+        "// Combinational logic",
+        "assign wr_nxt = wr_ptr + 1'd1;",
+        "assign wr_nxt_gray = wr_nxt ^ wr_nxt >> 1'd1;",
+        "assign full = wr_nxt_gray == {~rds_1[2:1], rds_1[0]};",
+        "assign empty = rd_gray == wrs_1;",
+        "assign dout = af_mem[rd_ptr[1:0]];",
+        "// Sequential logic",
+        "// Seq timing: clk=wr_clk, reset=wr_rst (sync, active-high)",
+        "always @(posedge wr_clk) begin",
+        "// Seq timing: clk=rd_clk, reset=rd_rst (sync, active-high)",
+        "always @(posedge rd_clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_sync_fifo_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(SyncFIFO(width=8, depth=4))
+
+    expected_markers = (
+        "// Internal declarations",
+        "logic rd_inc;",
+        "logic wr_inc;",
+        "reg [2:0] wr_ptr;",
+        "reg [2:0] rd_ptr;",
+        "reg [3:0] count_reg;",
+        "// Combinational logic",
+        "assign full = count_reg == 3'd4;",
+        "assign empty = count_reg == 1'd0;",
+        "assign count = count_reg;",
+        "assign rd_rdy = ~empty;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "always @(posedge clk) begin",
     )
     last_index = -1
     for marker in expected_markers:
@@ -1140,6 +1397,362 @@ def test_emit_profile_review_skid_buffer_matches_readability_snapshot():
         "// Sequential logic",
         "// Seq timing: clk=clk, reset=rst (sync, active-high)",
         "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_round_robin_arbiter_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(RoundRobinArbiter(4))
+
+    expected_markers = (
+        "// Internal declarations",
+        "logic [7:0] double_reqs;",
+        "reg [1:0] pointer;",
+        "// Combinational logic",
+        "// Comb: double_reqs, grant_idx, grant_vec (+6)",
+        "double_reqs = {2{reqs}};",
+        "grant_vec = 4'd0;",
+        "grants = grant_vec;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_divider_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(Divider(16))
+
+    expected_markers = (
+        "// Internal declarations",
+        "logic [32:0] shifted_rem;",
+        "reg [31:0] rem_reg;",
+        "reg [15:0] quo_reg;",
+        "// Combinational logic",
+        "// Comb: busy, done, quotient (+1)",
+        "assign quotient = quo_reg;",
+        "assign remainder = rem_reg;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "// Seq: count_reg, quo_reg, rem_reg (+2)",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_shiftreg_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(ShiftReg(8, 4))
+
+    expected_markers = (
+        "// Storage declarations",
+        "reg [7:0] regs [0:3];",
+        "// Combinational logic",
+        "// Comb: dout",
+        "assign dout = regs[2'd3];",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst_n (async, active-low)",
+        "always @(posedge clk or negedge rst_n) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_validpipe_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(ValidPipe(8))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [7:0] data_reg;",
+        "reg valid_reg;",
+        "// Combinational logic",
+        "// Comb: dout, valid_out",
+        "assign dout = data_reg;",
+        "assign valid_out = valid_reg;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst_n (async, active-low)",
+        "// Seq: data_reg, valid_reg",
+        "always @(posedge clk or negedge rst_n) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_pipelineshift_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(PipelineShift(16, 3))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg pv_0;",
+        "reg [15:0] pd_0;",
+        "// Combinational logic",
+        "// Comb: in_ready",
+        "assign in_ready = (pv_2 == 1'd0) | out_ready;",
+        "// Comb: data_out, out_valid",
+        "assign data_out = pd_2;",
+        "assign out_valid = pv_2;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "// Seq: pd_0, pd_1, pd_2 (+3)",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_counter_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(Counter(8))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [7:0] cnt;",
+        "// Combinational logic",
+        "// Comb: count, max_reached, zero",
+        "assign count = cnt;",
+        "assign zero = cnt == 1'd0;",
+        "assign max_reached = cnt >= 8'd255;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "// Seq: cnt",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_multicyclefsm_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(MultiCycleFSM(8))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [1:0] state;",
+        "reg [7:0] timer;",
+        "// Combinational logic",
+        "// Comb: busy, done",
+        "assign busy = state != 1'd0;",
+        "assign done = state == 2'd3;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "// Seq: state, timer",
+        "always @(posedge clk) begin",
+        "case (state)",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_graycounter_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(GrayCounter(8))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [7:0] gb_bin;",
+        "// Combinational logic",
+        "// Comb: binary, gray",
+        "assign gray = gb_bin ^ gb_bin >> 1'd1;",
+        "assign binary = gb_bin;",
+        "// Sequential logic",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "// Seq: gb_bin",
+        "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_decoder_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(Decoder(3))
+
+    expected_markers = (
+        "// Combinational logic",
+        "// Comb: out",
+        "always @(*) begin",
+        "case (in)",
+        "3'd7: begin",
+        "out = 8'd128;",
+        "if (~en) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_priorityencoder_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(PriorityEncoder(8))
+
+    expected_markers = (
+        "// Module: PriorityEncoder",
+        "logic [3:0] out_wire;",
+        "// Comb: out, out_wire, valid",
+        "out_wire = 4'd0;",
+        "if (in[7] == 1'd1) begin",
+        "out = out_wire;",
+        "valid = in != 1'd0;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_barrelshifter_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(BarrelShifter(16))
+
+    expected_markers = (
+        "// Module: BarrelShifter",
+        "logic [15:0] result;",
+        "// Comb: data_out, result",
+        "result = data_in;",
+        "if (shift_amount[3] == 1'd1) begin",
+        "result = result << 4'd8;",
+        "data_out = result;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_lfsr_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(LFSR(8))
+
+    expected_markers = (
+        "// Internal declarations",
+        "logic fb;",
+        "logic [7:0] next_val;",
+        "reg [7:0] lfsr_reg;",
+        "// Comb: out",
+        "assign out = lfsr_reg;",
+        "// Seq timing: clk=clk, reset=rst (sync, active-high)",
+        "fb <= lfsr_reg[0];",
+        "next_val[3'd7] = fb;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_edgedetector_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(EdgeDetector())
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg sig_d;",
+        "// Comb: falling, rising",
+        "assign rising = sig & ~sig_d;",
+        "assign falling = ~sig & sig_d;",
+        "// Seq: sig_d",
+        "sig_d <= sig;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_pipelineinterlock_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(PipelineInterlock())
+
+    expected_markers = (
+        "// Module: PipelineInterlock",
+        "reg pl_v;",
+        "reg pl_stall;",
+        "// Comb: ready_out, valid_out",
+        "assign ready_out = ~pl_stall;",
+        "assign valid_out = pl_v;",
+        "// Seq: pl_stall, pl_v",
+        "pl_stall <= hold;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_bypassnetwork_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(BypassNetwork(4, 16))
+
+    expected_markers = (
+        "// Module: BypassNetwork",
+        "// Comb: fwd_data, fwd_valid",
+        "fwd_data = 16'd0;",
+        "fwd_valid = 1'd0;",
+        "if (rd_valid_3 & (rd_addr_3 == rs_addr)) begin",
+        "fwd_data = rd_data_3;",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_multicyclepath_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(MultiCyclePath(16, 3))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [15:0] mcp_0;",
+        "reg [15:0] mcp_2;",
+        "// Comb: data_out",
+        "assign data_out = mcp_2;",
+        "// Seq: mcp_0, mcp_1, mcp_2",
+        "mcp_0 <= data_in;",
+        "if (en == 1'd1) begin",
+        "mcp_2 <= mcp_1;",
     )
     last_index = -1
     for marker in expected_markers:
@@ -1372,6 +1985,60 @@ def test_ready_valid_register_lowers_and_inserts_one_stage_latency():
         "out_data": 0,
         "out_valid": 0,
     }
+
+
+def test_ready_valid_async_bridge_lowers_and_supports_multiclock_python_and_compiled(tmp_path):
+    lowered = lower_dsl_module_to_sim(ReadyValidAsyncBridgeTop())
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
+
+    python_sim = PythonSimulator(lowered.module)
+    with build_compiled_simulator_from_dsl(ReadyValidAsyncBridgeTop(), build_dir=tmp_path / "rv_async_bridge") as compiled:
+        with pytest.raises(ValueError, match="step_clocks"):
+            python_sim.step({"in_data": 0, "in_valid": 0, "out_ready": 0})
+        with pytest.raises(ValueError, match="step_clocks"):
+            compiled.step({"in_data": 0, "in_valid": 0, "out_ready": 0})
+
+        _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"wr_rst": 1},
+            ("wr_clk",),
+        )
+        _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"rd_rst": 1},
+            ("rd_clk",),
+        )
+
+        _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"wr_rst": 0, "rd_rst": 0, "in_data": 0x11, "in_valid": 1},
+            ("wr_clk",),
+        )
+        expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"out_ready": 0},
+            ("rd_clk",),
+        )
+        assert expected["out_valid"] == 0
+        expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"out_ready": 1},
+            ("rd_clk",),
+        )
+        assert expected["out_valid"] == 1
+        assert expected["out_data"] == 0x11
+        expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"out_ready": 1},
+            ("rd_clk",),
+        )
+        assert expected["out_valid"] == 0
 
 
 def test_reqrsp_queue_lowers_and_buffers_requests():
@@ -1610,6 +2277,20 @@ def test_apb_register_bank_lowers_and_applies_byte_enable_writes(tmp_path):
                 {
                     "pclk": 0,
                     "presetn": 0,
+                    "psel": 0,
+                    "penable": 0,
+                    "pwrite": 0,
+                    "paddr": 0,
+                    "pwdata": 0,
+                    "pprot": 0,
+                    "pstrb": 0,
+                },
+                {"prdata": 0, "pready": 0, "pslverr": 0},
+            ),
+            (
+                {
+                    "pclk": 0,
+                    "presetn": 1,
                     "psel": 0,
                     "penable": 0,
                     "pwrite": 0,
@@ -2338,6 +3019,105 @@ def test_dsl_seq_domain_accepts_declared_domain_name():
     }
     assert seq_domains["wptr"] == "wr_clk"
     assert seq_domains["rptr"] == "rd_clk"
+
+
+def test_dsl_clock_domain_accepts_declared_reset_domain_name():
+    lowered = lower_dsl_module_to_sim(DeclaredDomainMailboxByResetName())
+
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
+    assert tuple(domain.reset_signal for domain in lowered.module.clock_domains) == ("wr_rst", "rd_rst_n")
+    assert tuple(domain.reset_active_low for domain in lowered.module.clock_domains) == (False, True)
+    assert tuple(domain.reset_async for domain in lowered.module.clock_domains) == (False, True)
+
+
+def test_dsl_clock_domain_reuses_matching_declared_reset_domain_for_raw_reset_signal():
+    class ReuseDeclaredResetDomain(Module):
+        def __init__(self):
+            super().__init__("ReuseDeclaredResetDomain")
+            self.clk = Input(1, "clk")
+            self.rst = Input(1, "rst")
+            self.out = Output(1, "out")
+            self.state = Reg(1, "state")
+            self.func_reset = self.reset_domain("func_reset", self.rst)
+            self.func_domain = self.clock_domain("func", self.clk, self.rst)
+
+            @self.comb
+            def _comb():
+                self.out <<= self.state
+
+            @self.seq_domain("func")
+            def _seq():
+                with If(self.rst == 1):
+                    self.state <<= 0
+                with Else():
+                    self.state <<= 1
+
+    module = ReuseDeclaredResetDomain()
+    assert tuple(domain.name for domain in module.declared_reset_domains) == ("func_reset",)
+    assert module.func_domain.reset is module.func_reset
+
+    lowered = lower_dsl_module_to_sim(module)
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("clk",)
+    assert tuple(domain.reset_signal for domain in lowered.module.clock_domains) == ("rst",)
+
+
+def test_dsl_reset_domain_rejects_same_signal_with_conflicting_semantics():
+    class ConflictingResetDomainSemantics(Module):
+        def __init__(self):
+            super().__init__("ConflictingResetDomainSemantics")
+            self.rst = Input(1, "rst")
+            self.reset_domain("sync_rst", self.rst)
+            self.reset_domain("async_rst", self.rst, reset_async=True)
+
+    with pytest.raises(
+        ValueError,
+        match="reset signal 'rst' is already declared by reset domain 'sync_rst'",
+    ):
+        ConflictingResetDomainSemantics()
+
+
+def test_dsl_seq_domain_unknown_name_reports_known_domains():
+    class MissingSeqDomain(Module):
+        def __init__(self):
+            super().__init__("MissingSeqDomain")
+            self.clk = Input(1, "clk")
+            self.rst = Input(1, "rst")
+            self.clock_domain("func", self.clk, self.rst)
+
+            @self.seq_domain("missing")
+            def _seq():
+                pass
+
+    with pytest.raises(ValueError, match="Known clock domains: func"):
+        MissingSeqDomain()
+
+
+def test_dsl_clock_domain_unknown_reset_name_reports_known_reset_domains():
+    class MissingResetDomain(Module):
+        def __init__(self):
+            super().__init__("MissingResetDomain")
+            self.clk = Input(1, "clk")
+            self.rst = Input(1, "rst")
+            self.reset_domain("func_reset", self.rst)
+            self.clock_domain("func", self.clk, "missing_reset")
+
+    with pytest.raises(ValueError, match="Known reset domains: func_reset"):
+        MissingResetDomain()
+
+
+def test_async_fifo_lowers_with_sane_empty_flag_semantics():
+    lowered = lower_dsl_module_to_sim(AsyncFIFO(width=8, depth=4))
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step_clocks({"wr_rst": 1}, ("wr_clk",)) == {"dout": 0, "full": 0, "empty": 1}
+    assert sim.step_clocks({"rd_rst": 1}, ("rd_clk",)) == {"dout": 0, "full": 0, "empty": 1}
+    assert sim.step_clocks({"wr_rst": 0, "rd_rst": 0, "din": 0x11, "wr_en": 1}, ("wr_clk",)) == {
+        "dout": 0x11,
+        "full": 0,
+        "empty": 1,
+    }
+    assert sim.step_clocks({"rd_en": 0}, ("rd_clk",)) == {"dout": 0x11, "full": 0, "empty": 1}
+    assert sim.step_clocks({"rd_en": 1}, ("rd_clk",)) == {"dout": 0x11, "full": 0, "empty": 0}
 
 
 def test_dsl_declared_clock_domain_rejects_conflicting_seq_reset_semantics():

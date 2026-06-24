@@ -117,9 +117,17 @@ For multi-clock designs:
 2. bind sequential processes with `@self.seq_domain(...)`
 3. prefer named domain authoring when it keeps the module clearer, for example
    `@self.seq_domain("write")`
-4. use CDC helpers such as `SyncCell`, `PulseSynchronizer`, `AsyncResetRel`,
-   and `AsyncFIFO` instead of ad hoc crossings where possible
-5. if a hand-written two-flop synchronizer is used, keep the sync chain simple;
+4. when a reset domain is already declared, `clock_domain(...)` may also reuse
+   it by name, for example `self.clock_domain("write", self.wr_clk, "wr_reset")`
+5. if `clock_domain(...)` receives a raw reset signal whose semantics already
+   match a declared reset domain, it now reuses that declared domain instead of
+   silently creating a second reset-domain alias
+6. unknown domain lookups now report the known declared clock/reset-domain
+   names to make multi-clock authoring failures easier to fix
+7. use CDC helpers such as `SyncCell`, `PulseSynchronizer`, `AsyncResetRel`,
+   `AsyncFIFO`, and `ReadyValidAsyncBridge` instead of ad hoc crossings where
+   possible
+8. if a hand-written two-flop synchronizer is used, keep the sync chain simple;
    a final comb alias/observation wire is fine, but avoid mixing extra logic
    into the first-stage and second-stage transfer path
 
@@ -263,6 +271,9 @@ Notes:
    one agent-friendly object
 5. `emit_architecture_report_markdown(...)` turns that summary into a compact
    report for design review or agent feedback loops
+6. `infer_architecture_from_module(...)` is intentionally heuristic: it is only
+   a coarse bootstrap from executable structure, not a recovered real
+   microarchitecture, and the emitted report now marks that scope explicitly
 
 ### 2. Executable design modeling: `rtlgen_x.dsl`
 
@@ -282,6 +293,19 @@ For the current stable/partial boundary, see:
 
 1. [DSL support matrix](./DSL_SUPPORT_MATRIX.md)
 2. [DSL semantic contract](./DSL_SEMANTICS.md)
+3. [Stdlib support matrix](./STDLIB_SUPPORT_MATRIX.md)
+
+For executable stdlib lookup, the package now also exposes a small public
+catalog:
+
+1. `get_stdlib_entry("APBRegisterBank")`
+2. `list_stdlib_entries(kind="component")`
+3. `list_stdlib_entries(kind="vip")`
+4. `emit_stdlib_support_matrix_markdown()`
+
+That catalog is the code-side source of truth for the current protocol /
+component / VIP public surface and its conservative `stable` / `partial`
+status.
 
 Important entry points:
 
@@ -295,6 +319,8 @@ Important entry points:
    - review-first RTL
    - keeps fallback module header and auto block comments
    - disables CSE and prefers named extraction for very large expressions
+   - emits stable, instance/port-named helper wires for complex submodule port
+     expressions inside the structural wiring section
 2. `EmitProfile.compact()`
    - terser RTL for export/handoff
    - suppresses fallback header and auto block comments
@@ -302,6 +328,28 @@ Important entry points:
 3. `EmitProfile.systemverilog(...)`
    - convenience wrapper for SystemVerilog-style emit
    - enables `always_comb` / `always_ff`
+
+Review-profile readability regression now has explicit snapshot coverage for
+declared multi-clock mailbox structure, `SyncCell`, `PulseSynchronizer`,
+`AsyncResetRel`, `AsyncFIFO`, `SyncFIFO`, `ReadyValidAsyncBridge`,
+`RoundRobinArbiter`, `Divider`, `ShiftReg`, `ValidPipe`, `PipelineShift`,
+`Counter`, `MultiCycleFSM`, `GrayCounter`, `Decoder`, `PriorityEncoder`,
+`BarrelShifter`, `LFSR`, `EdgeDetector`, `PipelineInterlock`,
+`BypassNetwork`, `MultiCyclePath`, and the main register-bank / ready-valid
+stdlib helpers. That gives emitter changes a concrete guardrail on
+CDC/FIFO/pipeline/control-oriented RTL readability instead of relying on ad
+hoc visual inspection.
+
+For review-profile readability specifically, emitter normalization now also
+prefers target-local helper naming for repeated sub-expressions. In practice
+that means review output will try to extract repeated medium-complexity terms
+into `_target_exN` helpers before falling back to a flatter long expression,
+while compact output still keeps the more mechanical `_cse_N` style.
+
+Review output also now tries to split overly long associative `^` / `&` / `|`
+chains into shorter `_target_exN` chunks. This keeps helper wires themselves
+readable, instead of replacing one giant inlined expression with one giant
+helper assignment.
 
 Typical usage:
 
@@ -326,7 +374,7 @@ Key constructs include:
 
 1. `Module`, `Input`, `Output`, `Reg`, `Wire`, `Array`
 2. `If`, `Else`, `Elif`, `Switch`, `When`
-3. `FSM`, `Pipeline`, `SkidBuffer`, `ReadyValidRegister`, `ReadyValidFIFO`, `APBRegisterBank`, `AXI4LiteRegisterBank`, `WishboneRegisterBank`, `SyncFIFO`, `AsyncFIFO`
+3. `FSM`, `Pipeline`, `SkidBuffer`, `ReadyValidRegister`, `ReadyValidFIFO`, `ReadyValidAsyncBridge`, `APBRegisterBank`, `AXI4LiteRegisterBank`, `WishboneRegisterBank`, `SyncFIFO`, `AsyncFIFO`
 4. `Bundle`, `ReadyValid`, `ReqRsp`, `Interface`, `Handshake`, `HandshakeInterface`
 5. `AXI4`, `AXI4Lite`, `AXI4Stream`, `APB`, `AHBLite`, `Wishbone`
 6. `SinglePortRAM`, `SimpleDualPortRAM`
@@ -338,6 +386,10 @@ Authoring-level domain helpers now also exist:
 3. `seq_domain(...)`
 4. `ClockDomainSpec`
 5. `ResetDomainSpec`
+
+The authoring helpers also fail earlier than before: conflicting reuse of the
+same reset signal under different semantics is rejected at declaration time,
+and missing domain-name lookups report the currently known declared domains.
 
 The removed AST/JIT simulator surface and `DSLSimValidator` are no longer part
 of `rtlgen_x`. DSL modules are expected to lower into the internal executable
@@ -363,9 +415,10 @@ Current boundary:
 2. authoring can now declare reusable domain intent explicitly with
    `clock_domain(...)` / `reset_domain(...)` and bind sequential logic through
    `seq_domain(...)`
-3. multi-clock DSL modules can now lower into an executable model with
-   `clock_domains=...` when each sequential block cleanly belongs to one
-   clock/reset domain
+3. declared clock/reset intent is now preserved into the executable model even
+   for explicitly-declared single-clock modules, while multi-clock DSL modules
+   lower with per-domain metadata when each sequential block cleanly belongs to
+   one clock/reset domain
 4. conflicting reset semantics on the same clock still fail fast during
    lowering
 5. declared domain specs also fail fast if a later sequential block disagrees
@@ -530,9 +583,11 @@ beats.
 
 For explicit multi-clock event stepping, use
 `run_dsl_multiclock_rtl_cosim(...)`. Each vector is either a plain input
-mapping or an `(inputs, active_domains)` tuple, where `active_domains`
-identifies which clock domains receive one edge on that step. This keeps RTL
-cosim aligned with `PythonSimulator.step_clocks(...)` and
+mapping, a structured step mapping such as
+`{"inputs": {...}, "active_domains": {"wr_clk": True, "rd_clk": False}}`,
+or an `(inputs, active_domains)` tuple, where `active_domains` identifies
+which clock domains receive one edge on that step. This keeps RTL cosim
+aligned with `PythonSimulator.step_clocks(...)` and
 `CompiledSimulator.step_clocks(...)`.
 
 Storage initialization boundary:
@@ -611,9 +666,16 @@ Current safe-pattern recognition includes:
 2. `PulseSynchronizer`
 3. `AsyncFIFO`
 4. `AsyncResetRel`
-5. hand-written two-flop level synchronizers
-6. hand-written async-assert / sync-release reset synchronizers, including
-   deeper multi-stage release chains
+5. `ReadyValidAsyncBridge`
+6. hand-written two-flop level synchronizers
+7. hand-written toggle-sync-edge pulse synchronizers, including a final comb
+   alias / observation tap on the synchronized side
+8. hand-written async-assert / sync-release reset synchronizers, including
+   deeper multi-stage release chains, active-low release variants, and a final
+   comb alias / observation tap on the synchronized reset side
+9. reset-release safety is tracked per destination clock domain; reusing one
+   domain's synchronized reset as another domain's async reset still reports a
+   CDC warning
 
 Practical guidance:
 
@@ -624,7 +686,9 @@ Practical guidance:
    producer and consumer side of the crossing
 4. `reset_release_crossing` is a `warning` that specifically asks you to add a
    per-domain reset-release synchronizer or move the raw async reset behind an
-   existing one
+   existing one; the report also names affected sequential targets, recommends
+   an `AsyncResetRel` instance name plus synchronized-reset signal name, and,
+   when available, points back to target source sites
 5. same-clock DSL designs are allowed to use one raw-reset block to
    build `rst_sync` and separate functional blocks that consume that
    synchronized reset
@@ -718,6 +782,14 @@ report = run_python_uvm_test(module, sequence, name="multiclk_local_uvm")
 When `active_domains` is present, the driver and default local reference model
 step via `step_clocks(...)`. Batch execution intentionally falls back to
 per-item stepping for such sequences so the event order stays explicit.
+If a multi-clock sequence omits `active_domains`, the public helpers now point
+you directly at `PythonUvmSequenceItem(..., active_domains=(...))` or
+`UvmSequenceStep(..., active_domains=(...))` so the fix is local and explicit.
+The same explicit schedule can also be authored as a structured step mapping,
+for example `{"inputs": {...}, "active_domains": ("wr_clk",), "label": "write0"}`,
+or `{"inputs": {...}, "active_domains": {"wr_clk": True, "rd_clk": False}}`,
+which keeps local Python-UVM, generated UVM collateral, and remote UVM payloads
+aligned on one multi-clock step shape.
 
 #### 4.3 Protocol-aware sequences and reference models
 
@@ -739,6 +811,55 @@ The verification layer already includes reusable protocol adapters:
 14. `csr_sequence(...)`
 15. `interrupt_sequence(...)`
 
+For stdlib/VIP-oriented lookup, these helpers now also have a unified registry
+surface:
+
+1. `get_protocol_vip_kit("apb")`
+2. `get_protocol_vip_kit("axilite")`
+3. `get_protocol_vip_kit("axis")`
+4. `get_protocol_vip_kit("wishbone")`
+5. `get_protocol_vip_kit("wishbone_clocked")`
+6. `get_protocol_vip_kit("ready_valid")`
+7. `get_protocol_vip_kit("req_rsp")`
+8. `get_protocol_vip_kit("ahb_lite")`
+9. `list_protocol_vip_kits()`
+
+At the broader stdlib level, you can also query the official catalog surface:
+
+1. `get_stdlib_entry("APB")`
+2. `get_stdlib_entry("APBRegisterBank")`
+3. `get_stdlib_entry("APBVIP")`
+4. `list_stdlib_entries(kind="protocol")`
+5. `list_stdlib_entries(kind="component")`
+6. `list_stdlib_entries(kind="vip")`
+
+The same stdlib catalog query surface is also re-exported from
+`rtlgen_x.verify`, so verification-side workflows can stay inside the verify
+namespace when choosing protocol/component/VIP objects.
+
+Each `ProtocolVipKit` bundles:
+
+1. transaction type
+2. sequence builder
+3. reference-model builder
+4. trace checker
+
+If you want to reuse those protocol transactions as generated-SV/UVM directed
+stimulus, use:
+
+1. `protocol_transfers_to_uvm_sequence_steps("apb", transfers)`
+2. `protocol_transfers_to_uvm_sequence_steps("axilite", transfers)`
+3. `protocol_transfers_to_uvm_sequence_steps("wishbone", transfers)`
+4. `protocol_transfers_to_uvm_sequence_steps("wishbone_clocked", transfers)`
+5. `protocol_transfers_to_uvm_sequence_steps("axis", transfers)`
+
+That bridge intentionally converts protocol transfers into
+`UvmSequenceStep(inputs=...)` stimulus only. It does not carry over the
+Python-UVM-side `expected={...}` payload verbatim; generated UVM continues to
+close the loop through the DUT, generated reference model, and scoreboard. For
+non-DSL executable modules, generated runtime bundles still require explicit
+`dut_source=...` / `dut_module_name=...`.
+
 Reference models include:
 
 1. `ready_valid_reference_model(...)`
@@ -751,6 +872,7 @@ Reference models include:
 8. `axi_memory_reference_model(...)`
 9. `csr_reference_model(...)`
 10. `interrupt_reference_model(...)`
+11. `axistream_reference_model(...)`
 
 Supported transaction types include:
 
@@ -800,6 +922,17 @@ Their intended roles are slightly different:
 
 That separation makes it easier for an agent to choose whether a datapath wants
 timing decoupling, a true registered stage, or queueing capacity.
+
+For `APBRegisterBank` specifically, the control-plane closure is strong on
+lowering, executable simulation, emitted RTL, and generated-UVM smoke flows,
+but `analyze_cdc(...)` will still report the raw asynchronous `presetn`
+release path until the design is wrapped with an explicit per-domain
+reset-release synchronizer.
+
+`AXI4LiteRegisterBank` and `WishboneRegisterBank` currently avoid that specific
+warning because their reset handling is synchronous in the stdlib
+implementation, so `analyze_cdc(...)` sees no reset-release crossing on those
+two helpers today.
 
 The APB / AXI-Lite / Wishbone control-plane side is also slightly more
 realistic now: the generated/local components and the Python reference-model
@@ -1234,15 +1367,16 @@ For emitted RTL closure, the current best practice is:
 3. use `run_dsl_multiclock_rtl_cosim(...)` when the DUT is multi-clock and
    you want an explicit domain-step event schedule rather than a custom harness
 
-### Example 7: GPU-SM-style architecture plus PPA feedback
+### Example 7: GPU-SM-style seed program plus PPA feedback
 
-The repository also includes a mixed compute/memory worked example in
+The repository also includes a mixed compute/memory seed program in
 `../gpu_sm/`:
 
 1. dispatch, shared memory, SIMD ALU, SFU, GEMM-style compute, and writeback
 2. lowered executable simulation plus emitted RTL cosim
 3. architecture reporting through `summarize_architecture_report(...)`
 4. PPA and calibration reporting through `emit_ppa_report_markdown(...)`
+5. a concrete bridge toward a larger compute-oriented GPGPU flagship effort
 
 Start with:
 
@@ -1257,6 +1391,8 @@ And use [../gpu_sm/README.md](../gpu_sm/README.md) as the worked example for:
 2. generating a readable architecture report
 3. generating a readable PPA and calibration report
 4. deciding what to rewrite in the DSL next
+5. understanding how a future runtime/compiler/workload layer should meet the
+   hardware side without introducing another thick framework
 
 ## Tutorials
 
@@ -1368,8 +1504,9 @@ The current framework is strong, but it still has clear boundaries.
 ## Multi-clock support snapshot
 
 For the full construct-by-construct support matrix, see
-[DSL_SUPPORT_MATRIX.md](./DSL_SUPPORT_MATRIX.md). For the detailed semantic
-boundary, see [DSL_SEMANTICS.md](./DSL_SEMANTICS.md).
+[DSL_SUPPORT_MATRIX.md](./DSL_SUPPORT_MATRIX.md). For the stdlib-facing public
+inventory, see [STDLIB_SUPPORT_MATRIX.md](./STDLIB_SUPPORT_MATRIX.md). For the
+detailed semantic boundary, see [DSL_SEMANTICS.md](./DSL_SEMANTICS.md).
 
 | Surface | Single-clock | Multi-clock | Notes |
 | --- | --- | --- | --- |

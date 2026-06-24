@@ -60,14 +60,14 @@ class CdcReport:
         return sum(1 for finding in self.findings if finding.severity == "warning")
 
 
-_SAFE_CDC_TYPES = frozenset({"SyncCell", "PulseSynchronizer", "AsyncFIFO", "AsyncResetRel"})
+_SAFE_CDC_TYPES = frozenset({"SyncCell", "PulseSynchronizer", "AsyncFIFO", "AsyncResetRel", "ReadyValidAsyncBridge"})
 _SAFE_RESET_TYPES = frozenset({"AsyncResetRel"})
 
 
 @dataclass(frozen=True)
 class _RecognizedCdcStructures:
     safe_first_stage_targets: Tuple[str, ...] = ()
-    safe_reset_signals: Tuple[str, ...] = ()
+    safe_reset_signals_by_domain: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
     reset_builder_block_indices: Tuple[int, ...] = ()
 
 
@@ -107,6 +107,7 @@ def _analyze_dsl_cdc(flat_module: Any, original_module: Any) -> CdcReport:
         flat_module,
         signal_widths=signal_widths,
         safe_reset_prefixes=safe_reset_prefixes,
+        primitive_safe_reset_outputs_by_domain=_collect_safe_reset_outputs_by_domain(original_module),
     )
     state_writers = _dsl_state_writers(flat_module)
     memory_writers = _dsl_memory_writers(flat_module)
@@ -122,7 +123,10 @@ def _analyze_dsl_cdc(flat_module: Any, original_module: Any) -> CdcReport:
         _analyze_dsl_reset_release(
             flat_module,
             safe_reset_prefixes=safe_reset_prefixes,
-            safe_reset_signals=set(recognized.safe_reset_signals),
+            safe_reset_signals_by_domain={
+                domain_name: set(signal_names)
+                for domain_name, signal_names in recognized.safe_reset_signals_by_domain.items()
+            },
             reset_builder_block_indices=set(recognized.reset_builder_block_indices),
             source_locs=source_locs,
         )
@@ -198,7 +202,10 @@ def _analyze_executable_cdc(module: SimModule) -> CdcReport:
     )
     findings = _analyze_executable_reset_release(
         module,
-        safe_reset_signals=set(recognized.safe_reset_signals),
+        safe_reset_signals_by_domain={
+            domain_name: set(signal_names)
+            for domain_name, signal_names in recognized.safe_reset_signals_by_domain.items()
+        },
         source_locs=source_locs,
     )
     if len(clock_domains) <= 1:
@@ -269,6 +276,11 @@ def emit_cdc_report_markdown(report: CdcReport, *, title: Optional[str] = None) 
             lines.append("- source sites:")
             for site in signal_sites:
                 lines.append(f"  - {site}")
+        affected_sites = _finding_affected_target_sites(finding)
+        if affected_sites:
+            lines.append("- affected target sites:")
+            for site in affected_sites:
+                lines.append(f"  - {site}")
         if finding.suggestions:
             lines.append("- suggestions:")
             for suggestion in finding.suggestions:
@@ -276,7 +288,12 @@ def emit_cdc_report_markdown(report: CdcReport, *, title: Optional[str] = None) 
         if finding.evidence:
             lines.append("- evidence:")
             for key, value in finding.evidence.items():
-                lines.append(f"  - {key}: {value}")
+                if isinstance(value, (list, tuple)) and not isinstance(value, (str, bytes)):
+                    lines.append(f"  - {key}:")
+                    for item in value:
+                        lines.append(f"    - {item}")
+                else:
+                    lines.append(f"  - {key}: {value}")
         lines.append("")
     return "\n".join(lines)
 
@@ -885,20 +902,51 @@ def _propagate_safe_reset_signals_executable(
     return safe_signals
 
 
+def _collect_safe_reset_outputs_by_domain(module: Any) -> Dict[str, Set[str]]:
+    outputs_by_domain: Dict[str, Set[str]] = {}
+    for stmt in getattr(module, "_top_level", ()):
+        if not hasattr(stmt, "module") or not hasattr(stmt, "port_map"):
+            continue
+        submodule = getattr(stmt, "module", None)
+        type_name = getattr(submodule, "_type_name", getattr(submodule, "name", submodule.__class__.__name__))
+        if str(type_name) not in _SAFE_RESET_TYPES:
+            continue
+        port_map = getattr(stmt, "port_map", {}) or {}
+        clk_expr = port_map.get("clk")
+        rst_sync_expr = port_map.get("rst_sync")
+        clk_name = _extract_dsl_expr_single_ref(clk_expr)
+        rst_sync_name = _extract_dsl_expr_single_ref(rst_sync_expr)
+        if not clk_name or not rst_sync_name:
+            continue
+        outputs_by_domain.setdefault(clk_name, set()).add(rst_sync_name)
+    return outputs_by_domain
+
+
+def _extract_dsl_expr_single_ref(expr: object) -> Optional[str]:
+    refs = _dsl_expr_signal_refs(expr)
+    if len(refs) != 1:
+        return None
+    return next(iter(refs))
+
+
 def _recognize_dsl_cdc_structures(
     module: Any,
     *,
     signal_widths: Mapping[str, int],
     safe_reset_prefixes: Set[str],
+    primitive_safe_reset_outputs_by_domain: Optional[Mapping[str, Set[str]]] = None,
 ) -> _RecognizedCdcStructures:
     consumers = _collect_dsl_signal_consumers(module)
     comb_aliases = _collect_dsl_comb_aliases(module)
     safe_first_stages: Set[str] = set()
-    reset_base_signals: Set[str] = set()
+    reset_base_signals_by_domain = {
+        domain_name: set(signal_names)
+        for domain_name, signal_names in (primitive_safe_reset_outputs_by_domain or {}).items()
+    }
     reset_builder_blocks: Set[int] = set()
 
     for index, (clk, rst, reset_async, reset_active_low, body) in enumerate(getattr(module, "_seq_blocks", ())):
-        _clk_name = getattr(clk, "name", str(clk)) if clk is not None else None
+        clk_name = getattr(clk, "name", str(clk)) if clk is not None else None
         reset_name, resolved_async, resolved_active_low = _resolve_dsl_reset_signal(
             rst,
             reset_async=bool(reset_async),
@@ -941,18 +989,25 @@ def _recognize_dsl_cdc_structures(
                 reset_constant_like_targets=reset_constant_like_targets,
                 widths=signal_widths,
             )
-            if safe_reset_chain_targets:
-                reset_base_signals.update(safe_reset_chain_targets)
+            if safe_reset_chain_targets and clk_name:
+                reset_base_signals_by_domain.setdefault(clk_name, set()).update(safe_reset_chain_targets)
                 reset_builder_blocks.add(index)
 
-    safe_reset_signals = _propagate_safe_reset_signals_dsl(
-        module,
-        safe_reset_prefixes=safe_reset_prefixes,
-        reset_base_signals=reset_base_signals,
-    )
+    safe_reset_signals_by_domain = {
+        domain_name: tuple(
+            sorted(
+                _propagate_safe_reset_signals_dsl(
+                    module,
+                    safe_reset_prefixes=safe_reset_prefixes,
+                    reset_base_signals=set(reset_base_signals),
+                )
+            )
+        )
+        for domain_name, reset_base_signals in reset_base_signals_by_domain.items()
+    }
     return _RecognizedCdcStructures(
         safe_first_stage_targets=tuple(sorted(safe_first_stages)),
-        safe_reset_signals=tuple(sorted(safe_reset_signals)),
+        safe_reset_signals_by_domain=safe_reset_signals_by_domain,
         reset_builder_block_indices=tuple(sorted(reset_builder_blocks)),
     )
 
@@ -975,7 +1030,7 @@ def _recognize_executable_cdc_structures(module: SimModule) -> _RecognizedCdcStr
         state_domain_by_target.setdefault(assignment.target, assignment.clock_domain)
     domain_map = {domain.name: domain for domain in module.clock_domains}
     safe_first_stages: Set[str] = set()
-    reset_base_signals: Set[str] = set()
+    reset_base_signals_by_domain: Dict[str, Set[str]] = {}
     seq_assignments = {assignment.target: assignment for assignment in module.assignments if assignment.phase == "seq"}
     transfer_sources = {
         target_name: _extract_compiled_transfer_source(assignment.expr, target_name)
@@ -1016,7 +1071,7 @@ def _recognize_executable_cdc_structures(module: SimModule) -> _RecognizedCdcStr
             if _compiled_expr_has_constant_like_branch(assignment.expr, target_name):
                 reset_constant_like_targets.add(target_name)
             active_transfer_sources[target_name] = _extract_compiled_transfer_source(assignment.expr, target_name)
-        reset_base_signals.update(
+        reset_base_signals_by_domain.setdefault(domain_name, set()).update(
             _infer_safe_reset_chain_targets(
                 transfer_sources=active_transfer_sources,
                 active_constant_like_targets=active_constant_like_targets,
@@ -1024,13 +1079,20 @@ def _recognize_executable_cdc_structures(module: SimModule) -> _RecognizedCdcStr
                 widths=signal_widths,
             )
         )
-    safe_reset_signals = _propagate_safe_reset_signals_executable(
-        module,
-        reset_base_signals=reset_base_signals,
-    )
+    safe_reset_signals_by_domain = {
+        domain_name: tuple(
+            sorted(
+                _propagate_safe_reset_signals_executable(
+                    module,
+                    reset_base_signals=set(reset_base_signals),
+                )
+            )
+        )
+        for domain_name, reset_base_signals in reset_base_signals_by_domain.items()
+    }
     return _RecognizedCdcStructures(
         safe_first_stage_targets=tuple(sorted(safe_first_stages)),
-        safe_reset_signals=tuple(sorted(safe_reset_signals)),
+        safe_reset_signals_by_domain=safe_reset_signals_by_domain,
         reset_builder_block_indices=(),
     )
 
@@ -1505,7 +1567,7 @@ def _analyze_dsl_reset_release(
     module: Any,
     *,
     safe_reset_prefixes: Set[str],
-    safe_reset_signals: Set[str],
+    safe_reset_signals_by_domain: Mapping[str, Set[str]],
     reset_builder_block_indices: Set[int],
     source_locs: Mapping[str, Tuple[Optional[str], Optional[int]]],
 ) -> List[CdcFinding]:
@@ -1520,21 +1582,28 @@ def _analyze_dsl_reset_release(
             continue
         if index in reset_builder_block_indices:
             continue
+        domain_name = getattr(clk, "name", str(clk)) if clk is not None else None
+        reset_assigns, active_assigns = _dsl_split_reset_guard(
+            body,
+            reset_name=reset_name,
+            reset_active_low=resolved_active_low,
+        )
         state_targets = {
             name
-            for name in _dsl_direct_assignments(body).keys()
+            for name in set(reset_assigns) | set(active_assigns) | set(_dsl_direct_assignments(body))
             if name != "<unknown>"
         }
         if state_targets and all(_belongs_to_safe_cdc_primitive(name, safe_reset_prefixes) for name in state_targets):
             continue
-        if reset_name in safe_reset_signals or _belongs_to_safe_cdc_primitive(reset_name, safe_reset_prefixes):
+        domain_safe_resets = safe_reset_signals_by_domain.get(domain_name or "", set())
+        if reset_name in domain_safe_resets or _belongs_to_safe_cdc_primitive(reset_name, safe_reset_prefixes):
             continue
-        domain_name = getattr(clk, "name", str(clk)) if clk is not None else None
         findings.append(
             _make_reset_release_finding(
                 reset_signal=reset_name,
                 dst_domain=domain_name,
                 reset_active_low=resolved_active_low,
+                affected_targets=tuple(sorted(state_targets)),
                 source_locs=source_locs,
             )
         )
@@ -1544,20 +1613,27 @@ def _analyze_dsl_reset_release(
 def _analyze_executable_reset_release(
     module: SimModule,
     *,
-    safe_reset_signals: Set[str],
+    safe_reset_signals_by_domain: Mapping[str, Set[str]],
     source_locs: Mapping[str, Tuple[Optional[str], Optional[int]]],
 ) -> List[CdcFinding]:
     findings: List[CdcFinding] = []
     for domain in module.clock_domains:
         if not domain.reset_async or not domain.reset_signal:
             continue
-        if domain.reset_signal in safe_reset_signals:
+        if domain.reset_signal in safe_reset_signals_by_domain.get(domain.name, set()):
             continue
         findings.append(
             _make_reset_release_finding(
                 reset_signal=domain.reset_signal,
                 dst_domain=domain.name,
                 reset_active_low=domain.reset_active_low,
+                affected_targets=tuple(
+                    sorted(
+                        assignment.target
+                        for assignment in module.assignments
+                        if assignment.phase == "seq" and assignment.clock_domain == domain.name
+                    )
+                ),
                 source_locs=source_locs,
             )
         )
@@ -1569,16 +1645,47 @@ def _make_reset_release_finding(
     reset_signal: str,
     dst_domain: Optional[str],
     reset_active_low: bool,
+    affected_targets: Sequence[str],
     source_locs: Mapping[str, Tuple[Optional[str], Optional[int]]],
 ) -> CdcFinding:
     file_name, line_no = source_locs.get(reset_signal, (None, None))
     polarity = "active-low" if reset_active_low else "active-high"
+    affected = tuple(target for target in affected_targets if target and target != "<unknown>")
+    affected_target_sites = tuple(
+        (target, source_locs.get(target, (None, None))[0], source_locs.get(target, (None, None))[1])
+        for target in affected
+        if source_locs.get(target, (None, None))[0] is not None
+    )
+    affected_text = _summarize_affected_targets(affected)
+    target_hint = (
+        f" Affected sequential targets: {affected_text}."
+        if affected_text
+        else ""
+    )
+    sync_instance = _recommended_reset_release_instance_name(reset_signal=reset_signal, dst_domain=dst_domain)
+    sync_reset_name = _recommended_synchronized_reset_name(reset_signal=reset_signal, dst_domain=dst_domain)
+    domain_label = dst_domain or "unknown"
+    remediation_steps = [
+        (
+            f"Instantiate `AsyncResetRel` as `{sync_instance}` for destination domain "
+            f"`{domain_label}`, with `clk={domain_label}` and `rst_async={reset_signal}`."
+        ),
+        (
+            f"Drive functional sequential logic in `{domain_label}` from `{sync_reset_name}` "
+            f"instead of raw `{reset_signal}`."
+        ),
+    ]
+    if affected_text:
+        remediation_steps.append(
+            f"Reconnect the reset of affected state first: {affected_text}."
+        )
     return CdcFinding(
         category="reset_release_crossing",
         severity="warning",
         message=(
             f"Asynchronous reset '{reset_signal}' drives clock domain '{dst_domain or 'unknown'}' "
             f"without a recognized sync-release stage. Reset deassertion can violate recovery/removal timing."
+            f"{target_hint}"
         ),
         src=CdcEndpoint(
             signal_name=reset_signal,
@@ -1595,11 +1702,57 @@ def _make_reset_release_finding(
             kind="clock_domain",
         ),
         suggestions=(
-            "Insert AsyncResetRel or a two-flop async-assert / sync-release reset synchronizer per destination clock domain.",
-            "Keep the raw async reset only on the synchronizer itself, and use the synchronized reset on functional sequential logic.",
+            remediation_steps[0],
+            remediation_steps[1],
+            (
+                "Keep the raw async reset only on the synchronizer itself, and use the synchronized "
+                "reset on functional sequential logic."
+            ),
+            *(tuple(remediation_steps[2:]) or ()),
         ),
-        evidence={"polarity": polarity},
+        evidence={
+            "polarity": polarity,
+            "destination_domain": dst_domain or "unknown",
+            "affected_targets": affected,
+            "affected_target_sites": affected_target_sites,
+            "recommended_sync_primitive": "AsyncResetRel",
+            "recommended_sync_instance": sync_instance,
+            "recommended_synchronized_reset": sync_reset_name,
+            "remediation_steps": tuple(remediation_steps),
+        },
     )
+
+
+def _summarize_affected_targets(affected_targets: Sequence[str]) -> str:
+    affected = tuple(target for target in affected_targets if target and target != "<unknown>")
+    if not affected:
+        return ""
+    text = ", ".join(affected[:4])
+    if len(affected) > 4:
+        text = f"{text}, +{len(affected) - 4} more"
+    return text
+
+
+def _recommended_reset_release_instance_name(*, reset_signal: str, dst_domain: Optional[str]) -> str:
+    base = dst_domain or reset_signal or "reset"
+    return f"u_{_sanitize_identifier_fragment(base)}_reset_rel"
+
+
+def _recommended_synchronized_reset_name(*, reset_signal: str, dst_domain: Optional[str]) -> str:
+    base = dst_domain or reset_signal or "reset"
+    return f"{_sanitize_identifier_fragment(base)}_rst_sync"
+
+
+def _sanitize_identifier_fragment(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in str(value))
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    cleaned = cleaned.strip("_")
+    if not cleaned:
+        cleaned = "sig"
+    if cleaned[0].isdigit():
+        cleaned = f"sig_{cleaned}"
+    return cleaned.lower()
 
 
 def _make_signal_crossing_finding(
@@ -1874,6 +2027,26 @@ def _finding_signal_sites(finding: CdcFinding) -> Tuple[str, ...]:
             sites.append(f"{label} `{endpoint.signal_name}` -> {path}:{endpoint.source_line}")
         else:
             sites.append(f"{label} `{endpoint.signal_name}` -> {path}")
+    return tuple(sites)
+
+
+def _finding_affected_target_sites(finding: CdcFinding) -> Tuple[str, ...]:
+    evidence = getattr(finding, "evidence", {}) or {}
+    raw_entries = evidence.get("affected_target_sites")
+    if not raw_entries:
+        return ()
+    sites: List[str] = []
+    for entry in raw_entries:
+        if not isinstance(entry, tuple) or len(entry) != 3:
+            continue
+        signal_name, source_file, source_line = entry
+        if not signal_name or not source_file:
+            continue
+        path = Path(str(source_file)).name
+        if source_line is not None:
+            sites.append(f"`{signal_name}` -> {path}:{source_line}")
+        else:
+            sites.append(f"`{signal_name}` -> {path}")
     return tuple(sites)
 
 

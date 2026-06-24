@@ -1,6 +1,6 @@
-# Legacy DSL to Remote VCS/UVM Tutorial
+# DSL to Remote VCS/UVM Tutorial
 
-This tutorial shows the recommended path from a legacy DSL module to:
+This tutorial shows the recommended path from a DSL module to:
 
 1. executable local validation
 2. generated SV/UVM collateral
@@ -8,13 +8,13 @@ This tutorial shows the recommended path from a legacy DSL module to:
 4. feedback-driven iteration
 
 It is the most practical path when you already have a module written in the
-legacy DSL and want to move from design intent to runnable verification quickly.
+DSL and want to move from design intent to runnable verification quickly.
 
 ## When to use this tutorial
 
 Use this flow when:
 
-1. the DUT already exists as a legacy DSL `Module`
+1. the DUT already exists as a DSL `Module`
 2. you want semantic checks before exporting RTL/UVM
 3. you want generated Python reference models and SV/UVM collateral
 4. you want to run full UVM closure on a remote VCS host
@@ -38,8 +38,8 @@ Remote prerequisites:
 ## End-to-end path
 
 ```text
-legacy DSL module
-  -> lower to SimModule
+DSL module
+  -> lower for inspection and low-level executable use
   -> Python/local compiled validation
   -> Python-UVM or directed regression
   -> generate SV/UVM runtime bundle
@@ -51,12 +51,12 @@ legacy DSL module
 
 ## Step 1: instantiate the DUT
 
-Start from the legacy DSL class.
+Start from the DSL class.
 
 ```python
-from my_design.dsl import MyLegacyModule
+from my_design.dsl import MyDslModule
 
-module = MyLegacyModule()
+module = MyDslModule()
 ```
 
 If your module already lives in a dedicated file and class, keep that pair handy.
@@ -64,13 +64,13 @@ The helper scripts use exactly that interface.
 
 ## Step 2: lower into the executable model
 
-Lowering converts the legacy DSL module into `SimModule`, the execution model used
-by the new simulator stack.
+Lowering converts the DSL module into the internal executable model used by the
+new simulator stack.
 
 ```python
-from rtlgen_x.dsl import lower_legacy_module_to_sim
+from rtlgen_x.dsl import lower_dsl_module_to_sim
 
-lowered = lower_legacy_module_to_sim(module)
+lowered = lower_dsl_module_to_sim(module)
 sim_module = lowered.module
 
 print(sim_module.name)
@@ -79,11 +79,106 @@ print(lowered.report.assignment_count)
 
 What to check here:
 
-1. lowering succeeds without `LegacyLoweringError`
+1. lowering succeeds without `DslLoweringError`
 2. the output names and input names look sane
 3. state and memory objects were captured as expected
 4. reset behavior is represented correctly
 5. latch-heavy modules lower cleanly if they use `with self.latch:`
+
+Important boundary:
+
+1. single-clock DUTs are the smoothest path for generated reference models,
+   Python-UVM, and exported SV/UVM collateral
+2. multi-clock DSL modules can lower into the new executable model, and the
+   lowered runtime can execute them with `step_clocks(...)`
+3. local Python-UVM can also run multi-clock DUTs when every sequence item
+   carries explicit `active_domains`
+4. generated Python reference models can also run explicit multi-clock
+   `predict_clocks(...)` / smoke checks
+5. generated UVM collateral can now run an explicit directed multi-clock path
+   when every `UvmSequenceStep` names `active_domains`
+6. randomized / generic multi-clock generated UVM is still out of scope, so
+   broader multi-clock closure still prefers emitted RTL plus an external
+   simulator flow
+7. generated DSL DUT export preserves the module's authored reset semantics,
+   so sync reset stays sync and explicit async-low reset stays async-low in the
+   emitted SV/UVM bundle
+8. `sim_module` is for low-level runtimes such as `PythonSimulator`,
+   `CompiledSimulator`, or architecture inference helpers; public verify and
+   UVM helpers should receive the original DSL `Module` or the full
+   `LoweredDslModule`, not `lowered.module`
+
+## Step 2.5: run CDC preflight for clock/reset-domain hazards
+
+If the DUT has more than one clock domain, run the static CDC check before
+local simulation or collateral export. Also run it on single-clock DUTs that
+use async reset, because reset-release hazards are checked too.
+
+```python
+from rtlgen_x.verify import analyze_cdc, emit_cdc_report_markdown
+
+cdc_report = analyze_cdc(module)
+print(cdc_report.error_count, cdc_report.warning_count)
+print(emit_cdc_report_markdown(cdc_report, title="My DUT CDC Preflight"))
+```
+
+What this catches today:
+
+1. single-bit level crossings that should use `SyncCell`
+2. pulse/event crossings that should use `PulseSynchronizer`
+3. multi-bit payload crossings that should use `AsyncFIFO` or an explicit
+   synchronized protocol
+4. cross-domain memory reads/writes that need CDC-safe ownership or buffering
+5. multi-writer shared state or memory hazards
+6. async reset release paths that bypass a recognized sync-release stage
+
+What to run it on:
+
+1. prefer the original DSL `Module` when available, because safe helper
+   instances like `SyncCell`, `PulseSynchronizer`, `AsyncFIFO`, and
+   `AsyncResetRel` are recognized there
+2. the lowered executable model carries the same clock/reset metadata into the
+   simulator and verification stack
+3. the DSL path also recognizes common hand-written two-flop level
+   synchronizers and hand-written async-assert / sync-release reset chains
+4. same-clock DSL designs are allowed to build `rst_sync` in one raw-reset
+   block and consume that synchronized reset from separate functional blocks
+
+How to use the result:
+
+1. treat `error` findings as redesign-required before UVM closure
+2. treat `warning` findings as synchronizer/protocol-review-required
+3. `reset_release_crossing` means the functional domain still sees a raw async
+   reset, so add `AsyncResetRel` or a hand-written sync-release chain and feed
+   the resulting `rst_sync` into the functional block
+4. if source metadata is present, use the reported producer/consumer file+line
+   sites to patch the DUT directly; for reset-release findings, also use the
+   affected sequential target sites to identify the functional state that still
+   depends on the raw async reset
+5. current reset-release findings also carry a recommended `AsyncResetRel`
+   instance name and synchronized-reset signal name, so an agent can patch the
+   wrapper with less naming guesswork
+
+Practical control-plane stdlib guidance:
+
+1. `APBRegisterBank` is still a strong control-plane closure path for lowering,
+   executable simulation, Python-UVM, and generated SV/UVM collateral
+2. however, if you drive it from a raw asynchronous `presetn`, the CDC preflight
+   will intentionally report a `reset_release_crossing` warning until you add a
+   per-domain reset-release synchronizer
+3. `AXI4LiteRegisterBank` and `WishboneRegisterBank` do not currently trigger
+   that specific warning in the stdlib implementation, because their reset path
+   is synchronous today
+4. so if an agent is choosing between the built-in control-plane helpers for a
+   quick single-clock closure, `AXI4LiteRegisterBank` or `WishboneRegisterBank`
+   are the lower-friction path when you do not want to author a reset-release
+   wrapper first
+5. if APB is the required architectural interface, keep using
+   `APBRegisterBank`, but treat the reset wrapper as part of the intended DUT
+   authoring rather than as a post-hoc cleanup
+
+This step is intentionally report-oriented: `rtlgen_x` tells you what is unsafe
+and what primitive pattern fits, while the agent or designer edits the module.
 
 ## Step 3: run quick semantic checks in Python
 
@@ -149,9 +244,9 @@ data even though one-shot tests still pass.
 Once Python behavior looks right, validate on the compiled path.
 
 ```python
-from rtlgen_x.dsl import build_compiled_simulator_from_legacy
+from rtlgen_x.dsl import build_compiled_simulator_from_dsl
 
-with build_compiled_simulator_from_legacy(module, build_dir="build/my_legacy_compiled") as cpp_sim:
+with build_compiled_simulator_from_dsl(module, build_dir="build/my_dsl_compiled") as cpp_sim:
     cpp_sim.reset()
     print(cpp_sim.step({"clk": 0, "rst": 1, "inp": 0}))
     print(cpp_sim.step({"clk": 0, "rst": 0, "inp": 5}))
@@ -161,12 +256,37 @@ with build_compiled_simulator_from_legacy(module, build_dir="build/my_legacy_com
 If Python and compiled behavior differ, stop here and debug before generating
 verification collateral.
 
+## Step 4.5: decide storage initialization semantics early
+
+Before leaning on RTL cosim or remote UVM, decide whether storage contents are
+architecturally meaningful before the first write.
+
+Use these rules:
+
+1. `Memory(..., init_zero=True)` and `Memory(..., init_data=...)` export
+   explicit RTL initialization and stay aligned with lowered execution
+2. `Array(...)` does not inject implicit RTL initialization, even though the
+   lowered Python and compiled simulators still begin from concrete values
+3. if the design reads an `Array(...)` before reset logic or write traffic has
+   initialized it, local RTL cosim may surface `x` even when the executable
+   model produces a number
+
+If `run_dsl_multiclock_rtl_cosim(...)` raises `CosimUnknownValueError`,
+treat that as a real design/export boundary:
+
+1. switch the storage to `Memory(..., init_zero=True)` if zero-init is part of
+   the intended hardware contract
+2. add explicit init-block or reset writes if the storage should be initialized
+   structurally
+3. delay scoreboarding until after the first architecturally meaningful write if
+   the pre-init read truly does not matter
+
 Useful helpers at this stage:
 
 1. `compare_python_and_compiled(...)`
 2. `capture_execution_trace(...)`
 3. `run_random_parity_fuzz(...)`
-4. `run_legacy_rtl_cosim(...)` if emitted RTL parity matters early for
+4. `run_dsl_rtl_cosim(...)` if emitted RTL parity matters early for
    cycle-aligned interfaces or simple valid-gated streaming interfaces
 
 For valid-driven streaming DUTs, the generic helper now supports
@@ -190,7 +310,7 @@ vectors = (
     StepVector(inputs={"clk": 0, "rst": 0, "inp": 5}, expected={"out": 5}),
 )
 
-report = run_directed_test(module, vectors, name="legacy_directed")
+report = run_directed_test(module, vectors, name="dsl_directed")
 print(report.passed)
 ```
 
@@ -205,7 +325,7 @@ sequence = (
     PythonUvmSequenceItem(inputs={"clk": 0, "rst": 0, "inp": 2}, label="op1"),
 )
 
-report = run_python_uvm_test(module, sequence, name="legacy_local_uvm")
+report = run_python_uvm_test(module, sequence, name="dsl_local_uvm")
 print(report.passed, report.total_cycles)
 ```
 
@@ -215,6 +335,39 @@ Use Python-UVM when you want:
 2. scoreboarding
 3. coverage bins
 4. failure triage bundles
+5. explicit multi-clock local event verification via `active_domains`
+
+For a multi-clock local run, make each transaction an explicit clock-domain
+event:
+
+```python
+from rtlgen_x.verify import PythonUvmSequenceItem, run_python_uvm_test
+
+sequence = (
+    PythonUvmSequenceItem(
+        inputs={"wr_rst": 1, "rd_rst": 1},
+        active_domains=("wr_clk", "rd_clk"),
+        label="reset",
+    ),
+    PythonUvmSequenceItem(
+        inputs={"wr_en": 1, "din": 11},
+        active_domains=("wr_clk",),
+        label="write0",
+    ),
+    PythonUvmSequenceItem(
+        inputs={"rd_en": 1},
+        active_domains=("rd_clk",),
+        label="read0",
+    ),
+)
+
+report = run_python_uvm_test(module, sequence, name="dsl_multiclk_local_uvm")
+print(report.passed, report.traces[-1].active_domains)
+```
+
+Today this local path is scalar-step only. If you pass `batch_cycles`, any
+chunk containing `active_domains` items automatically falls back to per-item
+stepping so the event order stays explicit.
 
 For streaming or pipelined DUTs, include:
 
@@ -247,7 +400,7 @@ collateral.
 from rtlgen_x.verify import generate_uvm_collateral, write_uvm_collateral
 
 collateral = generate_uvm_collateral(module, clock_name="clk")
-write_uvm_collateral(collateral, "build/my_legacy_uvm_collateral")
+write_uvm_collateral(collateral, "build/my_dsl_uvm_collateral")
 ```
 
 ### Runnable bundle
@@ -256,7 +409,7 @@ write_uvm_collateral(collateral, "build/my_legacy_uvm_collateral")
 from rtlgen_x.verify import generate_uvm_runtime_bundle, write_uvm_runtime_bundle
 
 bundle = generate_uvm_runtime_bundle(module, clock_name="clk")
-write_uvm_runtime_bundle(bundle, "build/my_legacy_uvm", include_runtime_package=False)
+write_uvm_runtime_bundle(bundle, "build/my_dsl_uvm", include_runtime_package=False)
 ```
 
 The runtime bundle adds:
@@ -295,6 +448,16 @@ What to check:
 4. generated reference-model outputs match the DUT outputs
 5. latch-based DUTs emit `always_latch` when exported as SV
 
+For control-plane stdlib blocks, also check:
+
+1. `APBRegisterBank` smoke sequences assert `presetn == 1'b0` during reset and
+   `presetn == 1'b1` during normal traffic
+2. `AXI4LiteRegisterBank` / `WishboneRegisterBank` smoke sequences match the
+   DUT reset polarity (`rst` / `rst_i`)
+3. generated reference models preserve byte-enable metadata so partial writes
+   (`pstrb` / `wstrb` / `sel_i`) are not silently flattened into full-word
+   overwrites
+
 For pipelined DUTs also check:
 
 1. valid bits and payload registers move stage-by-stage as intended
@@ -309,12 +472,93 @@ Before involving remote tools, prove that the generated reference model is alive
 from rtlgen_x.verify import smoke_test_generated_reference_model
 
 report = smoke_test_generated_reference_model(
-    "build/my_legacy_uvm/my_legacy_module_ref_model.py",
+    "build/my_dsl_uvm/my_dsl_module_ref_model.py",
     inputs={"clk": 0, "rst": 0, "inp": 5},
 )
 print(report.class_name)
 print(report.predicted)
 ```
+
+For a multi-clock generated reference model, pass an explicit domain-event
+schedule:
+
+```python
+report = smoke_test_generated_reference_model(
+    "build/my_dsl_uvm/my_dsl_module_ref_model.py",
+    inputs={"wr_en": 1, "din": 11},
+    active_domains=("wr_clk",),
+)
+print(report.predicted)
+print(report.active_domains)
+```
+
+For a multi-clock generated UVM bundle, use directed steps with explicit active
+domains:
+
+```python
+from rtlgen_x.verify import UvmSequenceStep, generate_uvm_runtime_bundle
+
+bundle = generate_uvm_runtime_bundle(
+    module,
+    clock_name="wr_clk",
+    directed_sequence=(
+        UvmSequenceStep(
+            inputs={"wr_rst": 1, "rd_rst": 1},
+            active_domains=("wr_clk", "rd_clk"),
+            label="reset",
+        ),
+        UvmSequenceStep(
+            inputs={"wr_en": 1, "din": 0x11},
+            active_domains=("wr_clk",),
+            label="write0",
+        ),
+        UvmSequenceStep(
+            inputs={"rd_en": 1},
+            active_domains=("rd_clk",),
+            label="read0",
+        ),
+    ),
+)
+```
+
+For single-clock control-plane stdlib DUTs, you can also reuse protocol-transfer
+helpers directly instead of hand-writing `UvmSequenceStep(...)` items:
+
+```python
+from rtlgen_x.dsl import APBRegisterBank
+from rtlgen_x.verify import (
+    ApbTransfer,
+    generate_uvm_runtime_bundle,
+    protocol_transfers_to_uvm_sequence_steps,
+)
+
+bundle = generate_uvm_runtime_bundle(
+    APBRegisterBank(depth=8),
+    clock_name="pclk",
+    directed_sequence=protocol_transfers_to_uvm_sequence_steps(
+        "apb",
+        (
+            ApbTransfer(addr=0x10, write=True, wdata=0x55AA, label="wr0"),
+            ApbTransfer(addr=0x10, write=False, expected_rdata=0x55AA, label="rd0"),
+        ),
+    ),
+)
+```
+
+The bridge only reuses protocol stimulus shaping. Generated UVM still checks
+behavior through the emitted DUT wrapper, generated reference model, and
+scoreboard rather than copying Python-UVM `expected` dictionaries into the
+sequence step object.
+
+Generated runtime bundles preserve the DSL module's reset semantics. In
+practice that means:
+
+1. `@self.seq(clk, rst)` exports as a synchronous `always_ff @(posedge clk)`
+   reset style
+2. `@self.seq(clk, ~rst_n)` exports as `always_ff @(posedge clk or negedge rst_n)`
+
+That detail matters for multi-clock directed sequences, because reset release
+must not silently introduce an extra event on the wrong domain.
 
 If this fails, feed the issue back into:
 
@@ -359,7 +603,7 @@ Use `iverilog` as a local packaging sanity check.
 from rtlgen_x.verify import generate_uvm_collateral, probe_iverilog_uvm_collateral
 
 collateral = generate_uvm_collateral(module, clock_name="clk")
-probe = probe_iverilog_uvm_collateral(collateral, output_dir="build/my_legacy_iverilog_probe")
+probe = probe_iverilog_uvm_collateral(collateral, output_dir="build/my_dsl_iverilog_probe")
 
 print(probe.interface_compile_ok)
 print(probe.package_compile_ok)
@@ -380,6 +624,24 @@ export.
 
 Once local smoke passes, generate and run the bundle remotely.
 
+### Optional preflight
+
+Before generating any bundle, confirm the remote host can source the simulator
+environment and find `vcs`:
+
+```python
+from rtlgen_x.verify import probe_remote_uvm_environment
+
+env_report = probe_remote_uvm_environment(
+    host="10.134.143.28",
+    source_script="/apps/EDAs/syn.bash",
+)
+
+print(env_report.environment_ok)
+print(env_report.vcs_path)
+print(env_report.stderr)
+```
+
 ### Python API
 
 ```python
@@ -389,9 +651,9 @@ result = run_remote_uvm_probe(
     module,
     clock_name="clk",
     host="10.134.143.28",
-    remote_dir=default_remote_dir(getattr(module, "name", "my_legacy_module")),
+    remote_dir=default_remote_dir(getattr(module, "name", "my_dsl_module")),
     source_script="/apps/EDAs/syn.bash",
-    local_bundle_dir="build/my_legacy_remote_probe",
+    local_bundle_dir="build/my_dsl_remote_probe",
 )
 
 print(result.returncode)
@@ -406,10 +668,43 @@ for line in result.summary.scoreboard_lines:
 ```bash
 python scripts/run_remote_uvm_probe.py \
   --module-file path/to/dsl.py \
-  --module-class MyLegacyModule \
+  --module-class MyDslModule \
   --clock clk \
   --host 10.134.143.28 \
-  --local-bundle-dir build/my_legacy_remote_probe
+  --local-bundle-dir build/my_dsl_remote_probe
+```
+
+For multi-clock directed closure, add a step file and pass
+`--directed-sequence-json`:
+
+```json
+[
+  {
+    "inputs": {"wr_rst": 1, "rd_rst": 1},
+    "label": "reset",
+    "active_domains": ["wr_clk", "rd_clk"]
+  },
+  {
+    "inputs": {"wr_en": 1, "din": 17},
+    "label": "write0",
+    "active_domains": ["wr_clk"]
+  },
+  {
+    "inputs": {"rd_en": 1},
+    "label": "read0",
+    "active_domains": ["rd_clk"]
+  }
+]
+```
+
+```bash
+python scripts/run_remote_uvm_probe.py \
+  --module-file path/to/dsl.py \
+  --module-class MyDslMultiClockModule \
+  --clock wr_clk \
+  --host 10.134.143.28 \
+  --directed-sequence-json path/to/multiclk_steps.json \
+  --local-bundle-dir build/my_multiclk_remote_probe
 ```
 
 This path is usually the first full-system proof that:
@@ -463,6 +758,18 @@ python scripts/run_remote_uvm_regression.py \
   --json-out build/remote_uvm_regression/report.json
 ```
 
+You can also load targets from JSON or overlay one explicit directed sequence
+across every target:
+
+```bash
+python scripts/run_remote_uvm_regression.py \
+  --host 10.134.143.28 \
+  --targets-json build/remote_uvm_targets.json \
+  --directed-sequence-json path/to/shared_steps.json \
+  --local-root build/remote_uvm_regression \
+  --json-out build/remote_uvm_regression/report.json
+```
+
 ## Failure map and feedback path
 
 Use failures to decide where to modify the system.
@@ -471,7 +778,7 @@ Use failures to decide where to modify the system.
 
 Likely fix points:
 
-1. the legacy DSL design itself
+1. the DSL design itself
 2. reset sequencing assumptions
 3. latch, memory, or state semantics
 
@@ -507,6 +814,8 @@ Likely fix points:
 2. SV/UVM packaging
 3. DPI bridge environment
 4. simulator-specific behavior
+5. reset-style mismatches between the authored DSL module and the emitted
+   DUT, especially if failure shows up exactly on reset release
 
 The key design principle is:
 
@@ -532,5 +841,6 @@ Before calling the flow healthy, check off:
 
 1. [README.md](./README.md)
 2. [TUTORIAL_ARCH_PPA.md](./TUTORIAL_ARCH_PPA.md)
-3. [scripts/run_remote_uvm_probe.py](../scripts/run_remote_uvm_probe.py)
-4. [scripts/run_remote_uvm_regression.py](../scripts/run_remote_uvm_regression.py)
+3. [scripts/probe_remote_uvm_environment.py](../scripts/probe_remote_uvm_environment.py)
+4. [scripts/run_remote_uvm_probe.py](../scripts/run_remote_uvm_probe.py)
+5. [scripts/run_remote_uvm_regression.py](../scripts/run_remote_uvm_regression.py)
