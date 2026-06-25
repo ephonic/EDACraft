@@ -4880,7 +4880,11 @@ def flatten_module(module: "Module") -> "Module":
             latch.append([_rename_stmt(s, mapping, mem_rename, arr_rename) for s in body])
 
         for port_name, expr in stmt.port_map.items():
-            port_sig = sub_copy._inputs.get(port_name) or sub_copy._outputs.get(port_name) or sub_copy._wires.get(port_name)
+            port_sig = sub_copy._inputs.get(port_name)
+            if port_sig is None:
+                port_sig = sub_copy._outputs.get(port_name)
+            if port_sig is None:
+                port_sig = sub_copy._wires.get(port_name)
             if port_sig is None:
                 continue
             new_sig = mapping[port_sig]
