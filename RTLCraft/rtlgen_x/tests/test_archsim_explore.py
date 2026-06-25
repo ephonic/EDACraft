@@ -13,6 +13,7 @@ from rtlgen_x.archsim import (
     rank_initiation_interval_upgrades,
     rank_latency_upgrades,
     rank_queue_depth_upgrades,
+    rank_upgrade_opportunities,
     run_stage_bandwidth_sweep,
     run_stage_capacity_sweep,
     run_stage_initiation_interval_sweep,
@@ -200,3 +201,24 @@ def test_queue_depth_and_bandwidth_rankings_surface_the_right_stage():
     assert bandwidth_candidates[0].stage_name == "dram"
     assert bandwidth_candidates[0].recommended_value >= 64
     assert bandwidth_candidates[0].cycle_reduction > 0
+
+
+def test_combined_upgrade_ranking_merges_knob_suggestions_into_one_ordered_list():
+    model, workload = _shared_resource_model()
+
+    candidates = rank_upgrade_opportunities(
+        model,
+        workload,
+        candidate_capacities=(2, 4),
+        candidate_initiation_intervals=(2, 1),
+        candidate_latencies=(2, 1),
+        candidate_queue_depths=(4, 8),
+        candidate_bandwidths=(32, 64),
+    )
+
+    assert candidates
+    assert candidates[0].stage_name == "shared_mem"
+    assert candidates[0].cycle_reduction > 0
+    assert {candidate.knob for candidate in candidates}.issuperset(
+        {"capacity", "initiation_interval", "latency"}
+    )

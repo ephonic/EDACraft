@@ -308,15 +308,20 @@ def test_ppa_report_summary_surfaces_handshake_payload_state_pattern_hint():
     report = advise_ppa(module=SkidBuffer(16), goals=PpaGoals(max_state_bits=16))
     summary = summarize_ppa_report(report)
     state_summary = next(rec for rec in summary.top_recommendations if rec.title == "Reduce or gate large sequential state")
-    rewrite_summary = next(proposal for proposal in summary.rewrite_proposals if proposal.target == "buf_data")
+    rewrite_summary = next(proposal for proposal in summary.rewrite_proposals if proposal.target == "buf_data_hold_en")
     markdown = emit_ppa_report_markdown(summary=summary, title="SkidBuffer PPA")
 
     assert state_summary.pattern_hint == "handshake_payload_state"
+    assert state_summary.focus_anchors[0].startswith("SkidBuffer.buf_data @ ")
     assert any("accepted transfers" in action for action in state_summary.actions)
     assert rewrite_summary.applicability == "scaffold_only"
+    assert rewrite_summary.origin_anchor is not None
+    assert rewrite_summary.origin_anchor.startswith("SkidBuffer.buf_data @ ")
     assert "hold by default" in (rewrite_summary.applicability_reason or "")
     assert "handshake_payload_state" in markdown
-    assert "[scaffold_only] Reduce or gate large sequential state (buf_data)" in markdown
+    assert "  focus: SkidBuffer.buf_data @" in markdown
+    assert "  origin: SkidBuffer.buf_data @" in markdown
+    assert "[scaffold_only] Reduce or gate large sequential state (buf_data_hold_en)" in markdown
 
 
 def test_ppa_report_summary_surfaces_fifo_storage_pattern_hint():
@@ -341,10 +346,14 @@ def test_ppa_report_summary_surfaces_queue_metadata_pattern_hint():
     markdown = emit_ppa_report_markdown(summary=summary, title="ReqRspQueue PPA")
 
     assert memory_summary.pattern_hint == "queue_metadata_arrays"
+    assert memory_summary.focus_anchors[0].startswith("ReqRspQueue.count @ ")
     assert any("queue metadata storage" in action for action in memory_summary.actions)
     assert rewrite_summary.applicability == "scaffold_only"
+    assert rewrite_summary.origin_anchor == "ReqRspQueue.req_storage"
     assert "per-entry payload bundle" in (rewrite_summary.applicability_reason or "")
     assert "queue_metadata_arrays" in markdown
+    assert "  focus: ReqRspQueue.count @" in markdown
+    assert "  origin: ReqRspQueue.req_storage" in markdown
     assert "[scaffold_only] Bank or isolate large memories (req_storage)" in markdown
 
 
@@ -353,16 +362,45 @@ def test_ppa_report_summary_surfaces_control_register_bank_patterns():
     summary = summarize_ppa_report(report)
     memory_summary = next(rec for rec in summary.top_recommendations if rec.title == "Bank or isolate large memories")
     state_summary = next(rec for rec in summary.top_recommendations if rec.title == "Reduce or gate large sequential state")
-    rewrite_summary = next(proposal for proposal in summary.rewrite_proposals if proposal.target == "w_data_latched")
+    rewrite_summary = next(proposal for proposal in summary.rewrite_proposals if proposal.target == "capture_fire")
     markdown = emit_ppa_report_markdown(summary=summary, title="AXI4LiteRegisterBank PPA")
 
     assert memory_summary.pattern_hint == "control_register_bank"
     assert state_summary.pattern_hint == "register_bank_control_state"
+    assert state_summary.focus_anchors
     assert rewrite_summary.applicability == "scaffold_only"
+    assert rewrite_summary.origin_anchor == "AXI4LiteRegisterBank.w_data_latched"
     assert "protocol capture and response bookkeeping" in (rewrite_summary.applicability_reason or "")
     assert "control_register_bank" in markdown
     assert "register_bank_control_state" in markdown
-    assert "[scaffold_only] Reduce or gate large sequential state (w_data_latched)" in markdown
+    assert "  focus: AXI4LiteRegisterBank.w_data_latched @" in markdown
+    assert "  origin: AXI4LiteRegisterBank.w_data_latched" in markdown
+    assert "[scaffold_only] Reduce or gate large sequential state (capture_fire)" in markdown
+
+
+def test_ppa_report_markdown_supports_protocol_refinement_walkthrough_shape():
+    report = advise_ppa(
+        module=ReqRspQueue(req_width=8, rsp_width=8, depth=4, addr_width=4, write_enable=True, strobe_width=2),
+        goals=PpaGoals(max_memory_bits=32),
+    )
+    markdown = emit_ppa_report_markdown(report, title="ReqRspQueue PPA")
+
+    assert "ReqRspQueue.req_storage" in markdown
+    assert "  focus: ReqRspQueue.count @" in markdown
+    assert "  focus: ReqRspQueue.wr_ptr @" in markdown
+    assert "  origin: ReqRspQueue.req_storage" in markdown
+    assert "[scaffold_only] Bank or isolate large memories (req_storage)" in markdown
+
+
+def test_ppa_report_markdown_supports_axi4lite_refinement_walkthrough_shape():
+    report = advise_ppa(module=AXI4LiteRegisterBank(depth=8), goals=PpaGoals(max_memory_bits=32, max_state_bits=16))
+    markdown = emit_ppa_report_markdown(report, title="AXI4LiteRegisterBank PPA")
+
+    assert "AXI4LiteRegisterBank.write_commit" in markdown
+    assert "  focus: AXI4LiteRegisterBank.w_data_latched @" in markdown
+    assert "  focus: AXI4LiteRegisterBank.read_fire" in markdown
+    assert "  origin: AXI4LiteRegisterBank.w_data_latched" in markdown
+    assert "[scaffold_only] Reduce or gate large sequential state (capture_fire)" in markdown
 
 
 def test_ppa_report_summary_rejects_raw_simmodule():

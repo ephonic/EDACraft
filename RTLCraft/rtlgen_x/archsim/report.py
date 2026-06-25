@@ -46,6 +46,9 @@ class ArchitectureStageSummary:
     max_ready_depth: int
     utilization: float
     queue_pressure: float
+    shared_resource: str
+    shared_resource_utilization: float
+    contention_capacity: int
     flows: Tuple[str, ...]
 
 
@@ -210,8 +213,8 @@ def emit_architecture_report_markdown(
             "",
             "## Stages",
             "",
-            "| Stage | Kind | Lat | II | Cap | Queue | BW | Util | Queue Pressure | Bytes | Flows |",
-            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+            "| Stage | Kind | Lat | II | Cap | Queue | BW | Util | Shared Util | Queue Pressure | Bytes | Flows |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for stage in summary.stage_summaries:
@@ -219,6 +222,7 @@ def emit_architecture_report_markdown(
             "| "
             f"{stage.name} | {stage.kind} | {stage.latency} | {stage.initiation_interval} | {stage.capacity} | "
             f"{stage.queue_depth} | {stage.bandwidth_bytes_per_cycle} | {stage.utilization:.3f} | "
+            f"{stage.shared_resource_utilization:.3f} | "
             f"{stage.queue_pressure:.3f} | {stage.bytes_moved} | {', '.join(stage.flows) or '-'} |"
         )
 
@@ -299,6 +303,10 @@ def _summarize_stage(
     cycle_metrics = cycle_report.stage_metrics[stage_name]
     queue_capacity = max(model.queue_capacity(stage_name), 1)
     utilization = cycle_metrics.busy_token_cycles / max(cycle_report.total_cycles * stage.capacity, 1)
+    contention_capacity = model.stage_contention_capacity(stage_name)
+    shared_resource_utilization = (
+        cycle_metrics.shared_resource_busy_cycles / max(cycle_report.total_cycles * contention_capacity, 1)
+    )
     queue_pressure = cycle_metrics.max_ready_depth / queue_capacity
     return ArchitectureStageSummary(
         name=stage.name,
@@ -317,6 +325,9 @@ def _summarize_stage(
         max_ready_depth=cycle_metrics.max_ready_depth,
         utilization=utilization,
         queue_pressure=queue_pressure,
+        shared_resource=cycle_metrics.shared_resource,
+        shared_resource_utilization=shared_resource_utilization,
+        contention_capacity=contention_capacity,
         flows=tuple(behavior_metrics.flows) if behavior_metrics is not None else (),
     )
 
@@ -368,6 +379,20 @@ def _build_findings(
             f"Stage '{hottest_stage.name}' ({hottest_stage.kind}) reaches queue pressure "
             f"{hottest_stage.queue_pressure:.3f} and utilization {hottest_stage.utilization:.3f}."
         )
+        if hottest_stage.queue_pressure >= 0.75:
+            findings.append(
+                f"Stage '{hottest_stage.name}' is queue-pressure limited; explore deeper buffering "
+                f"or upstream/downstream rate balancing around that stage."
+            )
+        most_contended = max(
+            stage_summaries,
+            key=lambda item: (item.shared_resource_utilization, item.utilization, item.name),
+        )
+        if most_contended.shared_resource and most_contended.shared_resource_utilization > 0.8:
+            findings.append(
+                f"Shared resource '{most_contended.shared_resource}' is contended across stage group including "
+                f"'{most_contended.name}' at effective utilization {most_contended.shared_resource_utilization:.3f}."
+            )
     if sweep_summaries:
         best_sweep = max(
             sweep_summaries,
@@ -378,6 +403,26 @@ def _build_findings(
                 f"Best explored knob was '{best_sweep.knob}' on stage '{best_sweep.stage_name}', "
                 f"reducing total cycles by {best_sweep.cycle_reduction}."
             )
+            if best_sweep.knob == "bandwidth_bytes_per_cycle":
+                findings.append(
+                    f"Explored evidence points to a bandwidth-limited bottleneck at '{best_sweep.stage_name}'."
+                )
+            elif best_sweep.knob == "queue_depth":
+                findings.append(
+                    f"Explored evidence points to queueing pressure around '{best_sweep.stage_name}'."
+                )
+            elif best_sweep.knob == "capacity":
+                findings.append(
+                    f"Explored evidence points to insufficient parallel capacity at '{best_sweep.stage_name}'."
+                )
+            elif best_sweep.knob == "initiation_interval":
+                findings.append(
+                    f"Explored evidence points to initiation-interval pressure at '{best_sweep.stage_name}'."
+                )
+            elif best_sweep.knob == "latency":
+                findings.append(
+                    f"Explored evidence points to latency pressure at '{best_sweep.stage_name}'."
+                )
     return tuple(findings)
 
 

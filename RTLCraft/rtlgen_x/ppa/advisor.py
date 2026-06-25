@@ -563,7 +563,7 @@ def advise_ppa(
 
     recommendations: List[PpaRecommendation] = []
     if module_stats is not None:
-        recommendations.extend(_module_recommendations(module_stats, goals))
+        recommendations.extend(_module_recommendations(module_stats, goals, executable_module))
     if implementation_reports is not None:
         recommendations.extend(_implementation_report_recommendations(implementation_reports, goals))
     if calibrated_module_estimate is not None:
@@ -965,10 +965,55 @@ def _module_target_evidence(
     return evidence
 
 
-def _protocol_target_hints(stats: ModulePpaStats) -> Dict[str, object]:
-    module = stats.module_name.lower()
+def _find_memory_write_site(
+    module_name: str,
+    memory_name: str,
+    module: Optional[SimModule],
+) -> Optional[str]:
+    if module is None:
+        return None
+    for write in module.memory_writes:
+        if write.memory == memory_name:
+            return _module_target_label(
+                module_name,
+                memory_name,
+                source_file=write.source_file,
+                source_line=write.source_line,
+            )
+    return None
+
+
+def _find_assignment_site(
+    module_name: str,
+    target_name: str,
+    module: Optional[SimModule],
+    *,
+    phase: Optional[str] = None,
+) -> Optional[str]:
+    if module is None:
+        return None
+    for assignment in module.assignments:
+        if assignment.target != target_name:
+            continue
+        if phase is not None and assignment.phase != phase:
+            continue
+        return _module_target_label(
+            module_name,
+            target_name,
+            source_file=assignment.source_file,
+            source_line=assignment.source_line,
+        )
+    signal = next((signal for signal in module.signals if signal.name == target_name), None)
+    if signal is None:
+        return None
+    return _module_target_label(module_name, target_name)
+
+
+def _protocol_target_hints(stats: ModulePpaStats, module: Optional[SimModule] = None) -> Dict[str, object]:
+    module_name_lower = stats.module_name.lower()
     hints: Dict[str, object] = {}
-    if "fifo" in module or "queue" in module:
+    available_memory_names = {memory.name for memory in module.memories} if module is not None else set()
+    if "fifo" in module_name_lower or "queue" in module_name_lower:
         control_targets = tuple(
             name
             for name in (
@@ -983,15 +1028,32 @@ def _protocol_target_hints(stats: ModulePpaStats) -> Dict[str, object]:
         )
         if control_targets:
             hints["queue_control_targets"] = tuple(dict.fromkeys(control_targets))
-        if "queue" in module:
+            hints["queue_control_anchors"] = tuple(
+                anchor
+                for anchor in (
+                    _find_assignment_site(stats.module_name, name, module, phase="seq")
+                    or _find_assignment_site(stats.module_name, name, module)
+                    for name in dict.fromkeys(control_targets)
+                )
+                if anchor is not None
+            )
+        if "queue" in module_name_lower:
             sideband_targets = tuple(
                 name
                 for name in ("req_storage", "addr_storage", "write_storage", "strb_storage")
-                if name == (stats.largest_memory_name or "") or name in {"addr_storage", "write_storage", "strb_storage"}
+                if name in available_memory_names
             )
             if sideband_targets:
                 hints["queue_sideband_targets"] = sideband_targets
-    if "registerbank" in module:
+                hints["queue_sideband_anchors"] = tuple(
+                    anchor
+                    for anchor in (
+                        _find_memory_write_site(stats.module_name, name, module)
+                        for name in sideband_targets
+                    )
+                    if anchor is not None
+                )
+    if "registerbank" in module_name_lower:
         control_targets = tuple(
             name
             for name in (
@@ -1010,18 +1072,45 @@ def _protocol_target_hints(stats: ModulePpaStats) -> Dict[str, object]:
         )
         if control_targets:
             hints["register_bank_control_targets"] = tuple(dict.fromkeys(control_targets))
-    if "skidbuffer" in module:
+            hints["register_bank_control_anchors"] = tuple(
+                anchor
+                for anchor in (
+                    _find_assignment_site(stats.module_name, name, module, phase="seq")
+                    or _find_assignment_site(stats.module_name, name, module)
+                    for name in dict.fromkeys(control_targets)
+                )
+                if anchor is not None
+            )
+    if "skidbuffer" in module_name_lower:
         payload_targets = tuple(
             name for name in (stats.largest_state_name, "buf_valid") if isinstance(name, str) and name
         )
         if payload_targets:
             hints["handshake_payload_targets"] = tuple(dict.fromkeys(payload_targets))
-    elif "readyvalidregister" in module:
+            hints["handshake_payload_anchors"] = tuple(
+                anchor
+                for anchor in (
+                    _find_assignment_site(stats.module_name, name, module, phase="seq")
+                    or _find_assignment_site(stats.module_name, name, module)
+                    for name in dict.fromkeys(payload_targets)
+                )
+                if anchor is not None
+            )
+    elif "readyvalidregister" in module_name_lower:
         payload_targets = tuple(
             name for name in (stats.largest_state_name, "valid_reg") if isinstance(name, str) and name
         )
         if payload_targets:
             hints["handshake_payload_targets"] = tuple(dict.fromkeys(payload_targets))
+            hints["handshake_payload_anchors"] = tuple(
+                anchor
+                for anchor in (
+                    _find_assignment_site(stats.module_name, name, module, phase="seq")
+                    or _find_assignment_site(stats.module_name, name, module)
+                    for name in dict.fromkeys(payload_targets)
+                )
+                if anchor is not None
+            )
     return hints
 
 
@@ -1210,6 +1299,71 @@ def _state_suggestions(stats: ModulePpaStats) -> Tuple[str, ...]:
     return tuple(suggestions)
 
 
+def _expr_contains_signal_ref(expr: Any, signal_name: str) -> bool:
+    if isinstance(expr, SignalRef):
+        return expr.name == signal_name
+    if isinstance(expr, BinaryExpr):
+        return _expr_contains_signal_ref(expr.lhs, signal_name) or _expr_contains_signal_ref(expr.rhs, signal_name)
+    if isinstance(expr, MuxExpr):
+        return (
+            _expr_contains_signal_ref(expr.cond, signal_name)
+            or _expr_contains_signal_ref(expr.when_true, signal_name)
+            or _expr_contains_signal_ref(expr.when_false, signal_name)
+        )
+    if isinstance(expr, UnaryExpr):
+        return _expr_contains_signal_ref(expr.value, signal_name)
+    if isinstance(expr, MaskExpr):
+        return _expr_contains_signal_ref(expr.value, signal_name)
+    if isinstance(expr, MemoryReadExpr):
+        return _expr_contains_signal_ref(expr.addr, signal_name)
+    return False
+
+
+def _handshake_payload_already_held(stats: ModulePpaStats, module: Optional[SimModule]) -> bool:
+    if module is None:
+        return False
+    payload_name = stats.largest_state_name
+    if not payload_name:
+        return False
+    payload_assignment = next(
+        (assignment for assignment in module.assignments if assignment.target == payload_name and assignment.phase == "seq"),
+        None,
+    )
+    if payload_assignment is None or not isinstance(payload_assignment.expr, MuxExpr):
+        return False
+    outer_mux = payload_assignment.expr.when_false
+    if not isinstance(outer_mux, MuxExpr):
+        return False
+    if not isinstance(outer_mux.when_false, SignalRef) or outer_mux.when_false.name != payload_name:
+        return False
+    inner_mux = outer_mux.when_true
+    if not isinstance(inner_mux, MuxExpr):
+        return False
+    return isinstance(inner_mux.when_false, SignalRef) and inner_mux.when_false.name == payload_name
+
+
+def _register_bank_control_already_partitioned(stats: ModulePpaStats, module: Optional[SimModule]) -> bool:
+    if module is None:
+        return False
+    signal_names = {signal.name for signal in module.signals}
+    if "capture_fire" not in signal_names:
+        return False
+    payload_name = stats.largest_state_name
+    if not payload_name:
+        return False
+    payload_assignment = next(
+        (assignment for assignment in module.assignments if assignment.target == payload_name and assignment.phase == "seq"),
+        None,
+    )
+    if payload_assignment is None or not _expr_contains_signal_ref(payload_assignment.expr, "capture_fire"):
+        return False
+    response_targets = {"bvalid_state", "rvalid_state", "rdata_state", "ack_state", "read_valid_state", "read_data_state"}
+    response_assignments = [assignment for assignment in module.assignments if assignment.target in response_targets and assignment.phase == "seq"]
+    if not response_assignments:
+        return False
+    return not any(_expr_contains_signal_ref(assignment.expr, "capture_fire") for assignment in response_assignments)
+
+
 def _suggested_multiplier_tile_width(widths: Tuple[int, int]) -> int:
     widest = max(widths, default=0)
     if widest >= 64:
@@ -1352,7 +1506,11 @@ def _architecture_stage_evidence(stats: ArchitecturePpaStats, stage_name: str) -
     }
 
 
-def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaRecommendation]:
+def _module_recommendations(
+    stats: ModulePpaStats,
+    goals: PpaGoals,
+    module: Optional[SimModule] = None,
+) -> List[PpaRecommendation]:
     recs: List[PpaRecommendation] = []
     depth_limit = goals.max_logic_depth if goals.max_logic_depth is not None else 6
     if stats.max_expr_depth > depth_limit:
@@ -1383,7 +1541,7 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                         source_file=stats.critical_assignment_source_file,
                         source_line=stats.critical_assignment_source_line,
                     ),
-                    **_protocol_target_hints(stats),
+                    **_protocol_target_hints(stats, module),
                 },
                 suggestions=_timing_suggestions(stats),
             )
@@ -1420,7 +1578,7 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                         source_file=stats.largest_memory_source_file,
                         source_line=stats.largest_memory_source_line,
                     ),
-                    **_protocol_target_hints(stats),
+                    **_protocol_target_hints(stats, module),
                     **_module_breakdown_evidence(stats),
                 },
                 suggestions=_memory_suggestions(stats),
@@ -1454,7 +1612,7 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                         source_file=stats.largest_memory_source_file,
                         source_line=stats.largest_memory_source_line,
                     ),
-                    **_protocol_target_hints(stats),
+                    **_protocol_target_hints(stats, module),
                     **_module_breakdown_evidence(stats),
                 },
                 suggestions=(
@@ -1465,6 +1623,15 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
         )
     state_limit = goals.max_state_bits if goals.max_state_bits is not None else 256
     if stats.state_bits > state_limit:
+        state_pattern_hint = _infer_state_pattern(stats)
+        skip_payload_gating = (
+            state_pattern_hint == "handshake_payload_state"
+            and _handshake_payload_already_held(stats, module)
+        )
+        skip_control_partition = (
+            state_pattern_hint == "register_bank_control_state"
+            and _register_bank_control_already_partitioned(stats, module)
+        )
         recs.append(
             PpaRecommendation(
                 category="power",
@@ -1478,7 +1645,9 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                     "module": stats.module_name,
                     "state_bits": stats.state_bits,
                     "state_count": stats.state_count,
-                    "state_pattern_hint": _infer_state_pattern(stats),
+                    "state_pattern_hint": state_pattern_hint,
+                    "payload_gating_already_applied": skip_payload_gating,
+                    "control_partition_already_applied": skip_control_partition,
                     "largest_state_name": stats.largest_state_name,
                     "largest_state_bits": stats.largest_state_bits,
                     "largest_state_source_file": stats.largest_state_source_file,
@@ -1490,7 +1659,7 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                         source_file=stats.largest_state_source_file,
                         source_line=stats.largest_state_source_line,
                     ),
-                    **_protocol_target_hints(stats),
+                    **_protocol_target_hints(stats, module),
                     **_module_breakdown_evidence(stats),
                 },
                 suggestions=_state_suggestions(stats),
@@ -1529,7 +1698,7 @@ def _module_recommendations(stats: ModulePpaStats, goals: PpaGoals) -> List[PpaR
                         source_file=stats.critical_assignment_source_file,
                         source_line=stats.critical_assignment_source_line,
                     ),
-                    **_protocol_target_hints(stats),
+                    **_protocol_target_hints(stats, module),
                     **_module_breakdown_evidence(stats),
                 },
                 suggestions=(
@@ -2324,6 +2493,8 @@ def _storage_transform_candidate(
             suggested_value="register_file_to_ram_wrapper",
         )
     if state_pattern == "handshake_payload_state":
+        if evidence.get("payload_gating_already_applied"):
+            return None
         return PpaTransformCandidate(
             name=rec.title,
             category=rec.category,
@@ -2334,6 +2505,8 @@ def _storage_transform_candidate(
             suggested_value="update_payload_only_on_handshake",
         )
     if state_pattern == "register_bank_control_state":
+        if evidence.get("control_partition_already_applied"):
+            return None
         return PpaTransformCandidate(
             name=rec.title,
             category=rec.category,

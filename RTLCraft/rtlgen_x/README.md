@@ -11,6 +11,13 @@ capabilities that an agent can call directly:
 4. verification generation and execution
 5. PPA analysis and recommendation
 
+Near-term, the project focus is intentionally narrower than the older roadmap:
+
+1. make the DSL authoring surface predictable and readable
+2. make `archsim` useful for early bottleneck analysis
+3. make the stdlib trustworthy through executable closure
+4. leave broader orchestration ideas out of the critical path for now
+
 The agent is expected to orchestrate these capabilities. `rtlgen_x` provides
 the engines.
 
@@ -97,11 +104,13 @@ ArchitectureModel + Workload
 
 1. architecture exploration can suggest bandwidth, queue-depth, capacity,
    latency, or II changes
-2. detailed simulation can expose semantic bugs, reset bugs, and state-update
+2. `rank_upgrade_opportunities(...)` can merge those explored moves into one
+   ordered candidate list when the agent wants a compact bottleneck ranking
+3. detailed simulation can expose semantic bugs, reset bugs, and state-update
    problems early
-3. verification can surface failing transactions and replayable traces
-4. PPA analysis can point at structural hotspots and possible rewrite targets
-5. the agent can then update the model or RTL and rerun the loop
+4. verification can surface failing transactions and replayable traces
+5. PPA analysis can point at structural hotspots and possible rewrite targets
+6. the agent can then update the model or RTL and rerun the loop
 
 This is the intended replacement for a document-heavy framework loop: faster,
 more executable, less ceremony.
@@ -123,13 +132,27 @@ For multi-clock designs:
    match a declared reset domain, it now reuses that declared domain instead of
    silently creating a second reset-domain alias
 6. unknown domain lookups now report the known declared clock/reset-domain
-   names to make multi-clock authoring failures easier to fix
+   names and clock aliases to make multi-clock authoring failures easier to fix
 7. use CDC helpers such as `SyncCell`, `PulseSynchronizer`, `AsyncResetRel`,
    `AsyncFIFO`, and `ReadyValidAsyncBridge` instead of ad hoc crossings where
    possible
 8. if a hand-written two-flop synchronizer is used, keep the sync chain simple;
    a final comb alias/observation wire is fine, but avoid mixing extra logic
    into the first-stage and second-stage transfer path
+9. `seq_domain("write")` remains the preferred semantic authoring style, but
+   `seq_domain("wr_clk")` is now also accepted when that clock alias resolves
+   uniquely to one declared domain
+10. lowered multi-clock executable models preserve both the declared domain
+    name and the underlying clock signal; verification-facing `active_domains`
+    should prefer declared names such as `write` / `read`, while raw clock names
+    such as `wr_clk` / `rd_clk` remain accepted as compatibility aliases
+11. CDC stdlib closure is intentionally explicit: `AsyncFIFO` is regression-
+    covered for lowering, Python/C++ multi-clock simulation, Python-UVM, and
+    generated directed multi-clock UVM collateral, while `ReadyValidAsyncBridge`
+    builds one level higher on the same closure path
+12. single-clock queue closure is also stronger now: `SyncFIFO` is no longer a
+    stub-style helper, and its lowering, executable simulation, Python-UVM,
+    and generated directed UVM paths are all regression-covered
 
 Current static CDC scope is intentionally modest: it can recognize several
 safe structural patterns, but it does not try to prove arbitrary pulse/toggle
@@ -249,6 +272,7 @@ Exploration helpers:
 8. `rank_latency_upgrades(...)`
 9. `rank_queue_depth_upgrades(...)`
 10. `rank_bandwidth_upgrades(...)`
+11. `rank_upgrade_opportunities(...)`
 
 Report helpers:
 
@@ -267,6 +291,9 @@ Notes:
    pressure
 2. behavior-level mode is fast and good for throughput reasoning
 3. cycle-level mode is better for backpressure, queue pressure, and contention
+4. `rank_upgrade_opportunities(...)` is the convenience entry point when the
+   agent wants one merged list across capacity, II, latency, queue depth, and
+   bandwidth instead of stitching several rankers together manually
 4. `summarize_architecture_report(...)` condenses flow/stage/sweep evidence into
    one agent-friendly object
 5. `emit_architecture_report_markdown(...)` turns that summary into a compact
@@ -357,12 +384,45 @@ helper assignment.
 Typical usage:
 
 ```python
-from rtlgen_x.dsl import EmitProfile, VerilogEmitter
+from rtlgen_x.dsl import (
+    EmitProfile,
+    VerilogEmitter,
+    analyze_emitted_readability,
+    assert_emitted_rtl_contract,
+    emit_readability_report_markdown,
+)
 
 review_rtl = VerilogEmitter(profile=EmitProfile.review()).emit(my_module)
 compact_rtl = VerilogEmitter(profile=EmitProfile.compact()).emit(my_module)
 sv_rtl = VerilogEmitter(profile=EmitProfile.systemverilog()).emit(my_module)
+
+readability = analyze_emitted_readability(my_module, profile=EmitProfile.review())
+print(emit_readability_report_markdown(readability))
+
+review_rtl = assert_emitted_rtl_contract(
+    my_module,
+    profile=EmitProfile.review(),
+    expected_markers=(
+        "// Storage declarations",
+        "// Internal declarations",
+        "// Combinational logic",
+        "// Sequential logic",
+    ),
+)
 ```
+
+That readability pass is intentionally lightweight: it does not try to replace
+snapshot regression, but it does make a few review-grade quality gates explicit,
+including:
+
+1. overlong lines
+2. anonymous helper names such as `_cse_N` / `_tmpN` leaking into review RTL
+3. duplicated review block prefixes
+4. excessively deep ternary/mux chains left inside one `assign`
+
+`assert_emitted_rtl_contract(...)` layers those checks with an optional ordered
+marker contract, so stdlib or seed-design regressions can fail with one compact
+Markdown report instead of many ad hoc assertions.
 
 Agent-facing structural query helpers also now exist directly on DSL modules:
 
@@ -378,6 +438,46 @@ Key constructs include:
 1. `Module`, `Input`, `Output`, `Reg`, `Wire`, `Array`
 2. `If`, `Else`, `Elif`, `Switch`, `When`
 3. `FSM`, `Pipeline`, `SkidBuffer`, `ReadyValidRegister`, `ReadyValidFIFO`, `ReadyValidAsyncBridge`, `APBRegisterBank`, `AXI4LiteRegisterBank`, `WishboneRegisterBank`, `SyncFIFO`, `AsyncFIFO`
+4. protocol/bundle helpers such as `ReadyValid`, `ReqRsp`, `AXI4Stream`,
+   `APB`, `AXI4Lite`, `Wishbone`, and `AHBLite`
+
+Protocol bundles are now slightly more first-class than plain signal groups:
+
+1. they expose semantic field helpers such as
+   `payload_fields()`, `forward_fields()`, `backward_fields()`,
+   `request_payload_fields()`, and `response_payload_fields()`
+2. handshake-oriented bundles expose `fire()` / `request_fire()` /
+   `response_fire()` expressions directly in DSL space
+3. `bundle.prefixed("foo")` creates a peer bundle with stable emitted signal
+   names such as `foo_data`, `foo_valid`, ...
+4. assigning a bundle to `self.<name>` on a `Module` now registers all of its
+   member signals as ordinary module ports, so bundles can be authored as part
+   of the public module surface instead of only as standalone helpers
+
+There are now two intentionally distinct connection helpers:
+
+1. `connect_port_map(...)`
+   - protocol-semantic mapping
+   - keeps the traditional field-name-keyed shape
+   - useful for simple same-named bundle wiring and tests
+2. `instantiate_port_map(...)`
+   - submodule-instantiation mapping
+   - keys use the peer bundle's actual port names
+   - useful when the submodule bundle ports are prefixed, for example
+     `u_sink_data`, `u_sink_valid`, `u_sink_ready`
+
+At the module level, there is now also a bundle-oriented bulk-instantiation
+path:
+
+1. `self.instantiate_with_bundles(...)`
+   - bundle-level sibling of `instantiate_with_ifaces(...)`
+   - accepts `parent_bundles={...}` and optional `sub_bundles={...}`
+   - can auto-discover same-named parent/submodule bundles by default
+   - supports `bundle_includes={...}` / `bundle_excludes={...}` when only part
+     of a protocol bundle should be connected
+   - uses `instantiate_port_map(...)` under the hood
+   - keeps emitted submodule hookups readable even when both sides use
+     prefixed protocol bundles
 4. `Bundle`, `ReadyValid`, `ReqRsp`, `Interface`, `Handshake`, `HandshakeInterface`
 5. `AXI4`, `AXI4Lite`, `AXI4Stream`, `APB`, `AHBLite`, `Wishbone`
 6. `SinglePortRAM`, `SimpleDualPortRAM`
@@ -587,11 +687,13 @@ beats.
 For explicit multi-clock event stepping, use
 `run_dsl_multiclock_rtl_cosim(...)`. Each vector is either a plain input
 mapping, a structured step mapping such as
-`{"inputs": {...}, "active_domains": {"wr_clk": True, "rd_clk": False}}`,
+`{"inputs": {...}, "active_domains": {"write": True, "read": False}}`,
 or an `(inputs, active_domains)` tuple, where `active_domains` identifies
 which clock domains receive one edge on that step. This keeps RTL cosim
 aligned with `PythonSimulator.step_clocks(...)` and
-`CompiledSimulator.step_clocks(...)`.
+`CompiledSimulator.step_clocks(...)`. For DSL modules that declare semantic
+clock-domain names, prefer those names in `active_domains`; raw signal names
+remain accepted as compatibility aliases.
 
 Storage initialization boundary:
 
@@ -676,7 +778,9 @@ Current safe-pattern recognition includes:
 8. hand-written async-assert / sync-release reset synchronizers, including
    deeper multi-stage release chains, active-low release variants, and a final
    comb alias / observation tap on the synchronized reset side
-9. reset-release safety is tracked per destination clock domain; reusing one
+9. hand-written shift-register / pipe style reset-release synchronizers where
+   one small state register shifts out the release value across cycles
+10. reset-release safety is tracked per destination clock domain; reusing one
    domain's synchronized reset as another domain's async reset still reports a
    CDC warning
 
@@ -764,17 +868,17 @@ from rtlgen_x.verify import PythonUvmSequenceItem, run_python_uvm_test
 sequence = (
     PythonUvmSequenceItem(
         inputs={"wr_rst": 1, "rd_rst": 1},
-        active_domains=("wr_clk", "rd_clk"),
+        active_domains=("write", "read"),
         label="reset",
     ),
     PythonUvmSequenceItem(
         inputs={"wr_en": 1, "din": 11},
-        active_domains=("wr_clk",),
+        active_domains=("write",),
         label="write0",
     ),
     PythonUvmSequenceItem(
         inputs={"rd_en": 1},
-        active_domains=("rd_clk",),
+        active_domains=("read",),
         label="read0",
     ),
 )
@@ -789,10 +893,11 @@ If a multi-clock sequence omits `active_domains`, the public helpers now point
 you directly at `PythonUvmSequenceItem(..., active_domains=(...))` or
 `UvmSequenceStep(..., active_domains=(...))` so the fix is local and explicit.
 The same explicit schedule can also be authored as a structured step mapping,
-for example `{"inputs": {...}, "active_domains": ("wr_clk",), "label": "write0"}`,
-or `{"inputs": {...}, "active_domains": {"wr_clk": True, "rd_clk": False}}`,
+for example `{"inputs": {...}, "active_domains": ("write",), "label": "write0"}`,
+or `{"inputs": {...}, "active_domains": {"write": True, "read": False}}`,
 which keeps local Python-UVM, generated UVM collateral, and remote UVM payloads
-aligned on one multi-clock step shape.
+aligned on one multi-clock step shape. Raw `SimModule` users can continue to
+use physical names such as `wr_clk` / `rd_clk`.
 
 #### 4.3 Protocol-aware sequences and reference models
 
@@ -903,13 +1008,24 @@ On top of that channel, `ReqRspQueue` now provides a first lightweight
 component: it buffers the request path with explicit queue depth while keeping
 the response path as a direct passthrough. That is enough to decouple upstream
 request injection from downstream service latency without yet turning the block
-into a full response-reordering fabric.
+into a full response-reordering fabric. When request sideband fields are always
+enqueued and dequeued together, `ReqRspQueue(..., bundle_sideband=True)` also
+lets the stdlib collapse parallel shallow arrays into one packed `entry_storage`
+array so the emitted RTL and the PPA report both reflect the denser layout.
 
 On the component side, `SkidBuffer`, `ReadyValidRegister`,
 `ReadyValidFIFO`, `APBRegisterBank`, `AXI4LiteRegisterBank`, and `WishboneRegisterBank` are explicit
 protocol-aware stdlib blocks: they lower through the executable path, emit
 RTL, and can be checked directly with the protocol helpers already used by the
 Python-UVM flow.
+
+For the three single-clock ready/valid buffering blocks specifically,
+`SkidBuffer`, `ReadyValidRegister`, and `ReadyValidFIFO` now also have local
+generated-UVM closure locked into regression: we exercise their emitted
+interface/sequence/scoreboard collateral and their generated runtime bundles,
+while still keeping the public `SV/UVM` support level conservative until the
+same paths are routinely exercised on external simulators as a standard part of
+the project flow.
 
 Their intended roles are slightly different:
 
@@ -925,6 +1041,22 @@ Their intended roles are slightly different:
 
 That separation makes it easier for an agent to choose whether a datapath wants
 timing decoupling, a true registered stage, or queueing capacity.
+
+For protocol-stage payload state, `ReadyValidRegister(..., hold_payload=True)`
+is now the standard-library realization of the PPA guidance
+`update_payload_only_on_handshake`: it keeps payload bits stable on drain /
+idle cycles while leaving valid/ready control structure explicit and readable.
+
+For control-plane bookkeeping, `AXI4LiteRegisterBank(..., split_control_state=True)`
+is now the standard-library realization of the PPA guidance
+`split_capture_and_response_state`: it separates request-capture state updates
+from response-valid/data state updates while preserving the same AXI-Lite
+transaction behavior.
+
+`WishboneRegisterBank(..., split_control_state=True)` now follows the same
+pattern for registered-ack Wishbone control logic: it isolates request-capture
+and delayed fire bookkeeping from ack / read-response state updates while
+preserving the existing transaction timing expected by the clocked Wishbone VIP.
 
 For `APBRegisterBank` specifically, the control-plane closure is strong on
 lowering, executable simulation, emitted RTL, and generated-UVM smoke flows,
@@ -1180,42 +1312,66 @@ Important current behavior:
    `queue_metadata_arrays`, `control_register_bank`, and
    `register_bank_control_state`, so FIFO / ready-valid / register-bank reports
    read like hardware guidance instead of generic storage advice
-8. module-side `transform_candidates` now also cover storage-oriented first
+8. those protocol-aware recommendations now also carry anchor lists such as
+   `handshake_payload_anchors`, `queue_control_anchors`,
+   `queue_sideband_anchors`, and `register_bank_control_anchors`, so an agent
+   can jump straight to the most relevant named state, queue pointer/count
+   logic, or register-bank capture state
+9. module-side `transform_candidates` now also cover storage-oriented first
    moves such as `register_file_to_ram_wrapper`, `compare_ram_wrapper_vs_flops`,
    or `pack_rows_or_share_banks` for `RegisterFile` / `DualPortRAM` / `LUT`-like
    hotspots
-9. arithmetic-oriented first moves are also surfaced now, for example
+10. arithmetic-oriented first moves are also surfaced now, for example
    `split_operands_product_accumulate`,
    `retime_product_stages_keep_valid_shell`, or
    `tile_or_share_wide_multipliers` for `MAC` / `SignedMultiplier` /
    multi-multiplier datapaths
-10. queue/control-plane stdlib blocks now also get first-move transform
+11. queue/control-plane stdlib blocks now also get first-move transform
     candidates such as `update_payload_only_on_handshake`,
     `compare_fifo_storage_impls`, `bundle_queue_sideband_fields`,
     `partition_or_pack_register_bank`, and
     `split_capture_and_response_state`
-11. `derive_rewrite_proposals(...)` can now turn part of those arithmetic timing
+12. some of those storage-layout suggestions now also map directly back into
+    stdlib authoring knobs; for example, `ReqRspQueue(..., bundle_sideband=True)`
+    is the standard-library realization of the
+    `bundle_queue_sideband_fields` guidance
+13. protocol-state power suggestions can also map directly back into stdlib
+    authoring knobs; for example,
+    `ReadyValidRegister(..., hold_payload=True)` is the standard-library
+    realization of `update_payload_only_on_handshake`
+14. control-plane partition suggestions can also map directly back into stdlib
+    authoring knobs; for example,
+    `AXI4LiteRegisterBank(..., split_control_state=True)` is the
+    standard-library realization of `split_capture_and_response_state`
+15. the same control-plane partition path now also exists for Wishbone stdlib
+    blocks; `WishboneRegisterBank(..., split_control_state=True)` is another
+    standard-library realization of `split_capture_and_response_state`
+16. `derive_rewrite_proposals(...)` can now turn part of those arithmetic timing
     candidates into concrete pipeline-style rewrite scaffolds that already target
     the reported multiply assignment instead of only the deepest generic path
-12. some protocol-aware stdlib candidates now also produce scaffold-only rewrite
+17. some protocol-aware stdlib candidates now also produce scaffold-only rewrite
     proposals, for example handshake payload-hold enables, queue sideband
     bundling placeholders, or register-bank capture/response partition markers;
     these are intentionally advisory and point the agent at the exact payload or
     control state without pretending the whole protocol rewrite is automatic
-13. storage-oriented candidates can also produce wrapper/banking/packing
+18. storage-oriented candidates can also produce wrapper/banking/packing
     proposal scaffolds now; some of those, such as `RegisterFile`-to-RAM wrapper
     sketches, are intentionally scaffold-first and may sit outside the current
     executable-memory subset until the designer or agent completes the rewrite
-14. each rewrite proposal now carries explicit applicability metadata:
+19. each rewrite proposal now carries explicit applicability metadata:
     `direct_apply` proposals may be fed into `apply_rewrite_proposal(...)` /
     `validate_rewrite_proposal(...)`, while `scaffold_only` proposals are
     advisory skeletons with an explicit reason string describing what still
     needs manual completion
-15. `advise_ppa(...)` now also attaches derived rewrite proposals to the
+20. `advise_ppa(...)` now also attaches derived rewrite proposals to the
     returned `PpaReport`, and `summarize_ppa_report(...)` /
     `emit_ppa_report_markdown(...)` surface compact rewrite-proposal summaries
     so the report itself already tells the agent which ideas are directly
     applicable and which are scaffold-only
+21. the markdown report now also prints protocol-aware `focus:` anchors under
+    top recommendations and `origin:` anchors under rewrite proposals, so a
+    human or agent can jump from a helper signal like `capture_fire` back to
+    the original queue/control/payload hotspot immediately
 
 ## Recommended design flow
 
@@ -1286,6 +1442,11 @@ in a standard simulator flow.
 
 This is the preferred loop for timing/area/power-driven iteration.
 
+For concrete protocol-aware refinement walkthroughs that read `focus:` /
+`origin:` anchors and turn them into DSL-side rewrite plans, see
+[TUTORIAL_ARCH_PPA.md](./TUTORIAL_ARCH_PPA.md). It now includes both
+`ReqRspQueue` and `AXI4LiteRegisterBank` examples.
+
 ## Minimal examples
 
 ### Example 1: run a preset architecture scenario
@@ -1348,21 +1509,25 @@ carry `active_domains`:
 sequence = (
     PythonUvmSequenceItem(
         inputs={"wr_rst": 1, "rd_rst": 1},
-        active_domains=("wr_clk", "rd_clk"),
+        active_domains=("write", "read"),
     ),
     PythonUvmSequenceItem(
         inputs={"wr_en": 1, "din": 11},
-        active_domains=("wr_clk",),
+        active_domains=("write",),
     ),
     PythonUvmSequenceItem(
         inputs={"rd_en": 1},
-        active_domains=("rd_clk",),
+        active_domains=("read",),
     ),
 )
 
 report = run_python_uvm_test(module, sequence, name="multiclk_smoke")
 print(report.traces[-1].active_domains)
 ```
+
+For DSL-authored multi-clock modules, prefer semantic names such as `write` /
+`read` in `active_domains`. Keep physical signal names such as `wr_clk` in
+places that must bind to a real DUT port, for example `clock_name="wr_clk"`.
 
 ### Example 5: generate runnable SV/UVM collateral
 

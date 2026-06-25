@@ -13,7 +13,12 @@ import tarfile
 import tempfile
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
-from rtlgen_x.verify.uvm import UvmSequenceStep, generate_uvm_runtime_bundle, write_uvm_runtime_bundle
+from rtlgen_x.verify.uvm import (
+    UvmSequenceStep,
+    describe_verification_interface,
+    generate_uvm_runtime_bundle,
+    write_uvm_runtime_bundle,
+)
 
 
 class RemoteUvmError(RuntimeError):
@@ -167,6 +172,47 @@ def coerce_uvm_sequence_steps(
     return tuple(steps)
 
 
+def _canonicalize_sequence_active_domains_for_module(
+    module: Any,
+    directed_sequence: Optional[tuple[UvmSequenceStep, ...]],
+) -> Optional[tuple[UvmSequenceStep, ...]]:
+    """Prefer declared semantic clock-domain names when the module exposes them.
+
+    JSON/script payloads may still name physical clock ports such as `wr_clk`.
+    For DSL-authored multi-clock modules that declared semantic domain names
+    like `write` / `read`, normalize those aliases before bundle generation so
+    remote UVM follows the same conventions as local Python-UVM and generated
+    collateral tests.
+    """
+
+    if not directed_sequence:
+        return directed_sequence
+    try:
+        interface = describe_verification_interface(module)
+    except Exception:
+        return directed_sequence
+    if len(interface.clock_names) <= 1:
+        return directed_sequence
+    alias_to_domain = {canonical: canonical for canonical in interface.clock_names}
+    for canonical, signal_name in zip(interface.clock_names, interface.clock_signals):
+        alias_to_domain.setdefault(signal_name, canonical)
+    normalized_steps = []
+    for step in directed_sequence:
+        if not step.active_domains:
+            normalized_steps.append(step)
+            continue
+        normalized_steps.append(
+            UvmSequenceStep(
+                inputs=dict(step.inputs),
+                label=step.label,
+                active_domains=tuple(
+                    dict.fromkeys(alias_to_domain.get(name, name) for name in step.active_domains)
+                ),
+            )
+        )
+    return tuple(normalized_steps)
+
+
 def load_uvm_sequence_steps_json(path: Path | str) -> tuple[UvmSequenceStep, ...]:
     """Load one directed-sequence JSON file for remote UVM helpers/scripts."""
 
@@ -315,6 +361,10 @@ def run_remote_uvm_probe(
     """Generate, upload, and execute one UVM/VCS probe on a remote host."""
 
     normalized_directed_sequence = coerce_uvm_sequence_steps(directed_sequence)
+    normalized_directed_sequence = _canonicalize_sequence_active_domains_for_module(
+        module,
+        normalized_directed_sequence,
+    )
     bundle = generate_uvm_runtime_bundle(
         module,
         clock_name=clock_name,

@@ -775,6 +775,8 @@ def test_ppa_report_exposes_handshake_payload_state_candidate():
     assert candidate.suggested_knob == "payload_gating"
     assert "SkidBuffer.buf_data" in candidate.target
     assert recommendation.evidence["handshake_payload_targets"] == ("buf_data", "buf_valid")
+    assert recommendation.evidence["handshake_payload_anchors"][0].startswith("SkidBuffer.buf_data @ ")
+    assert recommendation.evidence["handshake_payload_anchors"][1].startswith("SkidBuffer.buf_valid @ ")
 
 
 def test_ppa_report_exposes_readyvalid_register_payload_state_candidate():
@@ -788,6 +790,20 @@ def test_ppa_report_exposes_readyvalid_register_payload_state_candidate():
     assert candidate.suggested_knob == "payload_gating"
     assert "ReadyValidRegister.data_reg" in candidate.target
     assert recommendation.evidence["handshake_payload_targets"] == ("data_reg", "valid_reg")
+    assert recommendation.evidence["handshake_payload_anchors"][0].startswith("ReadyValidRegister.data_reg @ ")
+    assert recommendation.evidence["handshake_payload_anchors"][1].startswith("ReadyValidRegister.valid_reg @ ")
+
+
+def test_ppa_readyvalid_register_payload_gating_candidate_drops_after_hold_payload():
+    report = advise_ppa(module=ReadyValidRegister(16, hold_payload=True), goals=PpaGoals(max_state_bits=16))
+    recommendation = next(r for r in report.recommendations if r.title == "Reduce or gate large sequential state")
+
+    assert recommendation.evidence["state_pattern_hint"] == "handshake_payload_state"
+    assert recommendation.evidence["payload_gating_already_applied"] is True
+    assert not any(
+        candidate.suggested_value == "update_payload_only_on_handshake"
+        for candidate in report.transform_candidates
+    )
 
 
 def test_ppa_report_exposes_fifo_storage_candidate():
@@ -821,6 +837,73 @@ def test_ppa_report_exposes_queue_metadata_layout_candidate():
         "write_storage",
         "strb_storage",
     )
+    assert recommendation.evidence["queue_control_anchors"][0].startswith("ReqRspQueue.count @ ")
+    assert recommendation.evidence["queue_control_anchors"][1].startswith("ReqRspQueue.wr_ptr @ ")
+    assert recommendation.evidence["queue_control_anchors"][2].startswith("ReqRspQueue.rd_ptr @ ")
+    assert recommendation.evidence["queue_sideband_anchors"] == (
+        "ReqRspQueue.req_storage",
+        "ReqRspQueue.addr_storage",
+        "ReqRspQueue.write_storage",
+        "ReqRspQueue.strb_storage",
+    )
+
+
+def test_ppa_queue_metadata_candidate_drops_after_bundling_sideband_storage():
+    baseline = advise_ppa(
+        module=ReqRspQueue(req_width=8, rsp_width=8, depth=4, addr_width=4, write_enable=True, strobe_width=2),
+        goals=PpaGoals(max_memory_bits=32),
+    )
+    bundled = advise_ppa(
+        module=ReqRspQueue(
+            req_width=8,
+            rsp_width=8,
+            depth=4,
+            addr_width=4,
+            write_enable=True,
+            strobe_width=2,
+            bundle_sideband=True,
+        ),
+        goals=PpaGoals(max_memory_bits=32),
+    )
+
+    baseline_memory = next(rec for rec in baseline.recommendations if rec.title == "Bank or isolate large memories")
+    bundled_memory = next(rec for rec in bundled.recommendations if rec.title == "Bank or isolate large memories")
+
+    assert baseline_memory.evidence["memory_pattern_hint"] == "queue_metadata_arrays"
+    assert bundled_memory.evidence["memory_pattern_hint"] == "generic_storage"
+    assert baseline_memory.evidence["queue_sideband_targets"] == (
+        "req_storage",
+        "addr_storage",
+        "write_storage",
+        "strb_storage",
+    )
+    assert "queue_sideband_targets" not in bundled_memory.evidence
+    assert any(
+        candidate.suggested_value == "bundle_queue_sideband_fields"
+        for candidate in baseline.transform_candidates
+    )
+    assert not any(
+        candidate.suggested_value == "bundle_queue_sideband_fields"
+        for candidate in bundled.transform_candidates
+    )
+
+    bundled_sim = lower_dsl_module_to_sim(
+        ReqRspQueue(
+            req_width=8,
+            rsp_width=8,
+            depth=4,
+            addr_width=4,
+            write_enable=True,
+            strobe_width=2,
+            bundle_sideband=True,
+        )
+    ).module
+    bundled_proposals = derive_rewrite_proposals(bundled_sim, bundled)
+    assert not any(
+        proposal.summary == "Bank or isolate large memories"
+        and proposal.source_assignment == "entry_storage"
+        for proposal in bundled_proposals
+    )
 
 
 def test_ppa_report_exposes_register_bank_layout_candidate():
@@ -848,6 +931,37 @@ def test_ppa_report_exposes_register_bank_control_partition_candidates():
         assert candidate.suggested_knob == "control_partition"
         assert module_name in candidate.target
         assert "register_bank_control_targets" in recommendation.evidence
+        assert recommendation.evidence["register_bank_control_anchors"]
+
+
+def test_ppa_axilite_register_bank_control_partition_candidate_drops_after_split_control_state():
+    report = advise_ppa(
+        module=AXI4LiteRegisterBank(depth=8, split_control_state=True),
+        goals=PpaGoals(max_memory_bits=32, max_state_bits=16),
+    )
+    recommendation = next(r for r in report.recommendations if r.title == "Reduce or gate large sequential state")
+
+    assert recommendation.evidence["state_pattern_hint"] == "register_bank_control_state"
+    assert recommendation.evidence["control_partition_already_applied"] is True
+    assert not any(
+        candidate.suggested_value == "split_capture_and_response_state"
+        for candidate in report.transform_candidates
+    )
+
+
+def test_ppa_wishbone_register_bank_control_partition_candidate_drops_after_split_control_state():
+    report = advise_ppa(
+        module=WishboneRegisterBank(depth=8, split_control_state=True),
+        goals=PpaGoals(max_memory_bits=32, max_state_bits=16),
+    )
+    recommendation = next(r for r in report.recommendations if r.title == "Reduce or gate large sequential state")
+
+    assert recommendation.evidence["state_pattern_hint"] == "register_bank_control_state"
+    assert recommendation.evidence["control_partition_already_applied"] is True
+    assert not any(
+        candidate.suggested_value == "split_capture_and_response_state"
+        for candidate in report.transform_candidates
+    )
 
 
 def test_ppa_rewrite_proposals_can_be_derived_and_applied():

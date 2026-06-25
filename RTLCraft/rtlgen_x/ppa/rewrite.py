@@ -42,6 +42,7 @@ class RewriteProposal:
     summary: str
     rationale: str
     source_assignment: str
+    origin_anchor: Optional[str]
     applicability: str
     applicability_reason: Optional[str]
     edits: Tuple[RewriteEdit, ...]
@@ -333,6 +334,7 @@ def _timing_pipeline_proposal(
         summary=summary,
         rationale=rationale,
         source_assignment=target_assignment.target,
+        origin_anchor=_assignment_anchor(module.name, target_assignment),
         applicability="direct_apply",
         applicability_reason=None,
         edits=(
@@ -467,6 +469,7 @@ def _register_file_wrapper_proposal(
         summary=summary,
         rationale=rationale,
         source_assignment=read_data_names[0],
+        origin_anchor=_signal_anchor(module.name, read_data_names[0]),
         applicability="scaffold_only",
         applicability_reason=(
             "current executable memory subset does not model this multi-read or multi-write "
@@ -557,6 +560,7 @@ def _dual_port_ram_banking_proposal(
         summary=summary,
         rationale=rationale,
         source_assignment="a_rdata",
+        origin_anchor=_signal_anchor(module.name, "a_rdata"),
         applicability="direct_apply",
         applicability_reason=None,
         edits=tuple(edits),
@@ -610,6 +614,7 @@ def _lut_packed_rows_proposal(
         summary=summary,
         rationale=rationale,
         source_assignment="dout",
+        origin_anchor=_signal_anchor(module.name, "dout"),
         applicability="direct_apply",
         applicability_reason=None,
         edits=tuple(edits),
@@ -637,6 +642,7 @@ def _handshake_payload_gating_proposal(
         summary=summary,
         rationale=rationale,
         source_assignment=state_name,
+        origin_anchor=_assignment_anchor(module.name, assignment),
         applicability="scaffold_only",
         applicability_reason=(
             "introduce an explicit handshake-fire enable and rewrite the payload state update "
@@ -672,6 +678,7 @@ def _queue_sideband_bundle_proposal(
         summary=summary,
         rationale=rationale,
         source_assignment="req_storage",
+        origin_anchor=_signal_anchor(module.name, "req_storage"),
         applicability="scaffold_only",
         applicability_reason=(
             "replace lock-step sideband memories with one packed per-entry payload bundle; this "
@@ -705,6 +712,7 @@ def _register_bank_control_partition_proposal(
         summary=summary,
         rationale=rationale,
         source_assignment=target_name,
+        origin_anchor=_signal_anchor(module.name, target_name),
         applicability="scaffold_only",
         applicability_reason=(
             "split protocol capture and response bookkeeping into smaller state groups; this "
@@ -754,6 +762,18 @@ def _resolve_validation_vectors(
             row[name] = rng.randrange(1 << width)
         generated.append(row)
     return tuple(generated)
+
+
+def _signal_anchor(module_name: str, signal_name: str) -> str:
+    return f"{module_name}.{signal_name}"
+
+
+def _assignment_anchor(module_name: str, assignment: Assignment) -> str:
+    if assignment.source_file:
+        if assignment.source_line is not None:
+            return f"{module_name}.{assignment.target} @ {assignment.source_file}:{assignment.source_line}"
+        return f"{module_name}.{assignment.target} @ {assignment.source_file}"
+    return _signal_anchor(module_name, assignment.target)
 
 
 def _compare_output_traces(

@@ -19,6 +19,9 @@ from rtlgen_x.dsl.core import (
     Concat,
     Const,
     Expr,
+    EnumLocalParam,
+    EnumType,
+    EnumValue,
     ForGenNode,
     FunctionCall,
     GenIfNode,
@@ -33,6 +36,7 @@ from rtlgen_x.dsl.core import (
     ModuleDoc,
     Mux,
     Output,
+    PackedStructType,
     PartSelect,
     Ref,
     Reg,
@@ -861,7 +865,32 @@ class VerilogEmitter:
     def _emit_internal_decls(self, module: Module):
         # localparam 声明
         localparams = [p for p in module._params.values() if isinstance(p, LocalParam)]
+        for struct_type in module._struct_types.values():
+            self.lines.append(
+                f"    // struct {struct_type.name}: "
+                + ", ".join(f"{field.name}[{field.hi}:{field.lo}]" for field in struct_type.fields)
+            )
+        enum_groups: Dict[str, List[EnumLocalParam]] = {}
+        plain_localparams: List[LocalParam] = []
         for p in localparams:
+            if isinstance(p, EnumLocalParam):
+                enum_groups.setdefault(p.enum_type.name, []).append(p)
+            else:
+                plain_localparams.append(p)
+        for enum_name, params in enum_groups.items():
+            enum_type = module._enum_types.get(enum_name)
+            if enum_type is not None:
+                self.lines.append(
+                    f"    // enum {enum_type.name}: "
+                    + ", ".join(member.name for member in enum_type.members)
+                )
+            for p in params:
+                self.lines.append(
+                    f"    localparam [{p.enum_type.width - 1}:0] {p.name} = {self._emit_const_literal(int(p.value), p.enum_type.width)};"
+                )
+        if enum_groups and plain_localparams:
+            self._append_blank_line()
+        for p in plain_localparams:
             self.lines.append(f"    localparam {p.name} = {p.value};")
         if localparams:
             self._append_blank_line()
@@ -934,11 +963,25 @@ class VerilogEmitter:
     def _sig_decl(self, vtype: str, sig: Signal, name_override: Optional[str] = None) -> str:
         init_part = ""
         if isinstance(sig, Reg) and getattr(sig, 'init_value', None) is not None:
-            init_part = f" = {self._emit_const_literal(sig.init_value, sig.width)}"
+            init_part = f" = {self._emit_signal_init(sig)}"
         name = name_override if name_override is not None else sig.name
+        comment = ""
+        if getattr(sig, "enum_type", None) is not None:
+            comment = f" // enum {sig.enum_type.name}"
+        elif getattr(sig, "struct_type", None) is not None:
+            comment = (
+                f" // struct {sig.struct_type.name}: "
+                + ", ".join(f"{field.name}[{field.hi}:{field.lo}]" for field in sig.struct_type.fields)
+            )
         if sig.width == 1:
-            return f"    {vtype} {name}{init_part};"
-        return f"    {vtype} [{sig.width - 1}:0] {name}{init_part};"
+            return f"    {vtype} {name}{init_part};{comment}"
+        return f"    {vtype} [{sig.width - 1}:0] {name}{init_part};{comment}"
+
+    def _emit_signal_init(self, sig: Signal) -> str:
+        enum_value = getattr(sig, "init_enum_value", None)
+        if enum_value is not None:
+            return self._emit_enum_literal(enum_value)
+        return self._emit_const_literal(sig.init_value, sig.width)
 
     def _stable_port_expr_wire_name(self, inst_name: str, port_name: str) -> str:
         base = f"{inst_name}_{port_name}_expr"
@@ -994,6 +1037,10 @@ class VerilogEmitter:
         return f"{width}'d{val}"
 
     def _emit_assign_rhs(self, expr: Expr, target) -> str:
+        if isinstance(expr, Const):
+            enum_value = getattr(expr, "enum_value", None)
+            if enum_value is not None:
+                return self._emit_enum_literal(enum_value)
         if isinstance(target, Signal) and isinstance(expr, Const):
             if expr.width < target.width:
                 return self._emit_const_literal(int(expr.value), target.width)
@@ -2682,12 +2729,20 @@ class VerilogEmitter:
 
     def _emit_case_label(self, expr: Expr, selector_width: int) -> str:
         if isinstance(expr, Const):
+            enum_value = getattr(expr, "enum_value", None)
+            if enum_value is not None:
+                return self._emit_enum_literal(enum_value)
+        if isinstance(expr, Const):
             width = max(expr.width, selector_width)
             return self._emit_const_literal(int(expr.value), width)
         if isinstance(expr, int):
             width = max(expr.bit_length(), 1, selector_width)
             return self._emit_const_literal(expr, width)
         return self._emit_expr(expr)
+
+    @staticmethod
+    def _emit_enum_literal(enum_value: EnumValue) -> str:
+        return f"{enum_value.enum_type.name.upper()}_{enum_value.name}"
 
 
 def _to_expr(val: Any) -> Expr:

@@ -351,6 +351,81 @@ def rank_bandwidth_upgrades(
     return tuple(ranked[:max_recommendations])
 
 
+def rank_upgrade_opportunities(
+    model: ArchitectureModel,
+    workload: Workload,
+    *,
+    candidate_capacities: Sequence[int] = (2, 4),
+    candidate_initiation_intervals: Sequence[int] = (1,),
+    candidate_latencies: Sequence[int] = (1,),
+    candidate_queue_depths: Sequence[int] = (2, 4, 8),
+    candidate_bandwidths: Sequence[int] = (32, 64, 128),
+    max_recommendations: int = 8,
+) -> Tuple[UpgradeCandidate, ...]:
+    """Rank all explored stage-upgrade opportunities in one combined list.
+
+    This helper is intentionally simple: it merges the existing per-knob
+    rankers, deduplicates exact repeated recommendations, and sorts by the same
+    cycle-reduction-first policy used elsewhere so an agent can consume one
+    compact upgrade list instead of stitching several together manually.
+    """
+
+    merged = (
+        rank_capacity_upgrades(
+            model,
+            workload,
+            candidate_capacities=candidate_capacities,
+            max_recommendations=max_recommendations,
+        )
+        + rank_initiation_interval_upgrades(
+            model,
+            workload,
+            candidate_initiation_intervals=candidate_initiation_intervals,
+            max_recommendations=max_recommendations,
+        )
+        + rank_latency_upgrades(
+            model,
+            workload,
+            candidate_latencies=candidate_latencies,
+            max_recommendations=max_recommendations,
+        )
+        + rank_queue_depth_upgrades(
+            model,
+            workload,
+            candidate_queue_depths=candidate_queue_depths,
+            max_recommendations=max_recommendations,
+        )
+        + rank_bandwidth_upgrades(
+            model,
+            workload,
+            candidate_bandwidths=candidate_bandwidths,
+            max_recommendations=max_recommendations,
+        )
+    )
+    deduped: Dict[Tuple[str, str, int, int], UpgradeCandidate] = {}
+    for candidate in merged:
+        key = (
+            candidate.stage_name,
+            candidate.knob,
+            candidate.baseline_value,
+            candidate.recommended_value,
+        )
+        prev = deduped.get(key)
+        if prev is None or (
+            candidate.cycle_reduction,
+            candidate.speedup,
+        ) > (
+            prev.cycle_reduction,
+            prev.speedup,
+        ):
+            deduped[key] = candidate
+    ranked = sorted(
+        deduped.values(),
+        key=lambda candidate: (-candidate.cycle_reduction, -candidate.speedup, candidate.stage_name, candidate.knob),
+    )
+    return tuple(ranked[:max_recommendations])
+
+
 def _run_stage_sweep(
     model: ArchitectureModel,
     workload: Workload,

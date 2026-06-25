@@ -156,7 +156,18 @@ def _validate_sequence_active_domains(
     sequence: Sequence[PythonUvmSequenceItem],
 ) -> None:
     known_domains = tuple(domain.name for domain in module.clock_domains)
-    known_set = set(known_domains)
+    known_aliases = tuple(
+        dict.fromkeys(
+            str(alias)
+            for domain in module.clock_domains
+            for alias in getattr(domain, "aliases", ())
+        )
+    )
+    alias_to_domain = {domain.name: domain.name for domain in module.clock_domains}
+    for domain in module.clock_domains:
+        for alias in getattr(domain, "aliases", ()):
+            alias_to_domain.setdefault(str(alias), domain.name)
+    known_set = set(alias_to_domain)
     for item in sequence:
         if not item.active_domains:
             continue
@@ -164,9 +175,11 @@ def _validate_sequence_active_domains(
         if unknown_domains:
             joined = ", ".join(unknown_domains)
             known_joined = ", ".join(known_domains) if known_domains else "<module clock domains>"
+            alias_joined = ", ".join(known_aliases) if known_aliases else "none"
             raise ValueError(
                 "run_python_uvm_test multi-clock sequences reference unknown active_domains: "
                 f"{joined}. Known clock domains: {known_joined}. "
+                f"Known clock aliases: {alias_joined}. "
                 "Wrap each step in PythonUvmSequenceItem(..., active_domains=(...))."
             )
 

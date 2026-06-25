@@ -42,6 +42,8 @@ class CycleStageMetrics:
     completed_tokens: int
     busy_token_cycles: int
     max_ready_depth: int
+    shared_resource_busy_cycles: int = 0
+    shared_resource: str = ""
 
 
 @dataclass(frozen=True)
@@ -85,9 +87,12 @@ class CycleSimulator:
                 "completed_tokens": 0,
                 "busy_token_cycles": 0,
                 "max_ready_depth": 0,
+                "shared_resource": model.shared_resource_tag(stage_name) or "",
+                "shared_resource_busy_cycles": 0,
             }
             for stage_name in model.stages
         }
+        shared_groups = model.shared_resource_groups()
 
         cycle = 0
         ordered_flows = list(workload.flows)
@@ -173,6 +178,11 @@ class CycleSimulator:
                     stage_stats[stage_name]["started_tokens"] += 1
                 stage_stats[stage_name]["busy_token_cycles"] += len(runtime.active)
 
+            for group_name, stage_names in shared_groups.items():
+                group_busy = sum(len(runtimes[stage_name].active) for stage_name in stage_names)
+                for stage_name in stage_names:
+                    stage_stats[stage_name]["shared_resource_busy_cycles"] += group_busy
+
             cycle += 1
 
         flow_metrics = {}
@@ -196,6 +206,8 @@ class CycleSimulator:
                 completed_tokens=int(stats["completed_tokens"]),
                 busy_token_cycles=int(stats["busy_token_cycles"]),
                 max_ready_depth=int(stats["max_ready_depth"]),
+                shared_resource_busy_cycles=int(stats["shared_resource_busy_cycles"]),
+                shared_resource=str(stats["shared_resource"]),
             )
             for stage_name, stats in stage_stats.items()
         }

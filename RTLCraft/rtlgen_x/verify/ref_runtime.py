@@ -185,9 +185,11 @@ class MemoryWrite:
 @dataclass(frozen=True)
 class ClockDomain:
     name: str
+    clock_signal: Optional[str] = None
     reset_signal: Optional[str] = None
     reset_async: bool = False
     reset_active_low: bool = False
+    aliases: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -236,9 +238,12 @@ class SimModule:
         for domain in self.clock_domains:
             if domain.name in domain_map:
                 raise ValueError(f"duplicate clock domain '{domain.name}'")
-            clock_signal = signal_map.get(domain.name)
+            clock_signal_name = domain.clock_signal or domain.name
+            clock_signal = signal_map.get(clock_signal_name)
             if clock_signal is None:
-                raise ValueError(f"unknown clock domain signal '{domain.name}'")
+                raise ValueError(
+                    f"unknown clock domain signal '{clock_signal_name}' for clock domain '{domain.name}'"
+                )
             if clock_signal.kind != "input":
                 raise ValueError("clock domain signal must be declared as an input")
             if domain.reset_signal is not None:
@@ -405,6 +410,13 @@ class PythonSimulator:
             for domain in self.module.clock_domains
         }
         self.clock_domain_names = tuple(self._clock_domains.keys())
+        self._clock_domain_name_by_alias = {
+            domain.name: domain.name
+            for domain in self.module.clock_domains
+        }
+        for domain in self.module.clock_domains:
+            for alias in getattr(domain, "aliases", ()):
+                self._clock_domain_name_by_alias.setdefault(str(alias), domain.name)
         self._multi_clock = len(self.clock_domain_names) > 1
         self._memory_init = {
             memory.name: tuple(
@@ -441,7 +453,7 @@ class PythonSimulator:
         if not self._clock_domains:
             return explicit_name
         if explicit_name is not None:
-            return explicit_name
+            return self._clock_domain_name_by_alias.get(explicit_name, explicit_name)
         return self._default_clock_domain()
 
     def _group_seq_assignments_by_domain(self) -> Dict[str, Tuple[Assignment, ...]]:
@@ -484,8 +496,15 @@ class PythonSimulator:
             selected = [name for name, enabled in active_domains.items() if enabled]
         else:
             selected = list(active_domains)
-        ordered = tuple(dict.fromkeys(selected))
-        unknown = sorted(set(ordered) - set(self.clock_domain_names))
+        normalized = []
+        unknown = []
+        for raw_name in selected:
+            canonical = self._clock_domain_name_by_alias.get(str(raw_name))
+            if canonical is None:
+                unknown.append(str(raw_name))
+                continue
+            normalized.append(canonical)
+        ordered = tuple(dict.fromkeys(normalized))
         if unknown:
             raise KeyError(f"unknown clock domains: {', '.join(unknown)}")
         return ordered

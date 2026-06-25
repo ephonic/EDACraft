@@ -100,6 +100,13 @@ class PythonSimulator:
             for domain in self.module.clock_domains
         }
         self.clock_domain_names = tuple(self._clock_domains.keys())
+        self._clock_domain_name_by_alias = {
+            domain.name: domain.name
+            for domain in self.module.clock_domains
+        }
+        for domain in self.module.clock_domains:
+            for alias in getattr(domain, "aliases", ()):
+                self._clock_domain_name_by_alias.setdefault(str(alias), domain.name)
         self._multi_clock = len(self.clock_domain_names) > 1
         self._memory_init = {
             memory.name: tuple(
@@ -136,7 +143,7 @@ class PythonSimulator:
         if not self._clock_domains:
             return explicit_name
         if explicit_name is not None:
-            return explicit_name
+            return self._clock_domain_name_by_alias.get(explicit_name, explicit_name)
         return self._default_clock_domain()
 
     def _group_seq_assignments_by_domain(self) -> Dict[str, Tuple[Assignment, ...]]:
@@ -179,8 +186,15 @@ class PythonSimulator:
             selected = [name for name, enabled in active_domains.items() if enabled]
         else:
             selected = list(active_domains)
-        ordered = tuple(dict.fromkeys(selected))
-        unknown = sorted(set(ordered) - set(self.clock_domain_names))
+        normalized = []
+        unknown = []
+        for raw_name in selected:
+            canonical = self._clock_domain_name_by_alias.get(str(raw_name))
+            if canonical is None:
+                unknown.append(str(raw_name))
+                continue
+            normalized.append(canonical)
+        ordered = tuple(dict.fromkeys(normalized))
         if unknown:
             joined = ", ".join(unknown)
             raise KeyError(f"unknown clock domains: {joined}")

@@ -109,6 +109,7 @@ class Const(Expr):
     def __init__(self, value: int, width: int = 1):
         super().__init__(width)
         self.value = value
+        self.enum_value: Optional["EnumValue"] = None
 
     def __invert__(self):
         return Const(~self.value & ((1 << self.width) - 1), self.width)
@@ -130,6 +131,266 @@ class Const(Expr):
         if isinstance(other, Const):
             return Const(self.value ^ other.value, w)
         return _make_binop("^", self, other, w)
+
+
+@dataclass(frozen=True)
+class EnumValue:
+    """One named literal belonging to an ``EnumType``."""
+
+    enum_type: "EnumType"
+    name: str
+    value: int
+
+    @property
+    def width(self) -> int:
+        return self.enum_type.width
+
+    def as_const(self) -> Const:
+        const = Const(self.value, self.width)
+        const.enum_value = self
+        return const
+
+
+@dataclass(frozen=True)
+class EnumType:
+    """A compact hardware enum with stable literal names and encodings."""
+
+    name: str
+    members: Tuple[EnumValue, ...]
+    width: int
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("enum name must not be empty")
+        if not self.members:
+            raise ValueError("enum must contain at least one member")
+
+    @classmethod
+    def define(
+        cls,
+        name: str,
+        member_names: List[str] | Tuple[str, ...],
+        *,
+        width: Optional[int] = None,
+        values: Optional[Dict[str, int]] = None,
+    ) -> "EnumType":
+        """Define one enum type from member names and optional encodings."""
+
+        ordered_names = tuple(str(member_name) for member_name in member_names)
+        if not ordered_names:
+            raise ValueError("enum must contain at least one member")
+        if len(set(ordered_names)) != len(ordered_names):
+            raise ValueError("enum member names must be unique")
+        value_map: Dict[str, int] = {}
+        if values:
+            value_map.update({str(k): int(v) for k, v in values.items()})
+        next_value = 0
+        encoded_values: List[int] = []
+        for member_name in ordered_names:
+            if member_name in value_map:
+                encoded = value_map[member_name]
+            else:
+                while next_value in encoded_values:
+                    next_value += 1
+                encoded = next_value
+            if encoded < 0:
+                raise ValueError("enum values must be >= 0")
+            encoded_values.append(encoded)
+            next_value = max(next_value, encoded + 1)
+        resolved_width = width or max(max(encoded_values).bit_length(), 1)
+        if resolved_width < 1:
+            raise ValueError("enum width must be >= 1")
+        if any(encoded >= (1 << resolved_width) for encoded in encoded_values):
+            raise ValueError("enum value does not fit within the declared width")
+
+        placeholder = object.__new__(cls)
+        members = tuple(
+            EnumValue(enum_type=placeholder, name=member_name, value=encoded)
+            for member_name, encoded in zip(ordered_names, encoded_values)
+        )
+        object.__setattr__(placeholder, "name", name)
+        object.__setattr__(placeholder, "members", members)
+        object.__setattr__(placeholder, "width", resolved_width)
+        rebound_members = tuple(
+            EnumValue(enum_type=placeholder, name=member.name, value=member.value)
+            for member in members
+        )
+        object.__setattr__(placeholder, "members", rebound_members)
+        return placeholder
+
+    def member(self, name: str) -> EnumValue:
+        for member in self.members:
+            if member.name == name:
+                return member
+        raise KeyError(f"unknown enum member '{name}' for enum '{self.name}'")
+
+    def __getattr__(self, name: str) -> EnumValue:
+        try:
+            return self.member(name)
+        except KeyError as exc:
+            raise AttributeError(str(exc)) from exc
+
+    def values(self) -> Tuple[EnumValue, ...]:
+        return self.members
+
+
+@dataclass(frozen=True)
+class PackedStructField:
+    """One field inside a packed struct type."""
+
+    struct_type: "PackedStructType"
+    name: str
+    width: int
+    hi: int
+    lo: int
+    enum_type: Optional[EnumType] = None
+
+
+@dataclass(frozen=True)
+class PackedStructType:
+    """A compact packed-struct type with stable field layout."""
+
+    name: str
+    fields: Tuple[PackedStructField, ...]
+    width: int
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("struct name must not be empty")
+        if not self.fields:
+            raise ValueError("struct must contain at least one field")
+
+    @classmethod
+    def define(
+        cls,
+        name: str,
+        field_specs: List[Tuple[Any, ...]] | Tuple[Tuple[Any, ...], ...],
+    ) -> "PackedStructType":
+        """Define one packed struct from ordered MSB-to-LSB field specs.
+
+        Supported field forms:
+
+        - ``("opcode", 4)``
+        - ``("state", state_enum)``
+        - ``("state", 2, state_enum)``
+        """
+
+        ordered_specs = tuple(field_specs)
+        if not ordered_specs:
+            raise ValueError("struct must contain at least one field")
+
+        parsed_specs: List[Tuple[str, int, Optional[EnumType]]] = []
+        seen_names: Set[str] = set()
+        for spec in ordered_specs:
+            if not isinstance(spec, (list, tuple)) or len(spec) not in (2, 3):
+                raise TypeError("struct field specs must be 2- or 3-tuples")
+            field_name = str(spec[0])
+            if not field_name:
+                raise ValueError("struct field name must not be empty")
+            if field_name in seen_names:
+                raise ValueError("struct field names must be unique")
+            seen_names.add(field_name)
+
+            enum_type: Optional[EnumType]
+            if len(spec) == 2:
+                width_or_enum = spec[1]
+                if isinstance(width_or_enum, EnumType):
+                    enum_type = width_or_enum
+                    field_width = enum_type.width
+                else:
+                    enum_type = None
+                    field_width = int(width_or_enum)
+            else:
+                field_width = int(spec[1])
+                enum_type = spec[2]
+                if enum_type is not None and not isinstance(enum_type, EnumType):
+                    raise TypeError("struct field enum_type must be an EnumType or None")
+                if enum_type is not None and field_width != enum_type.width:
+                    raise ValueError("struct field width must match the enum field width")
+            if field_width < 1:
+                raise ValueError("struct field width must be >= 1")
+            parsed_specs.append((field_name, field_width, enum_type))
+
+        total_width = sum(field_width for _, field_width, _ in parsed_specs)
+        placeholder = object.__new__(cls)
+        remaining = total_width
+        fields = []
+        for field_name, field_width, enum_type in parsed_specs:
+            remaining -= field_width
+            lo = remaining
+            hi = lo + field_width - 1
+            fields.append(
+                PackedStructField(
+                    struct_type=placeholder,
+                    name=field_name,
+                    width=field_width,
+                    hi=hi,
+                    lo=lo,
+                    enum_type=enum_type,
+                )
+            )
+        object.__setattr__(placeholder, "name", name)
+        object.__setattr__(placeholder, "fields", tuple(fields))
+        object.__setattr__(placeholder, "width", total_width)
+        rebound_fields = tuple(
+            PackedStructField(
+                struct_type=placeholder,
+                name=field.name,
+                width=field.width,
+                hi=field.hi,
+                lo=field.lo,
+                enum_type=field.enum_type,
+            )
+            for field in fields
+        )
+        object.__setattr__(placeholder, "fields", rebound_fields)
+        return placeholder
+
+    def field(self, name: str) -> PackedStructField:
+        for field in self.fields:
+            if field.name == name:
+                return field
+        raise KeyError(f"unknown struct field '{name}' for struct '{self.name}'")
+
+    def __getattr__(self, name: str) -> PackedStructField:
+        try:
+            return self.field(name)
+        except KeyError as exc:
+            raise AttributeError(str(exc)) from exc
+
+    def field_names(self) -> Tuple[str, ...]:
+        return tuple(field.name for field in self.fields)
+
+    def pack(self, **field_values: Any) -> "Signal":
+        expected = set(self.field_names())
+        provided = set(field_values)
+        missing = tuple(field.name for field in self.fields if field.name not in field_values)
+        extra = tuple(sorted(provided - expected))
+        if missing or extra:
+            details = []
+            if missing:
+                details.append(f"missing={missing}")
+            if extra:
+                details.append(f"extra={extra}")
+            raise ValueError(
+                f"struct pack for '{self.name}' requires exactly the declared fields ({', '.join(details)})"
+            )
+
+        packed_exprs: List[Expr] = []
+        for field in self.fields:
+            value = field_values[field.name]
+            if isinstance(value, EnumValue):
+                if field.enum_type is not None and value.enum_type is not field.enum_type:
+                    raise ValueError(
+                        f"struct field '{field.name}' expects enum '{field.enum_type.name}', "
+                        f"got '{value.enum_type.name}'"
+                    )
+            expr = _coerce_expr_width(_to_expr(value), field.width, context=f"{self.name}.{field.name}")
+            packed_exprs.append(expr)
+
+        signal = Signal(name=f"{self.name}_packed", struct_type=self)
+        signal._expr = Concat(packed_exprs, self.width)
+        return signal
 
 
 class FunctionCall(Expr):
@@ -205,6 +466,18 @@ def _width_of(val) -> int:
     if isinstance(val, int):
         return max(val.bit_length(), 1)
     return getattr(val, "width", 1)
+
+
+def _coerce_expr_width(expr: Expr, width: int, *, context: str) -> Expr:
+    if expr.width == width:
+        return expr
+    if expr.width < width:
+        if isinstance(expr, Const):
+            widened = Const(expr.value, width)
+            widened.enum_value = getattr(expr, "enum_value", None)
+            return widened
+        raise ValueError(f"{context} expects width {width}, got {expr.width}")
+    raise ValueError(f"{context} expects width {width}, got {expr.width}")
 
 
 class Mux(Expr):
@@ -1071,6 +1344,8 @@ def _to_expr(val: Any) -> Expr:
         return val._read_expr
     if isinstance(val, ArrayProxy):
         return val._read_expr
+    if isinstance(val, EnumValue):
+        return val.as_const()
     if isinstance(val, Signal):
         return val._expr
     if isinstance(val, Parameter):
@@ -1161,11 +1436,36 @@ def _derive_partselect_width(hi_expr: Expr, lo_expr: Expr) -> Optional[int]:
 class Signal(IREntity):
     """硬件信号基类，支持位宽推导与运算符重载。"""
 
-    def __init__(self, width: int = 1, name: str = "", signed: bool = False, init_value: Optional[int] = None):
+    def __init__(
+        self,
+        width: int = 1,
+        name: str = "",
+        signed: bool = False,
+        init_value: Optional[int] = None,
+        *,
+        enum_type: Optional[EnumType] = None,
+        struct_type: Optional[PackedStructType] = None,
+    ):
         IREntity.__init__(self, name)
-        self.width = width
+        if enum_type is not None and struct_type is not None:
+            raise ValueError("signal cannot be both enum-typed and struct-typed")
+        resolved_width = width
+        if enum_type is not None:
+            resolved_width = enum_type.width
+        elif struct_type is not None:
+            resolved_width = struct_type.width
+        self.width = resolved_width
         self.name = name
         self.signed = signed
+        self.enum_type = enum_type
+        self.struct_type = struct_type
+        if init_value is not None and isinstance(init_value, EnumValue):
+            if enum_type is not None and init_value.enum_type is not enum_type:
+                raise ValueError("enum init_value must belong to the signal enum_type")
+            self.init_enum_value = init_value
+            init_value = init_value.value
+        else:
+            self.init_enum_value = None
         self.init_value = init_value
         self._expr = Ref(self)
         self._driven_by: Optional[str] = None  # "comb" | "seq"
@@ -1173,6 +1473,27 @@ class Signal(IREntity):
 
     def __hash__(self):
         return id(self)
+
+    def __getattr__(self, key: str):
+        try:
+            struct_type = object.__getattribute__(self, "struct_type")
+        except AttributeError as exc:
+            raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {key!r}") from exc
+        if struct_type is not None:
+            try:
+                field = struct_type.field(key)
+            except KeyError as exc:
+                raise AttributeError(str(exc)) from exc
+            field_sig = Signal(width=field.width, enum_type=field.enum_type)
+            if field.hi == field.lo:
+                field_sig._expr = Slice(_to_expr(self), field.hi, field.lo)
+            else:
+                field_sig._expr = Slice(_to_expr(self), field.hi, field.lo)
+            field_sig._parent_module = self._parent_module
+            field_sig._field_parent = self
+            field_sig._field_spec = field
+            return field_sig
+        raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {key!r}")
 
     # ---- slicing ------------------------------------------------------
     def __getitem__(self, key):
@@ -1520,6 +1841,15 @@ class LocalParam(Parameter):
     pass
 
 
+class EnumLocalParam(LocalParam):
+    """Named enum literal emitted as a localparam with explicit enum provenance."""
+
+    def __init__(self, enum_value: EnumValue, name: str = ""):
+        super().__init__(enum_value.value, name=name)
+        self.enum_type = enum_value.enum_type
+        self.enum_value = enum_value
+
+
 # ---------------------------------------------------------------------
 # Intent
 # ---------------------------------------------------------------------
@@ -1746,6 +2076,9 @@ class Module(IREntity, metaclass=ModuleMeta):
         self._module_doc: Optional[ModuleDoc] = None
         self._parent: Optional["Module"] = None
         self._design_intent: Optional[IntentContext] = None
+        self._bundles: Dict[str, Any] = {}
+        self._enum_types: Dict[str, EnumType] = {}
+        self._struct_types: Dict[str, PackedStructType] = {}
 
     @staticmethod
     def _format_reset_semantics(*, reset_async: bool, reset_active_low: bool) -> str:
@@ -1760,6 +2093,35 @@ class Module(IREntity, metaclass=ModuleMeta):
     def _known_clock_domain_names(self) -> str:
         names = tuple(self._clock_domain_specs.keys())
         return ", ".join(names) if names else "none"
+
+    def _known_clock_domain_aliases(self) -> str:
+        aliases = tuple(
+            dict.fromkeys(
+                spec.clock.name
+                for spec in self._clock_domain_specs.values()
+                if getattr(spec.clock, "name", "")
+            )
+        )
+        return ", ".join(aliases) if aliases else "none"
+
+    def _resolve_declared_clock_domain(self, domain: str) -> Optional[ClockDomainSpec]:
+        declared = self._clock_domain_specs.get(domain)
+        if declared is not None:
+            return declared
+        alias_matches = [
+            spec
+            for spec in self._clock_domain_specs.values()
+            if getattr(spec.clock, "name", None) == domain
+        ]
+        if len(alias_matches) == 1:
+            return alias_matches[0]
+        return None
+
+    def _format_known_clock_domains(self) -> str:
+        return (
+            f"Known clock domains: {self._known_clock_domain_names()}. "
+            f"Known clock aliases: {self._known_clock_domain_aliases()}"
+        )
 
     def _find_matching_reset_domain(
         self,
@@ -1788,6 +2150,31 @@ class Module(IREntity, metaclass=ModuleMeta):
     def add_suggestions(self, suggestions: List[str]):
         """向模块添加优化建议，生成 Verilog 时会被转为注释。"""
         self._module_suggestions.extend(suggestions)
+
+    def add_enum_type(self, enum_type: EnumType) -> EnumType:
+        """Register one enum type for readable Verilog emission."""
+
+        existing = self._enum_types.get(enum_type.name)
+        if existing is not None and existing != enum_type:
+            raise ValueError(f"enum type '{enum_type.name}' is already registered with different members")
+        self._enum_types[enum_type.name] = enum_type
+        for member in enum_type.members:
+            localparam_name = f"{enum_type.name.upper()}_{member.name}"
+            if localparam_name not in self._params:
+                self._params[localparam_name] = EnumLocalParam(member, name=localparam_name)
+        return enum_type
+
+    def add_struct_type(self, struct_type: PackedStructType) -> PackedStructType:
+        """Register one packed struct type for readable authoring/emission metadata."""
+
+        existing = self._struct_types.get(struct_type.name)
+        if existing is not None and existing != struct_type:
+            raise ValueError(f"struct type '{struct_type.name}' is already registered with different fields")
+        self._struct_types[struct_type.name] = struct_type
+        for field in struct_type.fields:
+            if field.enum_type is not None:
+                self.add_enum_type(field.enum_type)
+        return struct_type
 
     def lint(self, rules: Optional[List[str]] = None) -> List[str]:
         """检查设计规则违例（严格端口连接模式 + 流水线/握手协议检查）。
@@ -2615,6 +3002,12 @@ class Module(IREntity, metaclass=ModuleMeta):
             value.name = value.name or key
             object.__setattr__(self, key, value)
             self._params[key] = value
+        elif isinstance(value, EnumType):
+            object.__setattr__(self, key, value)
+            self.add_enum_type(value)
+        elif isinstance(value, PackedStructType):
+            object.__setattr__(self, key, value)
+            self.add_struct_type(value)
         elif isinstance(value, Module):
             object.__setattr__(self, key, value)
             self._submodules.append((key, value))
@@ -2639,6 +3032,21 @@ class Module(IREntity, metaclass=ModuleMeta):
             value.name = value.name or key
             object.__setattr__(self, key, value)
             self._arrays[key] = value
+        elif hasattr(value, "_signals") and hasattr(value, "_directions"):
+            object.__setattr__(self, key, value)
+            self._bundles[key] = value
+            for field_name, sig in value._signals.items():
+                if not sig.name:
+                    sig.name = f"{key}_{field_name}"
+                sig._parent_module = self
+                if isinstance(sig, Input):
+                    self._inputs[sig.name] = sig
+                elif isinstance(sig, Output):
+                    self._outputs[sig.name] = sig
+                elif isinstance(sig, Wire):
+                    self._wires[sig.name] = sig
+                elif isinstance(sig, Reg):
+                    self._regs[sig.name] = sig
         elif isinstance(value, (list, tuple)):
             if value and all(isinstance(v, Signal) for v in value):
                 for sig in value:
@@ -2653,6 +3061,11 @@ class Module(IREntity, metaclass=ModuleMeta):
             object.__setattr__(self, key, value)
         else:
             object.__setattr__(self, key, value)
+
+    def bundle(self, key: str, bundle: Any):
+        """Register a protocol bundle on this module and return it."""
+        setattr(self, key, bundle)
+        return bundle
 
     def add_submodule(self, module: "Module", name: Optional[str] = None) -> "Module":
         """Add a sub-module created as a local variable.
@@ -2883,24 +3296,24 @@ class Module(IREntity, metaclass=ModuleMeta):
         """Sequential logic context manager bound to a declared clock domain.
 
         Accepts either a previously returned :class:`ClockDomainSpec` or the
-        declared domain name directly. The string form keeps multi-clock DSL
-        authoring lighter when the surrounding code already speaks in domain
-        names.
+        declared domain name directly. String lookups also accept the declared
+        domain's clock-signal alias when it resolves uniquely, which keeps
+        multi-clock DSL authoring lighter around existing signal-centric code.
         """
 
         if isinstance(domain, str):
-            declared = self._clock_domain_specs.get(domain)
+            declared = self._resolve_declared_clock_domain(domain)
             if declared is None:
                 raise ValueError(
                     f"clock domain '{domain}' must be declared on module '{self.name}' before use. "
-                    f"Known clock domains: {self._known_clock_domain_names()}"
+                    f"{self._format_known_clock_domains()}"
                 )
         else:
             declared = self._clock_domain_specs.get(domain.name)
             if declared is None or declared != domain:
                 raise ValueError(
                     f"clock domain '{domain.name}' must be declared on module '{self.name}' before use. "
-                    f"Known clock domains: {self._known_clock_domain_names()}"
+                    f"{self._format_known_clock_domains()}"
                 )
         return _SeqContext(
             self,
@@ -2993,6 +3406,100 @@ class Module(IREntity, metaclass=ModuleMeta):
             for sig_name, parent_sig in parent_iface.signals.items():
                 if sig_name in sub_iface.signals:
                     port_map[sub_iface.signals[sig_name].name] = parent_sig
+
+        port_map = {k: _to_expr(v) for k, v in port_map.items() if v is not None}
+        inst = SubmoduleInst(name, submodule, params, port_map)
+        ctx = Context.current()
+        if ctx and ctx.stmt_container is not None:
+            ctx.stmt_container.append(inst)
+        elif ctx and ctx.module is not None:
+            ctx.module._top_level.append(inst)
+        else:
+            self._top_level.append(inst)
+
+    def instantiate_with_bundles(
+        self,
+        submodule: "Module",
+        name: str,
+        params: Optional[Dict[str, Any]] = None,
+        parent_bundles: Optional[Dict[str, Any]] = None,
+        sub_bundles: Optional[Dict[str, Any]] = None,
+        extra_ports: Optional[Dict[str, Union[Signal, Expr]]] = None,
+        bundle_includes: Optional[Dict[str, tuple[str, ...]]] = None,
+        bundle_excludes: Optional[Dict[str, tuple[str, ...]]] = None,
+        auto_bundles: bool = True,
+    ):
+        """Instantiate a submodule using Bundle-based bulk connection.
+
+        This is the Bundle-oriented sibling of ``instantiate_with_ifaces(...)``.
+        It is intended for protocol bundles such as ``ReadyValid`` / ``ReqRsp`` /
+        ``AXI4Lite`` where the authored connection should stay at the protocol
+        object level rather than expanding a hand-written port map.
+
+        The generated mapping uses the peer bundle's actual signal names, so
+        prefixed bundle ports on the submodule side work naturally.
+        """
+        params = params or {}
+        parent_bundles = dict(parent_bundles or {})
+        sub_bundles = sub_bundles or {}
+        extra_ports = extra_ports or {}
+        bundle_includes = bundle_includes or {}
+        bundle_excludes = bundle_excludes or {}
+
+        resolved_parent_bundles: Dict[str, Any] = dict(parent_bundles)
+        if auto_bundles:
+            for bundle_name, sub_bundle in getattr(submodule, "_bundles", {}).items():
+                if bundle_name in resolved_parent_bundles:
+                    continue
+                if not hasattr(self, bundle_name):
+                    continue
+                parent_bundle = getattr(self, bundle_name)
+                if not (hasattr(parent_bundle, "_signals") and hasattr(parent_bundle, "instantiate_port_map")):
+                    continue
+                if type(parent_bundle) is not type(sub_bundle):
+                    raise TypeError(
+                        f"Auto-discovered bundle type mismatch on '{bundle_name}': "
+                        f"{type(parent_bundle).__name__} vs {type(sub_bundle).__name__}"
+                    )
+                resolved_parent_bundles[bundle_name] = parent_bundle
+
+        known_bundle_names = set(resolved_parent_bundles)
+        unknown_includes = set(bundle_includes) - known_bundle_names
+        unknown_excludes = set(bundle_excludes) - known_bundle_names
+        if unknown_includes or unknown_excludes:
+            unknown = tuple(sorted(unknown_includes | unknown_excludes))
+            raise ValueError(
+                f"bundle include/exclude keys {unknown} do not match the resolved parent bundles "
+                f"{tuple(sorted(known_bundle_names))}"
+            )
+
+        port_map: Dict[str, Union[Signal, Expr]] = dict(extra_ports)
+        for bundle_name, parent_bundle in resolved_parent_bundles.items():
+            sub_bundle = sub_bundles.get(bundle_name)
+            if sub_bundle is None:
+                sub_bundle = getattr(submodule, bundle_name, None)
+            if sub_bundle is None:
+                raise ValueError(
+                    f"submodule bundle '{bundle_name}' was not provided and is not present on "
+                    f"module '{submodule.name}'"
+                )
+            if type(parent_bundle) is not type(sub_bundle):
+                raise TypeError(
+                    f"Bundle type mismatch on '{bundle_name}': "
+                    f"{type(parent_bundle).__name__} vs {type(sub_bundle).__name__}"
+                )
+            if not hasattr(parent_bundle, "instantiate_port_map"):
+                raise TypeError(
+                    f"bundle '{bundle_name}' of type {type(parent_bundle).__name__} does not expose "
+                    "instantiate_port_map(...)"
+                )
+            port_map.update(
+                parent_bundle.instantiate_port_map(
+                    sub_bundle,
+                    include=bundle_includes.get(bundle_name),
+                    exclude=bundle_excludes.get(bundle_name),
+                )
+            )
 
         port_map = {k: _to_expr(v) for k, v in port_map.items() if v is not None}
         inst = SubmoduleInst(name, submodule, params, port_map)
@@ -4305,6 +4812,8 @@ def flatten_module(module: "Module") -> "Module":
             new_name = f"{prefix}{name}"
             new_arr = Array(arr.width, arr.depth, new_name, vtype=arr._vtype)
             arr_rename[name] = new_name
+            if arr.name and arr.name != name:
+                arr_rename[arr.name] = new_name
             flat._arrays[new_name] = new_arr
             object.__setattr__(flat, new_name, new_arr)
 

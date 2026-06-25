@@ -231,7 +231,15 @@ def lower_dsl_module_to_sim(
         clk, rst, reset_async, reset_active_low, body = seq_item
         if clk is None:
             raise DslLoweringError("sequential block is missing clock")
-        clock_domain_name = getattr(clk, "name", str(clk)) if clock_domains else None
+        clock_signal_name = getattr(clk, "name", str(clk))
+        clock_domain_name = None
+        if clock_domains:
+            for domain in clock_domains:
+                if (domain.clock_signal or domain.name) == clock_signal_name:
+                    clock_domain_name = domain.name
+                    break
+        if clock_domain_name is None:
+            clock_domain_name = clock_signal_name if clock_domains else None
         env = _LoweringEnv(signal_map, memory_names, clock_domain=clock_domain_name)
         _lower_stmt_list(body, phase="seq", env=env)
         assignments.extend(env.finalize_phase())
@@ -392,10 +400,12 @@ def _collect_clock_domains(module) -> tuple[ClockDomain, ...]:
         return ()
     return tuple(
         ClockDomain(
-            name=clock_name,
+            name=declared_specs_by_clock.get(clock_name, (None, False, False, clock_name))[3],
+            clock_signal=clock_name,
             reset_signal=clock_specs[clock_name][0],
             reset_async=clock_specs[clock_name][1],
             reset_active_low=clock_specs[clock_name][2],
+            aliases=(clock_name,),
         )
         for clock_name in ordered_clock_names
     )

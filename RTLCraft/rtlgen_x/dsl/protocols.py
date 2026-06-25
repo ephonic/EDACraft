@@ -46,6 +46,27 @@ class Bundle:
             other._add(n, new_sig, dir_)
         return other
 
+    def prefixed(self: T, prefix: str) -> T:
+        """Return a cloned bundle whose signal names are prefixed.
+
+        The semantic field names stay unchanged, so protocol helpers such as
+        ``payload_fields()`` / ``request_fields()`` still work the same way.
+        """
+        if not prefix:
+            return self
+        other: T = self.__class__.__new__(self.__class__)
+        for key, value in self.__dict__.items():
+            if key not in {"_signals", "_directions"}:
+                setattr(other, key, value)
+        Bundle.__init__(other, name=prefix)
+        for field_name, sig in self._signals.items():
+            direction = self._directions[field_name]
+            width = sig.width
+            signal_name = f"{prefix}_{field_name}"
+            new_sig = Input(width, signal_name) if direction == "in" else Output(width, signal_name)
+            other._add(field_name, new_sig, direction)
+        return other
+
     def connect(self, other: "Bundle"):
         """将两个同类型 Bundle 的信号按名称配对，返回 {self_sig: other_sig} 映射。"""
         if self.__class__ != other.__class__:
@@ -62,6 +83,20 @@ class Bundle:
     def signal_map(self) -> Dict[str, Signal]:
         """Return the bundle's named signal dictionary."""
         return dict(self._signals)
+
+    @property
+    def signals(self) -> Dict[str, Signal]:
+        """Compatibility surface shared with ``core.Interface`` helpers."""
+        return dict(self._signals)
+
+    def fields(self) -> tuple[str, ...]:
+        return tuple(self._signals.keys())
+
+    def input_fields(self) -> tuple[str, ...]:
+        return tuple(name for name, direction in self._directions.items() if direction == "in")
+
+    def output_fields(self) -> tuple[str, ...]:
+        return tuple(name for name, direction in self._directions.items() if direction == "out")
 
     def direction_of(self, name: str) -> str:
         return self._directions[name]
@@ -80,6 +115,35 @@ class Bundle:
             for name, sig in self._signals.items()
             if name in include_set and name not in exclude_set
         }
+
+    def instantiate_port_map(
+        self,
+        other: "Bundle",
+        *,
+        include: Optional[tuple[str, ...]] = None,
+        exclude: Optional[tuple[str, ...]] = None,
+    ) -> Dict[str, Signal]:
+        """Return a ``Module.instantiate(..., port_map=...)``-ready mapping.
+
+        Keys always use the *other* bundle's signal names, which makes the
+        result suitable for connecting local signals to a submodule's bundle
+        ports while keeping the local semantic field selection on ``self``.
+        """
+        if self.__class__ != other.__class__:
+            raise TypeError("Can only instantiate Bundles of the same type")
+        include_set = set(include or self._signals.keys())
+        exclude_set = set(exclude or ())
+        mapping: Dict[str, Signal] = {}
+        for field_name, local_sig in self._signals.items():
+            if field_name not in include_set or field_name in exclude_set:
+                continue
+            if field_name not in other._signals:
+                raise KeyError(
+                    f"bundle field '{field_name}' is missing on peer bundle "
+                    f"{other.__class__.__name__}({other.name or 'anonymous'})"
+                )
+            mapping[other._signals[field_name].name] = local_sig
+        return mapping
 
 
 # ---------------------------------------------------------------------
@@ -151,10 +215,39 @@ class ReadyValid(Bundle):
         """Generate a protocol-aware port map between two ready/valid bundles."""
         if self.__class__ is not other.__class__:
             raise TypeError("Can only connect ReadyValid bundles of the same type")
-        mapping = {name: self._signals[name] for name in self._signals if name != self.ready_name}
+        mapping = {self.payload_name: self._signals[self.payload_name], self.valid_name: self._signals[self.valid_name]}
+        if self.has_last:
+            mapping[self.last_name] = self._signals[self.last_name]
+        if self.has_keep:
+            mapping[self.keep_name] = self._signals[self.keep_name]
+        if self.user_width > 0:
+            mapping[self.user_name] = self._signals[self.user_name]
+        if "tstrb" in self._signals:
+            mapping["tstrb"] = self._signals["tstrb"]
         if include_ready:
             mapping[self.ready_name] = other._signals[other.ready_name]
         return mapping
+
+    def payload_fields(self) -> tuple[str, ...]:
+        fields = [self.payload_name]
+        if self.has_last:
+            fields.append(self.last_name)
+        if self.has_keep:
+            fields.append(self.keep_name)
+        if self.user_width > 0:
+            fields.append(self.user_name)
+        if "tstrb" in self._signals:
+            fields.append("tstrb")
+        return tuple(fields)
+
+    def forward_fields(self) -> tuple[str, ...]:
+        return (*self.payload_fields(), self.valid_name)
+
+    def backward_fields(self) -> tuple[str, ...]:
+        return (self.ready_name,)
+
+    def fire(self):
+        return self._signals[self.valid_name] & self._signals[self.ready_name]
 
 
 class ReqRsp(Bundle):
@@ -241,15 +334,40 @@ class ReqRsp(Bundle):
         """Generate a protocol-aware requester/responder port map."""
         if self.__class__ is not other.__class__:
             raise TypeError("Can only connect ReqRsp bundles of the same type")
-        mapping = {
-            name: self._signals[name]
-            for name in self._signals
-            if name not in {self.req_ready_name, self.rsp_name, self.rsp_valid_name}
-        }
+        mapping: Dict[str, Signal] = {}
+        if self.addr_width > 0:
+            mapping[self.addr_name] = self._signals[self.addr_name]
+        mapping[self.req_name] = self._signals[self.req_name]
+        if self.write_enable:
+            mapping[self.write_name] = self._signals[self.write_name]
+        if self.strobe_width > 0:
+            mapping[self.strobe_name] = self._signals[self.strobe_name]
+        mapping[self.req_valid_name] = self._signals[self.req_valid_name]
         mapping[self.req_ready_name] = other._signals[other.req_ready_name]
         mapping[self.rsp_name] = other._signals[other.rsp_name]
         mapping[self.rsp_valid_name] = other._signals[other.rsp_valid_name]
+        mapping[self.rsp_ready_name] = self._signals[self.rsp_ready_name]
         return mapping
+
+    def request_payload_fields(self) -> tuple[str, ...]:
+        fields = []
+        if self.addr_width > 0:
+            fields.append(self.addr_name)
+        fields.append(self.req_name)
+        if self.write_enable:
+            fields.append(self.write_name)
+        if self.strobe_width > 0:
+            fields.append(self.strobe_name)
+        return tuple(fields)
+
+    def response_payload_fields(self) -> tuple[str, ...]:
+        return (self.rsp_name,)
+
+    def request_fire(self):
+        return self._signals[self.req_valid_name] & self._signals[self.req_ready_name]
+
+    def response_fire(self):
+        return self._signals[self.rsp_valid_name] & self._signals[self.rsp_ready_name]
 
 class AXI4Stream(ReadyValid):
     """AXI4-Stream 协议接口。

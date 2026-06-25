@@ -519,6 +519,245 @@ After every change:
 3. rerun `advise_ppa(...)`
 4. if the executable design changed, rerun verification
 
+## Step 11.5: read one protocol-aware refinement loop end to end
+
+For protocol-heavy stdlib blocks, the most useful flow is often:
+
+1. render the markdown report
+2. read the `focus:` anchors under the top recommendation
+3. read the scaffold proposal `origin:` anchor
+4. make a small DSL edit around that exact hotspot
+5. rerun PPA and verification
+
+`ReqRspQueue` is a good example because it now surfaces queue-control anchors
+and a scaffold-only sideband-bundling proposal.
+
+```python
+from rtlgen_x.dsl import ReqRspQueue
+from rtlgen_x.ppa import PpaGoals, advise_ppa, emit_ppa_report_markdown
+
+module = ReqRspQueue(
+    req_width=8,
+    rsp_width=8,
+    depth=4,
+    addr_width=4,
+    write_enable=True,
+    strobe_width=2,
+)
+
+report = advise_ppa(module=module, goals=PpaGoals(max_memory_bits=32))
+print(emit_ppa_report_markdown(report, title="ReqRspQueue PPA"))
+```
+
+Typical output shape now looks like:
+
+1. recommendation target:
+   `ReqRspQueue.req_storage`
+2. recommendation `focus:` anchors:
+   `ReqRspQueue.count @ ...`, `ReqRspQueue.wr_ptr @ ...`,
+   `ReqRspQueue.rd_ptr @ ...`
+3. scaffold proposal:
+   `Bank or isolate large memories (req_storage)`
+4. scaffold `origin:` anchor:
+   `ReqRspQueue.req_storage`
+
+How to act on that report:
+
+1. the queue-control anchors tell you where occupancy and pointer bookkeeping
+   currently live
+2. the sideband-bundling scaffold tells you the storage layout is the first
+   thing to simplify
+3. the intended DSL move is to replace parallel shallow arrays such as
+   `req_storage`, `addr_storage`, `write_storage`, and `strb_storage` with one
+   packed per-entry bundle when they are always enqueued and dequeued together
+4. after the DSL rewrite, rerun:
+   `advise_ppa(...)`, local simulation, and the relevant verification harness
+5. once the queue is rewritten around a single `entry_storage`, the follow-up
+   PPA report should stop classifying it as `queue_metadata_arrays` and should
+   no longer emit the scaffold candidate
+   `bundle_queue_sideband_fields`
+
+The same idea now applies to handshake payload state in stdlib pipeline
+stages: when a report points at `data_reg` / `buf_data` with
+`update_payload_only_on_handshake`, the first DSL-side move can be a standard
+library option instead of a bespoke rewrite. For example,
+`ReadyValidRegister(..., hold_payload=True)` keeps payload bits stable on drain
+cycles, and the follow-up PPA report should stop emitting the
+`update_payload_only_on_handshake` candidate for that block.
+
+For control-plane register banks, the same reading pattern applies:
+
+1. `focus:` anchors point at hot request/response state such as
+   `w_data_latched`, `read_fire`, or `ack_state`
+2. scaffold proposal helper names such as `capture_fire` are only handles
+3. `origin:` tells you which original latched state or control signal the
+   scaffold is trying to help you restructure
+
+`AXI4LiteRegisterBank` is the clearest control-plane example because the PPA
+report usually highlights both a timing hotspot (`write_commit`) and a wider
+state-organization hotspot (`w_data_latched` plus handshake bookkeeping).
+
+```python
+from rtlgen_x.dsl import AXI4LiteRegisterBank
+from rtlgen_x.ppa import PpaGoals, advise_ppa, emit_ppa_report_markdown
+
+module = AXI4LiteRegisterBank(depth=8)
+report = advise_ppa(module=module, goals=PpaGoals(max_memory_bits=32, max_state_bits=16))
+print(emit_ppa_report_markdown(report, title="AXI4LiteRegisterBank PPA"))
+```
+
+Typical output shape now looks like:
+
+1. timing recommendation target:
+   `AXI4LiteRegisterBank.write_commit @ ...`
+2. recommendation `focus:` anchors:
+   `AXI4LiteRegisterBank.write_commit`, `AXI4LiteRegisterBank.w_data_latched @ ...`,
+   `AXI4LiteRegisterBank.read_fire`
+3. scaffold proposal:
+   `Reduce or gate large sequential state (capture_fire)`
+4. scaffold `origin:` anchor:
+   `AXI4LiteRegisterBank.w_data_latched`
+
+How to act on that report:
+
+1. `write_commit` being hot means the combined AW/W capture and commit path is
+   too coupled
+2. `w_data_latched` showing up in `focus:` / `origin:` means the captured write
+   payload is part of the always-hot control cone
+3. the intended DSL move is to separate:
+   - request capture state
+   - write-response state
+   - read-response state
+4. in practice, that means reducing how much logic is directly gated by
+   `_aw_seen`, `_w_seen`, `_write_commit`, `_bvalid`, and `_rvalid` in one block
+5. a good first rewrite is to introduce one explicit capture-enable condition
+   and then make each latched state update only in the narrow subcase that owns it
+
+That first rewrite now also has a direct stdlib landing point:
+`AXI4LiteRegisterBank(..., split_control_state=True)` makes `capture_fire`
+explicit and moves response bookkeeping into a separate state-update group, so
+the follow-up PPA report should stop emitting
+`split_capture_and_response_state` for that block.
+
+The same idea now also lands directly in the Wishbone stdlib helper:
+`WishboneRegisterBank(..., split_control_state=True)` makes its registered-ack
+capture path explicit and separates ack/read-response state from the request
+capture bookkeeping, so the same candidate should also disappear on rerun there.
+
+In code terms, the report is pointing you back at the `@self.seq(...)` block
+around `_aw_seen`, `_w_seen`, `_w_data`, `_w_strb`, `_bvalid`, `_rvalid`, and
+`_rdata`. A small but meaningful improvement is to rewrite that block so:
+
+1. address/data capture is isolated from response-valid generation
+2. write-response state only looks at the delayed commit handshake
+3. read-response state only looks at the delayed read-fire handshake
+4. payload registers hold by default instead of being reset or rewritten by
+   unrelated control cases
+
+The point is not to invent a brand-new protocol, only to make ownership of each
+state update narrower.
+
+### Before: one broad response-update block
+
+The current shape mixes capture, delayed handshake bookkeeping, payload latching,
+and response-valid generation in one sequential block:
+
+```python
+@self.seq(self.clk, self.rst)
+def _response_updates():
+    with If(self.rst == 1):
+        ...
+    with Else():
+        self._write_commit_d <<= self._write_commit
+        self._read_fire_d <<= self._read_fire
+        with If(self._write_commit == 1):
+            self.regmem.write(...)
+            self._aw_seen <<= 0
+            self._w_seen <<= 0
+        with Else():
+            with If(self._aw_capture == 1):
+                self._aw_seen <<= 1
+                self._aw_addr <<= self.awaddr
+            with If(self._w_capture == 1):
+                self._w_seen <<= 1
+                self._w_data <<= self.wdata
+                self._w_strb <<= self.wstrb
+            with If(self._read_fire == 1):
+                self._ar_addr <<= self.araddr
+            with If((self._bvalid == 1) & (self.bready == 1)):
+                self._bvalid <<= 0
+
+        with If((self._write_commit_d == 1) & ...):
+            self._bvalid <<= 1
+
+        with If(self._read_fire_d == 1):
+            self._rvalid <<= 1
+            self._rdata <<= self.regmem[...]
+        with Else():
+            with If((self._rvalid == 1) & (self.rready == 1)):
+                self._rvalid <<= 0
+```
+
+This is exactly why the report tends to show:
+
+1. `write_commit` as a timing hotspot
+2. `w_data_latched` as a control-state hotspot
+3. `capture_fire` as a scaffold helper rather than a final answer
+
+### After: split capture ownership from response ownership
+
+The first useful rewrite is to separate the state updates by responsibility,
+even if they still live in the same `@self.seq(...)` block:
+
+```python
+@self.seq(self.clk, self.rst)
+def _response_updates():
+    with If(self.rst == 1):
+        ...
+    with Else():
+        self._write_commit_d <<= self._write_commit
+        self._read_fire_d <<= self._read_fire
+
+        # capture ownership
+        with If(self._aw_capture == 1):
+            self._aw_seen <<= 1
+            self._aw_addr <<= self.awaddr
+        with If(self._w_capture == 1):
+            self._w_seen <<= 1
+            self._w_data <<= self.wdata
+            self._w_strb <<= self.wstrb
+        with If(self._read_fire == 1):
+            self._ar_addr <<= self.araddr
+
+        # write commit ownership
+        with If(self._write_commit == 1):
+            self.regmem.write(...)
+            self._aw_seen <<= 0
+            self._w_seen <<= 0
+
+        # write response ownership
+        with If((self._bvalid == 1) & (self.bready == 1)):
+            self._bvalid <<= 0
+        with If(self._write_commit_d == 1):
+            self._bvalid <<= 1
+
+        # read response ownership
+        with If(self._read_fire_d == 1):
+            self._rvalid <<= 1
+            self._rdata <<= self.regmem[...]
+        with Else():
+            with If((self._rvalid == 1) & (self.rready == 1)):
+                self._rvalid <<= 0
+```
+
+This does not magically solve every timing issue, but it usually gives the
+agent a much cleaner starting point:
+
+1. `focus:` tells you the hot state names
+2. `origin:` tells you which latched payload or response state the scaffold is
+   really about
+3. the rewrite itself stays conservative and local to the reported state cone
+
 ## How to read recommendations
 
 A good practical rule:

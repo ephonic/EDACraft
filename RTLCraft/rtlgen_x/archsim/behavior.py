@@ -27,6 +27,8 @@ class BehaviorStageMetrics:
     busy_cycles: float
     bytes_moved: int
     flows: List[str]
+    shared_resource: str = ""
+    contention_capacity: int = 1
 
 
 @dataclass(frozen=True)
@@ -54,8 +56,9 @@ class BehaviorSimulator:
             for stage_name in flow.path:
                 stage = model.stage(stage_name)
                 service_ii = model.stage_service_initiation_interval(stage_name, flow)
+                contention_capacity = model.stage_contention_capacity(stage_name)
                 pipeline_latency += stage.latency
-                per_stage_ii.append((stage_name, service_ii / stage.capacity))
+                per_stage_ii.append((stage_name, service_ii / contention_capacity))
                 stage_bytes = 0
                 if flow.bytes_per_token and stage.kind in {"memory", "interconnect", "datapath"}:
                     stage_bytes = flow.bytes_per_token * flow.tokens
@@ -66,9 +69,11 @@ class BehaviorSimulator:
                     "busy_cycles": 0.0,
                     "bytes_moved": 0,
                     "flows": [],
+                    "shared_resource": model.shared_resource_tag(stage_name) or "",
+                    "contention_capacity": contention_capacity,
                 })
                 acc["tokens"] = int(acc["tokens"]) + flow.tokens
-                acc["busy_cycles"] = float(acc["busy_cycles"]) + (flow.tokens * service_ii / stage.capacity)
+                acc["busy_cycles"] = float(acc["busy_cycles"]) + (flow.tokens * service_ii / contention_capacity)
                 acc["bytes_moved"] = int(acc["bytes_moved"]) + stage_bytes
                 if flow.name not in acc["flows"]:
                     acc["flows"].append(flow.name)
@@ -96,6 +101,8 @@ class BehaviorSimulator:
                 busy_cycles=float(values["busy_cycles"]),
                 bytes_moved=int(values["bytes_moved"]),
                 flows=list(values["flows"]),
+                shared_resource=str(values["shared_resource"]),
+                contention_capacity=int(values["contention_capacity"]),
             )
             for name, values in stage_acc.items()
         }

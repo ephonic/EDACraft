@@ -1,6 +1,10 @@
 from rtlgen_x.archsim import (
+    ArchitectureModel,
     BehaviorSimulator,
     CycleSimulator,
+    FlowSpec,
+    StageSpec,
+    Workload,
     build_all_advanced_scenarios,
     build_cache_hierarchy_scenario,
     build_dma_copy_scenario,
@@ -87,3 +91,39 @@ def test_gpu_and_npu_advanced_scenarios_respond_to_upgrade_sweeps():
 
     assert gpu_report.best_point.cycle_total_cycles < gpu_report.baseline_cycles
     assert npu_report.best_point.cycle_total_cycles < npu_report.baseline_cycles
+
+
+def test_shared_resource_groups_and_contention_capacity_are_exposed():
+    model = ArchitectureModel(
+        (
+            StageSpec("a", kind="compute", capacity=2, metadata={"shared_resource": "wb"}),
+            StageSpec("b", kind="datapath", capacity=1, metadata={"shared_resource": "wb"}),
+            StageSpec("c", kind="memory", capacity=4),
+        )
+    )
+
+    assert model.shared_resource_groups() == {"wb": ("a", "b")}
+    assert model.stage_contention_capacity("a") == 3
+    assert model.stage_contention_capacity("b") == 3
+    assert model.stage_contention_capacity("c") == 4
+
+
+def test_cycle_simulator_tracks_shared_resource_busy_cycles():
+    model = ArchitectureModel(
+        (
+            StageSpec("issue", kind="control", capacity=1, queue_depth=4),
+            StageSpec("pipe0", kind="compute", capacity=1, latency=2, queue_depth=4, metadata={"shared_resource": "exec"}),
+            StageSpec("pipe1", kind="compute", capacity=1, latency=2, queue_depth=4, metadata={"shared_resource": "exec"}),
+        )
+    )
+    workload = Workload.from_flows(
+        FlowSpec("f0", path=("issue", "pipe0"), tokens=4),
+        FlowSpec("f1", path=("issue", "pipe1"), tokens=4, start_cycle=1),
+    )
+
+    report = CycleSimulator().run(model, workload)
+
+    assert report.stage_metrics["pipe0"].shared_resource == "exec"
+    assert report.stage_metrics["pipe1"].shared_resource == "exec"
+    assert report.stage_metrics["pipe0"].shared_resource_busy_cycles >= report.stage_metrics["pipe0"].busy_token_cycles
+    assert report.stage_metrics["pipe1"].shared_resource_busy_cycles >= report.stage_metrics["pipe1"].busy_token_cycles

@@ -23,6 +23,7 @@ from rtlgen_x.verify.remote_uvm import (
     write_remote_uvm_regression_report,
 )
 from rtlgen_x.verify import UvmSequenceStep
+from rtlgen_x.tests.test_verify_uvm import DslMultiClockMailbox
 
 
 def test_default_remote_dir_normalizes_module_name():
@@ -139,6 +140,100 @@ def test_remote_uvm_regression_passes_directed_sequence_to_probe(monkeypatch, tm
                 inputs={"wr_rst": 1, "rd_rst": 1},
                 label="reset",
                 active_domains=("wr_clk", "rd_clk"),
+            ),
+        ),
+    )
+    report = run_remote_uvm_regression((target,), host="10.0.0.1", local_root=tmp_path / "root")
+
+    assert len(report.entries) == 1
+    assert report.entries[0].status == "passed"
+    assert captured["clock_name"] == "wr_clk"
+    assert captured["directed_sequence"] == target.directed_sequence
+
+
+def test_run_remote_uvm_probe_canonicalizes_dsl_domain_aliases(monkeypatch, tmp_path):
+    captured = {}
+
+    class _Summary:
+        passed = True
+        severity_counts = {"UVM_INFO": 1, "UVM_WARNING": 0, "UVM_ERROR": 0, "UVM_FATAL": 0}
+        scoreboard_lines = ("scoreboard passed",)
+
+    class _Completed:
+        returncode = 0
+        stdout = "UVM_INFO :    1\nUVM_WARNING :    0\nUVM_ERROR :    0\nUVM_FATAL :    0\nscoreboard passed\n"
+        stderr = ""
+
+    def fake_write_uvm_runtime_bundle(bundle, local_dir, include_runtime_package=False):
+        captured["bundle"] = bundle
+        local_dir.mkdir(parents=True, exist_ok=True)
+        (local_dir / "run_vcs.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+    def fake_run_remote_ssh(host, command, **kwargs):
+        return _Completed()
+
+    monkeypatch.setattr("rtlgen_x.verify.remote_uvm.write_uvm_runtime_bundle", fake_write_uvm_runtime_bundle)
+    monkeypatch.setattr("rtlgen_x.verify.remote_uvm._run_remote_ssh", fake_run_remote_ssh)
+
+    from rtlgen_x.verify.remote_uvm import run_remote_uvm_probe
+
+    run_remote_uvm_probe(
+        DslMultiClockMailbox(),
+        clock_name="wr_clk",
+        host="10.0.0.1",
+        local_bundle_dir=tmp_path / "bundle",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"wr_rst": 1, "rd_rst": 1},
+                label="reset",
+                active_domains=("wr_clk", "rd_clk"),
+            ),
+        ),
+    )
+
+    bundle = captured["bundle"]
+    seq_source = bundle.artifact_map()["dsl_multi_clock_mailbox_smoke_seq.sv"]
+    assert "req.rtlgen_x_active_write = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_read = 1'b1;" in seq_source
+
+
+def test_run_remote_uvm_regression_canonicalizes_dsl_domain_aliases(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_load_module_instance(module_file, class_name):
+        return DslMultiClockMailbox()
+
+    class _Summary:
+        passed = True
+        severity_counts = {"UVM_INFO": 1, "UVM_WARNING": 0, "UVM_ERROR": 0, "UVM_FATAL": 0}
+        scoreboard_lines = ("scoreboard passed",)
+
+    class _Result:
+        host = "10.0.0.1"
+        remote_dir = "$HOME/rtlgen_x/test"
+        local_bundle_dir = tmp_path / "bundle"
+        returncode = 0
+        summary = _Summary()
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run_remote_uvm_probe(module, **kwargs):
+        captured.update(kwargs)
+        return _Result()
+
+    monkeypatch.setattr("rtlgen_x.verify.remote_uvm.load_module_instance", fake_load_module_instance)
+    monkeypatch.setattr("rtlgen_x.verify.remote_uvm.run_remote_uvm_probe", fake_run_remote_uvm_probe)
+
+    target = RemoteUvmTarget(
+        name="mailbox",
+        module_file=Path("foo.py"),
+        module_class="Foo",
+        clock_name="wr_clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"wr_rst": 1, "rd_rst": 1},
+                label="reset",
+                active_domains=("write", "read"),
             ),
         ),
     )

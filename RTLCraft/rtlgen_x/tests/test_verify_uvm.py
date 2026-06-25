@@ -19,7 +19,7 @@ from rtlgen_x.sim import (
     SignalRef,
     SimModule,
 )
-from rtlgen_x.dsl import APBRegisterBank, AXI4LiteRegisterBank, Array, Else, If, Input, Module, Output, Reg, WishboneRegisterBank
+from rtlgen_x.dsl import APBRegisterBank, AXI4LiteRegisterBank, Array, AsyncFIFO, Else, If, Input, Module, Output, ReadyValidAsyncBridge, ReadyValidFIFO, ReadyValidRegister, Reg, SkidBuffer, SyncFIFO, WishboneRegisterBank
 from rtlgen_x.verify import (
     ApbTransfer,
     AxiLiteTransfer,
@@ -220,12 +220,14 @@ class DslMultiClockMailbox(Module):
         self.mem = Array(8, 4, "rf")
         self.wptr = Reg(2, "wptr")
         self.rptr = Reg(2, "rptr")
+        self.clock_domain("write", self.wr_clk, self.wr_rst)
+        self.clock_domain("read", self.rd_clk, self.rd_rst)
 
         @self.comb
         def _comb():
             self.dout <<= self.mem[self.rptr]
 
-        @self.seq(self.wr_clk, self.wr_rst)
+        @self.seq_domain("write")
         def _wr_seq():
             with If(self.wr_rst == 1):
                 self.wptr <<= 0
@@ -234,7 +236,7 @@ class DslMultiClockMailbox(Module):
                     self.mem[self.wptr] <<= self.din
                     self.wptr <<= self.wptr + 1
 
-        @self.seq(self.rd_clk, self.rd_rst)
+        @self.seq_domain("read")
         def _rd_seq():
             with If(self.rd_rst == 1):
                 self.rptr <<= 0
@@ -265,6 +267,105 @@ class DslAsyncLowStorage(Module):
             with Else():
                 with If(self.we == 1):
                     self.rf[self.addr] <<= self.din
+
+
+class DslReadyValidAsyncBridgeHarness(Module):
+    def __init__(self):
+        super().__init__("dsl_ready_valid_async_bridge_harness")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.in_data = Input(8, "in_data")
+        self.in_valid = Input(1, "in_valid")
+        self.out_ready = Input(1, "out_ready")
+        self.in_ready = Output(1, "in_ready")
+        self.out_data = Output(8, "out_data")
+        self.out_valid = Output(1, "out_valid")
+        self.bridge = ReadyValidAsyncBridge(width=8, depth=4, name="bridge")
+
+        self.instantiate(
+            self.bridge,
+            "u_bridge",
+            port_map={
+                "wr_clk": self.wr_clk,
+                "rd_clk": self.rd_clk,
+                "wr_rst": self.wr_rst,
+                "rd_rst": self.rd_rst,
+                "in_data": self.in_data,
+                "in_valid": self.in_valid,
+                "in_ready": self.in_ready,
+                "out_data": self.out_data,
+                "out_valid": self.out_valid,
+                "out_ready": self.out_ready,
+            },
+        )
+
+
+class DslAsyncFifoHarness(Module):
+    def __init__(self):
+        super().__init__("dsl_async_fifo_harness")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.din = Input(8, "din")
+        self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.dout = Output(8, "dout")
+        self.full = Output(1, "full")
+        self.empty = Output(1, "empty")
+        self.fifo = AsyncFIFO(width=8, depth=4, name="fifo")
+
+        self.instantiate(
+            self.fifo,
+            "u_fifo",
+            port_map={
+                "wr_clk": self.wr_clk,
+                "rd_clk": self.rd_clk,
+                "wr_rst": self.wr_rst,
+                "rd_rst": self.rd_rst,
+                "din": self.din,
+                "wr_en": self.wr_en,
+                "rd_en": self.rd_en,
+                "dout": self.dout,
+                "full": self.full,
+                "empty": self.empty,
+            },
+        )
+
+
+class DslSyncFifoHarness(Module):
+    def __init__(self):
+        super().__init__("dsl_sync_fifo_harness")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.din = Input(8, "din")
+        self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.dout = Output(8, "dout")
+        self.full = Output(1, "full")
+        self.empty = Output(1, "empty")
+        self.count = Output(3, "count")
+        self.rd_rdy = Output(1, "rd_rdy")
+        self.fifo = SyncFIFO(width=8, depth=4, name="fifo")
+
+        self.instantiate(
+            self.fifo,
+            "u_fifo",
+            port_map={
+                "clk": self.clk,
+                "rst": self.rst,
+                "din": self.din,
+                "wr_en": self.wr_en,
+                "rd_en": self.rd_en,
+                "dout": self.dout,
+                "full": self.full,
+                "empty": self.empty,
+                "count": self.count,
+                "rd_rdy": self.rd_rdy,
+            },
+        )
 
 
 def _load_external_module(rel_path: str, class_name: str):
@@ -314,6 +415,66 @@ def test_emit_python_reference_model_supports_multi_clock_modules():
     assert "clock_domain='wr_clk'" in source
     assert "clock_domain='rd_clk'" in source
     assert "def predict_clocks(self, transaction: Mapping[str, int], active_domains) -> Dict[str, int]:" in source
+
+
+def test_python_uvm_accepts_declared_clock_domain_aliases():
+    from rtlgen_x.verify import PythonUvmSequenceItem, run_python_uvm_test
+
+    report = run_python_uvm_test(
+        DslMultiClockMailbox(),
+        (
+            PythonUvmSequenceItem(
+                inputs={"wr_rst": 1, "rd_rst": 1},
+                active_domains=("write", "read"),
+                label="reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"wr_en": 1, "din": 9},
+                active_domains=("write",),
+                label="write0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"rd_en": 1},
+                active_domains=("read",),
+                label="read0",
+            ),
+        ),
+        name="python_uvm_declared_domain_aliases",
+    )
+
+    assert report.passed is True
+    assert report.traces[0].active_domains == ("write", "read")
+
+
+def test_emit_python_reference_model_preserves_declared_clock_domain_metadata():
+    source = emit_python_reference_model(DslMultiClockMailbox())
+
+    assert "ClockDomain(name='write', clock_signal='wr_clk', reset_signal='wr_rst', aliases=('wr_clk',))" in source
+    assert "ClockDomain(name='read', clock_signal='rd_clk', reset_signal='rd_rst', aliases=('rd_clk',))" in source
+    assert "clock_domain='write'" in source
+    assert "clock_domain='read'" in source
+
+
+def test_generate_uvm_collateral_uses_domain_aliases_for_steps_and_clock_signals_for_ports():
+    collateral = generate_uvm_collateral(
+        DslMultiClockMailbox(),
+        interface_name="mc_if",
+        directed_sequence=(
+            UvmSequenceStep(inputs={"wr_rst": 1, "rd_rst": 1}, active_domains=("write", "read"), label="reset"),
+            UvmSequenceStep(inputs={"wr_en": 1, "din": 7}, active_domains=("write",), label="write0"),
+        ),
+    )
+    artifact_map = collateral.artifact_map()
+    seq_src = artifact_map["dsl_multi_clock_mailbox_smoke_seq.sv"]
+    drv_src = artifact_map["dsl_multi_clock_mailbox_driver.sv"]
+    if_src = artifact_map["mc_if.sv"]
+
+    assert "req.rtlgen_x_active_write = 1'b1;" in seq_src
+    assert "req.rtlgen_x_active_read = 1'b1;" in seq_src
+    assert "vif.wr_clk = req.rtlgen_x_active_write;" in drv_src
+    assert "vif.rd_clk = req.rtlgen_x_active_read;" in drv_src
+    assert "logic wr_clk;" in if_src
+    assert "logic rd_clk;" in if_src
 
 
 def test_generate_uvm_collateral_emits_expected_artifacts(tmp_path):
@@ -464,7 +625,7 @@ def test_generate_uvm_runtime_bundle_preserves_sync_reset_semantics_for_dsl_dut(
             UvmSequenceStep(
                 inputs={"wr_rst": 1, "rd_rst": 1},
                 label="reset",
-                active_domains=("wr_clk", "rd_clk"),
+                active_domains=("write", "read"),
             ),
         ),
     )
@@ -610,12 +771,12 @@ def test_uvm_collateral_rejects_multi_clock_modules():
     with pytest.raises(ValueError) as excinfo:
         generate_uvm_collateral(module, clock_name="wr_clk")
     assert "requires directed_sequence with explicit active_domains" in str(excinfo.value)
-    assert "Known clock domains: wr_clk, rd_clk" in str(excinfo.value)
+    assert "Known clock domains: write, read" in str(excinfo.value)
 
     with pytest.raises(ValueError) as excinfo:
         generate_uvm_runtime_bundle(module, clock_name="wr_clk")
     assert "requires directed_sequence with explicit active_domains" in str(excinfo.value)
-    assert "Known clock domains: wr_clk, rd_clk" in str(excinfo.value)
+    assert "Known clock domains: write, read" in str(excinfo.value)
 
 
 def test_multiclock_uvm_collateral_requires_explicit_active_domains():
@@ -633,6 +794,25 @@ def test_multiclock_uvm_collateral_requires_explicit_active_domains():
     assert "Use UvmSequenceStep(..., active_domains=" in str(excinfo.value)
 
 
+def test_multiclock_uvm_collateral_reports_known_clock_aliases_for_unknown_active_domains():
+    with pytest.raises(ValueError) as excinfo:
+        generate_uvm_collateral(
+            DslMultiClockMailbox(),
+            clock_name="wr_clk",
+            directed_sequence=(
+                UvmSequenceStep(
+                    inputs={"wr_rst": 1, "rd_rst": 1},
+                    active_domains=("bogus_clk",),
+                    label="bad_step",
+                ),
+            ),
+        )
+
+    assert "unknown active_domains: bogus_clk" in str(excinfo.value)
+    assert "Known clock domains: write, read" in str(excinfo.value)
+    assert "Known clock aliases: wr_clk, rd_clk" in str(excinfo.value)
+
+
 def test_generate_multiclock_uvm_collateral_emits_event_driven_artifacts():
     collateral = generate_uvm_collateral(
         DslMultiClockMailbox(),
@@ -641,17 +821,17 @@ def test_generate_multiclock_uvm_collateral_emits_event_driven_artifacts():
             UvmSequenceStep(
                 inputs={"wr_rst": 1, "rd_rst": 1},
                 label="reset",
-                active_domains=("wr_clk", "rd_clk"),
+                active_domains=("write", "read"),
             ),
             UvmSequenceStep(
                 inputs={"wr_en": 1, "din": 0x11},
                 label="write0",
-                active_domains=("wr_clk",),
+                active_domains=("write",),
             ),
             UvmSequenceStep(
                 inputs={"rd_en": 1},
                 label="read0",
-                active_domains=("rd_clk",),
+                active_domains=("read",),
             ),
         ),
     )
@@ -667,26 +847,26 @@ def test_generate_multiclock_uvm_collateral_emits_event_driven_artifacts():
     assert "interface dsl_multi_clock_mailbox_if;" in if_source
     assert "logic wr_clk;" in if_source
     assert "logic rd_clk;" in if_source
-    assert "logic rtlgen_x_active_wr_clk;" in if_source
-    assert "logic rtlgen_x_active_rd_clk;" in if_source
+    assert "logic rtlgen_x_active_write;" in if_source
+    assert "logic rtlgen_x_active_read;" in if_source
     assert "event rtlgen_x_step_done;" in if_source
 
     assert 'create("reset")' in seq_source
-    assert "req.rtlgen_x_active_wr_clk = 1'b1;" in seq_source
-    assert "req.rtlgen_x_active_rd_clk = 1'b1;" in seq_source
-    assert "req.rtlgen_x_active_rd_clk = 1'b0;" in seq_source
+    assert "req.rtlgen_x_active_write = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_read = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_read = 1'b0;" in seq_source
 
-    assert "vif.wr_clk = req.rtlgen_x_active_wr_clk;" in driver_source
-    assert "vif.rd_clk = req.rtlgen_x_active_rd_clk;" in driver_source
+    assert "vif.wr_clk = req.rtlgen_x_active_write;" in driver_source
+    assert "vif.rd_clk = req.rtlgen_x_active_read;" in driver_source
     assert "-> vif.rtlgen_x_step_done;" in driver_source
 
     assert "@(vif.rtlgen_x_step_done);" in monitor_source
-    assert "txn.rtlgen_x_active_wr_clk = vif.rtlgen_x_active_wr_clk;" in monitor_source
+    assert "txn.rtlgen_x_active_write = vif.rtlgen_x_active_write;" in monitor_source
 
-    assert "observed.rtlgen_x_active_wr_clk" in scoreboard_source
-    assert "observed.rtlgen_x_active_rd_clk" in scoreboard_source
+    assert "observed.rtlgen_x_active_write" in scoreboard_source
+    assert "observed.rtlgen_x_active_read" in scoreboard_source
 
-    assert "ACTIVE_DOMAIN_FLAGS = ('rtlgen_x_active_wr_clk', 'rtlgen_x_active_rd_clk')" in dpi_py_source
+    assert "ACTIVE_DOMAIN_FLAGS = ('rtlgen_x_active_write', 'rtlgen_x_active_read')" in dpi_py_source
     assert "outputs = model.predict_clocks(transaction, tuple(active_domains))" in dpi_py_source
 
 
@@ -716,8 +896,8 @@ def test_generate_multiclock_uvm_collateral_accepts_structured_directed_steps():
     seq_source = collateral.artifact_map()["dsl_multi_clock_mailbox_smoke_seq.sv"]
 
     assert "create(\"reset\")" in seq_source
-    assert "req.rtlgen_x_active_wr_clk = 1'b1;" in seq_source
-    assert "req.rtlgen_x_active_rd_clk = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_write = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_read = 1'b1;" in seq_source
     assert "create(\"write0\")" in seq_source
     assert "create(\"read0\")" in seq_source
 
@@ -730,17 +910,17 @@ def test_generate_multiclock_uvm_collateral_accepts_mapping_active_domains():
             {
                 "inputs": {"wr_rst": 1, "rd_rst": 1},
                 "label": "reset",
-                "active_domains": {"wr_clk": True, "rd_clk": True},
+                "active_domains": {"write": True, "read": True},
             },
             {
                 "inputs": {"wr_en": 1, "din": 0x11},
                 "label": "write0",
-                "active_domains": {"wr_clk": True, "rd_clk": False},
+                "active_domains": {"write": True, "read": False},
             },
             {
                 "inputs": {"rd_en": 1},
                 "label": "read0",
-                "active_domains": {"wr_clk": False, "rd_clk": True},
+                "active_domains": {"write": False, "read": True},
             },
         ),
     )
@@ -748,10 +928,10 @@ def test_generate_multiclock_uvm_collateral_accepts_mapping_active_domains():
     seq_source = collateral.artifact_map()["dsl_multi_clock_mailbox_smoke_seq.sv"]
 
     assert "create(\"reset\")" in seq_source
-    assert "req.rtlgen_x_active_wr_clk = 1'b1;" in seq_source
-    assert "req.rtlgen_x_active_rd_clk = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_write = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_read = 1'b1;" in seq_source
     assert "create(\"write0\")" in seq_source
-    assert "req.rtlgen_x_active_rd_clk = 1'b0;" in seq_source
+    assert "req.rtlgen_x_active_read = 1'b0;" in seq_source
     assert "create(\"read0\")" in seq_source
 
 
@@ -762,7 +942,7 @@ def test_generate_multiclock_uvm_runtime_bundle_emits_event_driven_top():
         directed_sequence=(
             UvmSequenceStep(
                 inputs={"wr_rst": 1, "rd_rst": 1},
-                active_domains=("wr_clk", "rd_clk"),
+                active_domains=("write", "read"),
             ),
         ),
     )
@@ -778,8 +958,325 @@ def test_generate_multiclock_uvm_runtime_bundle_emits_event_driven_top():
     assert 'uvm_config_db#(virtual dsl_multi_clock_mailbox_if)::set(null, "*", "vif", vif);' in top_source
 
     assert "const char* ref_model_path" in dpi_c_source
+    assert "rtlgen_x_active_write" in dpi_c_source
+    assert "rtlgen_x_active_read" in dpi_c_source
+
+
+def test_generate_ready_valid_async_bridge_uvm_collateral_emits_multiclock_artifacts():
+    collateral = generate_uvm_collateral(
+        DslReadyValidAsyncBridgeHarness(),
+        clock_name="wr_clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"wr_rst": 1, "rd_rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0},
+                active_domains=("wr_clk", "rd_clk"),
+                label="reset",
+            ),
+            UvmSequenceStep(
+                inputs={"wr_rst": 0, "rd_rst": 0, "in_data": 0x11, "in_valid": 1, "out_ready": 0},
+                active_domains=("wr_clk",),
+                label="push0",
+            ),
+            UvmSequenceStep(
+                inputs={"in_data": 0, "in_valid": 0, "out_ready": 1},
+                active_domains=("rd_clk",),
+                label="pop0",
+            ),
+        ),
+    )
+
+    artifact_map = collateral.artifact_map()
+    seq_source = artifact_map["dsl_ready_valid_async_bridge_harness_smoke_seq.sv"]
+    if_source = artifact_map["dsl_ready_valid_async_bridge_harness_if.sv"]
+    driver_source = artifact_map["dsl_ready_valid_async_bridge_harness_driver.sv"]
+    scoreboard_source = artifact_map["dsl_ready_valid_async_bridge_harness_scoreboard.sv"]
+
+    assert "logic wr_clk;" in if_source
+    assert "logic rd_clk;" in if_source
+    assert "logic rtlgen_x_active_wr_clk;" in if_source
+    assert "logic rtlgen_x_active_rd_clk;" in if_source
+    assert "req.rtlgen_x_active_wr_clk = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_rd_clk = 1'b1;" in seq_source
+    assert "vif.wr_clk = req.rtlgen_x_active_wr_clk;" in driver_source
+    assert "vif.rd_clk = req.rtlgen_x_active_rd_clk;" in driver_source
+    assert "observed.rtlgen_x_active_wr_clk" in scoreboard_source
+    assert "observed.rtlgen_x_active_rd_clk" in scoreboard_source
+
+
+def test_generate_async_fifo_uvm_collateral_emits_multiclock_artifacts():
+    collateral = generate_uvm_collateral(
+        DslAsyncFifoHarness(),
+        clock_name="wr_clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"wr_rst": 1, "rd_rst": 1, "din": 0, "wr_en": 0, "rd_en": 0},
+                active_domains=("wr_clk", "rd_clk"),
+                label="reset",
+            ),
+            UvmSequenceStep(
+                inputs={"wr_rst": 0, "rd_rst": 0, "din": 0x11, "wr_en": 1, "rd_en": 0},
+                active_domains=("wr_clk",),
+                label="push0",
+            ),
+            UvmSequenceStep(
+                inputs={"din": 0, "wr_en": 0, "rd_en": 1},
+                active_domains=("rd_clk",),
+                label="pop0",
+            ),
+        ),
+    )
+
+    artifact_map = collateral.artifact_map()
+    seq_source = artifact_map["dsl_async_fifo_harness_smoke_seq.sv"]
+    if_source = artifact_map["dsl_async_fifo_harness_if.sv"]
+    driver_source = artifact_map["dsl_async_fifo_harness_driver.sv"]
+    scoreboard_source = artifact_map["dsl_async_fifo_harness_scoreboard.sv"]
+
+    assert "logic wr_clk;" in if_source
+    assert "logic rd_clk;" in if_source
+    assert "logic rtlgen_x_active_wr_clk;" in if_source
+    assert "logic rtlgen_x_active_rd_clk;" in if_source
+    assert "req.rtlgen_x_active_wr_clk = 1'b1;" in seq_source
+    assert "req.rtlgen_x_active_rd_clk = 1'b1;" in seq_source
+    assert "vif.wr_clk = req.rtlgen_x_active_wr_clk;" in driver_source
+    assert "vif.rd_clk = req.rtlgen_x_active_rd_clk;" in driver_source
+    assert "observed.rtlgen_x_active_wr_clk" in scoreboard_source
+    assert "observed.rtlgen_x_active_rd_clk" in scoreboard_source
+
+
+def test_generate_async_fifo_uvm_runtime_bundle_emits_event_driven_top():
+    bundle = generate_uvm_runtime_bundle(
+        DslAsyncFifoHarness(),
+        clock_name="wr_clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"wr_rst": 1, "rd_rst": 1, "din": 0, "wr_en": 0, "rd_en": 0},
+                active_domains=("wr_clk", "rd_clk"),
+                label="reset",
+            ),
+        ),
+    )
+
+    artifact_map = bundle.artifact_map()
+    top_source = artifact_map["dsl_async_fifo_harness_top.sv"]
+    dpi_c_source = artifact_map["dsl_async_fifo_harness_dpi_bridge.c"]
+
+    assert "dsl_async_fifo_harness_if vif();" in top_source
+    assert ".wr_clk(vif.wr_clk)" in top_source
+    assert ".rd_clk(vif.rd_clk)" in top_source
     assert "rtlgen_x_active_wr_clk" in dpi_c_source
     assert "rtlgen_x_active_rd_clk" in dpi_c_source
+
+
+def test_generate_sync_fifo_uvm_collateral_emits_single_clock_artifacts():
+    collateral = generate_uvm_collateral(
+        DslSyncFifoHarness(),
+        clock_name="clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"rst": 1, "din": 0, "wr_en": 0, "rd_en": 0},
+                label="reset",
+            ),
+            UvmSequenceStep(
+                inputs={"rst": 0, "din": 0x11, "wr_en": 1, "rd_en": 0},
+                label="push0",
+            ),
+        ),
+    )
+
+    artifact_map = collateral.artifact_map()
+    seq_source = artifact_map["dsl_sync_fifo_harness_smoke_seq.sv"]
+    if_source = artifact_map["dsl_sync_fifo_harness_if.sv"]
+    scoreboard_source = artifact_map["dsl_sync_fifo_harness_scoreboard.sv"]
+
+    assert "interface dsl_sync_fifo_harness_if(input logic clk);" in if_source
+    assert "logic [7:0] din;" in if_source
+    assert "logic [7:0] dout;" in if_source
+    assert 'create("push0")' in seq_source
+    assert "req.din = 8'h11;" in seq_source
+    assert "req.wr_en = 1'b1;" in seq_source
+    assert 'rtlgen_x_predict("dsl_sync_fifo_harness_ref_model.py"' in scoreboard_source
+
+
+def test_generate_sync_fifo_uvm_runtime_bundle_emits_single_clock_top():
+    bundle = generate_uvm_runtime_bundle(
+        DslSyncFifoHarness(),
+        clock_name="clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"rst": 1, "din": 0, "wr_en": 0, "rd_en": 0},
+                label="reset",
+            ),
+        ),
+    )
+
+    artifact_map = bundle.artifact_map()
+    top_source = artifact_map["dsl_sync_fifo_harness_top.sv"]
+    dut_source = artifact_map["dsl_sync_fifo_harness_dut.sv"]
+
+    assert "dsl_sync_fifo_harness_if vif(clk);" in top_source
+    assert "always #5 clk = ~clk;" in top_source
+    assert ".clk(clk)" in top_source
+    assert "module dsl_sync_fifo_harness" in dut_source
+
+
+def test_generate_skid_buffer_uvm_collateral_emits_single_clock_artifacts():
+    collateral = generate_uvm_collateral(
+        SkidBuffer(8),
+        clock_name="clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 1},
+                label="reset",
+            ),
+            UvmSequenceStep(
+                inputs={"rst": 0, "in_data": 0x12, "in_valid": 1, "out_ready": 0},
+                label="stall0",
+            ),
+        ),
+    )
+
+    artifact_map = collateral.artifact_map()
+    seq_source = artifact_map["skidbuffer_smoke_seq.sv"]
+    if_source = artifact_map["skidbuffer_if.sv"]
+    scoreboard_source = artifact_map["skidbuffer_scoreboard.sv"]
+
+    assert "interface skidbuffer_if(input logic clk);" in if_source
+    assert "logic [7:0] in_data;" in if_source
+    assert "logic [7:0] out_data;" in if_source
+    assert 'create("stall0")' in seq_source
+    assert "req.in_data = 8'h12;" in seq_source
+    assert "req.in_valid = 1'b1;" in seq_source
+    assert "req.out_ready = 1'b0;" in seq_source
+    assert 'rtlgen_x_predict("skidbuffer_ref_model.py"' in scoreboard_source
+
+
+def test_generate_skid_buffer_uvm_runtime_bundle_emits_single_clock_top():
+    bundle = generate_uvm_runtime_bundle(
+        SkidBuffer(8),
+        clock_name="clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 1},
+                label="reset",
+            ),
+        ),
+    )
+
+    artifact_map = bundle.artifact_map()
+    top_source = artifact_map["skidbuffer_top.sv"]
+    dut_source = artifact_map["skidbuffer_dut.sv"]
+
+    assert "skidbuffer_if vif(clk);" in top_source
+    assert "always #5 clk = ~clk;" in top_source
+    assert ".clk(clk)" in top_source
+    assert "module SkidBuffer" in dut_source
+
+
+def test_generate_ready_valid_register_uvm_collateral_emits_single_clock_artifacts():
+    collateral = generate_uvm_collateral(
+        ReadyValidRegister(width=8),
+        clock_name="clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 1},
+                label="reset",
+            ),
+            UvmSequenceStep(
+                inputs={"rst": 0, "in_data": 0x34, "in_valid": 1, "out_ready": 1},
+                label="push0",
+            ),
+        ),
+    )
+
+    artifact_map = collateral.artifact_map()
+    seq_source = artifact_map["readyvalidregister_smoke_seq.sv"]
+    if_source = artifact_map["readyvalidregister_if.sv"]
+    scoreboard_source = artifact_map["readyvalidregister_scoreboard.sv"]
+
+    assert "interface readyvalidregister_if(input logic clk);" in if_source
+    assert "logic [7:0] in_data;" in if_source
+    assert "logic [7:0] out_data;" in if_source
+    assert 'create("push0")' in seq_source
+    assert "req.in_data = 8'h34;" in seq_source
+    assert "req.in_valid = 1'b1;" in seq_source
+    assert "req.out_ready = 1'b1;" in seq_source
+    assert 'rtlgen_x_predict("readyvalidregister_ref_model.py"' in scoreboard_source
+
+
+def test_generate_ready_valid_register_uvm_runtime_bundle_emits_single_clock_top():
+    bundle = generate_uvm_runtime_bundle(
+        ReadyValidRegister(width=8),
+        clock_name="clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 1},
+                label="reset",
+            ),
+        ),
+    )
+
+    artifact_map = bundle.artifact_map()
+    top_source = artifact_map["readyvalidregister_top.sv"]
+    dut_source = artifact_map["readyvalidregister_dut.sv"]
+
+    assert "readyvalidregister_if vif(clk);" in top_source
+    assert "always #5 clk = ~clk;" in top_source
+    assert ".clk(clk)" in top_source
+    assert "module ReadyValidRegister" in dut_source
+
+
+def test_generate_ready_valid_fifo_uvm_collateral_emits_single_clock_artifacts():
+    collateral = generate_uvm_collateral(
+        ReadyValidFIFO(width=8, depth=2),
+        clock_name="clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 1},
+                label="reset",
+            ),
+            UvmSequenceStep(
+                inputs={"rst": 0, "in_data": 0x56, "in_valid": 1, "out_ready": 0},
+                label="fill0",
+            ),
+        ),
+    )
+
+    artifact_map = collateral.artifact_map()
+    seq_source = artifact_map["readyvalidfifo_smoke_seq.sv"]
+    if_source = artifact_map["readyvalidfifo_if.sv"]
+    scoreboard_source = artifact_map["readyvalidfifo_scoreboard.sv"]
+
+    assert "interface readyvalidfifo_if(input logic clk);" in if_source
+    assert "logic [7:0] in_data;" in if_source
+    assert "logic [1:0] level;" in if_source
+    assert 'create("fill0")' in seq_source
+    assert "req.in_data = 8'h56;" in seq_source
+    assert "req.in_valid = 1'b1;" in seq_source
+    assert "req.out_ready = 1'b0;" in seq_source
+    assert 'rtlgen_x_predict("readyvalidfifo_ref_model.py"' in scoreboard_source
+
+
+def test_generate_ready_valid_fifo_uvm_runtime_bundle_emits_single_clock_top():
+    bundle = generate_uvm_runtime_bundle(
+        ReadyValidFIFO(width=8, depth=2),
+        clock_name="clk",
+        directed_sequence=(
+            UvmSequenceStep(
+                inputs={"rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 1},
+                label="reset",
+            ),
+        ),
+    )
+
+    artifact_map = bundle.artifact_map()
+    top_source = artifact_map["readyvalidfifo_top.sv"]
+    dut_source = artifact_map["readyvalidfifo_dut.sv"]
+
+    assert "readyvalidfifo_if vif(clk);" in top_source
+    assert "always #5 clk = ~clk;" in top_source
+    assert ".clk(clk)" in top_source
+    assert "module ReadyValidFIFO" in dut_source
 
 
 def test_generate_uvm_runtime_bundle_rejects_raw_simmodule():

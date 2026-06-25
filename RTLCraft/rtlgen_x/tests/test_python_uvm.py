@@ -6,6 +6,7 @@ import pytest
 
 from rtlgen_x.dsl import (
     APBRegisterBank,
+    AsyncFIFO,
     AXI4LiteRegisterBank,
     DslLoweringReport,
     Else,
@@ -14,12 +15,14 @@ from rtlgen_x.dsl import (
     LoweredDslModule,
     Module,
     Output,
+    ReadyValidAsyncBridge,
     ReadyValidFIFO,
     ReadyValidRegister,
     ReqRsp,
     ReqRspQueue,
     Reg,
     SkidBuffer,
+    SyncFIFO,
     WishboneRegisterBank,
     build_compiled_simulator_from_dsl,
 )
@@ -184,6 +187,105 @@ class DslPythonUvmAccum(Module):
                 self.acc <<= 0
             with Else():
                 self.acc <<= self.acc + self.inp
+
+
+class DslReadyValidAsyncBridgeHarness(Module):
+    def __init__(self):
+        super().__init__("dsl_ready_valid_async_bridge_harness")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.in_data = Input(8, "in_data")
+        self.in_valid = Input(1, "in_valid")
+        self.out_ready = Input(1, "out_ready")
+        self.in_ready = Output(1, "in_ready")
+        self.out_data = Output(8, "out_data")
+        self.out_valid = Output(1, "out_valid")
+        self.bridge = ReadyValidAsyncBridge(width=8, depth=4, name="bridge")
+
+        self.instantiate(
+            self.bridge,
+            "u_bridge",
+            port_map={
+                "wr_clk": self.wr_clk,
+                "rd_clk": self.rd_clk,
+                "wr_rst": self.wr_rst,
+                "rd_rst": self.rd_rst,
+                "in_data": self.in_data,
+                "in_valid": self.in_valid,
+                "in_ready": self.in_ready,
+                "out_data": self.out_data,
+                "out_valid": self.out_valid,
+                "out_ready": self.out_ready,
+            },
+        )
+
+
+class DslAsyncFifoHarness(Module):
+    def __init__(self):
+        super().__init__("dsl_async_fifo_harness")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.din = Input(8, "din")
+        self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.dout = Output(8, "dout")
+        self.full = Output(1, "full")
+        self.empty = Output(1, "empty")
+        self.fifo = AsyncFIFO(width=8, depth=4, name="fifo")
+
+        self.instantiate(
+            self.fifo,
+            "u_fifo",
+            port_map={
+                "wr_clk": self.wr_clk,
+                "rd_clk": self.rd_clk,
+                "wr_rst": self.wr_rst,
+                "rd_rst": self.rd_rst,
+                "din": self.din,
+                "wr_en": self.wr_en,
+                "rd_en": self.rd_en,
+                "dout": self.dout,
+                "full": self.full,
+                "empty": self.empty,
+            },
+        )
+
+
+class DslSyncFifoHarness(Module):
+    def __init__(self):
+        super().__init__("dsl_sync_fifo_harness")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.din = Input(8, "din")
+        self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.dout = Output(8, "dout")
+        self.full = Output(1, "full")
+        self.empty = Output(1, "empty")
+        self.count = Output(3, "count")
+        self.rd_rdy = Output(1, "rd_rdy")
+        self.fifo = SyncFIFO(width=8, depth=4, name="fifo")
+
+        self.instantiate(
+            self.fifo,
+            "u_fifo",
+            port_map={
+                "clk": self.clk,
+                "rst": self.rst,
+                "din": self.din,
+                "wr_en": self.wr_en,
+                "rd_en": self.rd_en,
+                "dout": self.dout,
+                "full": self.full,
+                "empty": self.empty,
+                "count": self.count,
+                "rd_rdy": self.rd_rdy,
+            },
+        )
 
 
 def _load_external_module(rel_path: str, class_name: str):
@@ -862,6 +964,63 @@ def test_python_uvm_rejects_unknown_active_domains_early():
     assert "Known clock domains: wr_clk, rd_clk" in str(excinfo.value)
 
 
+def test_python_uvm_rejects_unknown_active_domains_with_declared_domain_aliases():
+    class DeclaredDomainPythonUvmMailbox(Module):
+        def __init__(self):
+            super().__init__("DeclaredDomainPythonUvmMailbox")
+            self.wr_clk = Input(1, "wr_clk")
+            self.rd_clk = Input(1, "rd_clk")
+            self.wr_rst = Input(1, "wr_rst")
+            self.rd_rst = Input(1, "rd_rst")
+            self.wr_en = Input(1, "wr_en")
+            self.rd_en = Input(1, "rd_en")
+            self.din = Input(8, "din")
+            self.dout = Output(8, "dout")
+            self.data_q = Reg(8, "data_q")
+            self.read_q = Reg(8, "read_q")
+
+            self.clock_domain("write", self.wr_clk, self.wr_rst)
+            self.clock_domain("read", self.rd_clk, self.rd_rst)
+
+            @self.comb
+            def _comb():
+                self.dout <<= self.read_q
+
+            @self.seq_domain("write")
+            def _wr_seq():
+                with If(self.wr_rst == 1):
+                    self.data_q <<= 0
+                with Else():
+                    with If(self.wr_en == 1):
+                        self.data_q <<= self.din
+
+            @self.seq_domain("read")
+            def _rd_seq():
+                with If(self.rd_rst == 1):
+                    self.read_q <<= 0
+                with Else():
+                    with If(self.rd_en == 1):
+                        self.read_q <<= self.data_q
+
+    with pytest.raises(ValueError) as excinfo:
+        run_python_uvm_test(
+            DeclaredDomainPythonUvmMailbox(),
+            (
+                {
+                    "inputs": {"wr_en": 1},
+                    "active_domains": ("bogus_clk",),
+                    "label": "bad_step",
+                },
+            ),
+            name="python_uvm_multiclk_unknown_declared_domain",
+        )
+
+    assert "reference unknown active_domains: bogus_clk" in str(excinfo.value)
+    assert "Known clock domains: write, read" in str(excinfo.value)
+    assert "Known clock aliases: wr_clk, rd_clk" in str(excinfo.value)
+    assert "Known clock aliases: wr_clk, rd_clk" in str(excinfo.value)
+
+
 def test_python_uvm_supports_explicit_multi_clock_sequences_on_compiled_simulator(tmp_path):
     builder = CppBackendScaffold()
     with builder.build(_raw_multi_clock_python_uvm_module(), tmp_path / "compiled_uvm_multiclk") as simulator:
@@ -899,6 +1058,141 @@ def test_python_uvm_supports_explicit_multi_clock_sequences_on_compiled_simulato
     assert report.used_batch_mode is False
     assert report.traces[-1].outputs == {"out": 3}
     assert report.traces[1].active_domains == ("wr_clk",)
+
+
+def test_python_uvm_ready_valid_async_bridge_supports_explicit_multiclock_expected_traces():
+    report = run_python_uvm_test(
+        DslReadyValidAsyncBridgeHarness(),
+        (
+            PythonUvmSequenceItem(
+                inputs={"wr_rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0},
+                expected={"in_ready": 1, "out_data": 0, "out_valid": 0},
+                active_domains=("wr_clk",),
+                label="wr_reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"rd_rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0},
+                expected={"in_ready": 1, "out_data": 0, "out_valid": 0},
+                active_domains=("rd_clk",),
+                label="rd_reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"wr_rst": 0, "rd_rst": 0, "in_data": 0x11, "in_valid": 1, "out_ready": 0},
+                expected={"in_ready": 1, "out_data": 0x11, "out_valid": 0},
+                active_domains=("wr_clk",),
+                label="push0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"in_data": 0, "in_valid": 0, "out_ready": 0},
+                expected={"in_ready": 1, "out_data": 0x11, "out_valid": 0},
+                active_domains=("rd_clk",),
+                label="observe_empty",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"in_data": 0, "in_valid": 0, "out_ready": 1},
+                expected={"in_ready": 1, "out_data": 0x11, "out_valid": 1},
+                active_domains=("rd_clk",),
+                label="pop0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"in_data": 0, "in_valid": 0, "out_ready": 1},
+                expected={"in_ready": 1, "out_data": 0, "out_valid": 0},
+                active_domains=("rd_clk",),
+                label="drain",
+            ),
+        ),
+        name="python_uvm_ready_valid_async_bridge",
+    )
+
+    assert report.passed is True
+    assert report.used_batch_mode is False
+    assert report.coverage["labels_seen"]["pop0"] == 1
+    assert report.traces[2].outputs["out_data"] == 0x11
+    assert report.traces[4].outputs["out_valid"] == 1
+
+
+def test_python_uvm_async_fifo_supports_explicit_multiclock_expected_traces():
+    report = run_python_uvm_test(
+        DslAsyncFifoHarness(),
+        (
+            PythonUvmSequenceItem(
+                inputs={"wr_rst": 1, "rd_rst": 0, "din": 0, "wr_en": 0, "rd_en": 0},
+                expected={"dout": 0, "full": 0, "empty": 1},
+                active_domains=("wr_clk",),
+                label="wr_reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"wr_rst": 0, "rd_rst": 1, "din": 0, "wr_en": 0, "rd_en": 0},
+                expected={"dout": 0, "full": 0, "empty": 1},
+                active_domains=("rd_clk",),
+                label="rd_reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"wr_rst": 0, "rd_rst": 0, "din": 0x11, "wr_en": 1, "rd_en": 0},
+                expected={"dout": 0x11, "full": 0, "empty": 1},
+                active_domains=("wr_clk",),
+                label="push0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"din": 0, "wr_en": 0, "rd_en": 0},
+                expected={"dout": 0x11, "full": 0, "empty": 1},
+                active_domains=("rd_clk",),
+                label="observe0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"din": 0, "wr_en": 0, "rd_en": 1},
+                expected={"dout": 0x11, "full": 0, "empty": 0},
+                active_domains=("rd_clk",),
+                label="pop0",
+            ),
+        ),
+        name="python_uvm_async_fifo",
+    )
+
+    assert report.passed is True
+    assert report.used_batch_mode is False
+    assert report.coverage["labels_seen"]["push0"] == 1
+    assert report.traces[2].outputs == {"dout": 0x11, "full": 0, "empty": 1}
+    assert report.traces[4].outputs == {"dout": 0x11, "full": 0, "empty": 0}
+
+
+def test_python_uvm_sync_fifo_buffers_single_clock_storage():
+    report = run_python_uvm_test(
+        DslSyncFifoHarness(),
+        (
+            PythonUvmSequenceItem(
+                inputs={"clk": 0, "rst": 1, "din": 0, "wr_en": 0, "rd_en": 0},
+                expected={"dout": 0, "full": 0, "empty": 1, "count": 0, "rd_rdy": 0},
+                label="reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"clk": 0, "rst": 0, "din": 0x11, "wr_en": 1, "rd_en": 0},
+                expected={"dout": 0x11, "full": 0, "empty": 0, "count": 1, "rd_rdy": 1},
+                label="push0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"clk": 0, "rst": 0, "din": 0x22, "wr_en": 1, "rd_en": 0},
+                expected={"dout": 0x11, "full": 0, "empty": 0, "count": 2, "rd_rdy": 1},
+                label="push1",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"clk": 0, "rst": 0, "din": 0, "wr_en": 0, "rd_en": 1},
+                expected={"dout": 0x22, "full": 0, "empty": 0, "count": 1, "rd_rdy": 1},
+                label="pop0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"clk": 0, "rst": 0, "din": 0, "wr_en": 0, "rd_en": 1},
+                expected={"dout": 0, "full": 0, "empty": 1, "count": 0, "rd_rdy": 0},
+                label="pop1",
+            ),
+        ),
+        name="python_uvm_sync_fifo",
+    )
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["push1"] == 1
+    assert report.traces[2].outputs["count"] == 2
+    assert report.traces[3].outputs["dout"] == 0x22
 
 
 def test_python_uvm_runs_real_sram256k_module_on_compiled_simulator(tmp_path):
@@ -1150,6 +1444,42 @@ def test_python_uvm_wishbone_register_bank_runs_with_clocked_protocol_vip():
     assert report.traces[4].expected["dat_o"] == 0x00A5005A
 
 
+def test_python_uvm_wishbone_register_bank_split_control_state_runs_with_clocked_protocol_vip():
+    report = run_python_uvm_test(
+        WishboneRegisterBank(depth=8, split_control_state=True),
+        _stimulus_only(
+            wishbone_clocked_protocol_sequence(
+                (
+                    WishboneTransfer(
+                        addr=0x10,
+                        write=True,
+                        wdata=0xA5A55A5A,
+                        sel=0x5,
+                        label="wb_wr",
+                    ),
+                    WishboneTransfer(
+                        addr=0x10,
+                        write=False,
+                        expected_rdata=0x00A5005A,
+                        label="wb_rd",
+                    ),
+                ),
+                extra_inputs={"clk_i": 0, "rst_i": 0},
+            )
+        ),
+        reference_model=wishbone_clocked_reference_model(storage={}, read_output_name="dat_o"),
+        name="python_uvm_wishbone_clocked_register_bank_split_control_state",
+    )
+    protocol_check = check_wishbone_trace(report)
+
+    assert report.passed is True
+    assert protocol_check.passed is True
+    assert report.coverage["labels_seen"]["wb_wr"] == 2
+    assert report.coverage["labels_seen"]["wb_rd"] == 2
+    assert report.traces[1].expected["ack_o"] == 1
+    assert report.traces[4].expected["dat_o"] == 0x00A5005A
+
+
 def test_python_uvm_supports_ahblite_protocol_reference_model():
     report = run_python_uvm_test(
         _ahblite_regfile_module(),
@@ -1380,6 +1710,127 @@ def test_python_uvm_reqrsp_queue_buffers_request_path():
     assert report.coverage["labels_seen"]["pop_push"] == 1
 
 
+def test_python_uvm_reqrsp_queue_bundled_sideband_buffers_request_path():
+    report = run_python_uvm_test(
+        ReqRspQueue(
+            req_width=8,
+            rsp_width=8,
+            depth=2,
+            addr_width=4,
+            write_enable=True,
+            strobe_width=2,
+            bundle_sideband=True,
+        ),
+        (
+            PythonUvmSequenceItem(
+                inputs={
+                    "clk": 0,
+                    "rst": 1,
+                    "up_addr": 0,
+                    "up_req": 0,
+                    "up_write": 0,
+                    "up_strb": 0,
+                    "up_req_valid": 0,
+                    "up_rsp_ready": 1,
+                    "down_req_ready": 0,
+                    "down_rsp": 0,
+                    "down_rsp_valid": 0,
+                },
+                expected={
+                    "up_req_ready": 1,
+                    "down_req_valid": 0,
+                    "up_rsp_valid": 0,
+                    "level": 0,
+                },
+                label="reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={
+                    "clk": 0,
+                    "rst": 0,
+                    "up_addr": 3,
+                    "up_req": 0x12,
+                    "up_write": 1,
+                    "up_strb": 0x3,
+                    "up_req_valid": 1,
+                    "up_rsp_ready": 1,
+                    "down_req_ready": 0,
+                    "down_rsp": 0x80,
+                    "down_rsp_valid": 1,
+                },
+                expected={
+                    "up_req_ready": 1,
+                    "down_req_valid": 1,
+                    "down_req": 0x12,
+                    "down_addr": 3,
+                    "down_write": 1,
+                    "down_strb": 0x3,
+                    "up_rsp": 0x80,
+                    "up_rsp_valid": 1,
+                    "level": 1,
+                },
+                label="push0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={
+                    "clk": 0,
+                    "rst": 0,
+                    "up_addr": 5,
+                    "up_req": 0x34,
+                    "up_write": 0,
+                    "up_strb": 0x1,
+                    "up_req_valid": 1,
+                    "up_rsp_ready": 1,
+                    "down_req_ready": 0,
+                    "down_rsp": 0,
+                    "down_rsp_valid": 0,
+                },
+                expected={
+                    "up_req_ready": 0,
+                    "down_req_valid": 1,
+                    "down_req": 0x12,
+                    "down_addr": 3,
+                    "down_write": 1,
+                    "down_strb": 0x3,
+                    "up_rsp_valid": 0,
+                    "level": 2,
+                },
+                label="push1",
+            ),
+            PythonUvmSequenceItem(
+                inputs={
+                    "clk": 0,
+                    "rst": 0,
+                    "up_addr": 7,
+                    "up_req": 0x56,
+                    "up_write": 1,
+                    "up_strb": 0x2,
+                    "up_req_valid": 1,
+                    "up_rsp_ready": 1,
+                    "down_req_ready": 1,
+                    "down_rsp": 0,
+                    "down_rsp_valid": 0,
+                },
+                expected={
+                    "up_req_ready": 1,
+                    "down_req_valid": 1,
+                    "down_req": 0x34,
+                    "down_addr": 5,
+                    "down_write": 0,
+                    "down_strb": 0x1,
+                    "up_rsp_valid": 0,
+                    "level": 2,
+                },
+                label="pop_push",
+            ),
+        ),
+        name="python_uvm_reqrsp_queue_bundled",
+    )
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["pop_push"] == 1
+
+
 def test_python_uvm_reqrsp_trace_checker_accepts_protocol_clean_trace():
     module = SimModule(
         name="reqrsp_checker_endpoint",
@@ -1569,6 +2020,33 @@ def test_python_uvm_ready_valid_register_holds_data_under_backpressure():
     assert report.coverage["labels_seen"]["stall"] == 1
 
 
+def test_python_uvm_ready_valid_register_hold_payload_preserves_data_on_drain():
+    report = run_python_uvm_test(
+        ReadyValidRegister(width=8, hold_payload=True),
+        (
+            PythonUvmSequenceItem(
+                inputs={"clk": 0, "rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0},
+                expected={"in_ready": 1, "out_valid": 0, "out_data": 0},
+                label="reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"clk": 0, "rst": 0, "in_data": 0x44, "in_valid": 1, "out_ready": 0},
+                expected={"in_ready": 0, "out_valid": 1, "out_data": 0x44},
+                label="capture",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1},
+                expected={"in_ready": 1, "out_valid": 0, "out_data": 0x44},
+                label="drain_hold",
+            ),
+        ),
+        name="python_uvm_ready_valid_register_hold_payload",
+    )
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["drain_hold"] == 1
+
+
 def test_python_uvm_supports_axilite_protocol_sequences():
     sequence = axilite_protocol_sequence(
         (
@@ -1608,6 +2086,38 @@ def test_python_uvm_axilite_register_bank_runs_with_protocol_vip():
         ),
         reference_model=axilite_reference_model(storage={}, read_output_name="rdata"),
         name="python_uvm_axilite_register_bank",
+    )
+
+    assert report.passed is True
+    assert report.coverage["labels_seen"]["axil_wr"] == 2
+    assert report.coverage["labels_seen"]["axil_rd"] == 2
+    assert report.traces[1].expected["bvalid"] == 1
+    assert report.traces[3].expected["rdata"] == 0x00220044
+
+
+def test_python_uvm_axilite_register_bank_split_control_state_runs_with_protocol_vip():
+    report = run_python_uvm_test(
+        AXI4LiteRegisterBank(depth=8, split_control_state=True),
+        axilite_protocol_sequence(
+            (
+                AxiLiteTransfer(
+                    addr=0x10,
+                    write=True,
+                    wdata=0x11223344,
+                    wstrb=0x5,
+                    label="axil_wr",
+                ),
+                AxiLiteTransfer(
+                    addr=0x10,
+                    write=False,
+                    expected_rdata=0x00220044,
+                    label="axil_rd",
+                ),
+            ),
+            extra_inputs={"clk": 0, "rst": 0},
+        ),
+        reference_model=axilite_reference_model(storage={}, read_output_name="rdata"),
+        name="python_uvm_axilite_register_bank_split_control_state",
     )
 
     assert report.passed is True

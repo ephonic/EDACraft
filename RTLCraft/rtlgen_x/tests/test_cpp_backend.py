@@ -319,6 +319,56 @@ def _dual_clock_fifo_like_module() -> SimModule:
     )
 
 
+def _named_dual_clock_fifo_like_module() -> SimModule:
+    return SimModule(
+        name="cpp_named_multi_clock",
+        signals=(
+            Signal("wr_clk", width=1, kind="input"),
+            Signal("rd_clk", width=1, kind="input"),
+            Signal("wr_rst", width=1, kind="input"),
+            Signal("rd_rst", width=1, kind="input"),
+            Signal("wr_en", width=1, kind="input"),
+            Signal("rd_en", width=1, kind="input"),
+            Signal("din", width=8, kind="input"),
+            Signal("wr_ptr", width=2, kind="state", init=0),
+            Signal("rd_ptr", width=2, kind="state", init=0),
+            Signal("rd_data", width=8, kind="state", init=0),
+            Signal("out", width=8, kind="output"),
+        ),
+        assignments=(
+            Assignment("out", SignalRef("rd_data")),
+            Assignment(
+                "wr_ptr",
+                MuxExpr(SignalRef("wr_en"), BinaryExpr("+", SignalRef("wr_ptr"), ConstExpr(1, 2)), SignalRef("wr_ptr")),
+                phase="seq",
+                clock_domain="write",
+            ),
+            Assignment(
+                "rd_ptr",
+                MuxExpr(SignalRef("rd_en"), BinaryExpr("+", SignalRef("rd_ptr"), ConstExpr(1, 2)), SignalRef("rd_ptr")),
+                phase="seq",
+                clock_domain="read",
+            ),
+            Assignment(
+                "rd_data",
+                MuxExpr(SignalRef("rd_en"), MemoryReadExpr("fifo_mem", SignalRef("rd_ptr")), SignalRef("rd_data")),
+                phase="seq",
+                clock_domain="read",
+            ),
+        ),
+        outputs=("out",),
+        memories=(Memory("fifo_mem", width=8, depth=4),),
+        memory_writes=(
+            MemoryWrite("fifo_mem", SignalRef("wr_ptr"), SignalRef("din"), enable=SignalRef("wr_en"), clock_domain="write"),
+        ),
+        clock_domains=(
+            ClockDomain("write", clock_signal="wr_clk", reset_signal="wr_rst", aliases=("wr_clk",)),
+            ClockDomain("read", clock_signal="rd_clk", reset_signal="rd_rst", aliases=("rd_clk",)),
+        ),
+        outputs_post_state=True,
+    )
+
+
 def test_compiled_backend_supports_clock_domain_metadata_and_explicit_steping(tmp_path):
     module = _dual_clock_fifo_like_module()
     scaffold = CppBackendScaffold(namespace="multiclk")
@@ -341,6 +391,18 @@ def test_compiled_backend_supports_clock_domain_metadata_and_explicit_steping(tm
 
         with pytest.raises(ValueError, match="single-clock"):
             sim.run_batch_raw((0, 0, 0, 0, 0, 0, 0, 0), 1)
+
+
+def test_compiled_backend_prefers_named_domains_but_accepts_signal_aliases(tmp_path):
+    module = _named_dual_clock_fifo_like_module()
+    python_sim = PythonSimulator(module)
+
+    with CppBackendScaffold(namespace="namedmulticlk").build(module, tmp_path) as sim:
+        assert sim.step_clocks({"wr_en": 1, "din": 11}, ("write",)) == python_sim.step_clocks({"wr_en": 1, "din": 11}, ("write",))
+        assert sim.step_clocks({"wr_en": 1, "din": 22}, ("wr_clk",)) == python_sim.step_clocks({"wr_en": 1, "din": 22}, ("wr_clk",))
+        assert sim.step_clocks({"rd_en": 1}, ("read",)) == python_sim.step_clocks({"rd_en": 1}, ("read",))
+        assert sim.step_clocks({"rd_en": 1}, ("rd_clk",)) == python_sim.step_clocks({"rd_en": 1}, ("rd_clk",))
+        assert sim.step_clocks({"rd_rst": 1}, ("read",)) == python_sim.step_clocks({"rd_rst": 1}, ("read",))
 
 
 def test_compiled_simulator_buffered_and_streaming_batch(tmp_path):

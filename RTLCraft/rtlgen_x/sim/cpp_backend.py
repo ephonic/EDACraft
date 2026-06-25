@@ -204,9 +204,11 @@ class MemoryWrite:
 @dataclass(frozen=True)
 class ClockDomain:
     name: str
+    clock_signal: Optional[str] = None
     reset_signal: Optional[str] = None
     reset_async: bool = False
     reset_active_low: bool = False
+    aliases: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -259,9 +261,12 @@ class SimModule:
         for domain in self.clock_domains:
             if domain.name in domain_map:
                 raise ValueError(f"duplicate clock domain '{domain.name}'")
-            clock_signal = signal_map.get(domain.name)
+            clock_signal_name = domain.clock_signal or domain.name
+            clock_signal = signal_map.get(clock_signal_name)
             if clock_signal is None:
-                raise ValueError(f"unknown clock domain signal '{domain.name}'")
+                raise ValueError(
+                    f"unknown clock domain signal '{clock_signal_name}' for clock domain '{domain.name}'"
+                )
             if clock_signal.kind != "input":
                 raise ValueError("clock domain signal must be declared as an input")
             if domain.reset_signal is not None:
@@ -629,6 +634,7 @@ class CompiledSimulator:
         state_widths: Sequence[int],
         step_domains_fn=None,
         clock_domain_names: Sequence[str] = (),
+        clock_domain_aliases: Optional[Mapping[str, Sequence[str]]] = None,
         artifact_dir: Path,
         source_path: Path,
         library_path: Path,
@@ -647,6 +653,10 @@ class CompiledSimulator:
         self.output_names = tuple(output_names)
         self.state_names = tuple(state_names)
         self.clock_domain_names = tuple(clock_domain_names)
+        self.clock_domain_aliases = {
+            str(name): tuple(str(alias) for alias in values)
+            for name, values in (clock_domain_aliases or {}).items()
+        }
         self.input_widths = tuple(input_widths)
         self.output_widths = tuple(output_widths)
         self.state_widths = tuple(state_widths)
@@ -673,6 +683,13 @@ class CompiledSimulator:
         self._clock_domain_index = {
             name: idx for idx, name in enumerate(self.clock_domain_names)
         }
+        self._clock_domain_name_by_alias = {}
+        for name in self.clock_domain_names:
+            self._clock_domain_name_by_alias[name] = name
+        for canonical, values in self.clock_domain_aliases.items():
+            self._clock_domain_name_by_alias[canonical] = canonical
+            for alias in values:
+                self._clock_domain_name_by_alias.setdefault(alias, canonical)
         self._multi_clock = len(self.clock_domain_names) > 1
 
     def close(self) -> None:
@@ -726,8 +743,15 @@ class CompiledSimulator:
             selected = [name for name, enabled in active_domains.items() if enabled]
         else:
             selected = list(active_domains)
-        ordered = tuple(dict.fromkeys(selected))
-        unknown = sorted(set(ordered) - set(self.clock_domain_names))
+        normalized = []
+        unknown = []
+        for raw_name in selected:
+            canonical = self._clock_domain_name_by_alias.get(str(raw_name))
+            if canonical is None:
+                unknown.append(str(raw_name))
+                continue
+            normalized.append(canonical)
+        ordered = tuple(dict.fromkeys(normalized))
         if unknown:
             joined = ", ".join(unknown)
             raise KeyError(f"unknown clock domains: {joined}")
@@ -2817,6 +2841,11 @@ class CppBackendScaffold:
             state_names=state_names,
             state_widths=state_widths,
             clock_domain_names=[domain.name for domain in module.clock_domains],
+            clock_domain_aliases={
+                domain.name: tuple(domain.aliases)
+                for domain in module.clock_domains
+                if domain.aliases
+            },
             artifact_dir=artifact_dir,
             source_path=source_path,
             library_path=library_path,

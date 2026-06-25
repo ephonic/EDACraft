@@ -5,9 +5,9 @@ rtlgen_x.dsl.lib — 标准组件库
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from rtlgen_x.dsl.core import Array, Input, Memory, Module, Output, Parameter, Reg, Signal, Wire
+from rtlgen_x.dsl.core import Array, EnumType, Input, Memory, Module, Output, Parameter, Reg, Signal, Wire
 from rtlgen_x.dsl.logic import Cat, Const, Else, Elif, If, Mux, Switch
 
 
@@ -70,6 +70,7 @@ class FSM(Module):
         self._state_names: List[str] = []
         self._state_reg: Optional[Reg] = None
         self._next_state: Optional[Wire] = None
+        self._state_enum: Optional[EnumType] = None
         self._fsm_outputs: Dict[str, int] = {}      # name -> width，避免与 Module._outputs 冲突
         self._output_defaults: Dict[str, Any] = {}
         self._state_outputs: Dict[str, Dict[str, Any]] = {}
@@ -99,11 +100,16 @@ class FSM(Module):
         """
         target = parent if parent is not None else self
         n = len(self._state_names)
-        w = max(n.bit_length(), 1)
+        w = max((n - 1).bit_length(), 1)
         prefix = f"{self._given_name}_" if (parent is not None and self._given_name) else ""
+        enum_name = f"{prefix}state_t" if prefix else "state_t"
+        self._state_enum = target.add_enum_type(
+            EnumType.define(enum_name, tuple(self._state_names), width=w)
+        )
+        reset_enum_value = self._state_enum.member(self.reset_state)
 
-        self._state_reg = Reg(width=w, name=f"{prefix}state_reg")
-        self._next_state = Wire(width=w, name=f"{prefix}next_state")
+        self._state_reg = Reg(name=f"{prefix}state_reg", enum_type=self._state_enum, init_value=reset_enum_value)
+        self._next_state = Wire(name=f"{prefix}next_state", enum_type=self._state_enum)
         target._regs[self._state_reg.name] = self._state_reg
         target._wires[self._next_state.name] = self._next_state
         setattr(target, self._state_reg.name, self._state_reg)
@@ -130,35 +136,35 @@ class FSM(Module):
         def _next_logic():
             with Switch(self._state_reg) as sw:
                 for state_name in self._state_names:
-                    with sw.case(self._state_names.index(state_name)):
+                    current_state = self._state_enum.member(state_name)
+                    with sw.case(current_state):
                         transitions = self._state_transitions.get(state_name, [])
-                        current_idx = self._state_names.index(state_name)
 
                         def chain(idx: int):
                             if idx >= len(transitions):
-                                self._next_state <<= Const(current_idx, width=w)
+                                self._next_state <<= current_state
                                 return
                             cond, next_s = transitions[idx]
-                            next_idx = self._state_names.index(next_s)
+                            next_state = self._state_enum.member(next_s)
                             if cond is not None:
                                 with If(cond):
-                                    self._next_state <<= Const(next_idx, width=w)
+                                    self._next_state <<= next_state
                                 with Else():
                                     chain(idx + 1)
                             else:
-                                self._next_state <<= Const(next_idx, width=w)
+                                self._next_state <<= next_state
 
                         if transitions:
                             chain(0)
                         else:
-                            self._next_state <<= Const(current_idx, width=w)
+                            self._next_state <<= current_state
 
         # 生成输出组合逻辑
         @target.comb
         def _output_logic():
             with Switch(self._state_reg) as sw:
                 for state_name in self._state_names:
-                    with sw.case(self._state_names.index(state_name)):
+                    with sw.case(self._state_enum.member(state_name)):
                         outputs = self._state_outputs.get(state_name, {})
                         for out_name in self._fsm_outputs:
                             val = outputs.get(out_name, self._output_defaults.get(out_name, 0))
@@ -174,7 +180,7 @@ class FSM(Module):
         def _update():
             if reset is not None:
                 with If(reset == 1):
-                    self._state_reg <<= Const(self._state_names.index(self.reset_state), width=w)
+                    self._state_reg <<= reset_enum_value
                 with Else():
                     self._state_reg <<= self._next_state
             else:
@@ -189,10 +195,13 @@ class SyncFIFO(Module):
     """同步 FIFO。"""
 
     def __init__(self, width: int, depth: int, name: str = "SyncFIFO"):
+        if int(depth) < 1:
+            raise ValueError("SyncFIFO depth must be >= 1")
         super().__init__(name)
         self.width = width
         self.depth = depth
-        addr_w = max(depth.bit_length(), 1)
+        addr_w = max((depth - 1).bit_length(), 1)
+        count_w = max(depth.bit_length(), 1)
 
         self.clk = Input(1, "clk")
         self.rst = Input(1, "rst")
@@ -204,12 +213,15 @@ class SyncFIFO(Module):
         self.dout = Output(width, "dout")
         self.full = Output(1, "full")
         self.empty = Output(1, "empty")
-        self.count = Output(addr_w + 1, "count")
+        self.count = Output(count_w, "count")
         self.rd_rdy = Output(1, "rd_rdy")
 
+        self._storage = Array(width, depth, "storage", vtype=Reg)
         self._wr_ptr = Reg(addr_w, "wr_ptr")
         self._rd_ptr = Reg(addr_w, "rd_ptr")
-        self._count = Reg(addr_w + 1, "count_reg")
+        self._count = Reg(count_w, "count_reg")
+        self._wr_inc = Wire(1, "wr_inc")
+        self._rd_inc = Wire(1, "rd_inc")
 
         @self.comb
         def _comb():
@@ -217,6 +229,12 @@ class SyncFIFO(Module):
             self.empty <<= self._count == 0
             self.count <<= self._count
             self.rd_rdy <<= ~self.empty
+            with If(self._count != 0):
+                self.dout <<= self._storage[self._rd_ptr]
+            with Else():
+                self.dout <<= 0
+            self._wr_inc <<= self.wr_en & ~self.full
+            self._rd_inc <<= self.rd_en & ~self.empty
 
         @self.seq(self.clk, self.rst)
         def _seq():
@@ -225,54 +243,20 @@ class SyncFIFO(Module):
                 self._rd_ptr <<= 0
                 self._count <<= 0
             with Else():
-                wr_inc = Wire(1, "wr_inc")
-                rd_inc = Wire(1, "rd_inc")
-                wr_inc <<= self.wr_en & ~self.full
-                rd_inc <<= self.rd_en & ~self.empty
-
-                with If(wr_inc & ~rd_inc):
+                with If(self._wr_inc == 1):
+                    self._storage[self._wr_ptr] <<= self.din
+                with If((self._wr_inc == 1) & (self._rd_inc == 0)):
                     self._count <<= self._count + 1
                     self._wr_ptr <<= self._wr_ptr + 1
                 with Else():
-                    with If(~wr_inc & rd_inc):
+                    with If((self._wr_inc == 0) & (self._rd_inc == 1)):
                         self._count <<= self._count - 1
                         self._rd_ptr <<= self._rd_ptr + 1
                     with Else():
-                        with If(wr_inc & rd_inc):
+                        with If((self._wr_inc == 1) & (self._rd_inc == 1)):
                             self._wr_ptr <<= self._wr_ptr + 1
                             self._rd_ptr <<= self._rd_ptr + 1
-
-        # dout 为组合输出（连接 memory）；在真实实现中应实例化 ram
-        # 这里仅做接口占位
         self._mem_depth = Parameter(depth, "DEPTH")
-
-
-class AsyncFIFO(Module):
-    """异步 FIFO（跨时钟域）。
-
-    目前为接口占位，内部 CDC 逻辑（格雷码指针、双口 RAM）可在后续版本补充。
-    """
-
-    def __init__(self, width: int, depth: int, name: str = "AsyncFIFO"):
-        super().__init__(name)
-        addr_w = max(depth.bit_length(), 1)
-
-        self.wr_clk = Input(1, "wr_clk")
-        self.rd_clk = Input(1, "rd_clk")
-        self.wr_rst = Input(1, "wr_rst")
-        self.rd_rst = Input(1, "rd_rst")
-
-        self.din = Input(width, "din")
-        self.wr_en = Input(1, "wr_en")
-        self.rd_en = Input(1, "rd_en")
-
-        self.dout = Output(width, "dout")
-        self.full = Output(1, "full")
-        self.empty = Output(1, "empty")
-
-        self._width = Parameter(width, "WIDTH")
-        self._depth = Parameter(depth, "DEPTH")
-        self._addr_w = Parameter(addr_w, "ADDR_W")
 
 
 # ---------------------------------------------------------------------
@@ -338,9 +322,16 @@ class ReadyValidRegister(Module):
     ``ReadyValidFIFO``, it only holds a single beat.
     """
 
-    def __init__(self, width: int = 32, name: str = "ReadyValidRegister"):
+    def __init__(
+        self,
+        width: int = 32,
+        *,
+        hold_payload: bool = False,
+        name: str = "ReadyValidRegister",
+    ):
         super().__init__(name)
         self.width = width
+        self.hold_payload = bool(hold_payload)
 
         self.clk = Input(1, "clk")
         self.rst = Input(1, "rst")
@@ -371,7 +362,10 @@ class ReadyValidRegister(Module):
                     with If(self.in_valid == 1):
                         self._data_reg <<= self.in_data
                     with Else():
-                        self._data_reg <<= 0
+                        if self.hold_payload:
+                            self._data_reg <<= self._data_reg
+                        else:
+                            self._data_reg <<= 0
 
 
 class ReadyValidFIFO(Module):
@@ -520,6 +514,7 @@ class ReqRspQueue(Module):
         addr_width: int = 0,
         write_enable: bool = False,
         strobe_width: int = 0,
+        bundle_sideband: bool = False,
         name: str = "ReqRspQueue",
     ):
         if int(depth) < 1:
@@ -531,9 +526,11 @@ class ReqRspQueue(Module):
         self.addr_width = int(addr_width)
         self.write_enable = bool(write_enable)
         self.strobe_width = int(strobe_width)
+        self.bundle_sideband = bool(bundle_sideband)
 
         addr_w = max((depth - 1).bit_length(), 1)
         level_w = max(depth.bit_length(), 1)
+        entry_width = self.req_width + self.addr_width + (1 if self.write_enable else 0) + self.strobe_width
 
         self.clk = Input(1, "clk")
         self.rst = Input(1, "rst")
@@ -563,13 +560,16 @@ class ReqRspQueue(Module):
 
         self.level = Output(level_w, "level")
 
-        self._req_storage = Array(self.req_width, depth, "req_storage", vtype=Reg)
-        if self.addr_width > 0:
-            self._addr_storage = Array(self.addr_width, depth, "addr_storage", vtype=Reg)
-        if self.write_enable:
-            self._write_storage = Array(1, depth, "write_storage", vtype=Reg)
-        if self.strobe_width > 0:
-            self._strb_storage = Array(self.strobe_width, depth, "strb_storage", vtype=Reg)
+        if self.bundle_sideband:
+            self._entry_storage = Array(entry_width, depth, "entry_storage", vtype=Reg)
+        else:
+            self._req_storage = Array(self.req_width, depth, "req_storage", vtype=Reg)
+            if self.addr_width > 0:
+                self._addr_storage = Array(self.addr_width, depth, "addr_storage", vtype=Reg)
+            if self.write_enable:
+                self._write_storage = Array(1, depth, "write_storage", vtype=Reg)
+            if self.strobe_width > 0:
+                self._strb_storage = Array(self.strobe_width, depth, "strb_storage", vtype=Reg)
 
         self._wr_ptr = Reg(addr_w, "wr_ptr")
         self._rd_ptr = Reg(addr_w, "rd_ptr")
@@ -577,16 +577,47 @@ class ReqRspQueue(Module):
         self._push_fire = Wire(1, "push_fire")
         self._pop_fire = Wire(1, "pop_fire")
 
+        req_lo = 0
+        req_hi = self.req_width - 1
+        cursor = self.req_width
+        addr_lo = cursor
+        addr_hi = cursor + self.addr_width - 1
+        cursor += self.addr_width
+        write_lo = cursor
+        write_hi = cursor
+        cursor += 1 if self.write_enable else 0
+        strb_lo = cursor
+        strb_hi = cursor + self.strobe_width - 1
+
+        packed_parts = []
+        if self.strobe_width > 0:
+            packed_parts.append(self.up_strb)
+        if self.write_enable:
+            packed_parts.append(self.up_write)
+        if self.addr_width > 0:
+            packed_parts.append(self.up_addr)
+        packed_parts.append(self.up_req)
+        packed_entry = packed_parts[0] if len(packed_parts) == 1 else Cat(*packed_parts)
+
         with self.comb:
             self.down_req_valid <<= self._count != 0
             with If(self._count != 0):
-                self.down_req <<= self._req_storage[self._rd_ptr]
-                if self.addr_width > 0:
-                    self.down_addr <<= self._addr_storage[self._rd_ptr]
-                if self.write_enable:
-                    self.down_write <<= self._write_storage[self._rd_ptr]
-                if self.strobe_width > 0:
-                    self.down_strb <<= self._strb_storage[self._rd_ptr]
+                if self.bundle_sideband:
+                    self.down_req <<= self._entry_storage[self._rd_ptr][req_hi:req_lo]
+                    if self.addr_width > 0:
+                        self.down_addr <<= self._entry_storage[self._rd_ptr][addr_hi:addr_lo]
+                    if self.write_enable:
+                        self.down_write <<= self._entry_storage[self._rd_ptr][write_hi:write_lo]
+                    if self.strobe_width > 0:
+                        self.down_strb <<= self._entry_storage[self._rd_ptr][strb_hi:strb_lo]
+                else:
+                    self.down_req <<= self._req_storage[self._rd_ptr]
+                    if self.addr_width > 0:
+                        self.down_addr <<= self._addr_storage[self._rd_ptr]
+                    if self.write_enable:
+                        self.down_write <<= self._write_storage[self._rd_ptr]
+                    if self.strobe_width > 0:
+                        self.down_strb <<= self._strb_storage[self._rd_ptr]
             with Else():
                 self.down_req <<= 0
                 if self.addr_width > 0:
@@ -613,13 +644,16 @@ class ReqRspQueue(Module):
                 self._count <<= 0
             with Else():
                 with If(self._push_fire == 1):
-                    self._req_storage[self._wr_ptr] <<= self.up_req
-                    if self.addr_width > 0:
-                        self._addr_storage[self._wr_ptr] <<= self.up_addr
-                    if self.write_enable:
-                        self._write_storage[self._wr_ptr] <<= self.up_write
-                    if self.strobe_width > 0:
-                        self._strb_storage[self._wr_ptr] <<= self.up_strb
+                    if self.bundle_sideband:
+                        self._entry_storage[self._wr_ptr] <<= packed_entry
+                    else:
+                        self._req_storage[self._wr_ptr] <<= self.up_req
+                        if self.addr_width > 0:
+                            self._addr_storage[self._wr_ptr] <<= self.up_addr
+                        if self.write_enable:
+                            self._write_storage[self._wr_ptr] <<= self.up_write
+                        if self.strobe_width > 0:
+                            self._strb_storage[self._wr_ptr] <<= self.up_strb
                     with If(self._wr_ptr == (depth - 1)):
                         self._wr_ptr <<= 0
                     with Else():
@@ -726,6 +760,7 @@ class AXI4LiteRegisterBank(Module):
         data_width: int = 32,
         depth: int = 256,
         init_data: Optional[List[int]] = None,
+        split_control_state: bool = False,
         name: str = "AXI4LiteRegisterBank",
     ):
         super().__init__(name)
@@ -737,6 +772,7 @@ class AXI4LiteRegisterBank(Module):
         self.addr_width = int(addr_width)
         self.data_width = int(data_width)
         self.depth = int(depth)
+        self.split_control_state = bool(split_control_state)
         self.byte_lane_width = self.data_width // 8
         self.word_shift = max((self.byte_lane_width).bit_length() - 1, 0)
         index_width = max((self.depth - 1).bit_length(), 1)
@@ -778,6 +814,8 @@ class AXI4LiteRegisterBank(Module):
         self._read_fire = Wire(1, "read_fire")
         self._write_commit_d = Reg(1, "write_commit_d")
         self._read_fire_d = Reg(1, "read_fire_d")
+        if self.split_control_state:
+            self._capture_fire = Wire(1, "capture_fire")
         self.regmem = self.add_memory(
             Memory(
                 self.data_width,
@@ -812,50 +850,102 @@ class AXI4LiteRegisterBank(Module):
                 & (~self._bvalid)
             )
             self._read_fire <<= self.arvalid & self.arready
+            if self.split_control_state:
+                self._capture_fire <<= self._aw_capture | self._w_capture | self._read_fire
 
-        @self.seq(self.clk, self.rst)
-        def _response_updates():
-            with If(self.rst == 1):
-                self._aw_seen <<= 0
-                self._aw_addr <<= 0
-                self._w_seen <<= 0
-                self._w_data <<= 0
-                self._w_strb <<= 0
-                self._ar_addr <<= 0
-                self._write_commit_d <<= 0
-                self._read_fire_d <<= 0
-                self._bvalid <<= 0
-                self._rvalid <<= 0
-                self._rdata <<= 0
-            with Else():
-                self._write_commit_d <<= self._write_commit
-                self._read_fire_d <<= self._read_fire
-                with If(self._write_commit == 1):
-                    self.regmem.write(write_addr, merged_wdata, byte_enable=merged_wstrb)
+        if self.split_control_state:
+            @self.seq(self.clk, self.rst)
+            def _capture_updates():
+                with If(self.rst == 1):
                     self._aw_seen <<= 0
+                    self._aw_addr <<= 0
                     self._w_seen <<= 0
+                    self._w_data <<= 0
+                    self._w_strb <<= 0
+                    self._ar_addr <<= 0
+                    self._write_commit_d <<= 0
+                    self._read_fire_d <<= 0
                 with Else():
-                    with If(self._aw_capture == 1):
-                        self._aw_seen <<= 1
-                        self._aw_addr <<= self.awaddr
-                    with If(self._w_capture == 1):
-                        self._w_seen <<= 1
-                        self._w_data <<= self.wdata
-                        self._w_strb <<= self.wstrb
-                    with If(self._read_fire == 1):
-                        self._ar_addr <<= self.araddr
+                    self._write_commit_d <<= self._write_commit
+                    self._read_fire_d <<= self._read_fire
+                    with If(self._write_commit == 1):
+                        self.regmem.write(write_addr, merged_wdata, byte_enable=merged_wstrb)
+                        self._aw_seen <<= 0
+                        self._w_seen <<= 0
+                    with Else():
+                        with If(self._capture_fire == 1):
+                            with If(self._aw_capture == 1):
+                                self._aw_seen <<= 1
+                                self._aw_addr <<= self.awaddr
+                            with If(self._w_capture == 1):
+                                self._w_seen <<= 1
+                                self._w_data <<= self.wdata
+                                self._w_strb <<= self.wstrb
+                            with If(self._read_fire == 1):
+                                self._ar_addr <<= self.araddr
+
+            @self.seq(self.clk, self.rst)
+            def _response_updates_partitioned():
+                with If(self.rst == 1):
+                    self._bvalid <<= 0
+                    self._rvalid <<= 0
+                    self._rdata <<= 0
+                with Else():
                     with If((self._bvalid == 1) & (self.bready == 1)):
                         self._bvalid <<= 0
+                    with If((self._write_commit_d == 1) & ~((self._bvalid == 1) & (self.bready == 1))):
+                        self._bvalid <<= 1
 
-                with If((self._write_commit_d == 1) & ~((self._bvalid == 1) & (self.bready == 1))):
-                    self._bvalid <<= 1
-
-                with If(self._read_fire_d == 1):
-                    self._rvalid <<= 1
-                    self._rdata <<= self.regmem[(self._ar_addr >> self.word_shift)[index_width - 1 : 0]]
+                    with If(self._read_fire_d == 1):
+                        self._rvalid <<= 1
+                        self._rdata <<= self.regmem[(self._ar_addr >> self.word_shift)[index_width - 1 : 0]]
+                    with Else():
+                        with If((self._rvalid == 1) & (self.rready == 1)):
+                            self._rvalid <<= 0
+        else:
+            @self.seq(self.clk, self.rst)
+            def _response_updates():
+                with If(self.rst == 1):
+                    self._aw_seen <<= 0
+                    self._aw_addr <<= 0
+                    self._w_seen <<= 0
+                    self._w_data <<= 0
+                    self._w_strb <<= 0
+                    self._ar_addr <<= 0
+                    self._write_commit_d <<= 0
+                    self._read_fire_d <<= 0
+                    self._bvalid <<= 0
+                    self._rvalid <<= 0
+                    self._rdata <<= 0
                 with Else():
-                    with If((self._rvalid == 1) & (self.rready == 1)):
-                        self._rvalid <<= 0
+                    self._write_commit_d <<= self._write_commit
+                    self._read_fire_d <<= self._read_fire
+                    with If(self._write_commit == 1):
+                        self.regmem.write(write_addr, merged_wdata, byte_enable=merged_wstrb)
+                        self._aw_seen <<= 0
+                        self._w_seen <<= 0
+                    with Else():
+                        with If(self._aw_capture == 1):
+                            self._aw_seen <<= 1
+                            self._aw_addr <<= self.awaddr
+                        with If(self._w_capture == 1):
+                            self._w_seen <<= 1
+                            self._w_data <<= self.wdata
+                            self._w_strb <<= self.wstrb
+                        with If(self._read_fire == 1):
+                            self._ar_addr <<= self.araddr
+                        with If((self._bvalid == 1) & (self.bready == 1)):
+                            self._bvalid <<= 0
+
+                    with If((self._write_commit_d == 1) & ~((self._bvalid == 1) & (self.bready == 1))):
+                        self._bvalid <<= 1
+
+                    with If(self._read_fire_d == 1):
+                        self._rvalid <<= 1
+                        self._rdata <<= self.regmem[(self._ar_addr >> self.word_shift)[index_width - 1 : 0]]
+                    with Else():
+                        with If((self._rvalid == 1) & (self.rready == 1)):
+                            self._rvalid <<= 0
 
 
 # ---------------------------------------------------------------------
@@ -872,6 +962,7 @@ class WishboneRegisterBank(Module):
         data_width: int = 32,
         depth: int = 256,
         init_data: Optional[List[int]] = None,
+        split_control_state: bool = False,
         name: str = "WishboneRegisterBank",
     ):
         super().__init__(name)
@@ -883,6 +974,7 @@ class WishboneRegisterBank(Module):
         self.addr_width = int(addr_width)
         self.data_width = int(data_width)
         self.depth = int(depth)
+        self.split_control_state = bool(split_control_state)
         self.byte_lane_width = self.data_width // 8
         self.word_shift = max((self.byte_lane_width).bit_length() - 1, 0)
         index_width = max((self.depth - 1).bit_length(), 1)
@@ -914,6 +1006,8 @@ class WishboneRegisterBank(Module):
         self._accept_fire = Wire(1, "accept_fire")
         self._read_fire = Wire(1, "read_fire")
         self._write_fire = Wire(1, "write_fire")
+        if self.split_control_state:
+            self._capture_fire = Wire(1, "capture_fire")
 
         self.wbmem = self.add_memory(
             Memory(
@@ -933,41 +1027,80 @@ class WishboneRegisterBank(Module):
             self._accept_fire <<= self._access_fire & (~self._ack) & (~self._read_fire_d) & (~self._write_fire_d)
             self._read_fire <<= self._accept_fire & (~self.we_i)
             self._write_fire <<= self._accept_fire & self.we_i
+            if self.split_control_state:
+                self._capture_fire <<= self._accept_fire
             self.ack_o <<= self._ack
             self.err_o <<= 0
             self.rty_o <<= 0
             self.dat_o <<= Mux(self._read_valid, self._read_data, 0)
 
-        @self.seq(self.clk_i, self.rst_i)
-        def _seq():
-            with If(self.rst_i == 1):
-                self._ack <<= 0
-                self._read_valid <<= 0
-                self._read_data <<= 0
-                self._addr_latched <<= 0
-                self._wdata_latched <<= 0
-                self._sel_latched <<= 0
-                self._read_fire_d <<= 0
-                self._write_fire_d <<= 0
-            with Else():
-                self._ack <<= self._read_fire_d | self._write_fire_d
-                self._read_valid <<= self._read_fire_d
-                self._read_fire_d <<= self._read_fire
-                self._write_fire_d <<= self._write_fire
-
-                with If(self._accept_fire == 1):
-                    self._addr_latched <<= self.adr_i
-                    self._wdata_latched <<= self.dat_i
-                    self._sel_latched <<= self.sel_i
-
-                with If(self._read_fire_d == 1):
-                    self._read_data <<= self.wbmem[latched_word_addr]
+        if self.split_control_state:
+            @self.seq(self.clk_i, self.rst_i)
+            def _capture_updates():
+                with If(self.rst_i == 1):
+                    self._addr_latched <<= 0
+                    self._wdata_latched <<= 0
+                    self._sel_latched <<= 0
+                    self._read_fire_d <<= 0
+                    self._write_fire_d <<= 0
                 with Else():
-                    with If(self._read_valid == 0):
-                        self._read_data <<= 0
+                    self._read_fire_d <<= self._read_fire
+                    self._write_fire_d <<= self._write_fire
 
-                with If(self._write_fire_d == 1):
-                    self.wbmem.write(latched_word_addr, self._wdata_latched, byte_enable=self._sel_latched)
+                    with If(self._capture_fire == 1):
+                        self._addr_latched <<= self.adr_i
+                        self._wdata_latched <<= self.dat_i
+                        self._sel_latched <<= self.sel_i
+
+                    with If(self._write_fire_d == 1):
+                        self.wbmem.write(latched_word_addr, self._wdata_latched, byte_enable=self._sel_latched)
+
+            @self.seq(self.clk_i, self.rst_i)
+            def _response_updates_partitioned():
+                with If(self.rst_i == 1):
+                    self._ack <<= 0
+                    self._read_valid <<= 0
+                    self._read_data <<= 0
+                with Else():
+                    self._ack <<= self._read_fire_d | self._write_fire_d
+                    self._read_valid <<= self._read_fire_d
+
+                    with If(self._read_fire_d == 1):
+                        self._read_data <<= self.wbmem[latched_word_addr]
+                    with Else():
+                        with If(self._read_valid == 0):
+                            self._read_data <<= 0
+        else:
+            @self.seq(self.clk_i, self.rst_i)
+            def _seq():
+                with If(self.rst_i == 1):
+                    self._ack <<= 0
+                    self._read_valid <<= 0
+                    self._read_data <<= 0
+                    self._addr_latched <<= 0
+                    self._wdata_latched <<= 0
+                    self._sel_latched <<= 0
+                    self._read_fire_d <<= 0
+                    self._write_fire_d <<= 0
+                with Else():
+                    self._ack <<= self._read_fire_d | self._write_fire_d
+                    self._read_valid <<= self._read_fire_d
+                    self._read_fire_d <<= self._read_fire
+                    self._write_fire_d <<= self._write_fire
+
+                    with If(self._accept_fire == 1):
+                        self._addr_latched <<= self.adr_i
+                        self._wdata_latched <<= self.dat_i
+                        self._sel_latched <<= self.sel_i
+
+                    with If(self._read_fire_d == 1):
+                        self._read_data <<= self.wbmem[latched_word_addr]
+                    with Else():
+                        with If(self._read_valid == 0):
+                            self._read_data <<= 0
+
+                    with If(self._write_fire_d == 1):
+                        self.wbmem.write(latched_word_addr, self._wdata_latched, byte_enable=self._sel_latched)
 
 
 # ---------------------------------------------------------------------

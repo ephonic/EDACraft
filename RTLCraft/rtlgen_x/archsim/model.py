@@ -191,6 +191,52 @@ class ArchitectureModel:
         stage = self.stage(stage_name)
         return stage.queue_depth if stage.queue_depth > 0 else stage.capacity
 
+    def shared_resource_tag(self, stage_name: str) -> Optional[str]:
+        """Return the contention-group tag for one stage, if any."""
+
+        stage = self.stage(stage_name)
+        tag = stage.metadata.get("shared_resource")
+        if tag is None:
+            return None
+        text = str(tag).strip()
+        return text or None
+
+    def stage_contention_capacity(self, stage_name: str) -> int:
+        """Return effective service slots after shared-resource grouping.
+
+        By default each stage contends only with itself. When multiple stages
+        share the same non-empty ``metadata['shared_resource']`` tag, they are
+        treated as consuming a common aggregate service budget equal to the sum
+        of the grouped stage capacities. This is intentionally lightweight: it
+        does not try to model arbitration policies, only the fact that several
+        micro-stages are backed by one broader resource pool.
+        """
+
+        tag = self.shared_resource_tag(stage_name)
+        if tag is None:
+            return self.stage(stage_name).capacity
+        total = 0
+        for other in self._stages.values():
+            other_tag = other.metadata.get("shared_resource")
+            if other_tag is not None and str(other_tag).strip() == tag:
+                total += other.capacity
+        return max(total, self.stage(stage_name).capacity)
+
+    def shared_resource_groups(self) -> Dict[str, Tuple[str, ...]]:
+        """Return stage-name groups keyed by shared-resource tag."""
+
+        groups: Dict[str, list[str]] = {}
+        for stage in self._stages.values():
+            tag = self.shared_resource_tag(stage.name)
+            if tag is None:
+                continue
+            groups.setdefault(tag, []).append(stage.name)
+        return {
+            tag: tuple(names)
+            for tag, names in groups.items()
+            if len(names) > 1
+        }
+
     def stage_service_initiation_interval(self, stage_name: str, flow: FlowSpec) -> int:
         """Return the effective service II for one flow at one stage."""
 
@@ -218,7 +264,7 @@ class ArchitectureModel:
         worst_ii = -1.0
         for stage_name in flow.path:
             stage = self.stage(stage_name)
-            service_ii = self.stage_service_initiation_interval(stage_name, flow) / stage.capacity
+            service_ii = self.stage_service_initiation_interval(stage_name, flow) / self.stage_contention_capacity(stage_name)
             if service_ii > worst_ii:
                 worst_ii = service_ii
                 worst_name = stage_name

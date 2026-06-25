@@ -29,6 +29,7 @@ from rtlgen_x.dsl import (
     ModuleConnectivityReport,
     ModuleInstancePath,
     Output,
+    PackedStructType,
     PadLeft,
     PortConnection,
     ReadyValid,
@@ -43,13 +44,26 @@ from rtlgen_x.dsl import (
     SRA,
     SkidBuffer,
     SignalDriver,
+    Switch,
     SyncFIFO,
     StateWriter,
     Divider,
     Decoder,
+    EnumType,
     PriorityEncoder,
     BarrelShifter,
+    FSM,
     LFSR,
+    MarkerSequenceReport,
+    ReadabilityContractError,
+    analyze_marker_sequence,
+    analyze_emitted_readability,
+    analyze_verilog_readability,
+    assert_emitted_rtl_contract,
+    assert_marker_sequence,
+    assert_readable_verilog,
+    emit_marker_sequence_report_markdown,
+    emit_readability_report_markdown,
     VerilogEmitter,
     Wishbone,
     WishboneRegisterBank,
@@ -250,6 +264,43 @@ class DynamicSliceUpdate(Module):
                         self.state[self.lo + 1 : self.lo] <<= self.data[1:0]
                     with Else():
                         self.state[self.lo + 3 : self.lo] <<= self.data
+
+
+class PackedStructRoundTrip(Module):
+    def __init__(self):
+        super().__init__("PackedStructRoundTrip")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.load = Input(1, "load")
+        self.opcode = Input(4, "opcode")
+        self.tag = Input(4, "tag")
+        self.out_opcode = Output(4, "out_opcode")
+        self.out_tag = Output(4, "out_tag")
+        self.out_raw = Output(8, "out_raw")
+
+        self.packet_t = PackedStructType.define(
+            "packet_t",
+            (
+                ("opcode", 4),
+                ("tag", 4),
+            ),
+        )
+        self.packet = Reg(name="packet", struct_type=self.packet_t)
+
+        @self.comb
+        def _comb():
+            self.out_opcode <<= self.packet.opcode
+            self.out_tag <<= self.packet.tag
+            self.out_raw <<= self.packet
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.packet <<= self.packet_t.pack(opcode=0, tag=0)
+            with Else():
+                with If(self.load == 1):
+                    self.packet.opcode <<= self.opcode
+                    self.packet.tag <<= self.tag
 
 
 class InitBlockState(Module):
@@ -904,6 +955,29 @@ class SeqMulProductReg(Module):
                 self.acc <<= self.prod[15:0]
 
 
+class SeqBitUpdateUsesOldState(Module):
+    """Sequential partial update should read the old state value on the RHS."""
+
+    def __init__(self):
+        super().__init__("SeqBitUpdateUsesOldState")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.flag = Input(1, "flag")
+        self.out = Output(8, "out")
+        self.state = Reg(8, "state")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.state
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self.state <<= 0xA0
+            with Else():
+                self.state[2] <<= self.flag
+
+
 def _load_external_module(rel_path: str, class_name: str):
     path = Path(__file__).resolve().parents[2] / rel_path
     spec = importlib.util.spec_from_file_location(f"test_{path.stem}_{class_name}", path)
@@ -1049,6 +1123,137 @@ def test_emit_profile_review_places_port_expression_helpers_in_structural_sectio
         assert index >= 0, f"missing readability marker: {marker}"
         assert index > last_index, f"marker out of order: {marker}"
         last_index = index
+
+
+def test_analyze_emitted_readability_accepts_review_profile_output():
+    report = analyze_emitted_readability(ReadableRepeatedExpr(), profile=EmitProfile.review())
+
+    assert report.passed is True
+    assert report.profile == "review"
+    assert report.long_line_count == 0
+    assert report.anonymous_helper_count == 0
+    assert report.duplicated_block_prefix_count == 0
+
+
+def test_analyze_verilog_readability_flags_machineish_helpers_and_long_mux_lines():
+    text = "\n".join(
+        (
+            "module ugly;",
+            "  wire [7:0] _cse_0;",
+            "  assign out = a ? b : c ? d : e ? f : g ? h : i;",
+            "endmodule",
+        )
+    )
+    report = analyze_verilog_readability(text, profile="review", max_line_length=40, max_mux_ternaries_per_assign=2)
+
+    assert report.passed is False
+    assert report.long_line_count == 1
+    assert report.anonymous_helper_count == 1
+    assert report.deep_mux_assign_count == 1
+    assert {finding.kind for finding in report.findings} == {
+        "anonymous_helper",
+        "deep_mux_assign",
+        "long_line",
+    }
+
+
+def test_emit_readability_report_markdown_summarizes_findings():
+    report = analyze_verilog_readability(
+        "module ugly;\n  wire _cse_0;\nendmodule",
+        profile="review",
+        max_line_length=80,
+    )
+    markdown = emit_readability_report_markdown(report, title="Readable RTL")
+
+    assert "# Readable RTL" in markdown
+    assert "- profile: `review`" in markdown
+    assert "- passed: `false`" in markdown
+    assert "## Findings" in markdown
+    assert "`anonymous_helper`" in markdown
+
+
+def test_analyze_marker_sequence_reports_missing_and_out_of_order_markers():
+    text = "\n".join(
+        (
+            "module sample;",
+            "  // Internal declarations",
+            "  // Combinational logic",
+            "  // Storage declarations",
+            "endmodule",
+        )
+    )
+
+    report = analyze_marker_sequence(
+        text,
+        (
+            "// Storage declarations",
+            "// Internal declarations",
+            "// Sequential logic",
+        ),
+        context="sample review RTL",
+    )
+
+    assert isinstance(report, MarkerSequenceReport)
+    assert report.passed is False
+    assert report.expected_marker_count == 3
+    assert report.matched_marker_count == 1
+    assert [finding.kind for finding in report.findings] == [
+        "out_of_order_marker",
+        "missing_marker",
+    ]
+
+
+def test_emit_marker_sequence_report_markdown_summarizes_findings():
+    report = analyze_marker_sequence(
+        "module sample;\n  // Internal declarations\nendmodule",
+        ("// Storage declarations",),
+        context="sample review RTL",
+    )
+    markdown = emit_marker_sequence_report_markdown(report, title="Readable Marker Contract")
+
+    assert "# Readable Marker Contract" in markdown
+    assert "- context: `sample review RTL`" in markdown
+    assert "- passed: `false`" in markdown
+    assert "## Findings" in markdown
+    assert "`missing_marker` `// Storage declarations`" in markdown
+
+
+def test_assert_readable_verilog_raises_readability_contract_error_with_markdown():
+    with pytest.raises(ReadabilityContractError) as excinfo:
+        assert_readable_verilog(
+            "module ugly;\n  wire _cse_0;\nendmodule",
+            profile="review",
+        )
+
+    assert "# RTL Readability Report" in str(excinfo.value)
+    assert "`anonymous_helper`" in str(excinfo.value)
+
+
+def test_assert_marker_sequence_raises_readability_contract_error_with_markdown():
+    with pytest.raises(ReadabilityContractError) as excinfo:
+        assert_marker_sequence(
+            "module sample;\n  // Internal declarations\nendmodule",
+            ("// Storage declarations",),
+            context="sample review RTL",
+        )
+
+    assert "# RTL Marker Contract Report" in str(excinfo.value)
+    assert "`missing_marker` `// Storage declarations`" in str(excinfo.value)
+
+
+def test_assert_emitted_rtl_contract_enforces_readability_and_marker_gate():
+    emitted = assert_emitted_rtl_contract(
+        DeclaredDomainMailbox(),
+        expected_markers=(
+            "// Storage declarations",
+            "// Internal declarations",
+            "// Combinational logic",
+            "// Sequential logic",
+        ),
+        profile=EmitProfile.review(),
+    )
+
+    assert "// Module: DeclaredDomainMailbox" in emitted
 
 
 def test_emit_profile_review_declared_domain_mailbox_matches_readability_snapshot():
@@ -1215,17 +1420,21 @@ def test_emit_profile_review_sync_fifo_matches_readability_snapshot():
     emitted = VerilogEmitter(profile=EmitProfile.review()).emit(SyncFIFO(width=8, depth=4))
 
     expected_markers = (
+        "// Storage declarations",
         "// Internal declarations",
-        "logic rd_inc;",
         "logic wr_inc;",
-        "reg [2:0] wr_ptr;",
-        "reg [2:0] rd_ptr;",
-        "reg [3:0] count_reg;",
+        "logic rd_inc;",
+        "reg [1:0] wr_ptr;",
+        "reg [1:0] rd_ptr;",
+        "reg [2:0] count_reg;",
+        "reg [7:0] storage [0:3];",
         "// Combinational logic",
-        "assign full = count_reg == 3'd4;",
-        "assign empty = count_reg == 1'd0;",
-        "assign count = count_reg;",
-        "assign rd_rdy = ~empty;",
+        "always @(*) begin",
+        "full = count_reg == 3'd4;",
+        "empty = count_reg == 1'd0;",
+        "count = count_reg;",
+        "rd_rdy = ~empty;",
+        "dout = storage[rd_ptr];",
         "// Sequential logic",
         "// Seq timing: clk=clk, reset=rst (sync, active-high)",
         "always @(posedge clk) begin",
@@ -1236,6 +1445,43 @@ def test_emit_profile_review_sync_fifo_matches_readability_snapshot():
         assert index >= 0, f"missing readability marker: {marker}"
         assert index > last_index, f"marker out of order: {marker}"
         last_index = index
+
+
+def test_sync_fifo_lowers_and_buffers_single_clock_storage(tmp_path):
+    lowered = lower_dsl_module_to_sim(SyncFIFO(width=8, depth=4))
+    sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        SyncFIFO(width=8, depth=4),
+        build_dir=tmp_path / "sync_fifo",
+    )
+    try:
+        vectors = (
+            (
+                {"clk": 0, "rst": 1, "din": 0, "wr_en": 0, "rd_en": 0},
+                {"dout": 0, "full": 0, "empty": 1, "count": 0, "rd_rdy": 0},
+            ),
+            (
+                {"clk": 0, "rst": 0, "din": 0x11, "wr_en": 1, "rd_en": 0},
+                {"dout": 0x11, "full": 0, "empty": 0, "count": 1, "rd_rdy": 1},
+            ),
+            (
+                {"clk": 0, "rst": 0, "din": 0x22, "wr_en": 1, "rd_en": 0},
+                {"dout": 0x11, "full": 0, "empty": 0, "count": 2, "rd_rdy": 1},
+            ),
+            (
+                {"clk": 0, "rst": 0, "din": 0, "wr_en": 0, "rd_en": 1},
+                {"dout": 0x22, "full": 0, "empty": 0, "count": 1, "rd_rdy": 1},
+            ),
+            (
+                {"clk": 0, "rst": 0, "din": 0, "wr_en": 0, "rd_en": 1},
+                {"dout": 0, "full": 0, "empty": 1, "count": 0, "rd_rdy": 0},
+            ),
+        )
+        for inputs, expected in vectors:
+            assert sim.step(inputs) == expected
+            assert compiled.step(inputs) == expected
+    finally:
+        compiled.close()
 
 
 def test_emit_profile_review_apb_register_bank_matches_readability_snapshot():
@@ -1285,6 +1531,25 @@ def test_emit_profile_review_wishbone_register_bank_matches_readability_snapshot
         last_index = index
 
 
+def test_emit_profile_review_wishbone_register_bank_split_control_state_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(
+        WishboneRegisterBank(depth=4, split_control_state=True)
+    )
+
+    expected_markers = (
+        "logic capture_fire;",
+        "assign capture_fire = accept_fire;",
+        "always @(posedge clk_i) begin",
+        "always @(posedge clk_i) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker, last_index + 1)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
 def test_emit_profile_review_ready_valid_register_matches_readability_snapshot():
     emitted = VerilogEmitter(profile=EmitProfile.review()).emit(ReadyValidRegister())
 
@@ -1298,6 +1563,29 @@ def test_emit_profile_review_ready_valid_register_matches_readability_snapshot()
         "// Sequential logic",
         "// Seq timing: clk=clk, reset=rst (sync, active-high)",
         "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_ready_valid_register_hold_payload_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(ReadyValidRegister(hold_payload=True))
+
+    expected_markers = (
+        "// Internal declarations",
+        "reg [31:0] data_reg;",
+        "reg valid_reg;",
+        "// Combinational logic",
+        "assign in_ready = (valid_reg == 1'd0) | out_ready;",
+        "// Sequential logic",
+        "if (in_valid == 1'd1) begin",
+        "data_reg <= in_data;",
+        "end else begin",
+        "data_reg <= data_reg;",
     )
     last_index = -1
     for marker in expected_markers:
@@ -1358,6 +1646,32 @@ def test_emit_profile_review_reqrsp_queue_matches_readability_snapshot():
         last_index = index
 
 
+def test_emit_profile_review_reqrsp_queue_bundled_sideband_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(
+        ReqRspQueue(depth=4, addr_width=12, write_enable=True, strobe_width=4, bundle_sideband=True)
+    )
+
+    expected_markers = (
+        "// Storage declarations",
+        "// Internal declarations",
+        "logic push_fire;",
+        "reg [48:0] entry_storage [0:3];",
+        "// Combinational logic",
+        "down_req = entry_storage[rd_ptr][31:0];",
+        "down_addr = entry_storage[rd_ptr][43:32];",
+        "down_write = entry_storage[rd_ptr][44];",
+        "down_strb = entry_storage[rd_ptr][48:45];",
+        "// Sequential logic",
+        "entry_storage[wr_ptr] <= {up_strb, up_write, up_addr, up_req};",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
 def test_emit_profile_review_axilite_register_bank_matches_readability_snapshot():
     emitted = VerilogEmitter(profile=EmitProfile.review()).emit(AXI4LiteRegisterBank(depth=4))
 
@@ -1374,6 +1688,28 @@ def test_emit_profile_review_axilite_register_bank_matches_readability_snapshot(
         "// Sequential logic",
         "// Seq timing: clk=clk, reset=rst (sync, active-high)",
         "always @(posedge clk) begin",
+    )
+    last_index = -1
+    for marker in expected_markers:
+        index = emitted.find(marker)
+        assert index >= 0, f"missing readability marker: {marker}"
+        assert index > last_index, f"marker out of order: {marker}"
+        last_index = index
+
+
+def test_emit_profile_review_axilite_register_bank_split_control_state_matches_readability_snapshot():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(
+        AXI4LiteRegisterBank(depth=4, split_control_state=True)
+    )
+
+    expected_markers = (
+        "// Internal declarations",
+        "logic capture_fire;",
+        "assign capture_fire = aw_capture | w_capture | read_fire;",
+        "// Sequential logic",
+        "// Seq: ar_addr_latched, aw_addr_latched, aw_seen",
+        "else if (capture_fire == 1'd1) begin",
+        "// Seq: bvalid_state, rdata_state, rvalid_state",
     )
     last_index = -1
     for marker in expected_markers:
@@ -1888,6 +2224,9 @@ def test_ready_valid_bundle_supports_flip_and_protocol_aware_port_map():
     assert port_map["data"] is source.data
     assert port_map["valid"] is source.valid
     assert port_map["ready"] is sink.ready
+    assert source.payload_fields() == ("data",)
+    assert source.forward_fields() == ("data", "valid")
+    assert source.backward_fields() == ("ready",)
 
 
 def test_axistream_inherits_ready_valid_channel_shape():
@@ -1905,6 +2244,7 @@ def test_axistream_inherits_ready_valid_channel_shape():
     assert "tkeep" in axis.signal_map()
     assert "tuser" in axis.signal_map()
     assert "tstrb" in axis.signal_map()
+    assert axis.payload_fields() == ("tdata", "tlast", "tkeep", "tuser", "tstrb")
 
 
 def test_reqrsp_bundle_exposes_request_response_semantics_and_port_map():
@@ -1930,6 +2270,8 @@ def test_reqrsp_bundle_exposes_request_response_semantics_and_port_map():
     assert mapping["rsp"] is responder.rsp
     assert mapping["rsp_valid"] is responder.rsp_valid
     assert mapping["rsp_ready"] is requester.rsp_ready
+    assert requester.request_payload_fields() == ("addr", "req", "write", "strb")
+    assert requester.response_payload_fields() == ("rsp",)
 
 
 def test_apb_bundle_exposes_master_slave_semantics_and_port_map():
@@ -1977,6 +2319,191 @@ def test_wishbone_bundle_exposes_master_slave_semantics_and_port_map():
     assert mapping["dat_o"] is slave.dat_o
 
 
+def test_bundle_prefixed_peer_port_map_targets_peer_signal_names():
+    sink = ReadyValid(16, name="sink")
+    source = sink.flip().prefixed("src")
+    peer = sink.prefixed("u_sink")
+
+    mapping = source.instantiate_port_map(peer)
+
+    assert set(mapping) == {"u_sink_data", "u_sink_valid", "u_sink_ready"}
+    assert mapping["u_sink_data"] is source.data
+    assert mapping["u_sink_valid"] is source.valid
+    assert mapping["u_sink_ready"] is source.ready
+
+
+def test_module_bundle_registration_exposes_prefixed_ports():
+    class BundleWrapped(Module):
+        def __init__(self):
+            super().__init__("BundleWrapped")
+            self.in_ch = ReadyValid(8, name="in_ch").prefixed("in_ch")
+            self.out_ch = ReadyValid(8, name="out_ch").flip().prefixed("out_ch")
+
+            @self.comb
+            def _comb():
+                self.out_ch.data <<= self.in_ch.data
+                self.out_ch.valid <<= self.in_ch.valid
+                self.in_ch.ready <<= self.out_ch.ready
+
+    wrapped = BundleWrapped()
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(wrapped)
+
+    assert "input [7:0] in_ch_data" in emitted
+    assert "input in_ch_valid" in emitted
+    assert "output in_ch_ready" in emitted
+    assert "output [7:0] out_ch_data" in emitted
+    assert "output out_ch_valid" in emitted
+    assert "input out_ch_ready" in emitted
+    assert "assign out_ch_data = in_ch_data;" in emitted
+    assert "assign out_ch_valid = in_ch_valid;" in emitted
+    assert "assign in_ch_ready = out_ch_ready;" in emitted
+
+
+def test_instantiate_with_bundles_bulk_connects_prefixed_ready_valid_ports():
+    class BundleLeaf(Module):
+        def __init__(self):
+            super().__init__("BundleLeaf")
+            self.leaf_in = ReadyValid(8, name="leaf_in").prefixed("leaf_in")
+            self.leaf_out = ReadyValid(8, name="leaf_out").flip().prefixed("leaf_out")
+
+            @self.comb
+            def _comb():
+                self.leaf_out.data <<= self.leaf_in.data
+                self.leaf_out.valid <<= self.leaf_in.valid
+                self.leaf_in.ready <<= self.leaf_out.ready
+
+    class BundleTop(Module):
+        def __init__(self):
+            super().__init__("BundleTop")
+            self.clk = Input(1, "clk")
+            self.rst = Input(1, "rst")
+            self.up = ReadyValid(8, name="up").prefixed("up")
+            self.down = ReadyValid(8, name="down").flip().prefixed("down")
+            leaf = BundleLeaf()
+            self.instantiate_with_bundles(
+                leaf,
+                "u_leaf",
+                parent_bundles={"leaf_in": self.up, "leaf_out": self.down},
+                extra_ports={"clk": self.clk, "rst": self.rst},
+            )
+
+    top = BundleTop()
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(top)
+
+    assert ".leaf_in_data(up_data)" in emitted
+    assert ".leaf_in_valid(up_valid)" in emitted
+    assert ".leaf_in_ready(up_ready)" in emitted
+    assert ".leaf_out_data(down_data)" in emitted
+    assert ".leaf_out_valid(down_valid)" in emitted
+    assert ".leaf_out_ready(down_ready)" in emitted
+
+
+def test_instantiate_with_bundles_can_override_submodule_bundle_lookup():
+    class BundleLeaf(Module):
+        def __init__(self):
+            super().__init__("BundleLeafAlt")
+            self.sink = ReadyValid(8, name="sink").prefixed("sink")
+
+    class BundleTop(Module):
+        def __init__(self):
+            super().__init__("BundleTopAlt")
+            self.src = ReadyValid(8, name="src").flip().prefixed("src")
+            leaf = BundleLeaf()
+            self.instantiate_with_bundles(
+                leaf,
+                "u_leaf",
+                parent_bundles={"path": self.src},
+                sub_bundles={"path": leaf.sink},
+            )
+
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(BundleTop())
+
+    assert ".sink_data(src_data)" in emitted
+    assert ".sink_valid(src_valid)" in emitted
+    assert ".sink_ready(src_ready)" in emitted
+
+
+def test_instantiate_with_bundles_auto_discovers_same_named_parent_and_sub_bundles():
+    class BundleLeaf(Module):
+        def __init__(self):
+            super().__init__("BundleLeafAuto")
+            self.link = ReadyValid(8, name="link").prefixed("link")
+
+    class BundleTop(Module):
+        def __init__(self):
+            super().__init__("BundleTopAuto")
+            self.link = ReadyValid(8, name="link").flip().prefixed("link")
+            leaf = BundleLeaf()
+            self.instantiate_with_bundles(leaf, "u_leaf")
+
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(BundleTop())
+
+    assert ".link_data(link_data)" in emitted
+    assert ".link_valid(link_valid)" in emitted
+    assert ".link_ready(link_ready)" in emitted
+
+
+def test_instantiate_with_bundles_supports_field_include_exclude():
+    class BundleLeaf(Module):
+        def __init__(self):
+            super().__init__("BundleLeafFields")
+            self.link = ReadyValid(
+                8,
+                name="link",
+                has_last=True,
+                has_keep=True,
+                user_width=2,
+            ).prefixed("link")
+
+    class BundleTop(Module):
+        def __init__(self):
+            super().__init__("BundleTopFields")
+            self.link = ReadyValid(
+                8,
+                name="link",
+                has_last=True,
+                has_keep=True,
+                user_width=2,
+            ).flip().prefixed("link")
+            leaf = BundleLeaf()
+            self.instantiate_with_bundles(
+                leaf,
+                "u_leaf",
+                bundle_includes={"link": ("data", "valid", "ready", "last", "user")},
+                bundle_excludes={"link": ("user",)},
+            )
+
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(BundleTop())
+
+    assert ".link_data(link_data)" in emitted
+    assert ".link_valid(link_valid)" in emitted
+    assert ".link_ready(link_ready)" in emitted
+    assert ".link_last(link_last)" in emitted
+    assert ".link_keep(" not in emitted
+    assert ".link_user(" not in emitted
+
+
+def test_instantiate_with_bundles_rejects_unknown_bundle_filter_keys():
+    class BundleLeaf(Module):
+        def __init__(self):
+            super().__init__("BundleLeafBadFilter")
+            self.link = ReadyValid(8, name="link").prefixed("link")
+
+    class BundleTop(Module):
+        def __init__(self):
+            super().__init__("BundleTopBadFilter")
+            self.link = ReadyValid(8, name="link").flip().prefixed("link")
+            leaf = BundleLeaf()
+            with pytest.raises(ValueError, match="bundle include/exclude keys"):
+                self.instantiate_with_bundles(
+                    leaf,
+                    "u_leaf",
+                    bundle_includes={"missing": ("data",)},
+                )
+
+    BundleTop()
+
+
 def test_ahblite_bundle_exposes_master_slave_semantics_and_port_map():
     slave = AHBLite(32, 32, name="ahb_s")
     master = slave.flip()
@@ -2022,6 +2549,144 @@ def test_skid_buffer_lowers_and_preserves_stalled_payload():
         "out_data": 0,
         "out_valid": 0,
     }
+
+
+def test_enum_type_emits_named_localparams_and_lowers_on_runtime():
+    class EnumCounter(Module):
+        def __init__(self):
+            super().__init__("EnumCounter")
+            self.clk = Input(1, "clk")
+            self.rst = Input(1, "rst")
+            self.out = Output(2, "out")
+            self.phase_t = EnumType.define("phase_t", ("IDLE", "RUN", "DONE"))
+            self.phase = Reg(name="phase", enum_type=self.phase_t, init_value=self.phase_t.IDLE)
+
+            @self.comb
+            def _comb():
+                self.out <<= self.phase
+
+            @self.seq(self.clk, self.rst)
+            def _seq():
+                with If(self.rst == 1):
+                    self.phase <<= self.phase_t.IDLE
+                with Else():
+                    with Switch(self.phase) as sw:
+                        with sw.case(self.phase_t.IDLE):
+                            self.phase <<= self.phase_t.RUN
+                        with sw.case(self.phase_t.RUN):
+                            self.phase <<= self.phase_t.DONE
+                        with sw.default():
+                            self.phase <<= self.phase_t.IDLE
+
+    module = EnumCounter()
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(module)
+
+    assert "localparam [1:0] PHASE_T_IDLE = 2'd0;" in emitted
+    assert "localparam [1:0] PHASE_T_RUN = 2'd1;" in emitted
+    assert "reg [1:0] phase = PHASE_T_IDLE; // enum phase_t" in emitted
+    assert "PHASE_T_IDLE: begin" in emitted
+    assert "phase <= PHASE_T_RUN;" in emitted
+
+    lowered = lower_dsl_module_to_sim(module)
+    sim = PythonSimulator(lowered.module)
+    assert sim.step({"clk": 0, "rst": 1}) == {"out": 0}
+    assert sim.step({"clk": 0, "rst": 0}) == {"out": 1}
+    assert sim.step({"clk": 0, "rst": 0}) == {"out": 2}
+    assert sim.step({"clk": 0, "rst": 0}) == {"out": 0}
+
+
+def test_packed_struct_emits_field_layout_comments_and_supports_field_access():
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(PackedStructRoundTrip())
+
+    assert "// struct packet_t: opcode[7:4], tag[3:0]" in emitted
+    assert "reg [7:0] packet; // struct packet_t: opcode[7:4], tag[3:0]" in emitted
+    assert "assign out_opcode = packet[7:4];" in emitted
+    assert "assign out_tag = packet[3:0];" in emitted
+    assert "packet <= {2{4'd0}};" in emitted
+
+
+def test_packed_struct_field_access_lowers_and_runs_on_python_runtime():
+    lowered = lower_dsl_module_to_sim(PackedStructRoundTrip())
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step({"clk": 0, "rst": 1, "load": 0, "opcode": 0, "tag": 0}) == {
+        "out_opcode": 0,
+        "out_tag": 0,
+        "out_raw": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "load": 1, "opcode": 0xA, "tag": 0x5}) == {
+        "out_opcode": 0xA,
+        "out_tag": 0x5,
+        "out_raw": 0xA5,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "load": 0, "opcode": 0, "tag": 0}) == {
+        "out_opcode": 0xA,
+        "out_tag": 0x5,
+        "out_raw": 0xA5,
+    }
+
+
+def test_packed_struct_field_access_matches_compiled_simulator(tmp_path):
+    python_sim = PythonSimulator(lower_dsl_module_to_sim(PackedStructRoundTrip()).module)
+    compiled = build_compiled_simulator_from_dsl(
+        PackedStructRoundTrip(),
+        build_dir=tmp_path / "packed_struct_roundtrip",
+    )
+    try:
+        python_sim.reset()
+        compiled.reset()
+        for vector in (
+            {"clk": 0, "rst": 1, "load": 0, "opcode": 0, "tag": 0},
+            {"clk": 0, "rst": 0, "load": 1, "opcode": 0x3, "tag": 0xC},
+            {"clk": 0, "rst": 0, "load": 1, "opcode": 0xF, "tag": 0x1},
+            {"clk": 0, "rst": 0, "load": 0, "opcode": 0, "tag": 0},
+        ):
+            _step_python_and_compiled(python_sim, compiled, vector)
+    finally:
+        compiled.close()
+
+
+def test_fsm_emits_enum_state_markers_and_runs_on_lowered_runtime():
+    class TrafficTop(Module):
+        def __init__(self):
+            super().__init__("TrafficTop")
+            self.clk = Input(1, "clk")
+            self.rst = Input(1, "rst")
+            self.start = Input(1, "start")
+            self.stop = Input(1, "stop")
+            fsm = FSM("IDLE", name="traffic")
+            fsm.add_output("red", default=1)
+            fsm.add_output("green", default=0)
+
+            @fsm.state("IDLE")
+            def idle(ctx):
+                ctx.red = 1
+                ctx.green = 0
+                ctx.goto("RUN", when=self.start)
+
+            @fsm.state("RUN")
+            def run(ctx):
+                ctx.red = 0
+                ctx.green = 1
+                ctx.goto("IDLE", when=self.stop)
+
+            fsm.build(self.clk, self.rst, parent=self)
+
+    module = TrafficTop()
+    emitted = VerilogEmitter(profile=EmitProfile.review()).emit(module)
+
+    assert "localparam [0:0] TRAFFIC_STATE_T_IDLE = 1'd0;" in emitted
+    assert "localparam [0:0] TRAFFIC_STATE_T_RUN = 1'd1;" in emitted
+    assert "reg traffic_state_reg = TRAFFIC_STATE_T_IDLE; // enum traffic_state_t" in emitted
+    assert "case (traffic_state_reg)" in emitted
+    assert "TRAFFIC_STATE_T_IDLE: begin" in emitted
+    assert "traffic_next_state = TRAFFIC_STATE_T_RUN;" in emitted
+
+    lowered = lower_dsl_module_to_sim(module)
+    sim = PythonSimulator(lowered.module)
+    assert sim.step({"clk": 0, "rst": 1, "start": 0, "stop": 0}) == {"traffic_red": 1, "traffic_green": 0}
+    assert sim.step({"clk": 0, "rst": 0, "start": 1, "stop": 0}) == {"traffic_red": 0, "traffic_green": 1}
+    assert sim.step({"clk": 0, "rst": 0, "start": 0, "stop": 1}) == {"traffic_red": 1, "traffic_green": 0}
 
 
 def test_ready_valid_fifo_lowers_and_handles_backpressure_and_bypass():
@@ -2097,6 +2762,27 @@ def test_ready_valid_register_lowers_and_inserts_one_stage_latency():
     }
 
 
+def test_ready_valid_register_hold_payload_preserves_data_on_drain():
+    lowered = lower_dsl_module_to_sim(ReadyValidRegister(width=8, hold_payload=True))
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step({"clk": 0, "rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x44, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 0,
+        "out_data": 0x44,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0x44,
+        "out_valid": 0,
+    }
+
+
 def test_ready_valid_async_bridge_lowers_and_supports_multiclock_python_and_compiled(tmp_path):
     lowered = lower_dsl_module_to_sim(ReadyValidAsyncBridgeTop())
     assert tuple(domain.name for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
@@ -2154,6 +2840,126 @@ def test_ready_valid_async_bridge_lowers_and_supports_multiclock_python_and_comp
 def test_reqrsp_queue_lowers_and_buffers_requests():
     lowered = lower_dsl_module_to_sim(
         ReqRspQueue(req_width=8, rsp_width=8, depth=2, addr_width=4, write_enable=True, strobe_width=2)
+    )
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step(
+        {
+            "clk": 0,
+            "rst": 1,
+            "up_addr": 0,
+            "up_req": 0,
+            "up_write": 0,
+            "up_strb": 0,
+            "up_req_valid": 0,
+            "up_rsp_ready": 1,
+            "down_req_ready": 0,
+            "down_rsp": 0,
+            "down_rsp_valid": 0,
+        }
+    ) == {
+        "up_req_ready": 1,
+        "up_rsp": 0,
+        "up_rsp_valid": 0,
+        "down_addr": 0,
+        "down_req": 0,
+        "down_req_valid": 0,
+        "down_rsp_ready": 1,
+        "down_strb": 0,
+        "down_write": 0,
+        "level": 0,
+    }
+    assert sim.step(
+        {
+            "clk": 0,
+            "rst": 0,
+            "up_addr": 3,
+            "up_req": 0x12,
+            "up_write": 1,
+            "up_strb": 0x3,
+            "up_req_valid": 1,
+            "up_rsp_ready": 1,
+            "down_req_ready": 0,
+            "down_rsp": 0x80,
+            "down_rsp_valid": 1,
+        }
+    ) == {
+        "up_req_ready": 1,
+        "up_rsp": 0x80,
+        "up_rsp_valid": 1,
+        "down_addr": 3,
+        "down_req": 0x12,
+        "down_req_valid": 1,
+        "down_rsp_ready": 1,
+        "down_strb": 0x3,
+        "down_write": 1,
+        "level": 1,
+    }
+    assert sim.step(
+        {
+            "clk": 0,
+            "rst": 0,
+            "up_addr": 5,
+            "up_req": 0x34,
+            "up_write": 0,
+            "up_strb": 0x1,
+            "up_req_valid": 1,
+            "up_rsp_ready": 1,
+            "down_req_ready": 0,
+            "down_rsp": 0,
+            "down_rsp_valid": 0,
+        }
+    ) == {
+        "up_req_ready": 0,
+        "up_rsp": 0,
+        "up_rsp_valid": 0,
+        "down_addr": 3,
+        "down_req": 0x12,
+        "down_req_valid": 1,
+        "down_rsp_ready": 1,
+        "down_strb": 0x3,
+        "down_write": 1,
+        "level": 2,
+    }
+    assert sim.step(
+        {
+            "clk": 0,
+            "rst": 0,
+            "up_addr": 7,
+            "up_req": 0x56,
+            "up_write": 1,
+            "up_strb": 0x2,
+            "up_req_valid": 1,
+            "up_rsp_ready": 1,
+            "down_req_ready": 1,
+            "down_rsp": 0,
+            "down_rsp_valid": 0,
+        }
+    ) == {
+        "up_req_ready": 1,
+        "up_rsp": 0,
+        "up_rsp_valid": 0,
+        "down_addr": 5,
+        "down_req": 0x34,
+        "down_req_valid": 1,
+        "down_rsp_ready": 1,
+        "down_strb": 0x1,
+        "down_write": 0,
+        "level": 2,
+    }
+
+
+def test_reqrsp_queue_bundled_sideband_lowers_and_buffers_requests():
+    lowered = lower_dsl_module_to_sim(
+        ReqRspQueue(
+            req_width=8,
+            rsp_width=8,
+            depth=2,
+            addr_width=4,
+            write_enable=True,
+            strobe_width=2,
+            bundle_sideband=True,
+        )
     )
     sim = PythonSimulator(lowered.module)
 
@@ -2366,6 +3172,133 @@ def test_axilite_register_bank_lowers_and_applies_byte_enable_writes(tmp_path):
         for inputs, expected in vectors:
             assert sim.step(inputs) == expected
             assert compiled.step(inputs) == expected
+    finally:
+        compiled.close()
+
+
+def test_axilite_register_bank_split_control_state_lowers_and_applies_byte_enable_writes(tmp_path):
+    lowered = lower_dsl_module_to_sim(AXI4LiteRegisterBank(depth=8, split_control_state=True))
+    sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        AXI4LiteRegisterBank(depth=8, split_control_state=True),
+        build_dir=tmp_path / "axilite_register_bank_split_control_state",
+    )
+    try:
+        vectors = (
+            (
+                {
+                    "clk": 0,
+                    "rst": 1,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 0,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 1, "wready": 1, "bresp": 0, "bvalid": 0, "arready": 1, "rdata": 0, "rresp": 0, "rvalid": 0},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0x10,
+                    "awvalid": 1,
+                    "awprot": 0,
+                    "wdata": 0x11223344,
+                    "wstrb": 0x5,
+                    "wvalid": 1,
+                    "bready": 0,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 1, "wready": 1, "bresp": 0, "bvalid": 0, "arready": 1, "rdata": 0, "rresp": 0, "rvalid": 0},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 1,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 0, "wready": 0, "bresp": 0, "bvalid": 1, "arready": 1, "rdata": 0, "rresp": 0, "rvalid": 0},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 0,
+                    "araddr": 0x10,
+                    "arvalid": 1,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 0, "wready": 0, "bresp": 0, "bvalid": 1, "arready": 1, "rdata": 0, "rresp": 0, "rvalid": 0},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 0,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 1,
+                },
+                {"awready": 0, "wready": 0, "bresp": 0, "bvalid": 1, "arready": 0, "rdata": 0x00220044, "rresp": 0, "rvalid": 1},
+            ),
+            (
+                {
+                    "clk": 0,
+                    "rst": 0,
+                    "awaddr": 0,
+                    "awvalid": 0,
+                    "awprot": 0,
+                    "wdata": 0,
+                    "wstrb": 0,
+                    "wvalid": 0,
+                    "bready": 0,
+                    "araddr": 0,
+                    "arvalid": 0,
+                    "arprot": 0,
+                    "rready": 0,
+                },
+                {"awready": 0, "wready": 0, "bresp": 0, "bvalid": 1, "arready": 0, "rdata": 0x00220044, "rresp": 0, "rvalid": 1},
+            ),
+        )
+        for inputs, expected in vectors:
+            observed_python = sim.step(inputs)
+            observed_compiled = compiled.step(inputs)
+            assert observed_python == expected
+            assert observed_compiled == expected
     finally:
         compiled.close()
 
@@ -2603,6 +3536,117 @@ def test_wishbone_register_bank_lowers_and_applies_byte_enable_writes(tmp_path):
     emitted = VerilogEmitter(use_sv_always=True).emit(WishboneRegisterBank(depth=8))
     assert "module WishboneRegisterBank" in emitted
     assert "wbmem" in emitted
+
+
+def test_wishbone_register_bank_split_control_state_lowers_and_applies_byte_enable_writes(tmp_path):
+    lowered = lower_dsl_module_to_sim(WishboneRegisterBank(depth=8, split_control_state=True))
+    sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        WishboneRegisterBank(depth=8, split_control_state=True),
+        build_dir=tmp_path / "wishbone_register_bank_split_control_state",
+    )
+    try:
+        vectors = (
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 1,
+                    "adr_i": 0,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0,
+                    "stb_i": 0,
+                    "cyc_i": 0,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0x10,
+                    "dat_i": 0xA5A55A5A,
+                    "we_i": 1,
+                    "sel_i": 0x5,
+                    "stb_i": 1,
+                    "cyc_i": 1,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0x10,
+                    "dat_i": 0xA5A55A5A,
+                    "we_i": 1,
+                    "sel_i": 0x5,
+                    "stb_i": 1,
+                    "cyc_i": 1,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 1, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0,
+                    "stb_i": 0,
+                    "cyc_i": 0,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0x10,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0xF,
+                    "stb_i": 1,
+                    "cyc_i": 1,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0, "ack_o": 0, "err_o": 0, "rty_o": 0},
+            ),
+            (
+                {
+                    "clk_i": 0,
+                    "rst_i": 0,
+                    "adr_i": 0x10,
+                    "dat_i": 0,
+                    "we_i": 0,
+                    "sel_i": 0xF,
+                    "stb_i": 1,
+                    "cyc_i": 1,
+                    "cti_i": 0,
+                    "bte_i": 0,
+                },
+                {"dat_o": 0x00A5005A, "ack_o": 1, "err_o": 0, "rty_o": 0},
+            ),
+        )
+        for inputs, expected in vectors:
+            assert sim.step(inputs) == expected
+            assert compiled.step(inputs) == expected
+    finally:
+        compiled.close()
+
+    emitted = VerilogEmitter(use_sv_always=True).emit(WishboneRegisterBank(depth=8, split_control_state=True))
+    assert "module WishboneRegisterBank" in emitted
+    assert "capture_fire" in emitted
 
 
 def test_dsl_memory_init_data_emits_masked_literals():
@@ -3112,7 +4156,9 @@ def test_dsl_declared_clock_and_reset_domains_round_trip():
     assert module.rd_domain.reset_async is True
 
     lowered = lower_dsl_module_to_sim(module)
-    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("write", "read")
+    assert tuple(domain.clock_signal for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
+    assert tuple(domain.aliases for domain in lowered.module.clock_domains) == (("wr_clk",), ("rd_clk",))
     assert tuple(domain.reset_signal for domain in lowered.module.clock_domains) == ("wr_rst", "rd_rst_n")
     assert tuple(domain.reset_active_low for domain in lowered.module.clock_domains) == (False, True)
     assert tuple(domain.reset_async for domain in lowered.module.clock_domains) == (False, True)
@@ -3121,20 +4167,117 @@ def test_dsl_declared_clock_and_reset_domains_round_trip():
 def test_dsl_seq_domain_accepts_declared_domain_name():
     lowered = lower_dsl_module_to_sim(DeclaredDomainMailboxByName())
 
-    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("write", "read")
     seq_domains = {
         assignment.target: assignment.clock_domain
         for assignment in lowered.module.assignments
         if assignment.phase == "seq"
     }
-    assert seq_domains["wptr"] == "wr_clk"
-    assert seq_domains["rptr"] == "rd_clk"
+    assert seq_domains["wptr"] == "write"
+    assert seq_domains["rptr"] == "read"
+
+
+def test_dsl_seq_domain_accepts_clock_alias_and_canonicalizes_to_declared_domain():
+    class DeclaredDomainMailboxByAlias(Module):
+        def __init__(self):
+            super().__init__("DeclaredDomainMailboxByAlias")
+            self.wr_clk = Input(1, "wr_clk")
+            self.rd_clk = Input(1, "rd_clk")
+            self.wr_rst = Input(1, "wr_rst")
+            self.rd_rst_n = Input(1, "rd_rst_n")
+            self.wptr = Reg(2, "wptr")
+            self.rptr = Reg(2, "rptr")
+            self.out = Output(2, "out")
+
+            self.wr_reset_dom = self.reset_domain("wr_reset", self.wr_rst)
+            self.rd_reset_dom = self.reset_domain(
+                "rd_reset",
+                self.rd_rst_n,
+                reset_async=True,
+                reset_active_low=True,
+            )
+            self.clock_domain("write", self.wr_clk, self.wr_reset_dom)
+            self.clock_domain("read", self.rd_clk, self.rd_reset_dom)
+
+            @self.seq_domain("wr_clk")
+            def _wr_seq():
+                with If(self.wr_rst == 1):
+                    self.wptr <<= 0
+                with Else():
+                    self.wptr <<= self.wptr + 1
+
+            @self.seq_domain("rd_clk")
+            def _rd_seq():
+                with If(self.rd_rst_n == 0):
+                    self.rptr <<= 0
+                with Else():
+                    self.rptr <<= self.rptr + 1
+
+            @self.comb
+            def _comb():
+                self.out <<= self.wptr
+
+    lowered = lower_dsl_module_to_sim(DeclaredDomainMailboxByAlias())
+
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("write", "read")
+    assert tuple(domain.clock_signal for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
+    seq_domains = {
+        assignment.target: assignment.clock_domain
+        for assignment in lowered.module.assignments
+        if assignment.phase == "seq"
+    }
+    assert seq_domains["wptr"] == "write"
+    assert seq_domains["rptr"] == "read"
+
+
+def test_dsl_named_clock_domains_are_steppable_by_name_and_clock_alias(tmp_path):
+    lowered = lower_dsl_module_to_sim(DeclaredDomainMailboxByName())
+
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("write", "read")
+    assert tuple(domain.aliases for domain in lowered.module.clock_domains) == (("wr_clk",), ("rd_clk",))
+
+    python_sim = PythonSimulator(lowered.module)
+    with build_compiled_simulator_from_dsl(
+        DeclaredDomainMailboxByName(),
+        build_dir=tmp_path / "declared_domain_mailbox_by_name",
+    ) as compiled:
+        reset_expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"wr_rst": 1},
+            ("write",),
+        )
+        assert reset_expected["dout"] == 0
+
+        _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"rd_rst_n": 0},
+            ("rd_clk",),
+        )
+
+        push_expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"wr_rst": 0, "rd_rst_n": 1, "wr_en": 1, "din": 0x2A},
+            ("wr_clk",),
+        )
+        assert push_expected["dout"] == 0x2A
+
+        pop_expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"wr_en": 0, "rd_en": 0},
+            ("read",),
+        )
+        assert pop_expected["dout"] == 0x2A
 
 
 def test_dsl_clock_domain_accepts_declared_reset_domain_name():
     lowered = lower_dsl_module_to_sim(DeclaredDomainMailboxByResetName())
 
-    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("write", "read")
+    assert tuple(domain.clock_signal for domain in lowered.module.clock_domains) == ("wr_clk", "rd_clk")
     assert tuple(domain.reset_signal for domain in lowered.module.clock_domains) == ("wr_rst", "rd_rst_n")
     assert tuple(domain.reset_active_low for domain in lowered.module.clock_domains) == (False, True)
     assert tuple(domain.reset_async for domain in lowered.module.clock_domains) == (False, True)
@@ -3167,7 +4310,8 @@ def test_dsl_clock_domain_reuses_matching_declared_reset_domain_for_raw_reset_si
     assert module.func_domain.reset is module.func_reset
 
     lowered = lower_dsl_module_to_sim(module)
-    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("clk",)
+    assert tuple(domain.name for domain in lowered.module.clock_domains) == ("func",)
+    assert tuple(domain.clock_signal for domain in lowered.module.clock_domains) == ("clk",)
     assert tuple(domain.reset_signal for domain in lowered.module.clock_domains) == ("rst",)
 
 
@@ -3198,7 +4342,10 @@ def test_dsl_seq_domain_unknown_name_reports_known_domains():
             def _seq():
                 pass
 
-    with pytest.raises(ValueError, match="Known clock domains: func"):
+    with pytest.raises(
+        ValueError,
+        match=r"Known clock domains: func\. Known clock aliases: clk",
+    ):
         MissingSeqDomain()
 
 
@@ -3228,6 +4375,45 @@ def test_async_fifo_lowers_with_sane_empty_flag_semantics():
     }
     assert sim.step_clocks({"rd_en": 0}, ("rd_clk",)) == {"dout": 0x11, "full": 0, "empty": 1}
     assert sim.step_clocks({"rd_en": 1}, ("rd_clk",)) == {"dout": 0x11, "full": 0, "empty": 0}
+
+
+def test_async_fifo_supports_multiclock_python_and_compiled(tmp_path):
+    lowered = lower_dsl_module_to_sim(AsyncFIFO(width=8, depth=4))
+    python_sim = PythonSimulator(lowered.module)
+    with build_compiled_simulator_from_dsl(AsyncFIFO(width=8, depth=4), build_dir=tmp_path / "async_fifo") as compiled:
+        _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"wr_rst": 1},
+            ("wr_clk",),
+        )
+        _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"rd_rst": 1},
+            ("rd_clk",),
+        )
+        push_expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"wr_rst": 0, "rd_rst": 0, "din": 0x11, "wr_en": 1},
+            ("wr_clk",),
+        )
+        assert push_expected == {"dout": 0x11, "full": 0, "empty": 1}
+        hold_expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"rd_en": 0},
+            ("rd_clk",),
+        )
+        assert hold_expected == {"dout": 0x11, "full": 0, "empty": 1}
+        pop_expected = _step_multiclock_python_and_compiled(
+            python_sim,
+            compiled,
+            {"rd_en": 1},
+            ("rd_clk",),
+        )
+        assert pop_expected == {"dout": 0x11, "full": 0, "empty": 0}
 
 
 def test_dsl_declared_clock_domain_rejects_conflicting_seq_reset_semantics():
@@ -3625,6 +4811,33 @@ def test_dsl_sequential_multiply_full_product_register(tmp_path):
     assert py_outputs[2] == {"out": 15}
     # cycle3 (a=257,b=257): acc = 42, prod = 66049
     assert py_outputs[3] == {"out": 42}
+
+
+def test_dsl_seq_partial_update_reads_old_state_value(tmp_path):
+    lowered = lower_dsl_module_to_sim(SeqBitUpdateUsesOldState())
+    python_sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        SeqBitUpdateUsesOldState(),
+        build_dir=tmp_path / "seq_bit_update_old_state",
+    )
+    try:
+        assert python_sim.step(
+            {"clk": 0, "rst": 1, "flag": 0}
+        ) == compiled.step(
+            {"clk": 0, "rst": 1, "flag": 0}
+        ) == {"out": 0xA0}
+        assert python_sim.step(
+            {"clk": 0, "rst": 0, "flag": 1}
+        ) == compiled.step(
+            {"clk": 0, "rst": 0, "flag": 1}
+        ) == {"out": 0xA4}
+        assert python_sim.step(
+            {"clk": 0, "rst": 0, "flag": 0}
+        ) == compiled.step(
+            {"clk": 0, "rst": 0, "flag": 0}
+        ) == {"out": 0xA0}
+    finally:
+        compiled.close()
 
 
 class SeqOutputDirectAssign(Module):

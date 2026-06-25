@@ -12,6 +12,7 @@ from rtlgen_x.archsim import (
     memory_stage,
     rank_bandwidth_upgrades,
     rank_queue_depth_upgrades,
+    rank_upgrade_opportunities,
     run_stage_bandwidth_sweep,
     run_stage_queue_depth_sweep,
     summarize_architecture_report,
@@ -87,6 +88,7 @@ def test_architecture_report_summary_condenses_flow_stage_and_sweep_evidence():
     assert summary.upgrade_candidates
     assert summary.upgrade_candidates[0].stage_name == "shared_mem"
     assert any("shared_mem" in finding for finding in summary.findings)
+    assert any("bandwidth-limited bottleneck" in finding for finding in summary.findings)
 
 
 def test_architecture_report_markdown_renders_agent_facing_summary():
@@ -114,7 +116,28 @@ def test_architecture_report_markdown_renders_agent_facing_summary():
     assert "dispatch -> shared_mem -> alu -> commit" in markdown
     assert "shared_mem" in markdown
     assert "bandwidth_bytes_per_cycle" in markdown
-    assert "| Stage | Kind | Lat | II | Cap | Queue | BW | Util | Queue Pressure | Bytes | Flows |" in markdown
+    assert "| Stage | Kind | Lat | II | Cap | Queue | BW | Util | Shared Util | Queue Pressure | Bytes | Flows |" in markdown
+
+
+def test_architecture_report_markdown_renders_combined_ranked_upgrades():
+    model, workload = _report_model()
+    markdown = emit_architecture_report_markdown(
+        model=model,
+        workload=workload,
+        upgrade_candidates=rank_upgrade_opportunities(
+            model,
+            workload,
+            candidate_capacities=(2, 4),
+            candidate_bandwidths=(32, 64),
+            candidate_queue_depths=(4, 8),
+        ),
+        title="Combined Upgrade Report",
+    )
+
+    assert markdown.startswith("# Combined Upgrade Report\n")
+    assert "## Ranked Upgrades" in markdown
+    assert "`shared_mem`" in markdown
+    assert "cycle reduction" in markdown
 
 
 def test_architecture_report_markdown_surfaces_inference_scope_for_heuristic_models():
@@ -143,3 +166,34 @@ def test_architecture_report_markdown_surfaces_inference_scope_for_heuristic_mod
 
     assert "### Modeling Scope" in markdown
     assert "heuristic early-estimate inferred from executable-module structure" in markdown
+
+
+def test_architecture_report_surfaces_shared_resource_contention_findings():
+    model = linear_model(
+        [
+            controller_stage("dispatch", latency=1, initiation_interval=1, slots=1, queue_depth=4),
+            compute_stage("sfu_pipe", latency=3, initiation_interval=1, lanes=1, queue_depth=4, metadata={"shared_resource": "wb_cluster"}),
+            datapath_stage(
+                "writeback",
+                latency=1,
+                initiation_interval=1,
+                lanes=1,
+                queue_depth=4,
+                bandwidth_bytes_per_cycle=16,
+                metadata={"shared_resource": "wb_cluster"},
+            ),
+        ]
+    )
+    workload = Workload.from_flows(
+        FlowSpec("sfu0", path=("dispatch", "sfu_pipe", "writeback"), tokens=6, bytes_per_token=16),
+        FlowSpec("sfu1", path=("dispatch", "sfu_pipe", "writeback"), tokens=6, bytes_per_token=16, start_cycle=1),
+    )
+
+    summary = summarize_architecture_report(model, workload)
+
+    sfu_stage = next(stage for stage in summary.stage_summaries if stage.name == "sfu_pipe")
+    wb_stage = next(stage for stage in summary.stage_summaries if stage.name == "writeback")
+    assert sfu_stage.shared_resource == "wb_cluster"
+    assert wb_stage.shared_resource == "wb_cluster"
+    assert sfu_stage.shared_resource_utilization > 0.0
+    assert any("Shared resource 'wb_cluster'" in finding for finding in summary.findings)

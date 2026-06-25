@@ -16,6 +16,7 @@ class PpaRecommendationSummary:
     severity: str
     target: Optional[str]
     pattern_hint: Optional[str]
+    focus_anchors: Tuple[str, ...]
     rationale: str
     actions: Tuple[str, ...]
 
@@ -24,6 +25,7 @@ class PpaRecommendationSummary:
 class RewriteProposalSummary:
     summary: str
     target: str
+    origin_anchor: Optional[str]
     applicability: str
     applicability_reason: Optional[str]
     edit_kinds: Tuple[str, ...]
@@ -129,6 +131,8 @@ def emit_ppa_report_markdown(
             target_text = f" ({rec.target})" if rec.target else ""
             pattern_text = f" [{rec.pattern_hint}]" if rec.pattern_hint else ""
             lines.append(f"- [{rec.severity}/{rec.category}] {rec.title}{target_text}{pattern_text}: {rec.rationale}")
+            for anchor in rec.focus_anchors:
+                lines.append(f"  focus: {anchor}")
             for action in rec.actions:
                 lines.append(f"  next: {action}")
     if summary.rewrite_proposals:
@@ -137,6 +141,8 @@ def emit_ppa_report_markdown(
             lines.append(
                 f"- [{proposal.applicability}] {proposal.summary} ({proposal.target})"
             )
+            if proposal.origin_anchor:
+                lines.append(f"  origin: {proposal.origin_anchor}")
             lines.append(f"  edits: {', '.join(proposal.edit_kinds) if proposal.edit_kinds else 'none'}")
             if proposal.applicability_reason:
                 lines.append(f"  note: {proposal.applicability_reason}")
@@ -151,6 +157,7 @@ def _summarize_recommendation(rec: PpaRecommendation) -> PpaRecommendationSummar
         severity=rec.severity,
         target=target,
         pattern_hint=_recommendation_pattern_hint(rec),
+        focus_anchors=_recommendation_focus_anchors(rec),
         rationale=rec.rationale,
         actions=tuple(rec.suggestions[:2]),
     )
@@ -214,13 +221,35 @@ def _recommendation_target(rec: PpaRecommendation) -> Optional[str]:
 
 
 def _summarize_rewrite_proposal(proposal) -> RewriteProposalSummary:
+    anchor_target = proposal.source_assignment
+    for edit in proposal.edits:
+        if edit.kind in {"replace_assignment_expr", "append_assignment"} and isinstance(edit.target, str) and edit.target:
+            anchor_target = edit.target
+            break
     return RewriteProposalSummary(
         summary=proposal.summary,
-        target=proposal.source_assignment,
+        target=anchor_target,
+        origin_anchor=getattr(proposal, "origin_anchor", None),
         applicability=proposal.applicability,
         applicability_reason=proposal.applicability_reason,
         edit_kinds=tuple(edit.kind for edit in proposal.edits),
     )
+
+
+def _recommendation_focus_anchors(rec: PpaRecommendation) -> Tuple[str, ...]:
+    evidence = rec.evidence
+    for key in (
+        "handshake_payload_anchors",
+        "queue_control_anchors",
+        "queue_sideband_anchors",
+        "register_bank_control_anchors",
+    ):
+        value = evidence.get(key)
+        if isinstance(value, tuple):
+            anchors = tuple(anchor for anchor in value if isinstance(anchor, str) and anchor)
+            if anchors:
+                return anchors[:3]
+    return ()
 
 
 def _recommendation_pattern_hint(rec: PpaRecommendation) -> Optional[str]:

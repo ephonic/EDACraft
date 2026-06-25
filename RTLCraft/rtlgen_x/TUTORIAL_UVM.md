@@ -346,17 +346,17 @@ from rtlgen_x.verify import PythonUvmSequenceItem, run_python_uvm_test
 sequence = (
     PythonUvmSequenceItem(
         inputs={"wr_rst": 1, "rd_rst": 1},
-        active_domains=("wr_clk", "rd_clk"),
+        active_domains=("write", "read"),
         label="reset",
     ),
     PythonUvmSequenceItem(
         inputs={"wr_en": 1, "din": 11},
-        active_domains=("wr_clk",),
+        active_domains=("write",),
         label="write0",
     ),
     PythonUvmSequenceItem(
         inputs={"rd_en": 1},
-        active_domains=("rd_clk",),
+        active_domains=("read",),
         label="read0",
     ),
 )
@@ -364,6 +364,10 @@ sequence = (
 report = run_python_uvm_test(module, sequence, name="dsl_multiclk_local_uvm")
 print(report.passed, report.traces[-1].active_domains)
 ```
+
+For DSL modules that declare semantic clock domains, prefer those semantic
+names in `active_domains`. Raw signal names such as `wr_clk` / `rd_clk` remain
+accepted as compatibility aliases.
 
 Today this local path is scalar-step only. If you pass `batch_cycles`, any
 chunk containing `active_domains` items automatically falls back to per-item
@@ -486,7 +490,7 @@ schedule:
 report = smoke_test_generated_reference_model(
     "build/my_dsl_uvm/my_dsl_module_ref_model.py",
     inputs={"wr_en": 1, "din": 11},
-    active_domains=("wr_clk",),
+    active_domains=("write",),
 )
 print(report.predicted)
 print(report.active_domains)
@@ -504,17 +508,17 @@ bundle = generate_uvm_runtime_bundle(
     directed_sequence=(
         UvmSequenceStep(
             inputs={"wr_rst": 1, "rd_rst": 1},
-            active_domains=("wr_clk", "rd_clk"),
+            active_domains=("write", "read"),
             label="reset",
         ),
         UvmSequenceStep(
             inputs={"wr_en": 1, "din": 0x11},
-            active_domains=("wr_clk",),
+            active_domains=("write",),
             label="write0",
         ),
         UvmSequenceStep(
             inputs={"rd_en": 1},
-            active_domains=("rd_clk",),
+            active_domains=("read",),
             label="read0",
         ),
     ),
@@ -682,17 +686,17 @@ For multi-clock directed closure, add a step file and pass
   {
     "inputs": {"wr_rst": 1, "rd_rst": 1},
     "label": "reset",
-    "active_domains": ["wr_clk", "rd_clk"]
+    "active_domains": ["write", "read"]
   },
   {
     "inputs": {"wr_en": 1, "din": 17},
     "label": "write0",
-    "active_domains": ["wr_clk"]
+    "active_domains": ["write"]
   },
   {
     "inputs": {"rd_en": 1},
     "label": "read0",
-    "active_domains": ["rd_clk"]
+    "active_domains": ["read"]
   }
 ]
 ```

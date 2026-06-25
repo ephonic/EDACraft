@@ -51,6 +51,7 @@ class VerificationInterface:
     reset_signal: Optional[str]
     reset_active_low: bool
     clock_names: Tuple[str, ...]
+    clock_signals: Tuple[str, ...]
     inputs: Tuple[VerificationPort, ...]
     outputs: Tuple[VerificationPort, ...]
 
@@ -102,13 +103,21 @@ class UvmRuntimeBundle:
         return {artifact.path: artifact.contents for artifact in self.artifacts}
 
 
-def _format_active_domain_guidance(clock_names: Sequence[str]) -> str:
+def _format_active_domain_guidance(
+    clock_names: Sequence[str],
+    clock_aliases: Sequence[str] = (),
+) -> str:
     joined = ", ".join(clock_names) if clock_names else "<module clock domains>"
     example = ", ".join(repr(name) for name in clock_names[:2]) if clock_names else "'domain_name'"
-    return (
+    guidance = (
         f"Known clock domains: {joined}. "
         f"Use UvmSequenceStep(..., active_domains=({example},)) for multi-clock directed sequences."
     )
+    if clock_aliases:
+        guidance = (
+            f"{guidance} Known clock aliases: {', '.join(clock_aliases)}."
+        )
+    return guidance
 
 
 def _coerce_directed_step_active_domains(payload: object) -> Tuple[str, ...]:
@@ -223,6 +232,7 @@ def _describe_verification_interface_from_executable(
         reset_signal=reset_signal,
         reset_active_low=reset_active_low,
         clock_names=tuple(domain.name for domain in module.clock_domains),
+        clock_signals=tuple((domain.clock_signal or domain.name) for domain in module.clock_domains),
         inputs=tuple(inputs),
         outputs=tuple(outputs),
     )
@@ -826,12 +836,16 @@ def _render_assignment(assignment: Assignment) -> str:
 
 def _render_clock_domain(domain: ClockDomain) -> str:
     args = [f"name={domain.name!r}"]
+    if getattr(domain, "clock_signal", None) is not None:
+        args.append(f"clock_signal={domain.clock_signal!r}")
     if domain.reset_signal is not None:
         args.append(f"reset_signal={domain.reset_signal!r}")
     if domain.reset_async:
         args.append("reset_async=True")
     if domain.reset_active_low:
         args.append("reset_active_low=True")
+    if getattr(domain, "aliases", ()):
+        args.append(f"aliases={tuple(domain.aliases)!r}")
     return f"ClockDomain({', '.join(args)})"
 
 
@@ -1120,6 +1134,11 @@ def _emit_directed_sequence_body(
     driven_ports = _transaction_inputs(interface, clock_name)
     driven_names = {port.name for port in driven_ports}
     clock_names = _clock_signal_names(interface, clock_name)
+    clock_aliases = tuple(dict.fromkeys(_clock_signal_port_names(interface, clock_name)))
+    alias_to_domain = {canonical: canonical for canonical in clock_names}
+    for canonical, signal_name in zip(clock_names, _clock_signal_port_names(interface, clock_name)):
+        alias_to_domain.setdefault(signal_name, canonical)
+    accepted_domains = set(alias_to_domain)
     active_field_names = _active_domain_field_names(interface, clock_name)
     body_lines = []
     for index, step in enumerate(directed_sequence):
@@ -1127,13 +1146,17 @@ def _emit_directed_sequence_body(
         if unknown:
             joined = ", ".join(unknown)
             raise ValueError(f"directed UVM step references unknown driven ports: {joined}")
-        unknown_domains = sorted(set(step.active_domains) - set(clock_names))
+        unknown_domains = sorted(set(step.active_domains) - accepted_domains)
         if unknown_domains:
             joined = ", ".join(unknown_domains)
-            guidance = _format_active_domain_guidance(clock_names)
+            guidance = _format_active_domain_guidance(clock_names, clock_aliases)
             raise ValueError(
                 f"directed UVM step references unknown active_domains: {joined}. {guidance}"
             )
+        normalized_active_domains = {
+            alias_to_domain.get(name, name)
+            for name in step.active_domains
+        }
         instance_name = _sv_string_literal(step.label or f"step_{index}")
         body_lines.append("    begin")
         body_lines.append(f"      {txn_class} req;")
@@ -1144,7 +1167,7 @@ def _emit_directed_sequence_body(
             value = int(step.inputs.get(port.name, 0))
             body_lines.append(f"{indent}req.{port.name} = {_sv_literal(port.width, value=value)};")
         for field_name, domain_name in zip(active_field_names, clock_names):
-            value = 1 if domain_name in step.active_domains else 0
+            value = 1 if domain_name in normalized_active_domains else 0
             body_lines.append(f"{indent}req.{field_name} = 1'b{value};")
         body_lines.append(f"{indent}finish_item(req);")
         body_lines.append("    end")
@@ -1191,12 +1214,15 @@ def _emit_driver_sv(
             for field_name in _active_domain_field_names(interface, clock_name)
         )
         clock_high_lines = "\n".join(
-            f"      vif.{domain_name} = req.{_active_domain_field_name(domain_name)};"
-            for domain_name in _clock_signal_names(interface, clock_name)
+            f"      vif.{signal_name} = req.{_active_domain_field_name(domain_name)};"
+            for domain_name, signal_name in zip(
+                _clock_signal_names(interface, clock_name),
+                _clock_signal_port_names(interface, clock_name),
+            )
         )
         clock_low_lines = "\n".join(
-            f"      vif.{domain_name} = 1'b0;"
-            for domain_name in _clock_signal_names(interface, clock_name)
+            f"      vif.{signal_name} = 1'b0;"
+            for signal_name in _clock_signal_port_names(interface, clock_name)
         )
         return (
             f"class {driver_class} extends uvm_driver #({txn_class});\n"
@@ -1517,7 +1543,7 @@ def _transaction_inputs(
     interface: VerificationInterface,
     clock_name: str,
 ) -> Tuple[VerificationPort, ...]:
-    clock_names = set(_clock_signal_names(interface, clock_name))
+    clock_names = set(_clock_signal_port_names(interface, clock_name))
     return tuple(port for port in interface.inputs if port.name not in clock_names)
 
 
@@ -1663,10 +1689,15 @@ def _emit_uvm_top_sv(
 ) -> str:
     clock_names = _clock_signal_names(interface, clock_name)
     multi_clock = len(clock_names) > 1
-    driven_inputs = tuple(port for port in interface.inputs if port.name not in set(clock_names))
+    driven_inputs = tuple(
+        port for port in interface.inputs
+        if port.name not in set(_clock_signal_port_names(interface, clock_name))
+    )
     init_lines = "\n".join(f"    vif.{port.name} = '0;" for port in driven_inputs)
     if multi_clock:
-        clock_init_lines = "\n".join(f"    vif.{name} = 1'b0;" for name in clock_names)
+        clock_init_lines = "\n".join(
+            f"    vif.{name} = 1'b0;" for name in _clock_signal_port_names(interface, clock_name)
+        )
         meta_init_lines = "\n".join(
             f"    vif.{name} = 1'b0;" for name in _active_domain_field_names(interface, clock_name)
         )
@@ -2093,6 +2124,10 @@ def _render_collection_block(lines: Sequence[str]) -> str:
 
 def _clock_signal_names(interface: VerificationInterface, clock_name: str) -> Tuple[str, ...]:
     return interface.clock_names if interface.clock_names else (clock_name,)
+
+
+def _clock_signal_port_names(interface: VerificationInterface, clock_name: str) -> Tuple[str, ...]:
+    return interface.clock_signals if interface.clock_signals else _clock_signal_names(interface, clock_name)
 
 
 def _active_domain_field_name(domain_name: str) -> str:

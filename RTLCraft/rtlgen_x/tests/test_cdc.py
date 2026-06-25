@@ -2,8 +2,10 @@ import pytest
 
 from rtlgen_x.dsl import Array, AsyncFIFO, DslLoweringReport, Else, If, Input, LoweredDslModule, Module, Output, ReadyValidAsyncBridge, Reg, Wire
 from rtlgen_x.dsl.lib import AsyncResetRel, SyncCell
+from rtlgen_x.dsl.logic import Cat
 from rtlgen_x.sim import (
     Assignment,
+    BinaryExpr,
     ClockDomain,
     ConstExpr,
     Memory,
@@ -687,6 +689,37 @@ class SafeHandwrittenAsyncResetReleaseActiveLow(Module):
                 self.data_q <<= self.data_in
 
 
+class SafeShiftRegisterAsyncResetRelease(Module):
+    def __init__(self):
+        super().__init__("safe_shift_register_async_reset_release")
+        self.core_clk = Input(1, "core_clk")
+        self.rst_async = Input(1, "rst_async")
+        self.data_in = Input(1, "data_in")
+        self.rst_pipe = Reg(2, "rst_pipe")
+        self.rst_sync = Wire(1, "rst_sync")
+        self.data_q = Reg(1, "data_q")
+        self.data_out = Output(1, "data_out")
+
+        @self.comb
+        def _comb():
+            self.rst_sync <<= ~self.rst_pipe[1]
+            self.data_out <<= self.data_q
+
+        @self.seq(self.core_clk, self.rst_async, reset_async=True)
+        def _reset_release_seq():
+            with If(self.rst_async == 1):
+                self.rst_pipe <<= 0b11
+            with Else():
+                self.rst_pipe <<= Cat(self.rst_pipe[0], 0)
+
+        @self.seq(self.core_clk, self.rst_sync, reset_async=True)
+        def _core_seq():
+            with If(self.rst_sync == 1):
+                self.data_q <<= 0
+            with Else():
+                self.data_q <<= self.data_in
+
+
 class UnsafeCrossDomainReuseOfSynchronizedReset(Module):
     def __init__(self):
         super().__init__("unsafe_cross_domain_reuse_of_synchronized_reset")
@@ -895,6 +928,12 @@ def test_analyze_cdc_ignores_safe_three_stage_handwritten_async_reset_release():
 
 def test_analyze_cdc_ignores_safe_handwritten_active_low_async_reset_release():
     report = analyze_cdc(SafeHandwrittenAsyncResetReleaseActiveLow())
+
+    assert not any(f.category == "reset_release_crossing" for f in report.findings)
+
+
+def test_analyze_cdc_ignores_safe_shift_register_async_reset_release():
+    report = analyze_cdc(SafeShiftRegisterAsyncResetRelease())
 
     assert not any(f.category == "reset_release_crossing" for f in report.findings)
 
@@ -1279,6 +1318,69 @@ def test_analyze_cdc_ignores_simmodule_safe_three_stage_async_reset_release():
                 SignalRef("data_q"),
                 phase="comb",
                 source_file="safe_reset3_sim.py",
+                source_line=24,
+            ),
+        ),
+        outputs=("data_out",),
+        clock_domains=(
+            ClockDomain("core_clk", reset_signal="rst_sync", reset_async=True),
+        ),
+    )
+
+    report = analyze_cdc(_lowered(module))
+
+    assert not any(f.category == "reset_release_crossing" for f in report.findings)
+
+
+def test_analyze_cdc_ignores_simmodule_safe_shift_register_async_reset_release():
+    module = SimModule(
+        name="simmodule_safe_shift_register_reset_release",
+        signals=(
+            Signal("core_clk", width=1, kind="input"),
+            Signal("rst_async", width=1, kind="input"),
+            Signal("data_in", width=1, kind="input"),
+            Signal("rst_pipe", width=2, kind="state"),
+            Signal("rst_sync", width=1, kind="wire"),
+            Signal("data_q", width=1, kind="state"),
+            Signal("data_out", width=1, kind="output"),
+        ),
+        assignments=(
+            Assignment(
+                "rst_sync",
+                UnaryExpr("~", SignalRef("rst_pipe")),
+                phase="comb",
+                source_file="safe_shift_reset_sim.py",
+                source_line=8,
+            ),
+            Assignment(
+                "rst_pipe",
+                MuxExpr(
+                    SignalRef("rst_async"),
+                    ConstExpr(0b11, 2),
+                    BinaryExpr(
+                        "|",
+                        BinaryExpr("<<", SignalRef("rst_pipe"), ConstExpr(1, 1)),
+                        ConstExpr(0, 2),
+                    ),
+                ),
+                phase="seq",
+                clock_domain="core_clk",
+                source_file="safe_shift_reset_sim.py",
+                source_line=12,
+            ),
+            Assignment(
+                "data_q",
+                MuxExpr(SignalRef("rst_sync"), ConstExpr(0, 1), SignalRef("data_in")),
+                phase="seq",
+                clock_domain="core_clk",
+                source_file="safe_shift_reset_sim.py",
+                source_line=20,
+            ),
+            Assignment(
+                "data_out",
+                SignalRef("data_q"),
+                phase="comb",
+                source_file="safe_shift_reset_sim.py",
                 source_line=24,
             ),
         ),

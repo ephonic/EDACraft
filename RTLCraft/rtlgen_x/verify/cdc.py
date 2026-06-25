@@ -640,6 +640,10 @@ def _compiled_expr_has_constant_like_branch(expr: object, target_name: str) -> b
     return _compiled_expr_is_constant_like(expr, target_name)
 
 
+def _compiled_expr_is_strict_constant(expr: object) -> bool:
+    return not _compiled_expr_data_signal_refs(expr) and not _expr_memory_reads(expr)
+
+
 def _compiled_expr_matches_reset_value(expr: object, reset_name: str, active_value: int) -> bool:
     if isinstance(expr, SignalRef):
         return expr.name == reset_name and active_value == 1
@@ -715,6 +719,71 @@ def _infer_safe_reset_chain_targets(
             safe_targets.add(target_name)
             changed = True
     return safe_targets
+
+
+def _dsl_expr_is_target_slice(expr: object, *, target_name: str, hi: int, lo: int) -> bool:
+    if hi < lo:
+        return False
+    operand = getattr(expr, "operand", None)
+    signal = getattr(operand, "signal", None)
+    return (
+        getattr(signal, "name", None) == target_name
+        and getattr(expr, "hi", None) == hi
+        and getattr(expr, "lo", None) == lo
+    )
+
+
+def _dsl_expr_is_shift_register_update(expr: object, *, target_name: str, width: int) -> bool:
+    if width < 2 or not hasattr(expr, "operands"):
+        return False
+    operands = list(getattr(expr, "operands", ()) or ())
+    if len(operands) != 2:
+        return False
+    lhs, rhs = operands
+    return (
+        _dsl_expr_is_target_slice(lhs, target_name=target_name, hi=width - 2, lo=0)
+        and _dsl_expr_is_constant_like(rhs, target_name)
+        and getattr(rhs, "width", None) == 1
+    ) or (
+        _dsl_expr_is_constant_like(lhs, target_name)
+        and getattr(lhs, "width", None) == 1
+        and _dsl_expr_is_target_slice(rhs, target_name=target_name, hi=width - 1, lo=1)
+    )
+
+
+def _compiled_expr_contains_shift(expr: object) -> bool:
+    if isinstance(expr, BinaryExpr) and expr.op in {"<<", ">>"}:
+        return True
+    for attr in ("value", "lhs", "rhs", "when_true", "when_false"):
+        child = getattr(expr, attr, None)
+        if child is not None and _compiled_expr_contains_shift(child):
+            return True
+    return False
+
+
+def _compiled_expr_is_shift_register_update(expr: object, *, target_name: str, width: int) -> bool:
+    if width < 2:
+        return False
+    if isinstance(expr, MuxExpr):
+        return (
+            _compiled_expr_is_strict_constant(expr.when_true)
+            and _compiled_expr_is_shift_register_update(
+                expr.when_false,
+                target_name=target_name,
+                width=width,
+            )
+        ) or (
+            _compiled_expr_is_strict_constant(expr.when_false)
+            and _compiled_expr_is_shift_register_update(
+                expr.when_true,
+                target_name=target_name,
+                width=width,
+            )
+        )
+    refs = _compiled_expr_data_signal_refs(expr)
+    if refs != {target_name} or _expr_memory_reads(expr):
+        return False
+    return _compiled_expr_contains_shift(expr)
 
 
 def _extract_dsl_transfer_source(expr: object, target_name: str) -> Optional[str]:
@@ -943,7 +1012,7 @@ def _recognize_dsl_cdc_structures(
         domain_name: set(signal_names)
         for domain_name, signal_names in (primitive_safe_reset_outputs_by_domain or {}).items()
     }
-    reset_builder_blocks: Set[int] = set()
+    reset_builder_candidates: Dict[int, str] = {}
 
     for index, (clk, rst, reset_async, reset_active_low, body) in enumerate(getattr(module, "_seq_blocks", ())):
         clk_name = getattr(clk, "name", str(clk)) if clk is not None else None
@@ -989,9 +1058,19 @@ def _recognize_dsl_cdc_structures(
                 reset_constant_like_targets=reset_constant_like_targets,
                 widths=signal_widths,
             )
+            safe_reset_chain_targets.update(
+                target_name
+                for target_name, expr in active_assigns.items()
+                if target_name in reset_constant_like_targets
+                and _dsl_expr_is_shift_register_update(
+                    expr,
+                    target_name=target_name,
+                    width=signal_widths.get(target_name, 1),
+                )
+            )
             if safe_reset_chain_targets and clk_name:
                 reset_base_signals_by_domain.setdefault(clk_name, set()).update(safe_reset_chain_targets)
-                reset_builder_blocks.add(index)
+                reset_builder_candidates[index] = clk_name
 
     safe_reset_signals_by_domain = {
         domain_name: tuple(
@@ -1005,6 +1084,27 @@ def _recognize_dsl_cdc_structures(
         )
         for domain_name, reset_base_signals in reset_base_signals_by_domain.items()
     }
+    reset_builder_blocks: Set[int] = set()
+    for index, domain_name in reset_builder_candidates.items():
+        safe_resets = set(safe_reset_signals_by_domain.get(domain_name, ()))
+        if not safe_resets:
+            continue
+        for other_index, (other_clk, other_rst, other_async, other_active_low, _other_body) in enumerate(
+            getattr(module, "_seq_blocks", ())
+        ):
+            if other_index == index:
+                continue
+            other_domain = getattr(other_clk, "name", str(other_clk)) if other_clk is not None else None
+            if other_domain != domain_name:
+                continue
+            other_reset_name, other_resolved_async, _ = _resolve_dsl_reset_signal(
+                other_rst,
+                reset_async=bool(other_async),
+                reset_active_low=bool(other_active_low),
+            )
+            if other_resolved_async and other_reset_name in safe_resets:
+                reset_builder_blocks.add(index)
+                break
     return _RecognizedCdcStructures(
         safe_first_stage_targets=tuple(sorted(safe_first_stages)),
         safe_reset_signals_by_domain=safe_reset_signals_by_domain,
@@ -1077,6 +1177,16 @@ def _recognize_executable_cdc_structures(module: SimModule) -> _RecognizedCdcStr
                 active_constant_like_targets=active_constant_like_targets,
                 reset_constant_like_targets=reset_constant_like_targets,
                 widths=signal_widths,
+            )
+        )
+        reset_base_signals_by_domain.setdefault(domain_name, set()).update(
+            target_name
+            for target_name, assignment in domain_assignments.items()
+            if target_name in reset_constant_like_targets
+            and _compiled_expr_is_shift_register_update(
+                assignment.expr,
+                target_name=target_name,
+                width=signal_widths.get(target_name, 1),
             )
         )
     safe_reset_signals_by_domain = {
