@@ -49,6 +49,7 @@ from rtlgen_x.dsl.core import (
     SwitchNode,
     UnaryOp,
 )
+from rtlgen_x.dsl.adapter import validate_authoring_intent
 
 
 @dataclass
@@ -178,6 +179,7 @@ class VerilogEmitter:
     # -----------------------------------------------------------------
     def emit(self, module: Module) -> str:
         """生成单个模块的 Verilog 代码。"""
+        validate_authoring_intent(module)
         self._validate_storage_codegen_subset(module)
         self.lines = []
         self._extra_port_wires: List[Tuple[str, str]] = []
@@ -236,6 +238,7 @@ class VerilogEmitter:
         自动基于模块结构（端口+参数）进行去重，避免同名/同构模块重复输出。
         如果 include_assertions=True，还会为带有 _module_assertions 的模块生成 SVA bind 模块。
         """
+        validate_authoring_intent(top_module)
         visited: set = set()
         order: List[Module] = []
 

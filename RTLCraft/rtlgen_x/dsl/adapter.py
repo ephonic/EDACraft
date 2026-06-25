@@ -99,6 +99,28 @@ class DslLoweringError(ValueError):
     """Raised when a DSL construct is outside the supported lowering subset."""
 
 
+_AUTHORING_INTENT_RULES: tuple[str, ...] = (
+    "comb_reg_assign",
+    "seq_output_assign",
+    "hierarchical_write",
+    "hierarchical_read",
+)
+
+
+def validate_authoring_intent(module) -> None:
+    """Reject DSL authoring patterns that violate the intended public contract."""
+
+    violations = list(module.lint(rules=list(_AUTHORING_INTENT_RULES)))
+    if not violations:
+        return
+    details = "\n".join(f"- {item}" for item in violations)
+    raise DslLoweringError(
+        "DSL authoring violates the rtlgen_x intent contract.\n"
+        "These patterns are rejected at public lowering / emit boundaries:\n"
+        f"{details}"
+    )
+
+
 @dataclass(frozen=True)
 class DslLoweringReport:
     """Summary of a DSL lowering step."""
@@ -136,6 +158,7 @@ def lower_dsl_module_to_sim(
     - comb-read / seq-write ``Memory`` and ``Array`` storage
     """
 
+    validate_authoring_intent(module)
     flatten_fn = _select_flatten_module(module)
     lowered_source = flatten_fn(module) if flatten else module
     _reject_unsupported_module_features(lowered_source)

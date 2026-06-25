@@ -31,6 +31,7 @@ from rtlgen_x.dsl import (
     Output,
     PackedStructType,
     PadLeft,
+    Parameter,
     PortConnection,
     ReadyValid,
     ReadyValidAsyncBridge,
@@ -65,6 +66,7 @@ from rtlgen_x.dsl import (
     emit_marker_sequence_report_markdown,
     emit_readability_report_markdown,
     VerilogEmitter,
+    validate_authoring_intent,
     Wishbone,
     WishboneRegisterBank,
     Wire,
@@ -4858,15 +4860,67 @@ class SeqOutputDirectAssign(Module):
                 self.out <<= self.a
 
 
+class CombWritesReg(Module):
+    def __init__(self):
+        super().__init__("CombWritesReg")
+        self.a = Input(8, "a")
+        self.out = Output(8, "out")
+        self.state = Reg(8, "state")
+
+        @self.comb
+        def _comb():
+            self.state <<= self.a
+            self.out <<= self.state
+
+
+class ChildInternalState(Module):
+    def __init__(self):
+        super().__init__("ChildInternalState")
+        self.inp = Input(8, "inp")
+        self.out = Output(8, "out")
+        self.hidden = Reg(8, "hidden")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.hidden
+
+
+class ParentHierRead(Module):
+    def __init__(self):
+        super().__init__("ParentHierRead")
+        self.out = Output(8, "out")
+        self.child = ChildInternalState()
+
+        @self.comb
+        def _comb():
+            self.out <<= self.child.hidden
+
+
 def test_dsl_seq_output_assign_error_names_port_and_pattern():
     """Finding #2: the lowering error for an Output in a seq block must name
     the port and recommend the shadow-register pattern."""
     with pytest.raises(DslLoweringError) as exc_info:
         lower_dsl_module_to_sim(SeqOutputDirectAssign())
     message = str(exc_info.value)
-    assert "output 'out'" in message
+    assert "SeqOutputAssign" in message
+    assert "Output 'out'" in message
     assert "Reg" in message
     assert "comb" in message
+
+
+def test_validate_authoring_intent_rejects_comb_reg_assign():
+    with pytest.raises(DslLoweringError, match="intent contract"):
+        validate_authoring_intent(CombWritesReg())
+
+
+def test_validate_authoring_intent_rejects_hierarchical_read():
+    with pytest.raises(DslLoweringError, match="HierarchicalRead"):
+        validate_authoring_intent(ParentHierRead())
+
+
+def test_verilog_emit_rejects_authoring_intent_violation():
+    with pytest.raises(DslLoweringError, match="CombRegAssign"):
+        VerilogEmitter().emit(CombWritesReg())
 
 
 def test_dsl_seq_wire_assign_error_names_kind():
@@ -4895,3 +4949,49 @@ def test_dsl_seq_wire_assign_error_names_kind():
         lower_dsl_module_to_sim(SeqWireAssign())
     message = str(exc_info.value)
     assert "wire 'w'" in message
+
+
+def test_signal_truthiness_is_rejected_with_actionable_message():
+    sig = Input(1, "sig")
+
+    with pytest.raises(TypeError, match="does not support Python truthiness"):
+        bool(sig)
+
+
+def test_expr_truthiness_is_rejected_with_actionable_message():
+    expr = Input(1, "a") & Input(1, "b")
+
+    with pytest.raises(TypeError, match="does not support Python truthiness"):
+        bool(expr)
+
+
+def test_array_and_proxy_truthiness_are_rejected():
+    arr = Array(8, 4, "rf")
+
+    with pytest.raises(TypeError, match="Array does not support Python truthiness"):
+        bool(arr)
+
+    with pytest.raises(TypeError, match="ArrayProxy does not support Python truthiness"):
+        bool(arr[0])
+
+
+def test_memproxy_truthiness_is_rejected():
+    mem = Memory(8, 4, "mem")
+
+    with pytest.raises(TypeError, match="MemProxy does not support Python truthiness"):
+        bool(mem[0])
+
+
+def test_vector_truthiness_is_rejected():
+    from rtlgen_x.dsl.core import Vector
+
+    vector = Vector(8, 2, "v")
+    with pytest.raises(TypeError, match="Vector does not support Python truthiness"):
+        bool(vector)
+
+
+def test_parameter_truthiness_is_rejected():
+    width = Parameter(8, "WIDTH")
+
+    with pytest.raises(TypeError, match="Parameter does not support Python truthiness"):
+        bool(width)

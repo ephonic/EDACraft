@@ -11,6 +11,7 @@ from rtlgen_x.dsl.adapter import (
     LoweredDslModule,
     build_compiled_simulator_from_dsl,
     lower_dsl_module_to_sim,
+    validate_authoring_intent,
 )
 from rtlgen_x.dsl.codegen import EmitProfile, VerilogEmitter
 from rtlgen_x.dsl.core import (
@@ -230,4 +231,5 @@ __all__ = [
     "emit_readability_report_markdown",
     "emit_marker_sequence_report_markdown",
     "lower_dsl_module_to_sim",
+    "validate_authoring_intent",
 ]

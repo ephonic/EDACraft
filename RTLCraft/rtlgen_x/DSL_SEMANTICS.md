@@ -127,6 +127,32 @@ Important current rules:
 2. multiply lowering preserves full product width rather than truncating to the
    widest operand width
 3. unsupported expression forms fail fast through `DslLoweringError`
+4. DSL values are not valid Python booleans: authored hardware conditions must
+   stay inside the DSL surface rather than falling back to Python truthiness
+
+### 5.1 Python syntax boundary
+
+The DSL is embedded in Python, but not every Python expression form is a valid
+hardware-authoring construct.
+
+Authoring contract:
+
+1. do not use `if sig:` or `while sig:` on DSL `Signal` / `Expr` objects
+2. do not use Python `and` / `or` / `not` on DSL values
+3. do not use Python ternary expressions such as `a if cond else b` when
+   `cond` is a DSL value
+4. do not rely on Python container truthiness for DSL objects such as
+   `Array`, `ArrayProxy`, `MemProxy`, `Vector`, or `Parameter`
+
+Use these DSL forms instead:
+
+1. `with If(cond):` / `with Else():` for hardware control flow
+2. `a & b`, `a | b`, `~a` for bitwise logic
+3. `Mux(cond, a, b)` for value selection
+4. explicit index/read/compare expressions for array and memory elements
+
+This boundary is enforced intentionally so Python cannot silently consume a DSL
+condition before lowering or emitted-RTL checks ever see it.
 
 ## 6. Clock and reset semantics
 
@@ -255,3 +281,20 @@ survive the main closure path without ad hoc escape hatches:
 If any of those steps currently require special handling, the feature should be
 documented as `partial`, `experimental`, or `unsupported` rather than being
 presented as fully closed.
+
+## 11. Authoring intent gate
+
+Some patterns are not merely "discouraged style"; they violate the intended
+DSL authoring model strongly enough that the public lowering / emission
+surfaces reject them.
+
+Current hard-reject set:
+
+1. assigning a `Reg` in `@comb`
+2. assigning an `Output` directly in `@seq`
+3. illegal hierarchical writes into non-port child state
+4. illegal hierarchical reads from non-port child state
+
+This is intentional. The goal is to keep both humans and agents inside the DSL
+contract instead of letting structurally ambiguous or semantically misleading
+authoring patterns drift deeper into lowering, simulation, or emitted RTL.

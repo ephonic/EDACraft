@@ -85,6 +85,13 @@ class Expr:
     def __init__(self, width: int = 1):
         self.width = width
 
+    def __bool__(self):
+        raise TypeError(
+            "rtlgen_x DSL expressions do not support Python truthiness; "
+            "use 'with If(cond):' for control flow, '&'/'|'/'~' for bitwise logic, "
+            "and Mux(cond, a, b) instead of Python ternary expressions"
+        )
+
     def __ror__(self, other):
         return _make_binop("|", _to_expr(other), self)
 
@@ -982,6 +989,13 @@ class ArrayProxy:
     def __rrshift__(self, other):
         return _make_binop(">>", other, self, width=_to_expr(other).width)
 
+    def __bool__(self):
+        raise TypeError(
+            "rtlgen_x ArrayProxy does not support Python truthiness; "
+            "read or compare the indexed value explicitly, use 'with If(cond):' for control flow, "
+            "and '&'/'|'/'~' for bitwise logic"
+        )
+
 
 class IndexedAssign:
     """向量位选赋值：如 y[i] = a[i] 或 y[i] <= a[i]。"""
@@ -1042,6 +1056,13 @@ class MemProxy:
         self._append_write_stmt(stmt)
         self._written = True
         return self
+
+    def __bool__(self):
+        raise TypeError(
+            "rtlgen_x MemProxy does not support Python truthiness; "
+            "read or compare the memory value explicitly, use 'with If(cond):' for control flow, "
+            "and '&'/'|'/'~' for bitwise logic"
+        )
 
 
 class Comment:
@@ -1474,6 +1495,13 @@ class Signal(IREntity):
     def __hash__(self):
         return id(self)
 
+    def __bool__(self):
+        raise TypeError(
+            "rtlgen_x Signal does not support Python truthiness; "
+            "use 'with If(cond):' for hardware control flow, '&'/'|'/'~' instead of "
+            "Python and/or/not, and Mux(cond, a, b) instead of Python ternary expressions"
+        )
+
     def __getattr__(self, key: str):
         try:
             struct_type = object.__getattribute__(self, "struct_type")
@@ -1762,6 +1790,12 @@ class Vector:
     def __len__(self):
         return self.size
 
+    def __bool__(self):
+        raise TypeError(
+            "rtlgen_x Vector does not support Python truthiness; "
+            "use explicit length/count checks in host Python, and index/select signals explicitly inside DSL logic"
+        )
+
     def __reversed__(self):
         return reversed(self._signals)
 
@@ -1834,6 +1868,12 @@ class Parameter:
 
     def __repr__(self):
         return f"Parameter({self.value})"
+
+    def __bool__(self):
+        raise TypeError(
+            "rtlgen_x Parameter does not support Python truthiness inside authored DSL logic; "
+            "compare it explicitly or use it in RTL expressions only"
+        )
 
 
 class LocalParam(Parameter):
@@ -2040,6 +2080,12 @@ class Array:
 
     def __len__(self):
         return self.depth
+
+    def __bool__(self):
+        raise TypeError(
+            "rtlgen_x Array does not support Python truthiness; "
+            "use explicit depth checks in host Python, and index/select array entries explicitly inside DSL logic"
+        )
 
     def __repr__(self):
         return f"Array({self.width}x{self.depth})<{self.name}>"
@@ -2259,7 +2305,7 @@ class Module(IREntity, metaclass=ModuleMeta):
                 continue
 
             target_sig = _extract_target_sig(stmt)
-            if target_sig and target_sig._parent_module is not None and target_sig._parent_module is not self:
+            if target_sig is not None and target_sig._parent_module is not None and target_sig._parent_module is not self:
                 if not isinstance(target_sig, Input):
                     owner = _owner_name(target_sig._parent_module)
                     violations.append(
@@ -2777,7 +2823,7 @@ class Module(IREntity, metaclass=ModuleMeta):
                 elif isinstance(stmt.target, Ref):
                     target = stmt.target.signal
                     tw = target.width
-                if target and tw > 0:
+                if target is not None and tw > 0:
                     _check_expr(stmt.value, tw, target.name)
             elif isinstance(stmt, IfNode):
                 for s in stmt.then_body:
@@ -2814,7 +2860,7 @@ class Module(IREntity, metaclass=ModuleMeta):
                 r_sig = rhs.signal
             elif isinstance(rhs, Signal):
                 r_sig = rhs
-            if l_sig and r_sig and getattr(l_sig, "signed", False) != getattr(r_sig, "signed", False):
+            if l_sig is not None and r_sig is not None and getattr(l_sig, "signed", False) != getattr(r_sig, "signed", False):
                 violations.append(
                     f"[SignedMix] Signed signal '{l_sig.name}' and unsigned signal '{r_sig.name}' "
                     f"used in the same expression assigned to '{sig_name}'. "

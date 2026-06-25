@@ -544,6 +544,14 @@ Current boundary:
    semantics, so a synchronous `@self.seq(clk, rst)` block stays synchronous and
    an explicit async-low `@self.seq(clk, ~rst_n)` block stays async-low after
    SV/UVM export
+11. DSL values are not allowed to fall back into Python truthiness: `if sig`,
+   `a and b`, `not sig`, and Python ternary expressions on DSL conditions are
+   rejected with actionable errors so authoring stays inside the hardware DSL
+   surface
+12. public lowering and emitted-RTL entry points also enforce an authoring
+   intent gate for patterns such as `@comb` writing a `Reg`, `@seq` directly
+   writing an `Output`, or illegal hierarchical access into child internal
+   state
 
 Recent latch closure is important here:
 
