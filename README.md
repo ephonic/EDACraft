@@ -53,25 +53,21 @@ RTLCraft provides:
 
 Key RTLCraft documentation:
 
-- [RTLCraft README](RTLCraft/README.md)
-- [RTLCraft README 中文版](RTLCraft/README_CN.md)
-- [RTLCraft Tutorial](RTLCraft/Tutorial.md)
-- [RTLCraft Tutorial 中文版](RTLCraft/Tutorial_CN.md)
-- [Release manifest](RTLCraft/release_manifest.json)
+- [DSL semantics](RTLCraft/rtlgen/DSL_SEMANTICS.md)
+- [DSL support matrix](RTLCraft/rtlgen/DSL_SUPPORT_MATRIX.md)
+- [Standard-library support matrix](RTLCraft/rtlgen/STDLIB_SUPPORT_MATRIX.md)
+- [Architecture and PPA tutorial](RTLCraft/rtlgen/TUTORIAL_ARCH_PPA.md)
+- [UVM tutorial](RTLCraft/rtlgen/TUTORIAL_UVM.md)
 
 Key directories under `RTLCraft/`:
 
 - `rtlgen/` — DSL, code generation, simulation, verification, PPA, and
   architecture exploration.
-- `jpeg_decoder/` — Example RTL design and tests built on `rtlgen`.
-- `scripts/` — Local development and analysis scripts.
 
 Quick start:
 
 ```bash
-cd RTLCraft
-python -m pip install -e .
-python - <<'PY'
+PYTHONPATH=RTLCraft python - <<'PY'
 import rtlgen
 print("rtlgen import ok")
 PY
