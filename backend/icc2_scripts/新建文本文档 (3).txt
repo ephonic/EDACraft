@@ -1,0 +1,284 @@
+########################################################################
+# PRE-PLACE PG SCRIPT WITH PG_REGION
+# Goal:
+#   1. ring placed around core
+#   2. top mesh (M10/M9) extends to ring area through pg_region
+#   3. lower mesh (M8/M7/M6) stays in core
+#   4. SRAM macro PG connected to M6
+#   5. NO M6->M1 before placement
+########################################################################
+
+ 
+
+set_app_options -name plan.pgroute.disable_via_creation -value true
+
+ 
+
+########################################################################
+# Clean old PG
+########################################################################
+remove_pg_regions -all
+remove_routing_blockages *
+remove_pg_patterns -all
+remove_pg_strategies -all
+remove_pg_via_master_rules -all
+remove_pg_strategy_via_rules -all
+remove_routes -net_types {power ground} -ring -stripe -macro_pin_connect -lib_cell_pin_connect
+
+ 
+
+########################################################################
+# User blockage
+########################################################################
+create_routing_blockage -layers {M6 M7 M8 M9 M10} \
+    -boundary {{2431.1550 180} {2720 570.2000}}
+
+ 
+
+########################################################################
+# Get core bbox and build PG region for top mesh
+# Expand core bbox so M9/M10 mesh can overlap ring area
+########################################################################
+set core_bbox [get_attribute [current_block] core_area]
+
+ 
+
+set llx [lindex $core_bbox 0 0]
+set lly [lindex $core_bbox 0 1]
+set urx [lindex $core_bbox 1 0]
+set ury [lindex $core_bbox 1 1]
+
+ 
+
+# margin should cover ring offset + ring width + some safety
+set pg_margin 20.0
+
+ 
+
+set top_pg_bbox [list \
+    [list [expr {$llx - $pg_margin}] [expr {$lly - $pg_margin}]] \
+    [list [expr {$urx + $pg_margin}] [expr {$ury + $pg_margin}]]]
+
+ 
+
+create_pg_region top_pg_region -boundary $top_pg_bbox
+
+ 
+
+########################################################################
+# 1. Core ring
+########################################################################
+create_pg_ring_pattern p_core_ring \
+    -horizontal_layer M9 \
+    -horizontal_width 4.0 \
+    -horizontal_spacing 5.0 \
+    -vertical_layer M10 \
+    -vertical_width 4.0 \
+    -vertical_spacing 5.0
+
+ 
+
+set_pg_strategy s_core_ring \
+    -core \
+    -pattern {{name:p_core_ring} {nets:{VDD VSS}} {offset:{8 8}}}
+
+ 
+
+########################################################################
+# 2. Mesh patterns
+########################################################################
+
+ 
+
+# Top mesh: use pg_region so it extends to ring area
+create_pg_mesh_pattern p_m10 \
+    -layers {{{vertical_layer: M10} {width: 4.0} {spacing: 1.5} {pitch: 11.0} {offset: -1.5} {trim: true}}}
+
+ 
+
+create_pg_mesh_pattern p_m9 \
+    -layers {{{horizontal_layer: M9} {width: 4.0} {spacing: 1.5} {pitch: 11.0} {offset: 2.5} {trim: true}}}
+
+ 
+
+# Lower mesh: stay in core
+create_pg_mesh_pattern p_m8 \
+    -layers {{{vertical_layer: M8} {width: 2.0} {spacing: 1.5} {pitch: 8.0} {offset: 0.0} {trim: true}}}
+
+ 
+
+create_pg_mesh_pattern p_m7 \
+    -layers {{{horizontal_layer: M7} {width: 2.0} {spacing: 1.5} {pitch: 8.0} {offset: 0.0} {trim: true}}}
+
+ 
+
+create_pg_mesh_pattern p_m6 \
+    -layers {{{vertical_layer: M6} {width: 2.0} {spacing: 1.5} {pitch: 8.0} {offset: 2.0} {trim: true}}}
+
+ 
+
+########################################################################
+# 3. Strategies
+########################################################################
+
+ 
+
+# Top mesh on pg_region
+set_pg_strategy s_m10 \
+    -pg_regions {top_pg_region} \
+    -pattern {{name:p_m10} {nets:{VDD VSS}}}
+
+ 
+
+set_pg_strategy s_m9 \
+    -pg_regions {top_pg_region} \
+    -pattern {{name:p_m9} {nets:{VDD VSS}}}
+
+ 
+
+# Lower mesh on core only
+set_pg_strategy s_m8 \
+    -core \
+    -pattern {{name:p_m8} {nets:{VDD VSS}}}
+
+ 
+
+set_pg_strategy s_m7 \
+    -core \
+    -pattern {{name:p_m7} {nets:{VDD VSS}}}
+
+ 
+
+set_pg_strategy s_m6 \
+    -core \
+    -pattern {{name:p_m6} {nets:{VDD VSS}}}
+
+ 
+
+########################################################################
+# 4. SRAM macro PG connection
+# Macro pins on M4, scattered pins mostly 0.38, some 0.57
+########################################################################
+create_pg_macro_conn_pattern sram_macro_conn \
+    -pin_conn_type scattered_pin \
+    -nets {VDD VSS} \
+    -pin_layers {M4} \
+    -layers {M4 M5 M6} \
+    -width {0.38 0.57 0.80}
+
+ 
+
+set_pg_strategy sram_macro \
+    -core \
+    -pattern {{name:sram_macro_conn} {nets:{VDD VSS}}} \
+    -blockage {{nets:{VDD VSS}} {placement_blockages: all}}
+
+ 
+
+########################################################################
+# 5. Stdcell rail pattern only
+# DO NOT create M6->M1 here
+########################################################################
+create_pg_std_cell_conn_pattern p_std_conn1 \
+    -layer M1 \
+    -rail_width 0.15
+
+ 
+
+set_pg_strategy std_conn1 \
+    -core \
+    -pattern {{name:p_std_conn1} {nets:{VDD VSS}}} \
+    -blockage {{nets:{VDD VSS}} {placement_blockages: all}}
+
+ 
+
+########################################################################
+# 6. Compile PG shapes
+########################################################################
+compile_pg -strategies {s_core_ring s_m10 s_m9 s_m8 s_m7 s_m6 std_conn1 sram_macro}
+
+ 
+
+########################################################################
+# 7. Create vias
+########################################################################
+set die_box [get_attribute [current_block] boundary_bbox]
+
+ 
+
+# M10 <-> M9
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types stripe -to_types stripe \
+    -from_layers M10 -to_layers M9 \
+    -mark_as strap
+
+ 
+
+# ring <-> top mesh
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types ring -to_types stripe \
+    -from_layers M10 -to_layers M9 \
+    -mark_as strap
+
+ 
+
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types stripe -to_types ring \
+    -from_layers M10 -to_layers M9 \
+    -mark_as strap
+
+ 
+
+# M9 <-> M8
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types stripe -to_types stripe \
+    -from_layers M9 -to_layers M8 \
+    -mark_as strap
+
+ 
+
+# ring <-> M8 through M9 ring
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types ring -to_types stripe \
+    -from_layers M9 -to_layers M8 \
+    -mark_as strap
+
+ 
+
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types stripe -to_types ring \
+    -from_layers M9 -to_layers M8 \
+    -mark_as strap
+
+ 
+
+# M8 <-> M7
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types stripe -to_types stripe \
+    -from_layers M8 -to_layers M7 \
+    -mark_as strap
+
+ 
+
+# M7 <-> M6
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types stripe -to_types stripe \
+    -from_layers M7 -to_layers M6 \
+    -mark_as strap
+
+ 
+
+# M6 <-> SRAM macro M4
+create_pg_vias -nets {VDD VSS} -within_bbox $die_box \
+    -from_types stripe -to_types macro_pin_connect \
+    -from_layers M6 -to_layers M4 \
+    -mark_as strap
+
+ 
+
+########################################################################
+# 8. Checks
+########################################################################
+check_pg_drc
+check_routes
+ 

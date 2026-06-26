@@ -1,0 +1,19 @@
+QoR Analysis: FullSystem
+
+[SYNTHESIS]
+
+[FLOORPLAN]
+
+[PLACEMENT]
+
+[CTS]
+
+[ROUTING]
+
+[ROUTE_OPT]
+
+[PV_DRC]
+
+[PV_LVS]
+
+No significant regressions detected.
