@@ -8,7 +8,7 @@ EDACraft is a monorepo hosting multiple EDA sub-projects, each focusing on diffe
 
 ## Sub-projects
 
-### RTLCraft / rtlgen (`RTLCraft/`)
+### [RTLCraft / rtlgen](RTLCraft/README.md) (`RTLCraft/`)
 
 RTLCraft now publishes its clean-core RTL toolkit as `rtlgen`. The release
 replaces the historical `rtlgen_x` naming in the public package and removes the
@@ -53,6 +53,8 @@ RTLCraft provides:
 
 Key RTLCraft documentation:
 
+- [RTLCraft README](RTLCraft/README.md)
+- [中文 README](RTLCraft/README_CN.md)
 - [DSL semantics](RTLCraft/rtlgen/DSL_SEMANTICS.md)
 - [DSL support matrix](RTLCraft/rtlgen/DSL_SUPPORT_MATRIX.md)
 - [Standard-library support matrix](RTLCraft/rtlgen/STDLIB_SUPPORT_MATRIX.md)
