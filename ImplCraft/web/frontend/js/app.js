@@ -2,9 +2,11 @@
  * ImplCraft Frontend Application
  */
 
+console.log('ImplCraft App loading...');
+
 const API_BASE = '/api';
 
-const App = {
+window.App = {
     currentPage: 'dashboard',
     configData: null,
     flowData: null,
@@ -12,30 +14,63 @@ const App = {
     statusUpdateInterval: null,
 
     init() {
-        this.setupNavigation();
-        this.loadDashboard();
-        this.checkServerStatus();
-        this.startStatusPolling();
+        console.log('ImplCraft App initializing...');
+        try {
+            this.setupNavigation();
+            this.setupButtons();
+            this.loadDashboard();
+            this.checkServerStatus();
+            this.startStatusPolling();
+            console.log('ImplCraft App initialized successfully');
+        } catch (err) {
+            console.error('App initialization failed:', err);
+        }
     },
 
     setupNavigation() {
-        document.querySelectorAll('.nav-menu a').forEach(link => {
+        console.log('Setting up navigation...');
+        const links = document.querySelectorAll('.nav-menu a');
+        console.log(`Found ${links.length} navigation links`);
+        
+        links.forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 const page = link.dataset.page;
+                console.log(`Navigation clicked: ${page}`);
                 this.switchPage(page);
             });
         });
     },
 
+    setupButtons() {
+        console.log('Setting up button event handlers...');
+        
+        // Add event delegation for all buttons with onclick
+        document.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON' && e.target.onclick) {
+                console.log('Button clicked:', e.target.textContent);
+            }
+        });
+    },
+
     switchPage(page) {
+        console.log(`Switching to page: ${page}`);
         this.currentPage = page;
+        
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.nav-menu a').forEach(a => a.classList.remove('active'));
 
         const pageEl = document.getElementById(`page-${page}`);
         const navEl = document.querySelector(`[data-page="${page}"]`);
-        if (pageEl) pageEl.classList.add('active');
+        
+        if (pageEl) {
+            pageEl.classList.add('active');
+            console.log(`Page ${page} activated`);
+        } else {
+            console.error(`Page element not found: page-${page}`);
+        }
+        
         if (navEl) navEl.classList.add('active');
 
         switch (page) {
@@ -52,18 +87,24 @@ const App = {
     async api(path, options = {}) {
         try {
             const url = `${API_BASE}${path}`;
+            console.log(`API call: ${options.method || 'GET'} ${url}`);
+            
             const config = {
                 headers: { 'Content-Type': 'application/json' },
                 ...options,
             };
+            
             if (config.body && typeof config.body === 'object') {
                 config.body = JSON.stringify(config.body);
             }
+            
             const response = await fetch(url, config);
+            
             if (!response.ok) {
                 const error = await response.json().catch(() => ({ detail: response.statusText }));
                 throw new Error(error.detail || `HTTP ${response.status}`);
             }
+            
             return await response.json();
         } catch (err) {
             console.error(`API Error [${path}]:`, err);
@@ -76,10 +117,13 @@ const App = {
             const resp = await fetch('/health');
             const data = await resp.json();
             const dot = document.querySelector('#server-status .status-dot');
-            dot.className = `status-dot ${data.status === 'healthy' ? 'online' : 'offline'}`;
-        } catch {
+            if (dot) {
+                dot.className = `status-dot ${data.status === 'healthy' ? 'online' : 'offline'}`;
+            }
+        } catch (err) {
+            console.error('Server status check failed:', err);
             const dot = document.querySelector('#server-status .status-dot');
-            dot.className = 'status-dot offline';
+            if (dot) dot.className = 'status-dot offline';
         }
     },
 
@@ -92,6 +136,7 @@ const App = {
     },
 
     refresh() {
+        console.log('Refreshing current page');
         this.switchPage(this.currentPage);
     },
 
@@ -115,12 +160,15 @@ const App = {
 
     renderDesignsTable(designs) {
         const tbody = document.getElementById('designs-table-body');
+        if (!tbody) return;
+        
         if (!designs || designs.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无设计项目</td></tr>';
             return;
         }
+        
         tbody.innerHTML = designs.map(d => `
-            <tr onclick="App.switchPage('stages')">
+            <tr onclick="App.switchPage('stages')" style="cursor: pointer;">
                 <td><strong>${this.esc(d.name)}</strong></td>
                 <td><span class="badge badge-${d.status}">${d.status}</span></td>
                 <td>${this.esc(d.pdk_name || '-')}</td>
@@ -138,10 +186,13 @@ const App = {
         try {
             const designs = await this.api('/designs');
             const container = document.getElementById('designs-list');
+            if (!container) return;
+            
             if (!designs || designs.length === 0) {
                 container.innerHTML = '<div class="empty">暂无设计项目</div>';
                 return;
             }
+            
             container.innerHTML = designs.map(d => `
                 <div class="card">
                     <div class="card-header">
@@ -162,7 +213,11 @@ const App = {
     },
 
     showCreateDesign() {
-        document.getElementById('modal-create-design').classList.remove('hidden');
+        console.log('Showing create design modal');
+        const modal = document.getElementById('modal-create-design');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
     },
 
     async createDesign(event) {
@@ -175,6 +230,7 @@ const App = {
             target_utilization: parseFloat(form.target_utilization.value),
             pdk_name: form.pdk_name.value,
         };
+        
         try {
             await this.api('/designs', { method: 'POST', body: data });
             this.closeModal('modal-create-design');
@@ -201,37 +257,47 @@ const App = {
 
     renderConfig() {
         if (!this.configData) return;
+        
         document.getElementById('config-project-name').value = this.configData.name || '';
         document.getElementById('config-working-dir').value = this.configData.working_directory || '';
         
-        // Design files
         const filesContainer = document.getElementById('config-design-files');
-        filesContainer.innerHTML = (this.configData.design_files || []).map((f, i) => `
-            <div class="file-item">
-                <input type="text" value="${this.esc(f)}" data-index="${i}" onchange="App.updateDesignFile(${i}, this.value)">
-                <button class="btn btn-sm btn-danger" onclick="App.removeDesignFile(${i})">删除</button>
-            </div>
-        `).join('');
+        if (filesContainer) {
+            filesContainer.innerHTML = (this.configData.design_files || []).map((f, i) => `
+                <div class="file-item">
+                    <input type="text" value="${this.esc(f)}" data-index="${i}" onchange="App.updateDesignFile(${i}, this.value)">
+                    <button class="btn btn-sm btn-danger" onclick="App.removeDesignFile(${i})">删除</button>
+                </div>
+            `).join('');
+        }
 
-        // Design libs
         const libsContainer = document.getElementById('config-design-libs');
-        libsContainer.innerHTML = (this.configData.design_libraries || []).map((l, i) => `
-            <div class="file-item">
-                <input type="text" value="${this.esc(l)}" data-index="${i}" onchange="App.updateDesignLib(${i}, this.value)">
-                <button class="btn btn-sm btn-danger" onclick="App.removeDesignLib(${i})">删除</button>
-            </div>
-        `).join('');
+        if (libsContainer) {
+            libsContainer.innerHTML = (this.configData.design_libraries || []).map((l, i) => `
+                <div class="file-item">
+                    <input type="text" value="${this.esc(l)}" data-index="${i}" onchange="App.updateDesignLib(${i}, this.value)">
+                    <button class="btn btn-sm btn-danger" onclick="App.removeDesignLib(${i})">删除</button>
+                </div>
+            `).join('');
+        }
 
-        // EDA tools
-        document.getElementById('config-icc2-path').value = this.configData.eda_tools?.icc2_path || '';
-        document.getElementById('config-pt-path').value = this.configData.eda_tools?.pt_path || '';
-        document.getElementById('config-calibre-path').value = this.configData.eda_tools?.calibre_path || '';
-        document.getElementById('config-starrc-path').value = this.configData.eda_tools?.starrc_path || '';
+        const icc2Path = document.getElementById('config-icc2-path');
+        const ptPath = document.getElementById('config-pt-path');
+        const calibrePath = document.getElementById('config-calibre-path');
+        const starrcPath = document.getElementById('config-starrc-path');
+        
+        if (icc2Path) icc2Path.value = this.configData.eda_tools?.icc2_path || '';
+        if (ptPath) ptPath.value = this.configData.eda_tools?.pt_path || '';
+        if (calibrePath) calibrePath.value = this.configData.eda_tools?.calibre_path || '';
+        if (starrcPath) starrcPath.value = this.configData.eda_tools?.starrc_path || '';
     },
 
     renderFlowConfig() {
         if (!this.flowData) return;
+        
         const stagesContainer = document.getElementById('config-flow-stages');
+        if (!stagesContainer) return;
+        
         stagesContainer.innerHTML = (this.flowData.enabled_stages || []).map((stage, i) => `
             <div class="stage-item">
                 <span class="stage-number">${i + 1}</span>
@@ -242,19 +308,26 @@ const App = {
             </div>
         `).join('');
 
-        document.getElementById('config-parallel').checked = this.flowData.parallel_execution || false;
-        document.getElementById('config-auto-continue').checked = this.flowData.auto_continue || false;
-        document.getElementById('config-checkpoint').checked = this.flowData.checkpoint_enabled || false;
+        const parallel = document.getElementById('config-parallel');
+        const autoCont = document.getElementById('config-auto-continue');
+        const checkpoint = document.getElementById('config-checkpoint');
+        
+        if (parallel) parallel.checked = this.flowData.parallel_execution || false;
+        if (autoCont) autoCont.checked = this.flowData.auto_continue || false;
+        if (checkpoint) checkpoint.checked = this.flowData.checkpoint_enabled || false;
     },
 
     async loadDesignConfigs() {
         try {
             const configs = await this.api('/config/designs');
             const container = document.getElementById('config-designs-list');
+            if (!container) return;
+            
             if (!configs || configs.length === 0) {
                 container.innerHTML = '<div class="empty">暂无设计配置</div>';
                 return;
             }
+            
             container.innerHTML = configs.map(c => `
                 <div class="card">
                     <div class="card-header">
@@ -274,37 +347,49 @@ const App = {
     },
 
     addDesignFile() {
+        console.log('Adding design file');
+        if (!this.configData) this.configData = {};
         this.configData.design_files = this.configData.design_files || [];
         this.configData.design_files.push('');
         this.renderConfig();
     },
 
     updateDesignFile(index, value) {
-        this.configData.design_files[index] = value;
+        if (this.configData) {
+            this.configData.design_files[index] = value;
+        }
     },
 
     removeDesignFile(index) {
-        this.configData.design_files.splice(index, 1);
-        this.renderConfig();
+        if (this.configData && this.configData.design_files) {
+            this.configData.design_files.splice(index, 1);
+            this.renderConfig();
+        }
     },
 
     addDesignLib() {
+        console.log('Adding design lib');
+        if (!this.configData) this.configData = {};
         this.configData.design_libraries = this.configData.design_libraries || [];
         this.configData.design_libraries.push('');
         this.renderConfig();
     },
 
     updateDesignLib(index, value) {
-        this.configData.design_libraries[index] = value;
+        if (this.configData) {
+            this.configData.design_libraries[index] = value;
+        }
     },
 
     removeDesignLib(index) {
-        this.configData.design_libraries.splice(index, 1);
-        this.renderConfig();
+        if (this.configData && this.configData.design_libraries) {
+            this.configData.design_libraries.splice(index, 1);
+            this.renderConfig();
+        }
     },
 
     moveStageUp(index) {
-        if (index === 0) return;
+        if (!this.flowData || index === 0) return;
         const stages = this.flowData.enabled_stages;
         [stages[index - 1], stages[index]] = [stages[index], stages[index - 1]];
         this.flowData.stage_order = [...stages];
@@ -312,6 +397,7 @@ const App = {
     },
 
     moveStageDown(index) {
+        if (!this.flowData) return;
         const stages = this.flowData.enabled_stages;
         if (index >= stages.length - 1) return;
         [stages[index], stages[index + 1]] = [stages[index + 1], stages[index]];
@@ -320,31 +406,40 @@ const App = {
     },
 
     removeStage(index) {
+        if (!this.flowData) return;
         this.flowData.enabled_stages.splice(index, 1);
         this.flowData.stage_order = [...this.flowData.enabled_stages];
         this.renderFlowConfig();
     },
 
     switchConfigTab(tab) {
+        console.log(`Switching to config tab: ${tab}`);
         document.querySelectorAll('.config-panel').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(`config-${tab}`).classList.add('active');
-        event.target.classList.add('active');
+        
+        const panel = document.getElementById(`config-${tab}`);
+        if (panel) panel.classList.add('active');
+        if (event && event.target) event.target.classList.add('active');
     },
 
     async saveConfig() {
-        this.configData.name = document.getElementById('config-project-name').value;
-        this.configData.working_directory = document.getElementById('config-working-dir').value;
+        console.log('Saving config...');
+        
+        if (!this.configData) this.configData = {};
+        if (!this.flowData) this.flowData = {};
+        
+        this.configData.name = document.getElementById('config-project-name')?.value || '';
+        this.configData.working_directory = document.getElementById('config-working-dir')?.value || '';
         this.configData.eda_tools = {
-            icc2_path: document.getElementById('config-icc2-path').value,
-            pt_path: document.getElementById('config-pt-path').value,
-            calibre_path: document.getElementById('config-calibre-path').value,
-            starrc_path: document.getElementById('config-starrc-path').value,
+            icc2_path: document.getElementById('config-icc2-path')?.value || '',
+            pt_path: document.getElementById('config-pt-path')?.value || '',
+            calibre_path: document.getElementById('config-calibre-path')?.value || '',
+            starrc_path: document.getElementById('config-starrc-path')?.value || '',
         };
 
-        this.flowData.parallel_execution = document.getElementById('config-parallel').checked;
-        this.flowData.auto_continue = document.getElementById('config-auto-continue').checked;
-        this.flowData.checkpoint_enabled = document.getElementById('config-checkpoint').checked;
+        this.flowData.parallel_execution = document.getElementById('config-parallel')?.checked || false;
+        this.flowData.auto_continue = document.getElementById('config-auto-continue')?.checked || false;
+        this.flowData.checkpoint_enabled = document.getElementById('config-checkpoint')?.checked || false;
 
         try {
             await this.api('/config/project', { method: 'PUT', body: this.configData });
@@ -403,36 +498,47 @@ const App = {
 
         const status = this.executionStatus.status;
         const statusEl = document.getElementById('exec-status');
-        statusEl.querySelector('.status-dot').className = `status-dot ${status}`;
-        statusEl.querySelector('.status-text').textContent = this.getStatusText(status);
+        if (statusEl) {
+            const dot = statusEl.querySelector('.status-dot');
+            const text = statusEl.querySelector('.status-text');
+            if (dot) dot.className = `status-dot ${status}`;
+            if (text) text.textContent = this.getStatusText(status);
+        }
 
-        document.getElementById('exec-started').textContent = 
-            this.executionStatus.started_at ? this.formatDate(this.executionStatus.started_at) : '-';
-        document.getElementById('exec-current').textContent = 
-            this.executionStatus.current_stage || '-';
+        const startedEl = document.getElementById('exec-started');
+        const currentEl = document.getElementById('exec-current');
+        
+        if (startedEl) {
+            startedEl.textContent = this.executionStatus.started_at ? this.formatDate(this.executionStatus.started_at) : '-';
+        }
+        if (currentEl) {
+            currentEl.textContent = this.executionStatus.current_stage || '-';
+        }
 
-        // Render flow stages
         const stages = this.executionStatus.stages || {};
         const flowContainer = document.getElementById('execution-flow');
-        flowContainer.innerHTML = Object.entries(stages).map(([key, stage]) => `
-            <div class="flow-stage ${stage.status}">
-                <div class="flow-stage-header">
-                    <span class="flow-stage-name">${this.esc(stage.name)}</span>
-                    <span class="badge badge-${stage.status}">${this.getStageStatusText(stage.status)}</span>
+        if (flowContainer) {
+            flowContainer.innerHTML = Object.entries(stages).map(([key, stage]) => `
+                <div class="flow-stage ${stage.status}">
+                    <div class="flow-stage-header">
+                        <span class="flow-stage-name">${this.esc(stage.name)}</span>
+                        <span class="badge badge-${stage.status}">${this.getStageStatusText(stage.status)}</span>
+                    </div>
+                    <div class="flow-stage-body">
+                        <div class="flow-stage-desc">${this.esc(stage.description)}</div>
+                        <div class="flow-stage-tool">工具: ${this.esc(stage.tool)}</div>
+                        ${stage.duration ? `<div class="flow-stage-time">耗时: ${stage.duration.toFixed(1)}s</div>` : ''}
+                    </div>
                 </div>
-                <div class="flow-stage-body">
-                    <div class="flow-stage-desc">${this.esc(stage.description)}</div>
-                    <div class="flow-stage-tool">工具: ${this.esc(stage.tool)}</div>
-                    ${stage.duration ? `<div class="flow-stage-time">耗时: ${stage.duration.toFixed(1)}s</div>` : ''}
-                </div>
-            </div>
-        `).join('');
+            `).join('');
+        }
 
-        // Render logs
         const logs = this.executionStatus.logs || [];
         const logsContainer = document.getElementById('execution-logs');
-        logsContainer.textContent = logs.join('\n');
-        logsContainer.scrollTop = logsContainer.scrollHeight;
+        if (logsContainer) {
+            logsContainer.textContent = logs.join('\n');
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
     },
 
     getStatusText(status) {
@@ -446,6 +552,7 @@ const App = {
     },
 
     async startExecution() {
+        console.log('Starting execution...');
         try {
             const flowConfig = await this.api('/config/flow');
             await this.api('/execution/start', {
@@ -460,6 +567,7 @@ const App = {
     },
 
     async pauseExecution() {
+        console.log('Pausing execution...');
         try {
             await this.api('/execution/pause', { method: 'POST' });
             this.loadExecutionStatus();
@@ -469,6 +577,7 @@ const App = {
     },
 
     async resumeExecution() {
+        console.log('Resuming execution...');
         try {
             await this.api('/execution/resume', { method: 'POST' });
             this.loadExecutionStatus();
@@ -478,6 +587,7 @@ const App = {
     },
 
     async stopExecution() {
+        console.log('Stopping execution...');
         if (!confirm('确定停止执行?')) return;
         try {
             await this.api('/execution/stop', { method: 'POST' });
@@ -492,6 +602,8 @@ const App = {
         try {
             const stages = await this.api('/execution/stages');
             const container = document.getElementById('stages-list');
+            if (!container) return;
+            
             container.innerHTML = Object.entries(stages.statuses).map(([key, stage]) => `
                 <div class="card">
                     <div class="card-header">
@@ -513,7 +625,10 @@ const App = {
 
     // Metrics
     async loadMetrics() {
-        document.getElementById('metrics-content').innerHTML = '<div class="empty">指标分析功能开发中...</div>';
+        const container = document.getElementById('metrics-content');
+        if (container) {
+            container.innerHTML = '<div class="empty">指标分析功能开发中...</div>';
+        }
     },
 
     // Scripts
@@ -521,10 +636,13 @@ const App = {
         try {
             const scripts = await this.api('/scripts');
             const tbody = document.getElementById('scripts-table-body');
+            if (!tbody) return;
+            
             if (!scripts || scripts.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无脚本</td></tr>';
                 return;
             }
+            
             tbody.innerHTML = scripts.map(s => `
                 <tr>
                     <td>${s.id}</td>
@@ -544,7 +662,11 @@ const App = {
     },
 
     showGenerateScript() {
-        document.getElementById('modal-generate-script').classList.remove('hidden');
+        console.log('Showing generate script modal');
+        const modal = document.getElementById('modal-generate-script');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
     },
 
     async generateScript(event) {
@@ -557,6 +679,7 @@ const App = {
             filename: 'run.tcl',
             script_type: 'tcl'
         };
+        
         try {
             await this.api('/scripts/generate', { method: 'POST', body: data });
             this.closeModal('modal-generate-script');
@@ -592,7 +715,11 @@ const App = {
 
     // Utils
     closeModal(modalId) {
-        document.getElementById(modalId).classList.add('hidden');
+        console.log(`Closing modal: ${modalId}`);
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('hidden');
+        }
     },
 
     esc(str) {
@@ -610,4 +737,11 @@ const App = {
     },
 };
 
-document.addEventListener('DOMContentLoaded', () => App.init());
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => App.init());
+} else {
+    App.init();
+}
+
+console.log('ImplCraft App script loaded');
