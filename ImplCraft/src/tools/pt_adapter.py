@@ -1,6 +1,8 @@
 """
 PrimeTime Adapter — sign-off static timing analysis.
 
+Compatible with PT K-2015.06 and newer versions.
+
 Industrial features:
 - SPEF back-annotation from ICC2/StarRC
 - Multi-corner multi-mode (MCMM)
@@ -28,10 +30,11 @@ logger = logging.getLogger("ic_backend")
 class PTAdapter(ToolAdapter):
     tool_name = "PrimeTime"
     stage = FlowStage.STA_SIGNOFF
-    env_script = "/share/apps/EDAs/pt.bash"
+    env_script = "/share/apps/EDAs/syn22.bash"
 
     def _get_shell_cmd(self) -> str:
-        return "pt_shell -no_gui"
+        # K-2015.06 does not support -no_gui flag
+        return "pt_shell"
 
     def setup_work_dir(self, stage_name: str = "primetime") -> Path:
         root = super().setup_work_dir(stage_name)
@@ -44,6 +47,7 @@ class PTAdapter(ToolAdapter):
         lines = [
             f"# PrimeTime STA Sign-off Script",
             f"# Design: {cfg.design_name}",
+            f"# Compatible with PT K-2015.06",
             "",
             f'set_host_options -max_cores {cfg.synthesis.num_cores}',
             "",
@@ -56,7 +60,6 @@ class PTAdapter(ToolAdapter):
             "set_app_var timing_separate_clock_gating_group true",
             "set_app_var timing_use_enhanced_capacitance_modeling true",
             "set_app_var timing_remove_clock_reconvergence_pessimism true",
-            "set_app_var timing_crpr_threshold_ps 1.0",
             "set_app_var case_analysis_with_logic_constants true",
             "",
         ])
@@ -75,7 +78,7 @@ class PTAdapter(ToolAdapter):
             routed_netlist = f"work/route_opt/out/{cfg.design_name}_routed.v"
         lines.append(f'read_verilog "{routed_netlist}"')
         lines.append(f"current_design {cfg.top_module}")
-        lines.append("link")
+        lines.append("link_design")
         lines.append("")
 
         # ---- Read SDC ----
@@ -87,6 +90,7 @@ class PTAdapter(ToolAdapter):
         lines.append("")
 
         # ---- Read SPEF (parasitics) ----
+        # K-2015.06: use read_parasitics -format SPEF
         lines.append("# ---- Read SPEF ----")
         spef_file = self.state.get_artifact("icc2_route_opt_spef")
         if not spef_file:
@@ -107,39 +111,41 @@ class PTAdapter(ToolAdapter):
         # ---- Update timing ----
         lines.extend([
             "# ---- Update Timing ----",
-            "update_timing",
+            "update_timing -full",
             "",
         ])
 
         # ---- Setup timing analysis ----
         lines.extend([
             "# ---- Setup Timing Analysis ----",
-            'report_timing -delay_type max -max_paths 500 -slack_lesser_than 0 \\'
-            '    -path_type full_clock_expanded -significant_digits 4 \\'
-            '    -sort_by slack -nworst 1 \\'
+            'report_timing -delay_type max -max_paths 500 -slack_lesser_than 0 \\',
+            '    -path_type full_clock_expanded -significant_digits 4 \\',
+            '    -sort_by slack -nworst 1 \\',
             '    > ./PT/report/timing_setup.rpt',
             "",
-            'report_timing -delay_type min -max_paths 500 -slack_lesser_than 0 \\'
-            '    -path_type full_clock_expanded -significant_digits 4 \\'
-            '    -sort_by slack -nworst 1 \\'
+            'report_timing -delay_type min -max_paths 500 -slack_lesser_than 0 \\',
+            '    -path_type full_clock_expanded -significant_digits 4 \\',
+            '    -sort_by slack -nworst 1 \\',
             '    > ./PT/report/timing_hold.rpt',
             "",
         ])
 
         # ---- Path groups ----
+        # K-2015.06: use get_path_groups (no wildcard, no all_path_groups)
         lines.extend([
             "# ---- Path Group Reports ----",
-            'foreach pg [get_path_groups *] {',
-            '    report_timing -path_group $pg -max_paths 50 \\'
-            '        -slack_lesser_than 0 -sort_by slack \\'
-            '        > ./PT/report/timing_${pg}.rpt',
+            'foreach pg [get_path_groups] {',
+            '    set pg_name [get_attribute $pg full_name]',
+            '    report_timing -path_group $pg -max_paths 50 \\',
+            '        -slack_lesser_than 0 -sort_by slack \\',
+            '        > ./PT/report/timing_${pg_name}.rpt',
             '}',
             "",
         ])
 
         # ---- Constraint violations ----
         lines.extend([
-            "# ---- Constraint Violations ----",
+            "# ---- Constraint Reports ----",
             "report_constraint -all_violators -significant_digits 4 \\",
             "    > ./PT/report/constraint.rpt",
             "report_constraint -all_violators -max_transition -significant_digits 4 \\",
@@ -183,10 +189,18 @@ class PTAdapter(ToolAdapter):
             "",
         ])
 
-        # ---- ECO guidance (for RTL fix suggestions) ----
+        # ---- Power report ----
         lines.extend([
-            "# ---- ECO Guidance ----",
-            'write_eco_changes -format tcl ./PT/out/eco_script.tcl',
+            "# ---- Power Report ----",
+            "report_power -significant_digits 4 > ./PT/report/power.rpt",
+            "",
+        ])
+
+        # ---- ECO changes ----
+        # K-2015.06: use write_changes instead of write_eco_changes
+        lines.extend([
+            "# ---- ECO Changes ----",
+            'write_changes -format dctcl -output ./PT/out/eco_changes.tcl',
             "",
         ])
 
