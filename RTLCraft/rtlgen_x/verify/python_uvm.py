@@ -7,7 +7,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
-from rtlgen_x.sim import PythonSimulator, SimModule
+from rtlgen_x.sim import (
+    DslRtlCosimReport,
+    PythonSimulator,
+    SimModule,
+    run_dsl_multiclock_rtl_cosim,
+    run_dsl_rtl_cosim,
+)
 from rtlgen_x.verify.directed import StepVector, TraceSample, VerificationFailure
 from rtlgen_x.verify.module_adapter import normalize_executable_module, require_single_clock_module
 
@@ -33,6 +39,14 @@ class PythonUvmReport:
     traces: Tuple[TraceSample, ...]
     coverage: Mapping[str, object]
     used_batch_mode: bool
+
+
+@dataclass(frozen=True)
+class PythonUvmRtlReport:
+    """Python-side VIP result driven against emitted RTL cosimulation."""
+
+    python_uvm: PythonUvmReport
+    cosim: DslRtlCosimReport
 
 
 @dataclass
@@ -475,6 +489,133 @@ def run_python_uvm_test(
         batch_cycles=batch_cycles,
     )
     return env.run(normalized_sequence, name=name)
+
+
+def run_python_uvm_rtl_test(
+    module: Any,
+    sequence: Iterable[Union[PythonUvmSequenceItem, StepVector, Mapping[str, int]]],
+    *,
+    rtl_backend: str = "auto",
+    expected_fn: Optional[Callable[[int, Mapping[str, int]], Mapping[str, int]]] = None,
+    reference_model: Optional[object] = None,
+    coverage: Optional[PythonUvmCoverage] = None,
+    name: str = "python_uvm_rtl",
+    valid_signal: Optional[str] = None,
+    flush_cycles: int = 0,
+    flush_inputs: Optional[Mapping[str, int]] = None,
+    build_dir: Optional[Path | str] = None,
+) -> PythonUvmRtlReport:
+    """Run Python-side VIP against emitted RTL via cosim, without requiring SV VIP."""
+
+    if isinstance(module, SimModule):
+        raise TypeError(
+            "run_python_uvm_rtl_test(...) is a DSL-facing API and does not accept raw SimModule. "
+            "Pass a rtlgen_x.dsl.Module instance."
+        )
+    if not (hasattr(module, "_inputs") and hasattr(module, "_outputs") and hasattr(module, "_seq_blocks")):
+        raise TypeError(
+            "run_python_uvm_rtl_test(...) expects an authored rtlgen_x.dsl.Module because "
+            "emitted RTL cosim needs the original DSL hierarchy and external-module metadata."
+        )
+
+    executable = normalize_executable_module(module, context="run_python_uvm_rtl_test(...)")
+    multi_clock = len(executable.clock_domains) > 1
+    normalized_sequence = tuple(
+        sequence if isinstance(sequence, PythonUvmSequenceLibrary) else PythonUvmSequencer(sequence)
+    )
+    if multi_clock:
+        if any(not item.active_domains for item in normalized_sequence):
+            domain_names = ", ".join(domain.name for domain in executable.clock_domains)
+            raise ValueError(
+                "run_python_uvm_rtl_test multi-clock sequences must provide explicit "
+                f"active_domains for every item; module domains: {domain_names}. "
+                "Wrap each step in PythonUvmSequenceItem(..., active_domains=(...))."
+            )
+        _validate_sequence_active_domains(executable, normalized_sequence)
+    else:
+        require_single_clock_module(executable, context="run_python_uvm_rtl_test")
+
+    scoreboard = PythonUvmScoreboard(
+        expected_fn=expected_fn,
+        reference_model=(
+            reference_model
+            if reference_model is not None
+            else None if expected_fn is not None else PythonUvmReferenceModel(executable)
+        ),
+    )
+    monitor = PythonUvmMonitor()
+    coverage_collector = coverage if coverage is not None else PythonUvmCoverage()
+    scoreboard.reset()
+    coverage_collector.reset()
+
+    if multi_clock:
+        cosim_vectors = tuple(
+            (dict(item.inputs), tuple(item.active_domains))
+            for item in normalized_sequence
+        )
+        cosim_report = run_dsl_multiclock_rtl_cosim(
+            module,
+            cosim_vectors,
+            rtl_backend=rtl_backend,
+            build_dir=build_dir,
+            valid_signal=valid_signal,
+        )
+    else:
+        cosim_vectors = tuple(dict(item.inputs) for item in normalized_sequence)
+        cosim_report = run_dsl_rtl_cosim(
+            module,
+            cosim_vectors,
+            rtl_backend=rtl_backend,
+            build_dir=build_dir,
+            valid_signal=valid_signal,
+            flush_cycles=flush_cycles,
+            flush_inputs=flush_inputs,
+        )
+
+    if cosim_report.skipped_reason is not None:
+        python_report = PythonUvmReport(
+            name=name,
+            passed=False,
+            total_cycles=0,
+            failures=(),
+            traces=(),
+            coverage=coverage_collector.snapshot(),
+            used_batch_mode=False,
+        )
+        return PythonUvmRtlReport(python_uvm=python_report, cosim=cosim_report)
+
+    expected_trace_len = len(cosim_report.rtl_trace)
+    if expected_trace_len != len(normalized_sequence):
+        raise ValueError(
+            "run_python_uvm_rtl_test observed a cosim trace length mismatch: "
+            f"{expected_trace_len} RTL samples vs {len(normalized_sequence)} driven items. "
+            "If valid filtering or flush cycles are enabled, pass matching expected values "
+            "through the same sampling boundary."
+        )
+
+    traces: List[TraceSample] = []
+    observed_output_names = tuple(executable.outputs)
+    for cycle, (item, outputs) in enumerate(zip(normalized_sequence, cosim_report.rtl_trace)):
+        observed_outputs = {
+            name: int(outputs[name])
+            for name in observed_output_names
+            if name in outputs
+        }
+        expected = scoreboard.resolve_expected(cycle, item)
+        traces.append(monitor.observe(cycle, item, observed_outputs, expected))
+        scoreboard.check(cycle, item, observed_outputs, expected)
+        coverage_collector.sample(item, observed_outputs)
+
+    python_report = PythonUvmReport(
+        name=name,
+        passed=not scoreboard.failures,
+        total_cycles=len(normalized_sequence),
+        failures=tuple(scoreboard.failures),
+        traces=tuple(traces),
+        coverage=coverage_collector.snapshot(),
+        used_batch_mode=False,
+    )
+    return PythonUvmRtlReport(python_uvm=python_report, cosim=cosim_report)
 
 
 def dump_python_uvm_triage(

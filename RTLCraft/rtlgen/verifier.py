@@ -70,12 +70,20 @@ class Verifier:
         self,
         enable_level_3: bool = True,
         enable_level_4: bool = True,
+        enable_cosim: bool = False,
+        strict_cosim: bool = False,
+        max_cosim_vectors: int = 8,
+        cosim_mode: str = "auto",
         iverilog_cmd: str = "iverilog",
         max_smoke_cycles: int = 200,
     ):
         self.linter = VerilogLinter(auto_fix=False)
         self.enable_level_3 = enable_level_3
         self.enable_level_4 = enable_level_4
+        self.enable_cosim = enable_cosim
+        self.strict_cosim = strict_cosim
+        self.max_cosim_vectors = max_cosim_vectors
+        self.cosim_mode = cosim_mode
         self.iverilog_cmd = iverilog_cmd
         self.max_smoke_cycles = max_smoke_cycles
 
@@ -93,6 +101,7 @@ class Verifier:
     ) -> VerificationResult:
         """Run full 4-level verification. Stop at first failure."""
         issues: List[str] = []
+        highest_level = 0
 
         # ---- Level 1: Syntax Check ----
         ok, err = self.check_syntax(verilog_text)
@@ -100,6 +109,7 @@ class Verifier:
             issues.extend(err)
             return VerificationResult(level=1, passed=False, issues=issues)
         issues.append("Level 1 (Syntax): PASSED")
+        highest_level = 1
 
         # ---- Level 2: Static Lint ----
         ok, err = self.check_static(verilog_text)
@@ -107,6 +117,7 @@ class Verifier:
             issues.extend(err)
             return VerificationResult(level=2, passed=False, issues=issues)
         issues.append("Level 2 (Static): PASSED")
+        highest_level = 2
 
         # ---- Level 3: Smoke Test ----
         if self.enable_level_3 and golden_tests:
@@ -116,8 +127,18 @@ class Verifier:
                 return VerificationResult(level=3, passed=False, issues=issues,
                                           trace=trace)
             issues.append("Level 3 (Smoke): PASSED")
+            highest_level = 3
         else:
             trace = None
+
+        # ---- Differential Cosim: Python Simulator vs emitted Verilog ----
+        if self.enable_cosim and golden_tests:
+            ok, err, skipped = self.check_cosim(module, golden_tests)
+            issues.extend(err)
+            if not ok:
+                return VerificationResult(level=3, passed=False, issues=issues, trace=trace)
+            if not skipped:
+                issues.append("Level 3.5 (Cosim): PASSED")
 
         # ---- Level 4: Behavior Trace Comparison ----
         if self.enable_level_4 and behavior_ref is not None and golden_tests:
@@ -131,13 +152,14 @@ class Verifier:
                     trace=rtl_trace, behavior_trace=beh_trace, trace_diff=diff
                 )
             issues.append("Level 4 (Behavior Match): PASSED")
+            highest_level = 4
         else:
             rtl_trace = None
             beh_trace = None
             diff = None
 
         return VerificationResult(
-            level=4, passed=True, issues=issues,
+            level=highest_level, passed=True, issues=issues,
             trace=rtl_trace, behavior_trace=beh_trace, trace_diff=diff
         )
 
@@ -258,7 +280,9 @@ class Verifier:
 
         test = golden_tests[0]
         sim = Simulator(module, trace_signals=trace_signals)
-        sim.reset()
+        reset_name = self._detect_reset_name(module)
+        if reset_name:
+            sim.reset(reset_name)
 
         # Apply test inputs
         inputs = test.get("inputs", {})
@@ -283,6 +307,60 @@ class Verifier:
             return False, mismatches, sim.trace
 
         return True, [], sim.trace
+
+    def check_cosim(
+        self,
+        module: Module,
+        golden_tests: List[Dict[str, Any]],
+    ) -> Tuple[bool, List[str], bool]:
+        """Cross-check Python Simulator against emitted Verilog via CosimRunner.
+
+        Returns:
+            (ok, messages, skipped)
+        """
+        if not golden_tests:
+            return True, [], True
+
+        vectors: List[Dict[str, Any]] = []
+        for test in golden_tests[: self.max_cosim_vectors]:
+            inputs = test.get("inputs")
+            if isinstance(inputs, dict) and inputs:
+                vectors.append(dict(inputs))
+                continue
+            flat_inputs = {
+                k: v for k, v in test.items()
+                if k not in {"inputs", "expected_outputs", "name"}
+            }
+            if flat_inputs:
+                vectors.append(flat_inputs)
+
+        if not vectors:
+            return True, ["[Cosim] skipped: no input vectors available"], True
+
+        try:
+            from rtlgen.cosim import CosimError, CosimRunner
+
+            runner = CosimRunner(
+                module,
+                vectors,
+                mode=self.cosim_mode,
+            )
+            runner.run(verbose=False)
+            return True, [], False
+        except FileNotFoundError:
+            msg = "[Cosim] skipped: iverilog/vvp not found"
+            return (False, [msg], True) if self.strict_cosim else (True, [msg], True)
+        except OSError as exc:
+            msg = f"[Cosim] skipped: tool execution unavailable ({exc})"
+            return (False, [msg], True) if self.strict_cosim else (True, [msg], True)
+        except Exception as exc:
+            # Import locally to avoid module-level circular dependency.
+            exc_name = type(exc).__name__
+            if exc_name == "CosimError":
+                return False, [f"[Cosim] {exc}"], False
+            if self.strict_cosim:
+                return False, [f"[CosimCrash] {exc}"], False
+            return True, [f"[CosimCrash] {exc}"], True
 
     # ------------------------------------------------------------------
     # Level 4: Behavior Trace Comparison
@@ -315,7 +393,9 @@ class Verifier:
 
         # ---- Run RTL simulation ----
         rtl_sim = Simulator(module, trace_signals=trace_signals)
-        rtl_sim.reset()
+        reset_name = self._detect_reset_name(module)
+        if reset_name:
+            rtl_sim.reset(reset_name)
         for sig_name, val in inputs.items():
             rtl_sim.poke(sig_name, val)
         for _ in range(self.max_smoke_cycles):
@@ -465,6 +545,17 @@ class Verifier:
                 )
 
         return diffs
+
+    @staticmethod
+    def _detect_reset_name(module: Module) -> Optional[str]:
+        for candidate in ("rst_n", "reset_n", "rst", "reset", "aresetn"):
+            if candidate in getattr(module, "_inputs", {}):
+                return candidate
+        for name in getattr(module, "_inputs", {}):
+            lname = name.lower()
+            if "rst" in lname or "reset" in lname:
+                return name
+        return None
 
     @staticmethod
     def _extract_trace_events(

@@ -2,13 +2,17 @@
 
 The DUT is fully pipelined with a fixed latency (``BarrettModMul.LATENCY``):
 operands are accepted every cycle (``in_accept`` is always 1), and each result
-emerges ``LATENCY`` cycles after its operands were presented.
+emerges ``LATENCY`` cycles after its operands were presented, marked by
+``out_valid``.
+
+The redesigned rtlgen_x bundled simulator is RTL-faithful, so these helpers
+work on it as well as on the compiled sim and (with cycle-accurate stimulus)
+iverilog cosim.
 """
 
 from __future__ import annotations
 
 import random
-from collections import deque
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .dsl import BarrettModMul
@@ -27,20 +31,16 @@ def reset_sim(sim: Any) -> None:
     sim.step(_base_inputs(0, 0, 0, 0, in_valid=0, rst=1))
 
 
-def run_one(sim: Any, a: int, b: int, n: int, m: Optional[int] = None,
-            max_cycles: int = 16) -> int:
+def run_one(sim: Any, a: int, b: int, n: int, m: Optional[int] = None) -> int:
     """Drive a single operand set and return its result.
 
-    Presents the operands with in_valid=1 and returns the combinational result
-    observed in the same cycle (latency 0). Falls back to polling out_valid if
-    the unit exposes a non-zero latency.
+    Presents the operands for one cycle, then clocks until ``out_valid``
+    asserts and returns ``r``. Self-calibrating to the unit's actual latency.
     """
     if m is None:
         m = barrett_constant(n)
-    out = sim.step(_base_inputs(a, b, n, m, in_valid=1))
-    if BarrettModMul.LATENCY == 0:
-        return out["r"]
-    for _ in range(max_cycles):
+    sim.step(_base_inputs(a, b, n, m, in_valid=1))
+    for _ in range(BarrettModMul.LATENCY + 2):
         out = sim.step(_base_inputs(0, 0, 0, 0, in_valid=0))
         if out.get("out_valid"):
             return out["r"]
@@ -51,19 +51,25 @@ def run_stream(sim: Any, cases: List[Tuple[int, int, int, int]]) -> List[int]:
     """Drive a back-to-back stream of (a,b,n,m) cases through the pipe.
 
     Returns the results in input order. Each operand set is presented on a
-    successive cycle (full throughput); with latency 1 the result for operand i
-    is the output of the following cycle.
+    successive cycle (full throughput), then the pipe is drained by watching
+    ``out_valid`` rather than by assuming fixed output slots.
     """
-    latency = BarrettModMul.LATENCY
-    results: List[int] = [0] * len(cases)
-    outputs: List[Dict[str, int]] = []
+    results: List[int] = []
     for a, b, n, m in cases:
-        outputs.append(sim.step(_base_inputs(a, b, n, m, in_valid=1)))
-    for _ in range(latency + 1):
-        outputs.append(sim.step(_base_inputs(0, 0, 0, 0, in_valid=0)))
-    for i in range(len(cases)):
-        # result[i] is the output `latency` cycles after presenting operand i.
-        results[i] = outputs[min(i + latency, len(outputs) - 1)]["r"]
+        out = sim.step(_base_inputs(a, b, n, m, in_valid=1))
+        if out.get("out_valid"):
+            results.append(out["r"])
+    max_drain_steps = len(cases) + BarrettModMul.LATENCY + 4
+    for _ in range(max_drain_steps):
+        if len(results) == len(cases):
+            break
+        out = sim.step(_base_inputs(0, 0, 0, 0, in_valid=0))
+        if out.get("out_valid"):
+            results.append(out["r"])
+    if len(results) != len(cases):
+        raise RuntimeError(
+            f"expected {len(cases)} streamed results, collected {len(results)}"
+        )
     return results
 
 

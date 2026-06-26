@@ -76,6 +76,8 @@
 |-------|-------|--------|--------|---------|----------|
 | {{ suite_name }} | {{ suite_total }} | {{ suite_pass }} | {{ suite_fail }} | {{ suite_skip }} | {{ suite_cov }} |
 
+{{ suite_inventory }}
+
 ### 4.2 Results by Priority
 | Priority | Total | Passed | Failed | Skipped |
 |----------|-------|--------|--------|---------|

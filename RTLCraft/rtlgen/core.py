@@ -1099,14 +1099,14 @@ class Signal(IREntity):
         """返回此信号的有符号版本（用于算术运算中的符号扩展）。"""
         s = Signal(self.width, self.name)
         s.signed = True
-        s._expr = self._expr
+        s._expr = UnaryOp("$signed", self._expr, self.width)
         return s
 
     def as_uint(self) -> "Signal":
         """返回此信号的无符号版本（显式消除有符号语义）。"""
         s = Signal(self.width, self.name)
         s.signed = False
-        s._expr = self._expr
+        s._expr = UnaryOp("$unsigned", self._expr, self.width)
         return s
 
     def __repr__(self):

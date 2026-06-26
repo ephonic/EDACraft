@@ -3,7 +3,7 @@
 | Document ID | RV32-L1_BEHAVIOR-TP-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -114,6 +114,18 @@ Close L1 behavior when `layer_L1_behavior/specs/01_behavior_test_plan.md` has co
 |-------|------|------|----------|-----------|--------|
 | TC-001 | test_add_sub | Directed | P1 | Validate add sub. | Planned |
 
+
+
+Additional discovered test cases:
+
+| TC ID | Name | Type | Priority | Objective | Status |
+| --- | --- | --- | --- | --- | --- |
+| RV32-L1_BEHAVIOR-TC-001 | test_add_sub | Directed | P1 | Validate add sub. | Planned |
+| RV32-L1_BEHAVIOR-TC-002 | test_branch | Directed | P1 | Validate branch. | Planned |
+| RV32-L1_BEHAVIOR-TC-003 | test_div_by_zero | Directed | P1 | Validate div by zero. | Planned |
+| RV32-L1_BEHAVIOR-TC-004 | test_load_store | Directed | P1 | Validate load store. | Planned |
+| RV32-L1_BEHAVIOR-TC-005 | test_mul | Directed | P1 | Validate mul. | Planned |
+
 ### 7.2 Detailed Test Cases
 
 #### TC-001: test_add_sub
@@ -184,7 +196,7 @@ Issues are emitted into docgen_feedback.json with detected layer and upstream ta
 
 | Milestone | Target Date | Deliverable | Owner |
 |-----------|-------------|-------------|-------|
-| L1 behavior handoff | 2026-06-15 | layer_L1_behavior/specs/01_behavior_spec.md, layer_L1_behavior/specs/01_behavior_test_plan.md, layer_L1_behavior/specs/01_behavior_test_report.md | RTLCraft Agent |
+| L1 behavior handoff | 2026-06-18 | layer_L1_behavior/specs/01_behavior_spec.md, layer_L1_behavior/specs/01_behavior_test_plan.md, layer_L1_behavior/specs/01_behavior_test_report.md | RTLCraft Agent |
 
 ---
 
@@ -212,4 +224,4 @@ The verification phase is considered complete when:
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

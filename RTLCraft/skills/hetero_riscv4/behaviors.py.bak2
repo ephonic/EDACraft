@@ -1,0 +1,253 @@
+"""
+skills.hetero_riscv4.behaviors — Heterogeneous 4-Core SoC Behavior Templates
+
+Domain-specific behavior templates for heterogeneous 4-core RISC-V SoC:
+  - perf_core_template:        5-stage performance core behavior
+  - eff_core_template:         3-stage efficiency core behavior
+  - l1_cache_template:         L1 cache hit/miss/MSI behavior
+  - coherence_dir_template:    MSI directory snoop/invalidate
+  - noc_router_template:       5-port router XY routing behavior
+  - mesh_top_template:         Full 2x2 mesh behavior
+
+Registered into TemplateRegistry at import time.
+"""
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from rtlgen.arch_def import CycleContext
+from rtlgen.behaviors import TemplateRegistry
+
+
+# =====================================================================
+# Performance Core Behavior
+# =====================================================================
+
+def perf_core_template(**kwargs) -> Callable[[CycleContext], None]:
+    """5-stage RV64I pipeline behavior for performance cores.
+
+    Simulates fetch → decode → execute → memory → writeback with
+    L1 cache interface stalls and branch prediction.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        stall = ctx.get_input("stall", 0)
+        if stall:
+            ctx.set_output("retire_valid", 0)
+            return
+
+        # If an ISS model is attached, step it; otherwise emulate PC advancement
+        pc = ctx.get_state("pc", 0x1000)
+        iss_service = ctx.get_model_service("step")
+        if iss_service is not None and isinstance(iss_service, dict) and iss_service.get("done"):
+            pc = ctx.get_model_service("get_pc")
+            ctx.set_output("retire_valid", 1)
+            ctx.set_output("retire_count", 1)
+        else:
+            ctx.set_output("retire_valid", 1)
+            ctx.set_output("retire_count", 1)
+            pc = pc + 4
+
+        ctx.set_state("pc", pc)
+        ctx.set_output("pc_out", pc)
+
+    return behavior
+
+
+# =====================================================================
+# Efficiency Core Behavior
+# =====================================================================
+
+def eff_core_template(**kwargs) -> Callable[[CycleContext], None]:
+    """3-stage RV64I pipeline behavior for efficiency cores.
+
+    Simulates fetch → execute → writeback with simplified pipeline.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        stall = ctx.get_input("stall", 0)
+        if stall:
+            ctx.set_output("retire_valid", 0)
+            return
+
+        pc = ctx.get_state("pc", 0x2000)
+        iss_service = ctx.get_model_service("step")
+        if iss_service is not None and isinstance(iss_service, dict) and iss_service.get("done"):
+            pc = ctx.get_model_service("get_pc")
+            ctx.set_output("retire_valid", 1)
+            ctx.set_output("retire_count", 1)
+        else:
+            ctx.set_output("retire_valid", 1)
+            ctx.set_output("retire_count", 1)
+            pc = pc + 4
+
+        ctx.set_state("pc", pc)
+        ctx.set_output("pc_out", pc)
+
+    return behavior
+
+
+# =====================================================================
+# L1 Cache Behavior
+# =====================================================================
+
+def l1_cache_template(**kwargs) -> Callable[[CycleContext], None]:
+    """L1 cache with tag match, LRU, MSI state.
+
+    Hit: respond next cycle with valid=1.
+    Miss: issue coherence request to directory, stall requestor.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        addr = ctx.get_input("addr", 0)
+        req_valid = ctx.get_input("req_valid", 0)
+
+        if not req_valid:
+            ctx.set_output("valid", 0)
+            ctx.set_output("ready", 0)
+            return
+
+        hit = ctx.cache_hit("l1", addr)
+        if hit:
+            ctx.set_output("valid", 1)
+            ctx.set_output("ready", 1)
+            ctx.set_output("miss", 0)
+            ctx.set_output("stall", 0)
+        else:
+            ctx.set_output("valid", 0)
+            ctx.set_output("ready", 0)
+            ctx.set_output("miss", 1)
+            ctx.set_output("stall", 1)
+            ctx.coherence_request("read_shared", addr)
+
+    return behavior
+
+
+# =====================================================================
+# Coherence Directory Behavior
+# =====================================================================
+
+def coherence_dir_template(**kwargs) -> Callable[[CycleContext], None]:
+    """MSI directory behavior for 4 cores.
+
+    Tracks sharers bitmask per line, handles Shared/Modified requests,
+    generates invalidations when necessary.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        req_valid = ctx.get_input("req_valid", 0)
+        req_type = ctx.get_input("req_type", 0)
+        core_id = ctx.get_input("core_id", 0)
+        addr = ctx.get_input("addr", 0)
+        tag = addr >> 12
+
+        if not req_valid:
+            ctx.set_output("grant", 0)
+            return
+
+        # Directory state stored in PE state
+        dir_state = ctx.get_state("dir_state", {})
+        entry = dir_state.get(tag, {"state": 0, "sharers": 0, "owner": -1})
+
+        state = entry["state"]   # 0=I, 1=S, 2=M
+        sharers = entry["sharers"]
+        owner = entry["owner"]
+
+        if req_type == 1:  # Modified (exclusive) request
+            if owner >= 0 and owner != core_id:
+                # Invalidate previous owner
+                sharers &= ~(1 << owner)
+            sharers |= (1 << core_id)
+            state = 2
+            owner = core_id
+        else:  # Shared request
+            if state == 2 and owner != core_id:
+                # Downgrade M → S for previous owner
+                state = 1
+            sharers |= (1 << core_id)
+            if state == 0:
+                state = 1
+            owner = core_id if state == 2 else -1
+
+        entry = {"state": state, "sharers": sharers, "owner": owner}
+        dir_state[tag] = entry
+        ctx.set_state("dir_state", dir_state)
+
+        ctx.set_output("grant", 1)
+        ctx.set_output("grant_state", state)
+        ctx.set_output("grant_sharers", sharers)
+
+    return behavior
+
+
+# =====================================================================
+# NoC Router Behavior
+# =====================================================================
+
+def noc_router_template(**kwargs) -> Callable[[CycleContext], None]:
+    """5-port router with XY routing for 2x2 mesh.
+
+    Determines output port based on current vs destination coordinates.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        x = ctx.get_input("x", 0)
+        y = ctx.get_input("y", 0)
+        dest_x = ctx.get_input("dest_x", 0)
+        dest_y = ctx.get_input("dest_y", 0)
+        flit_valid = ctx.get_input("flit_valid", 0)
+
+        route_east = 0
+        route_west = 0
+        route_north = 0
+        route_south = 0
+        route_local = 0
+
+        if flit_valid:
+            if dest_x > x:
+                route_east = 1
+            elif dest_x < x:
+                route_west = 1
+            elif dest_y > y:
+                route_north = 1
+            elif dest_y < y:
+                route_south = 1
+            else:
+                route_local = 1
+
+        ctx.set_output("route_east", route_east)
+        ctx.set_output("route_west", route_west)
+        ctx.set_output("route_north", route_north)
+        ctx.set_output("route_south", route_south)
+        ctx.set_output("route_local", route_local)
+
+    return behavior
+
+
+# =====================================================================
+# Mesh Top Behavior
+# =====================================================================
+
+def mesh_top_template(**kwargs) -> Callable[[CycleContext], None]:
+    """Full 2x2 mesh SoC behavior.
+
+    4 heterogeneous cores with directory-based MSI coherence over mesh NoC.
+    The actual per-cluster behavior is executed by child PEs; this top-level
+    template only aggregates statistics.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        # Top-level PE: children are executed independently by ArchSimulator.
+        # Only aggregate metrics if needed.
+        cycle = ctx.get_state("cycle", 0)
+        ctx.set_state("cycle", cycle + 1)
+
+    return behavior
+
+
+# Register all templates at import time
+_template_map = {
+    "perf_core": perf_core_template,
+    "eff_core": eff_core_template,
+    "l1_cache": l1_cache_template,
+    "coherence_dir": coherence_dir_template,
+    "noc_router": noc_router_template,
+    "mesh_top": mesh_top_template,
+}
+
+for _name, _tmpl in _template_map.items():
+    TemplateRegistry.register(_name, _tmpl)

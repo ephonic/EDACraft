@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import time
 from array import array
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 import json
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterable, Iterator, Mapping, Optional, Sequence, Tuple
 
 from rtlgen_x.sim.cpp_backend import (
     Assignment,
@@ -23,6 +23,7 @@ from rtlgen_x.sim.cpp_backend import (
     _word_count,
 )
 from rtlgen_x.sim.python_runtime import PythonSimulator
+from rtlgen_x.sim.cosim import run_dsl_multiclock_rtl_cosim, run_dsl_rtl_cosim
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,59 @@ class StressSweepReport:
             "max_batch_speedup": self.max_batch_speedup,
             "max_stream_speedup": self.max_stream_speedup,
             "points": [asdict(point) for point in self.points],
+        }
+
+
+@dataclass(frozen=True)
+class CosimBenchmarkReport:
+    """Measured cold/warm runtime for emitted RTL cosim backends."""
+
+    module_name: str
+    backend: str
+    mode: str
+    vector_count: int
+    compile_cache_enabled: bool
+    first_cache_hit: bool
+    second_cache_hit: bool
+    cache_key: Optional[str]
+    cache_dir: Optional[str]
+    first_run_seconds: float
+    second_run_seconds: float
+    warm_speedup: float
+    cache_artifact_present: bool
+    first_report_passed: bool
+    second_report_passed: bool
+    skipped_reason: Optional[str] = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class CosimBackendSweepReport:
+    """Backend-by-backend cold/warm cosim benchmark summary."""
+
+    module_name: str
+    mode: str
+    vector_count: int
+    backends: Tuple[CosimBenchmarkReport, ...]
+
+    @property
+    def available_backends(self) -> Tuple[str, ...]:
+        return tuple(report.backend for report in self.backends if report.skipped_reason is None)
+
+    @property
+    def skipped_backends(self) -> Tuple[str, ...]:
+        return tuple(report.backend for report in self.backends if report.skipped_reason is not None)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "module_name": self.module_name,
+            "mode": self.mode,
+            "vector_count": self.vector_count,
+            "available_backends": list(self.available_backends),
+            "skipped_backends": list(self.skipped_backends),
+            "backends": [_cosim_benchmark_to_dict(report) for report in self.backends],
         }
 
 
@@ -446,6 +500,170 @@ def write_stress_sweep_report(
     return output_path
 
 
+def write_cosim_backend_sweep_report(
+    report: CosimBackendSweepReport,
+    path: str | Path,
+) -> Path:
+    """Persist one backend-sweep report as JSON."""
+
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+    return output_path
+
+
+def emit_cosim_backend_sweep_markdown(
+    report: CosimBackendSweepReport,
+    *,
+    title: Optional[str] = None,
+) -> str:
+    """Render a concise markdown summary for backend cosim comparisons."""
+
+    heading = title or f"Cosim Backend Sweep: {report.module_name}"
+    lines = [f"# {heading}", ""]
+    lines.append(f"- module: `{report.module_name}`")
+    lines.append(f"- mode: `{report.mode}`")
+    lines.append(f"- vectors: `{report.vector_count}`")
+    lines.append(f"- available backends: {', '.join(report.available_backends) or 'none'}")
+    lines.append(f"- skipped backends: {', '.join(report.skipped_backends) or 'none'}")
+    lines.append("")
+    lines.append("| backend | status | cache | cold(s) | warm(s) | speedup | note |")
+    lines.append("| --- | --- | --- | ---: | ---: | ---: | --- |")
+    for entry in report.backends:
+        status = "ok" if entry.skipped_reason is None else "skipped"
+        cache_state = (
+            f"{'on' if entry.compile_cache_enabled else 'off'} / "
+            f"{'hit' if entry.second_cache_hit else 'miss'}"
+        )
+        note = entry.skipped_reason or (
+            "pass" if entry.first_report_passed and entry.second_report_passed else "mismatch"
+        )
+        lines.append(
+            "| "
+            f"`{entry.backend}` | {status} | {cache_state} | "
+            f"{entry.first_run_seconds:.6f} | {entry.second_run_seconds:.6f} | "
+            f"{entry.warm_speedup:.2f} | {note} |"
+        )
+    return "\n".join(lines)
+
+
+def benchmark_cosim_cache(
+    module: Any,
+    vectors: Sequence[Any],
+    *,
+    rtl_backend: str = "verilator",
+    valid_signal: Optional[str] = None,
+    build_dir: Optional[str | Path] = None,
+) -> CosimBenchmarkReport:
+    """Measure cold-start versus cached rerun time for emitted RTL cosim."""
+
+    if build_dir is None:
+        raise ValueError("benchmark_cosim_cache requires build_dir so the external build cache can persist")
+    build_root = Path(build_dir)
+    build_root.mkdir(parents=True, exist_ok=True)
+
+    multi_clock = hasattr(module, "_seq_blocks") and len(
+        {
+            getattr(clk, "name", str(clk))
+            for clk, _rst, _reset_async, _reset_active_low, _body in getattr(module, "_seq_blocks", ())
+            if clk is not None
+        }
+    ) > 1
+
+    def _run_once():
+        if multi_clock:
+            return run_dsl_multiclock_rtl_cosim(
+                module,
+                vectors,
+                rtl_backend=rtl_backend,
+                build_dir=build_root,
+                valid_signal=valid_signal,
+            )
+        return run_dsl_rtl_cosim(
+            module,
+            vectors,
+            rtl_backend=rtl_backend,
+            build_dir=build_root,
+            valid_signal=valid_signal,
+        )
+
+    start = time.perf_counter()
+    first_report = _run_once()
+    first_run_seconds = time.perf_counter() - start
+    start = time.perf_counter()
+    second_report = _run_once()
+    second_run_seconds = time.perf_counter() - start
+
+    compile_cache_enabled = bool(getattr(first_report, "cache_enabled", False))
+    cache_key = getattr(second_report, "cache_key", None) or getattr(first_report, "cache_key", None)
+    cache_dir = getattr(second_report, "cache_dir", None) or getattr(first_report, "cache_dir", None)
+    cache_artifact_present = bool(cache_dir) and Path(cache_dir).joinpath(".compile_stamp").exists()
+    first_ok = first_report.skipped_reason is None and first_report.dsl_matches_rtl and first_report.compiled_matches_rtl
+    second_ok = second_report.skipped_reason is None and second_report.dsl_matches_rtl and second_report.compiled_matches_rtl
+
+    return CosimBenchmarkReport(
+        module_name=getattr(module, "name", getattr(module, "_type_name", type(module).__name__)),
+        backend=rtl_backend,
+        mode="multi_clock" if multi_clock else "seq",
+        vector_count=len(vectors),
+        compile_cache_enabled=compile_cache_enabled,
+        first_cache_hit=bool(getattr(first_report, "cache_hit", False)),
+        second_cache_hit=bool(getattr(second_report, "cache_hit", False)),
+        cache_key=cache_key,
+        cache_dir=cache_dir,
+        first_run_seconds=first_run_seconds,
+        second_run_seconds=second_run_seconds,
+        warm_speedup=(first_run_seconds / second_run_seconds) if second_run_seconds > 0 else float("inf"),
+        cache_artifact_present=cache_artifact_present,
+        first_report_passed=first_ok,
+        second_report_passed=second_ok,
+        skipped_reason=getattr(second_report, "skipped_reason", None) or getattr(first_report, "skipped_reason", None),
+    )
+
+
+def benchmark_cosim_backends(
+    module: Any,
+    vectors: Sequence[Any],
+    *,
+    rtl_backends: Sequence[str] = ("iverilog", "verilator", "vcs"),
+    valid_signal: Optional[str] = None,
+    build_dir: Optional[str | Path] = None,
+) -> CosimBackendSweepReport:
+    """Benchmark a set of RTL backends under the same vector workload."""
+
+    if build_dir is None:
+        raise ValueError("benchmark_cosim_backends requires build_dir so backend caches can persist")
+    build_root = Path(build_dir)
+    build_root.mkdir(parents=True, exist_ok=True)
+
+    multi_clock = hasattr(module, "_seq_blocks") and len(
+        {
+            getattr(clk, "name", str(clk))
+            for clk, _rst, _reset_async, _reset_active_low, _body in getattr(module, "_seq_blocks", ())
+            if clk is not None
+        }
+    ) > 1
+
+    reports = []
+    for backend in rtl_backends:
+        backend_root = build_root / backend
+        reports.append(
+            benchmark_cosim_cache(
+                module,
+                vectors,
+                rtl_backend=backend,
+                valid_signal=valid_signal,
+                build_dir=backend_root,
+            )
+        )
+    return CosimBackendSweepReport(
+        module_name=getattr(module, "name", getattr(module, "_type_name", type(module).__name__)),
+        mode="multi_clock" if multi_clock else "seq",
+        vector_count=len(vectors),
+        backends=tuple(reports),
+    )
+
+
 def _measure_min(repeats: int, run: Callable[[], None]) -> float:
     best = float("inf")
     for _ in range(repeats):
@@ -455,6 +673,32 @@ def _measure_min(repeats: int, run: Callable[[], None]) -> float:
         if duration < best:
             best = duration
     return best
+
+
+def _cosim_benchmark_to_dict(report: Any) -> dict[str, object]:
+    if hasattr(report, "to_dict"):
+        return dict(report.to_dict())
+    if is_dataclass(report):
+        return asdict(report)
+    fields = (
+        "module_name",
+        "backend",
+        "mode",
+        "vector_count",
+        "compile_cache_enabled",
+        "first_cache_hit",
+        "second_cache_hit",
+        "cache_key",
+        "cache_dir",
+        "first_run_seconds",
+        "second_run_seconds",
+        "warm_speedup",
+        "cache_artifact_present",
+        "first_report_passed",
+        "second_report_passed",
+        "skipped_reason",
+    )
+    return {name: getattr(report, name) for name in fields if hasattr(report, name)}
 
 
 def _split_rows(flat_inputs: Sequence[int], cycles: int, input_count: int) -> Tuple[Tuple[int, ...], ...]:

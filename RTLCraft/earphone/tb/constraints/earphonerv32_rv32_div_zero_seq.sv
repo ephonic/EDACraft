@@ -11,15 +11,15 @@ class rv32m_div_zero_seq extends uvm_sequence #(rv32_transaction);
         // x1 = 7, x2 = 0; DIV x5, x1, x2 -> -1
         req = rv32_transaction::type_id::create("req");
         start_item(req);
-        req.insn      = 32'h0220c2b3;
+        req.insn      = 32'h0220c1b3;
         req.rs1_val   = 32'h00000007;
         req.rs2_val   = 32'h00000000;
         finish_item(req);
 
-        // REM x6, x1, x2 -> 7
+        // REM x4, x1, x2 -> 7
         req = rv32_transaction::type_id::create("req");
         start_item(req);
-        req.insn      = 32'h0220e333;
+        req.insn      = 32'h0220e233;
         req.rs1_val   = 32'h00000007;
         req.rs2_val   = 32'h00000000;
         finish_item(req);

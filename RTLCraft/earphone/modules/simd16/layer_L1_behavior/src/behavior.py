@@ -95,8 +95,12 @@ def simd16_int16_functional(op: int, a: int, b: int, pred: int = 0xFFFF) -> int:
     for lane in range(16):
         if not ((pred >> lane) & 1):
             continue
-        av = _sign_extend((a >> (lane * 16)) & 0xFFFF, 16)
-        bv = _sign_extend((b >> (lane * 16)) & 0xFFFF, 16)
+        av_u16 = (a >> (lane * 16)) & 0xFFFF
+        bv_u16 = (b >> (lane * 16)) & 0xFFFF
+        av = _sign_extend(av_u16, 16)
+        bv = _sign_extend(bv_u16, 16)
+        av_s16 = av_u16 - 0x10000 if av_u16 & 0x8000 else av_u16
+        bv_s16 = bv_u16 - 0x10000 if bv_u16 & 0x8000 else bv_u16
         if op == SIMD_OP_VADD:
             rv = _to_u32(av + bv) & 0xFFFF
         elif op == SIMD_OP_VSUB:
@@ -117,11 +121,11 @@ def simd16_int16_functional(op: int, a: int, b: int, pred: int = 0xFFFF) -> int:
             rv = (av & 0xFFFF) >> sh
         elif op == SIMD_OP_VSRA:
             sh = bv & 0xF
-            rv = _to_u32(_sign_extend(av, 16) >> sh) & 0xFFFF
+            rv = _to_u32(av_s16 >> sh) & 0xFFFF
         elif op == SIMD_OP_VCMP_EQ:
             rv = 0xFFFF if av == bv else 0
         elif op == SIMD_OP_VCMP_LT:
-            rv = 0xFFFF if _sign_extend(av, 16) < _sign_extend(bv, 16) else 0
+            rv = 0xFFFF if av_s16 < bv_s16 else 0
         else:
             rv = 0
         result |= rv << (lane * 16)

@@ -12,6 +12,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from rtlgen_x.verify.remote_uvm import (
     RemoteUvmTarget,
+    load_remote_uvm_targets_json,
+    load_uvm_sequence_steps_json,
     run_remote_uvm_regression,
     write_remote_uvm_regression_report,
 )
@@ -64,18 +66,44 @@ def main() -> int:
         choices=("earphone-l5",),
         help="Predefined regression target set",
     )
+    parser.add_argument(
+        "--targets-json",
+        help="Optional JSON file containing target specs or a prior regression report with entries[].target",
+    )
+    parser.add_argument(
+        "--directed-sequence-json",
+        help="Optional JSON directed-sequence file to apply to every target loaded from --target/--preset",
+    )
     parser.add_argument("--source-script", default="/apps/EDAs/syn.bash", help="Remote environment setup script")
     parser.add_argument("--local-root", help="Optional local directory for generated bundles")
     parser.add_argument("--json-out", help="Optional JSON report path")
     args = parser.parse_args()
 
     targets = []
+    overlay_directed_sequence = (
+        load_uvm_sequence_steps_json(args.directed_sequence_json)
+        if args.directed_sequence_json
+        else None
+    )
+    if args.targets_json:
+        targets.extend(load_remote_uvm_targets_json(args.targets_json))
     if args.preset == "earphone-l5":
         targets.extend(_earphone_l5_targets())
     for spec in args.target:
         targets.append(_parse_target(spec))
     if not targets:
         parser.error("at least one --target or --preset is required")
+    if overlay_directed_sequence is not None:
+        targets = [
+            RemoteUvmTarget(
+                name=target.name,
+                module_file=target.module_file,
+                module_class=target.module_class,
+                clock_name=target.clock_name,
+                directed_sequence=overlay_directed_sequence,
+            )
+            for target in targets
+        ]
 
     report = run_remote_uvm_regression(
         targets,

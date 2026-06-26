@@ -5,7 +5,7 @@
 | Layer       | L6 verilog |
 | Module      | EarphoneI2C |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,7 +15,7 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-Verilog generation for EarphoneI2C.
+Verilog emission wrapper for the APB I2C DSL contract.
 
 ### 1.2 Scope
 Generated Verilog RTL and reports for EarphoneI2C.
@@ -24,13 +24,13 @@ Generated Verilog RTL and reports for EarphoneI2C.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `I2C-L5_DSL-001` (`layer_L5_dsl/specs/05_dsl_spec.md`), plus verification intent `I2C-L5_DSL-TP-001` (`layer_L5_dsl/specs/05_dsl_test_plan.md`) and latest evidence `I2C-L5_DSL-TR-001` (`layer_L5_dsl/specs/05_dsl_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits the final RTL-generation contract `I2C-L6_VERILOG-001` (`layer_L6_verilog/specs/06_verilog_spec.md`), verification plan `I2C-L6_VERILOG-TP-001` (`layer_L6_verilog/specs/06_verilog_test_plan.md`), and execution evidence `I2C-L6_VERILOG-TR-001` (`layer_L6_verilog/specs/06_verilog_test_report.md`) for module-level sign-off.
 
 ---
 
@@ -52,7 +52,9 @@ See next layer specification for outputs.
 
 | Property | Value |
 | --- | --- |
-| Deliverables | i2c.v |
+| File Name | earphone_i2c.v |
+| Dsl Class | EarphoneI2C |
+| Key Ports | paddr, scl_o, sda_oe |
 
 
 ---
@@ -95,4 +97,4 @@ Verilog generation, lint, and simulation.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

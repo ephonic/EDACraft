@@ -55,7 +55,7 @@ class EmitProfile:
     always_ff: bool = False         # 使用 always_ff 而非 always
     explicit_nettype: bool = False  # 在文件头添加 `default_nettype none
     one_module_per_file: bool = False
-    reset_style: str = "async_low"  # "async_low" | "async_high" | "sync"
+    reset_style: Optional[str] = None  # None | "async_low" | "async_high" | "sync"
     language: str = "verilog2001"   # "verilog2001" | "systemverilog"
 
 
@@ -2058,6 +2058,12 @@ class VerilogEmitter:
             return getattr(expr.signal, "signed", False)
         if isinstance(expr, Signal):
             return getattr(expr, "signed", False)
+        if isinstance(expr, UnaryOp):
+            if expr.op == "$signed":
+                return True
+            if expr.op == "$unsigned":
+                return False
+            return self._is_signed(expr.operand)
         if isinstance(expr, BinOp):
             return self._is_signed(expr.lhs) or self._is_signed(expr.rhs)
         return False
@@ -2124,6 +2130,9 @@ class VerilogEmitter:
                 return f"({s})"
             return s
         if isinstance(expr, UnaryOp):
+            if expr.op in ("$signed", "$unsigned"):
+                inner = self._emit_expr(expr.operand, expr.op, for_lhs)
+                return f"{expr.op}({inner})"
             s = f"{expr.op}{self._emit_expr(expr.operand, expr.op, for_lhs)}"
             if parent_op is not None and self._precedence(expr.op) < self._precedence(parent_op):
                 return f"({s})"
@@ -2151,6 +2160,18 @@ class VerilogEmitter:
                 if lo == 0:
                     return f"(({operand_str}) & {width}'d{mask})"
                 return f"((({operand_str}) >> {lo}) & {width}'d{mask})"
+            if isinstance(expr.operand, Slice):
+                # Flatten nested slices (e.g. vsrc1[255:240][3:0]) into a single
+                # slice on the underlying signal so iverilog can parse it.
+                inner = expr.operand
+                inner_hi = max(inner.hi, inner.lo)
+                inner_lo = min(inner.hi, inner.lo)
+                combined_hi = inner_lo + hi
+                combined_lo = inner_lo + lo
+                base_str = self._emit_expr(inner.operand, None, for_lhs)
+                if combined_hi == combined_lo:
+                    return f"{base_str}[{combined_hi}]"
+                return f"{base_str}[{combined_hi}:{combined_lo}]"
             if hi == lo:
                 return f"{operand_str}[{hi}]"
             return f"{operand_str}[{hi}:{lo}]"

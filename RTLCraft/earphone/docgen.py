@@ -135,6 +135,15 @@ def _render_to_file_checked(
         feedback.extend(validate_document_content(rendered, output_path))
 
 
+def _write_json_artifact(path: str, payload: Dict[str, Any]) -> str:
+    """Persist a structured artifact next to the rendered markdown."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return path
+
+
 def _write_docgen_feedback(
     output_base: str,
     module_name: str,
@@ -199,6 +208,14 @@ def _layer_doc_id(module_name: str, layer: str) -> str:
     return f"{module_name.upper()}-{layer.upper()}-001"
 
 
+def _module_test_plan_id(module_name: str) -> str:
+    return f"{module_name.upper()}-MOD-TP-001"
+
+
+def _module_test_report_id(module_name: str) -> str:
+    return f"{module_name.upper()}-MOD-TR-001"
+
+
 def _layer_test_plan_id(module_name: str, layer: str) -> str:
     return f"{module_name.upper()}-{layer.upper()}-TP-001"
 
@@ -219,6 +236,14 @@ def _layer_artifact_paths(layer: str) -> Tuple[str, str, str]:
         os.path.join(base, spec_name),
         os.path.join(base, f"{prefix}_test_plan.md"),
         os.path.join(base, f"{prefix}_test_report.md"),
+    )
+
+
+def _layer_artifact_json_paths(layer: str) -> Tuple[str, str]:
+    _, plan_path, report_path = _layer_artifact_paths(layer)
+    return (
+        plan_path.replace(".md", ".json"),
+        report_path.replace(".md", ".json"),
     )
 
 
@@ -1025,6 +1050,95 @@ def _find_layer_tests(module_name: str, layer: str) -> List[Tuple[str, str]]:
     return tests
 
 
+def _layer_test_cases(module_name: str, layer: str, tests: List[Tuple[str, str]]) -> List[Dict[str, str]]:
+    cases: List[Dict[str, str]] = []
+    if tests:
+        for i, (name, desc) in enumerate(tests, start=1):
+            cases.append({
+                "id": f"{module_name.upper()}-{layer.upper()}-TC-{i:03d}",
+                "name": name,
+                "type": "Directed",
+                "priority": "P1",
+                "objective": desc,
+                "status": "Planned",
+            })
+        return cases
+    return [{
+        "id": f"{module_name.upper()}-{layer.upper()}-TC-000",
+        "name": "missing_layer_tests",
+        "type": "Directed",
+        "priority": "P0",
+        "objective": "Strict sign-off must add at least one layer-local test.",
+        "status": "Blocked",
+    }]
+
+
+def _layer_test_inventory_markdown(module_name: str, layer: str, tests: List[Tuple[str, str]]) -> str:
+    cases = _layer_test_cases(module_name, layer, tests)
+    if len(cases) <= 1:
+        return "_Single suite summary shown above._"
+    rows = [
+        [case["id"], case["name"], case["type"], case["priority"], case["objective"], case["status"]]
+        for case in cases
+    ]
+    return "\n\nAdditional discovered test cases:\n\n" + _markdown_table(
+        ["TC ID", "Name", "Type", "Priority", "Objective", "Status"],
+        rows,
+    )
+
+
+def _module_layer_inventory(module_name: str, layer_tests: Dict[str, List[Tuple[str, str]]]) -> List[Dict[str, Any]]:
+    inventory: List[Dict[str, Any]] = []
+    for layer, _, _, _ in _LAYER_ORDER:
+        spec_path, plan_path, report_path = _layer_artifact_paths(layer)
+        tests = layer_tests.get(layer, [])
+        inventory.append({
+            "layer": layer,
+            "spec_ref": spec_path,
+            "plan_ref": plan_path,
+            "report_ref": report_path,
+            "input_contract": _layer_input_contract(module_name, layer),
+            "output_contract": _layer_output_contract(module_name, layer),
+            "feedback_target_layer": _previous_layer(layer) or "module_spec",
+            "tests": _layer_test_cases(module_name, layer, tests),
+        })
+    return inventory
+
+
+def _module_layer_inventory_markdown(module_name: str, layer_tests: Dict[str, List[Tuple[str, str]]]) -> str:
+    rows = []
+    for entry in _module_layer_inventory(module_name, layer_tests):
+        rows.append([
+            entry["layer"],
+            len(entry["tests"]),
+            entry["tests"][0]["status"],
+            entry["input_contract"],
+            entry["output_contract"],
+        ])
+    return "\n\nLayer handoff inventory:\n\n" + _markdown_table(
+        ["Layer", "Cases", "Status", "Consumes", "Emits"],
+        [[str(cell) for cell in row] for row in rows],
+    )
+
+
+def _module_suite_inventory_markdown(module_name: str, layer_results: Dict[str, Dict[str, Any]]) -> str:
+    rows = []
+    for layer, _, _, _ in _LAYER_ORDER:
+        result = layer_results.get(layer, {})
+        rows.append([
+            layer,
+            result.get("total", 0),
+            result.get("passed", 0),
+            result.get("failed", 0),
+            result.get("skipped", 0),
+            "N/A",
+        ])
+    return "\n\nLayer execution summary:\n\n" + _markdown_table(
+        ["Suite", "Total", "Passed", "Failed", "Skipped", "Coverage"],
+        [[str(cell) for cell in row] for row in rows],
+    )
+
+
 def _test_plan_fallback(
     module_name: str,
     layer: str,
@@ -1106,6 +1220,7 @@ def _test_plan_fallback(
         "risk_impact": "Downstream code may satisfy stale or incomplete intent",
         "risk_likelihood": "Medium during migration",
         "risk_mitigation": "Strict placeholder checks, layer tests, and upstream feedback blockers",
+        "test_case_inventory": _layer_test_inventory_markdown(module_name, layer, tests),
     }
     return values.get(key, f"Documented by {display} {layer_label} generated flow.")
 
@@ -1135,8 +1250,6 @@ def extract_layer_test_plan_vars(module_name: str, layer: str) -> Dict[str, Any]
 
     tests = _find_layer_tests(module_name, layer)
     if tests:
-        rows = [(f"TC-{i+1:03d}", name, "Directed", "P1", desc, "Planned")
-                for i, (name, desc) in enumerate(tests)]
         variables["tc_name_01"] = tests[0][0]
         variables["tc_type_01"] = "Directed"
         variables["tc_prio_01"] = "P1"
@@ -1148,10 +1261,6 @@ def extract_layer_test_plan_vars(module_name: str, layer: str) -> Dict[str, Any]
         variables["tc_pass_01"] = "Assertion passes"
         variables["tc_cov_01"] = "Functional coverage of the exercised feature"
         variables["tc_dep_01"] = "None"
-        test_inventory = _markdown_table(
-            ["TC ID", "Name", "Type", "Priority", "Objective", "Status"],
-            rows,
-        )
     else:
         variables["tc_name_01"] = "missing_layer_tests"
         variables["tc_type_01"] = "Directed"
@@ -1164,7 +1273,6 @@ def extract_layer_test_plan_vars(module_name: str, layer: str) -> Dict[str, Any]
         variables["tc_pass_01"] = "Test inventory is non-empty"
         variables["tc_cov_01"] = "Layer-local minimum coverage"
         variables["tc_dep_01"] = _layer_input_contract(module_name, layer)
-        test_inventory = "No layer-specific tests discovered; strict sign-off emits upstream feedback."
 
     variables["verification_approach"] = (
         f"Run the pytest cases listed in `{plan_path}` under "
@@ -1187,16 +1295,164 @@ def extract_layer_test_plan_vars(module_name: str, layer: str) -> Dict[str, Any]
     variables["func_cov_criteria"] = "All directed tests pass"
     variables["bug_criteria"] = "No open S0/S1 bugs"
     variables["regress_green_count"] = "3"
-
-    # Embed the inventory in the detailed description area by overriding the
-    # template's default placeholder.  The template renders a single TC-001 row
-    # by default; we prepend the full inventory as additional context.
-    variables["test_case_inventory"] = test_inventory
+    variables["test_case_inventory"] = _layer_test_inventory_markdown(module_name, layer, tests)
     return _fill_template_defaults(
         "test_plan",
         variables,
         lambda key: _test_plan_fallback(module_name, layer, tests, key),
     )
+
+
+def build_layer_test_plan_payload(
+    module_name: str,
+    layer: str,
+    tests: Optional[List[Tuple[str, str]]] = None,
+) -> Dict[str, Any]:
+    """Return a structured sidecar for a layer test plan."""
+    spec_path, plan_path, report_path = _layer_artifact_paths(layer)
+    plan_json_path, _ = _layer_artifact_json_paths(layer)
+    cases = _layer_test_cases(module_name, layer, tests if tests is not None else _find_layer_tests(module_name, layer))
+    return {
+        "schema_version": "2026-06-18.layer_test_plan.v1",
+        "scope": "layer",
+        "module_name": module_name,
+        "layer": layer,
+        "doc_id": _layer_test_plan_id(module_name, layer),
+        "spec_ref": spec_path,
+        "plan_ref": plan_path,
+        "plan_json_ref": plan_json_path,
+        "report_ref": report_path,
+        "input_contract": _layer_input_contract(module_name, layer),
+        "output_contract": _layer_output_contract(module_name, layer),
+        "feedback_target_layer": _previous_layer(layer) or "module_spec",
+        "test_cases": cases,
+    }
+
+
+def extract_module_test_plan_vars(
+    module_name: str,
+    layer_tests: Optional[Dict[str, List[Tuple[str, str]]]] = None,
+) -> Dict[str, Any]:
+    """Return variables for rendering the module-level test plan."""
+    display = _module_display_name(module_name)
+    spec_path = os.path.join("specs", "00_module_spec.md")
+    plan_path = os.path.join("specs", "07_module_test_plan.md")
+    report_path = os.path.join("specs", "08_module_test_report.md")
+    layer_tests = layer_tests or {layer: _find_layer_tests(module_name, layer) for layer, _, _, _ in _LAYER_ORDER}
+    inventory = _module_layer_inventory(module_name, layer_tests)
+    total_cases = sum(len(entry["tests"]) for entry in inventory)
+    blocked_layers = [entry["layer"] for entry in inventory if entry["tests"][0]["status"] == "Blocked"]
+
+    variables = default_variables()
+    variables["project_name"] = f"{display} — Module Handoff"
+    variables["dut_name"] = display
+    variables["dut_version"] = "0.1"
+    variables["doc_id"] = _module_test_plan_id(module_name)
+    variables["purpose"] = f"Verification handoff plan for the full layered refinement of {display}."
+    variables["scope"] = "Covers module-level refinement from L1 behavior through L6 Verilog."
+    variables["out_of_scope"] = "Top-level SoC integration closure; see earphone/top/."
+    variables["ref_id"] = f"{module_name.upper()}-MOD-001"
+    variables["ref_title"] = f"{display} module specification"
+    variables["ref_version"] = "0.1"
+    variables["term"] = "Module handoff"
+    variables["definition"] = "Approved contract plus layered test evidence required before CP0 module approval."
+    variables["dut_hier"] = f"earphone.modules.{module_name}"
+    variables["spec_ref"] = spec_path
+    variables["verification_approach"] = (
+        f"Each authored layer publishes `{plan_path}`-style intent and `{report_path}`-style evidence. "
+        "The module-level handoff aggregates those contracts so downstream integration and approval can "
+        "review one coherent packet instead of isolated layer markdown."
+    )
+    variables["unit_objective"] = "Validate layer-local functional correctness"
+    variables["unit_method"] = "Per-layer pytest suites"
+    variables["unit_owner"] = "RTLCraft Agent"
+    variables["int_objective"] = "Validate adjacent-layer refinement consistency"
+    variables["int_method"] = "Cross-layer document and test handoff checks"
+    variables["int_owner"] = "RTLCraft Agent"
+    variables["sys_objective"] = "Validate module readiness for SoC integration"
+    variables["sys_method"] = "CP0 approval packet review"
+    variables["sys_owner"] = "System Architect"
+    variables["tb_agent_a"] = "Upstream layer contract"
+    variables["tb_agent_b"] = "Downstream layer consumer"
+    variables["tb_scoreboard"] = "Module-level aggregated layer reports"
+    variables["cr_usage"] = "Not enabled until module handoff is stable"
+    variables["cr_tools"] = "Not enabled in current pilot"
+    variables["dir_usage"] = "Layer-local pytest plus module aggregation checks"
+    variables["dir_tools"] = "pytest"
+    variables["formal_usage"] = "Constraint/SVA artifacts at top-level closure"
+    variables["formal_tools"] = "Future formal flow"
+    variables["line_cov_goal"] = "Layer-local directed suites all present"
+    variables["line_cov_tool"] = "pytest summaries"
+    variables["branch_cov_goal"] = "Layer-local directed suites all pass"
+    variables["branch_cov_tool"] = "pytest summaries"
+    variables["fsm_cov_goal"] = "FSM-bearing layers covered by directed tests"
+    variables["fsm_cov_tool"] = "pytest"
+    variables["toggle_cov_goal"] = "Deferred to L6/top-level RTL checks"
+    variables["toggle_cov_tool"] = "RTL simulator"
+    variables["expr_cov_goal"] = "No failing layer-level expression paths"
+    variables["expr_cov_tool"] = "pytest"
+    variables["fc_point"] = "Layer handoff completeness"
+    variables["fc_desc"] = "Every active layer provides contract, test plan, and executable evidence."
+    variables["fc_goal"] = "All layers have at least one discovered test and no failing blockers"
+    variables["coverage_closure"] = (
+        "Close module handoff when every layer report is present, docgen feedback is empty, "
+        "and CP0 approval can review the aggregated packet."
+    )
+    variables["tc_name_01"] = "layered_module_handoff"
+    variables["tc_type_01"] = "Directed"
+    variables["tc_prio_01"] = "P1"
+    variables["tc_obj_01"] = f"Confirm all {len(inventory)} layers propagate tests and evidence for {display}."
+    variables["tc_status_01"] = "Blocked" if blocked_layers else "Planned"
+    variables["tc_pre_01"] = f"`{spec_path}` and all per-layer specs are generated."
+    variables["tc_stim_01"] = "Generate all per-layer plans/reports and review the aggregated module packet."
+    variables["tc_exp_01"] = "Every layer contributes structured plan/report artifacts with no open blockers."
+    variables["tc_pass_01"] = "No blocked layers and docgen feedback blocker count is zero."
+    variables["tc_cov_01"] = "Layer-to-layer contract propagation and module signoff readiness."
+    variables["tc_dep_01"] = "Per-layer specs, plans, and reports"
+    variables["test_case_inventory"] = _module_layer_inventory_markdown(module_name, layer_tests)
+    variables["dir_scenario_01"] = "Module handoff aggregation"
+    variables["dir_input_01"] = "Per-layer specs, test plans, test reports, and structured sidecars"
+    variables["dir_exp_01"] = "Module packet faithfully reflects all layers and their current verification state"
+    variables["dir_prio_01"] = "P1"
+    variables["rand_test"] = "Module packet drift scan"
+    variables["rand_focus"] = "Detect missing layer artifacts or stale evidence"
+    variables["rand_iter"] = "0 in current pilot"
+    variables["rand_seed"] = "record seed when enabled"
+    variables["rand_regress"] = "0 in current pilot"
+    variables["corner_scenario_01"] = "Layer exists with no discovered tests or unresolved report blockers"
+    variables["corner_rationale_01"] = "This is the main failure mode for document-driven drift."
+    variables["regress_env"] = "local-pytest"
+    variables["regress_tool"] = "pytest"
+    variables["regress_freq"] = "per module flow run"
+    variables["regress_scope"] = f"{display} module packet"
+    variables["regress_pass_criteria"] = "All per-layer suites pass and no layer is missing executable coverage."
+    variables["p1_pass_criteria"] = "100%"
+    variables["code_cov_criteria"] = "All layers publish executable evidence"
+    variables["func_cov_criteria"] = f"All {total_cases} discovered layer cases reviewed"
+    variables["bug_criteria"] = "No open S0/S1 module blockers"
+    variables["regress_green_count"] = "3"
+    return _fill_template_defaults(
+        "test_plan",
+        variables,
+        lambda key: f"{display} module handoff generated field for {key}.",
+    )
+
+
+def build_module_test_plan_payload(
+    module_name: str,
+    layer_tests: Dict[str, List[Tuple[str, str]]],
+) -> Dict[str, Any]:
+    """Return a structured sidecar for the module-level test plan."""
+    return {
+        "schema_version": "2026-06-18.module_test_plan.v1",
+        "scope": "module",
+        "module_name": module_name,
+        "doc_id": _module_test_plan_id(module_name),
+        "spec_ref": os.path.join("specs", "00_module_spec.md"),
+        "plan_ref": os.path.join("specs", "07_module_test_plan.md"),
+        "report_ref": os.path.join("specs", "08_module_test_report.md"),
+        "layers": _module_layer_inventory(module_name, layer_tests),
+    }
 
 
 def run_layer_tests(module_name: str, layer: str) -> Dict[str, Any]:
@@ -1415,6 +1671,7 @@ def _test_report_fallback(
         "test_logs": _compact_log(result.get("stdout", "") + "\n" + result.get("stderr", "")),
         "tool_history": result.get("cmd", "not run"),
         "raw_coverage": "No raw coverage report generated in this pilot flow.",
+        "suite_inventory": "_Single layer suite; no additional aggregation._",
     }
     return values.get(key, f"{display} {layer_label} generated report field.")
 
@@ -1455,6 +1712,7 @@ def extract_layer_test_report_vars(module_name: str, layer: str, result: Dict[st
     variables["p0_pass"] = str(result.get("passed", 0))
     variables["p0_fail"] = str(result.get("failed", 0))
     variables["p0_skip"] = str(result.get("skipped", 0))
+    variables["suite_inventory"] = "_Single layer suite; no additional aggregation._"
     variables["conclusion"] = (
         f"Layer {layer_label} tests completed: {result.get('passed', 0)}/{result.get('total', 0)} passed "
         f"in {result.get('duration', 0):.2f}s."
@@ -1470,25 +1728,270 @@ def extract_layer_test_report_vars(module_name: str, layer: str, result: Dict[st
     )
 
 
+def build_layer_test_report_payload(module_name: str, layer: str, result: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a structured sidecar for a layer test report."""
+    _, plan_path, report_path = _layer_artifact_paths(layer)
+    _, report_json_path = _layer_artifact_json_paths(layer)
+    return {
+        "schema_version": "2026-06-18.layer_test_report.v1",
+        "scope": "layer",
+        "module_name": module_name,
+        "layer": layer,
+        "doc_id": _layer_test_report_id(module_name, layer),
+        "test_plan_ref": _layer_test_plan_id(module_name, layer),
+        "report_ref": report_path,
+        "report_json_ref": report_json_path,
+        "summary": {
+            "total": int(result.get("total", 0)),
+            "passed": int(result.get("passed", 0)),
+            "failed": int(result.get("failed", 0)),
+            "skipped": int(result.get("skipped", 0)),
+            "duration": float(result.get("duration", 0.0)),
+            "overall_result": "PASS" if result.get("failed", 0) == 0 and result.get("total", 0) > 0 else "FAIL" if result.get("failed", 0) > 0 else "NO TESTS",
+        },
+        "command": result.get("cmd", ""),
+        "feedback_target_layer": _previous_layer(layer) or "module_spec",
+    }
+
+
+def extract_module_test_report_vars(
+    module_name: str,
+    layer_results: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Return variables for rendering the module-level test report."""
+    display = _module_display_name(module_name)
+    total = sum(int(result.get("total", 0)) for result in layer_results.values())
+    passed = sum(int(result.get("passed", 0)) for result in layer_results.values())
+    failed = sum(int(result.get("failed", 0)) for result in layer_results.values())
+    skipped = sum(int(result.get("skipped", 0)) for result in layer_results.values())
+    duration = sum(float(result.get("duration", 0.0)) for result in layer_results.values())
+    overall = "PASS" if failed == 0 and total > 0 else "FAIL" if failed > 0 else "NO TESTS"
+    failing_layers = [layer for layer, result in layer_results.items() if int(result.get("failed", 0)) > 0]
+    no_test_layers = [layer for layer, result in layer_results.items() if int(result.get("total", 0)) == 0]
+
+    variables = default_variables()
+    variables["project_name"] = f"{display} — Module Test Report"
+    variables["doc_id"] = _module_test_report_id(module_name)
+    variables["test_plan_ref"] = _module_test_plan_id(module_name)
+    variables["dut_name"] = display
+    variables["overall_result"] = overall
+    variables["target_total"] = str(total)
+    variables["achieved_total"] = str(total)
+    variables["status_total"] = "OK" if total > 0 else "NOK"
+    variables["target_pass"] = str(total)
+    variables["achieved_pass"] = str(passed)
+    variables["status_pass"] = "OK" if passed == total and total > 0 else "NOK"
+    variables["target_fail"] = "0"
+    variables["achieved_fail"] = str(failed)
+    variables["status_fail"] = "OK" if failed == 0 else "NOK"
+    variables["target_skip"] = "0"
+    variables["achieved_skip"] = str(skipped)
+    variables["status_skip"] = "OK" if skipped == 0 else "NOK"
+    variables["dut_version"] = "0.1"
+    variables["rtl_commit"] = "working tree snapshot"
+    variables["tb_commit"] = "working tree snapshot"
+    variables["scope_summary"] = (
+        f"Aggregated module-level verification evidence across {len(_LAYER_ORDER)} refinement layers."
+    )
+    uname = os.uname() if hasattr(os, "uname") else None
+    variables["host"] = getattr(uname, "nodename", "local runner") if uname else "local runner"
+    variables["cpu"] = getattr(uname, "machine", "local CPU") if uname else "local CPU"
+    variables["memory"] = "host managed"
+    variables["simulator"] = "pytest / Python model simulation"
+    variables["synth_tool"] = "Not invoked at module aggregate level"
+    variables["lint_tool"] = "rtlgen VerilogLinter at L6"
+    variables["coverage_tool"] = "pytest result summary"
+    variables["os"] = getattr(uname, "sysname", "local OS") if uname else "local OS"
+    variables["tb_config"] = "Aggregated from per-layer pytest invocations"
+    variables["target_line_cov"] = "All layers publish evidence"
+    variables["achieved_line_cov"] = f"{len(_LAYER_ORDER) - len(no_test_layers)}/{len(_LAYER_ORDER)} layers with tests"
+    variables["status_line_cov"] = "OK" if not no_test_layers else "NOK"
+    variables["target_func_cov"] = "All layer suites pass"
+    variables["achieved_func_cov"] = f"{passed}/{total} passed"
+    variables["status_func_cov"] = "OK" if overall == "PASS" else "NOK"
+    variables["suite_name"] = "module_aggregate"
+    variables["suite_total"] = str(total)
+    variables["suite_pass"] = str(passed)
+    variables["suite_fail"] = str(failed)
+    variables["suite_skip"] = str(skipped)
+    variables["suite_cov"] = "N/A"
+    variables["suite_inventory"] = _module_suite_inventory_markdown(module_name, layer_results)
+    variables["unit_total"] = str(total)
+    variables["unit_pass"] = str(passed)
+    variables["unit_fail"] = str(failed)
+    variables["unit_skip"] = str(skipped)
+    variables["p0_total"] = str(total)
+    variables["p0_pass"] = str(passed)
+    variables["p0_fail"] = str(failed)
+    variables["p0_skip"] = str(skipped)
+    variables["p1_total"] = "0"
+    variables["p1_pass"] = "0"
+    variables["p1_fail"] = "0"
+    variables["p1_skip"] = "0"
+    variables["p2_total"] = "0"
+    variables["p2_pass"] = "0"
+    variables["p2_fail"] = "0"
+    variables["p2_skip"] = "0"
+    variables["int_total"] = str(total)
+    variables["int_pass"] = str(passed)
+    variables["int_fail"] = str(failed)
+    variables["int_skip"] = str(skipped)
+    variables["sys_total"] = str(len(_LAYER_ORDER))
+    variables["sys_pass"] = str(len(_LAYER_ORDER) - len(failing_layers) - len(no_test_layers))
+    variables["sys_fail"] = str(len(failing_layers))
+    variables["sys_skip"] = str(len(no_test_layers))
+    variables["pass_tc_id"] = "MOD-PASS" if passed else "None"
+    variables["pass_tc_name"] = "module layered regression" if passed else "No passing suites"
+    variables["pass_tc_dur"] = f"{duration:.2f}s"
+    variables["pass_tc_notes"] = f"{passed} layer tests passed across {len(_LAYER_ORDER)} layers"
+    variables["fail_tc_id"] = "MOD-FAIL" if failed or no_test_layers else "None"
+    variables["fail_tc_name"] = "module layer blockers" if failed or no_test_layers else "No failing tests"
+    variables["fail_tc_sev"] = "S0" if failed or no_test_layers else "None"
+    variables["fail_tc_root"] = ", ".join(failing_layers + no_test_layers) if failing_layers or no_test_layers else "None"
+    variables["fail_tc_owner"] = "RTLCraft Agent" if failed or no_test_layers else "None"
+    variables["fail_tc_status"] = "Open" if failed or no_test_layers else "Closed"
+    variables["skip_tc_id"] = "MOD-SKIP" if skipped else "None"
+    variables["skip_tc_name"] = "module skipped layer tests" if skipped else "No skipped tests"
+    variables["skip_tc_reason"] = "See per-layer reports" if skipped else "None"
+    variables["skip_tc_plan"] = "Re-enable before approval" if skipped else "None"
+    variables["line_target"] = "All layers covered"
+    variables["line_achieved"] = f"{len(_LAYER_ORDER) - len(no_test_layers)}/{len(_LAYER_ORDER)}"
+    variables["line_gap"] = ", ".join(no_test_layers) if no_test_layers else "None"
+    variables["line_status"] = "OK" if not no_test_layers else "NOK"
+    variables["branch_target"] = "0 failing layer suites"
+    variables["branch_achieved"] = str(failed)
+    variables["branch_gap"] = ", ".join(failing_layers) if failing_layers else "None"
+    variables["branch_status"] = "OK" if not failing_layers else "NOK"
+    variables["fsm_target"] = "All active FSM layers pass directed checks"
+    variables["fsm_achieved"] = "See per-layer suites"
+    variables["fsm_gap"] = ", ".join(failing_layers) if failing_layers else "None"
+    variables["fsm_status"] = "OK" if overall == "PASS" else "NOK"
+    variables["toggle_target"] = "Deferred to RTL simulation"
+    variables["toggle_achieved"] = "Aggregated separately"
+    variables["toggle_gap"] = "Not applicable at module aggregate level"
+    variables["toggle_status"] = "WAIVED"
+    variables["expr_target"] = "No layer suite regressions"
+    variables["expr_achieved"] = f"{passed}/{total} passed"
+    variables["expr_gap"] = ", ".join(failing_layers) if failing_layers else "None"
+    variables["expr_status"] = "OK" if overall == "PASS" else "NOK"
+    variables["fc_name"] = "Module layered closure"
+    variables["fc_target"] = "All layers publish passing evidence"
+    variables["fc_achieved"] = f"{len(_LAYER_ORDER) - len(failing_layers) - len(no_test_layers)}/{len(_LAYER_ORDER)} layers"
+    variables["fc_gap"] = ", ".join(failing_layers + no_test_layers) if failing_layers or no_test_layers else "None"
+    variables["fc_status"] = "OK" if overall == "PASS" else "NOK"
+    variables["exclusion"] = "Coverage instrumentation"
+    variables["exclusion_reason"] = "Layer suites currently gate signoff more directly than coverage tools."
+    variables["exclusion_approver"] = "System Architect"
+    variables["open_issue_id"] = "MOD-OPEN" if failed or no_test_layers else "None"
+    variables["open_issue_sev"] = "S0" if failed or no_test_layers else "None"
+    variables["open_issue_summary"] = "Module cannot sign off" if failed or no_test_layers else "No open issues"
+    variables["open_issue_owner"] = "RTLCraft Agent" if failed or no_test_layers else "None"
+    variables["open_issue_eta"] = "Before CP0 approval" if failed or no_test_layers else "None"
+    variables["closed_issue_id"] = "MOD-CLOSED" if overall == "PASS" else "None"
+    variables["closed_issue_sev"] = "Info" if overall == "PASS" else "None"
+    variables["closed_issue_summary"] = "All layer suites passed" if overall == "PASS" else "None"
+    variables["closed_issue_resolution"] = "Evidence captured in module aggregate report" if overall == "PASS" else "None"
+    variables["waiver_id"] = "W-MOD-COV-001"
+    variables["waiver_desc"] = "Module aggregate uses per-layer evidence instead of a separate coverage tool."
+    variables["waiver_just"] = "The layered packet is the primary control-plane artifact in this pilot."
+    variables["waiver_approver"] = "System Architect"
+    variables["run_id"] = f"{module_name}-module-{date.today().isoformat()}"
+    variables["run_date"] = date.today().isoformat()
+    variables["run_total"] = str(total)
+    variables["run_pass"] = str(passed)
+    variables["run_fail"] = str(failed)
+    variables["run_skip"] = str(skipped)
+    variables["run_dur"] = f"{duration:.2f}s"
+    variables["run_result"] = overall
+    variables["verif_lead"] = "RTLCraft Agent"
+    variables["verif_lead_sig"] = "generated"
+    variables["verif_lead_date"] = date.today().isoformat()
+    variables["design_lead"] = "RTLCraft Agent"
+    variables["design_lead_sig"] = "generated"
+    variables["design_lead_date"] = date.today().isoformat()
+    variables["sys_arch"] = "System Architect"
+    variables["sys_arch_sig"] = "pending review"
+    variables["sys_arch_date"] = date.today().isoformat()
+    variables["pm"] = "Project Owner"
+    variables["pm_sig"] = "pending review"
+    variables["pm_date"] = date.today().isoformat()
+    variables["test_logs"] = "See per-layer reports for detailed pytest logs."
+    variables["tool_history"] = "Aggregated from per-layer pytest invocations."
+    variables["raw_coverage"] = "No standalone module aggregate coverage report generated."
+    variables["conclusion"] = (
+        f"Module aggregate completed with {passed}/{total} passing tests across {len(_LAYER_ORDER)} layers."
+    )
+    variables["sign_off_recommendation"] = (
+        "Proceed to CP0 approval" if overall == "PASS" else "Investigate failing or missing layer evidence before approval"
+    )
+    return _fill_template_defaults(
+        "test_report",
+        variables,
+        lambda key: f"{display} module test report generated field for {key}.",
+    )
+
+
+def build_module_test_report_payload(
+    module_name: str,
+    layer_results: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Return a structured sidecar for the module-level test report."""
+    total = sum(int(result.get("total", 0)) for result in layer_results.values())
+    passed = sum(int(result.get("passed", 0)) for result in layer_results.values())
+    failed = sum(int(result.get("failed", 0)) for result in layer_results.values())
+    skipped = sum(int(result.get("skipped", 0)) for result in layer_results.values())
+    return {
+        "schema_version": "2026-06-18.module_test_report.v1",
+        "scope": "module",
+        "module_name": module_name,
+        "doc_id": _module_test_report_id(module_name),
+        "test_plan_ref": _module_test_plan_id(module_name),
+        "summary": {
+            "total": total,
+            "passed": passed,
+            "failed": failed,
+            "skipped": skipped,
+            "overall_result": "PASS" if failed == 0 and total > 0 else "FAIL" if failed > 0 else "NO TESTS",
+        },
+        "layers": {
+            layer: {
+                "total": int(result.get("total", 0)),
+                "passed": int(result.get("passed", 0)),
+                "failed": int(result.get("failed", 0)),
+                "skipped": int(result.get("skipped", 0)),
+                "duration": float(result.get("duration", 0.0)),
+                "command": result.get("cmd", ""),
+            }
+            for layer, result in layer_results.items()
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Top-level generation
 # ---------------------------------------------------------------------------
 
-def generate_module_docs(
+def generate_module_bundle(
     module_name: str,
     output_base: Optional[str] = None,
     *,
     strict: bool = False,
-) -> List[str]:
-    """Generate all per-layer and module-level documents for a module.
+) -> Dict[str, Any]:
+    """Generate all per-layer and module-level artifacts for a module.
 
-    Returns the list of written file paths.
+    Returns a structured bundle containing written paths, per-layer results,
+    structured sidecars, and collected feedback.
     """
     if output_base is None:
         output_base = os.path.join(os.path.dirname(__file__), "modules", module_name)
 
     written: List[str] = []
     feedback: List[Dict[str, Any]] = []
+    layer_results: Dict[str, Dict[str, Any]] = {}
+    layer_tests: Dict[str, List[Tuple[str, str]]] = {}
+    artifacts: Dict[str, Any] = {
+        "layers": {},
+    }
 
     # Module-level spec.
     module_spec_path = os.path.join(output_base, "specs", "00_module_spec.md")
@@ -1500,11 +2003,15 @@ def generate_module_docs(
         validate=True,
     )
     written.append(module_spec_path)
+    artifacts["module_spec"] = module_spec_path
 
     # Per-layer specs, test plans, and test reports.
     for layer, src_file, _, spec_name in _LAYER_ORDER:
         layer_dir = os.path.join(output_base, _layer_dir(layer), "specs")
         os.makedirs(layer_dir, exist_ok=True)
+        spec_rel_path, plan_rel_path, report_rel_path = _layer_artifact_paths(layer)
+        plan_json_rel_path, report_json_rel_path = _layer_artifact_json_paths(layer)
+        layer_tests[layer] = _find_layer_tests(module_name, layer)
 
         # Layer spec.
         spec_path = os.path.join(layer_dir, spec_name)
@@ -1528,9 +2035,16 @@ def generate_module_docs(
             validate=True,
         )
         written.append(tp_path)
+        tp_json_path = os.path.join(output_base, plan_json_rel_path)
+        _write_json_artifact(
+            tp_json_path,
+            build_layer_test_plan_payload(module_name, layer, layer_tests[layer]),
+        )
+        written.append(tp_json_path)
 
         # Test report (runs tests and fills real results).
         result = run_layer_tests(module_name, layer)
+        layer_results[layer] = result
         tr_path = os.path.join(layer_dir, f"{layer_prefix}_test_report.md")
         _render_to_file_checked(
             "test_report",
@@ -1541,28 +2055,59 @@ def generate_module_docs(
         )
         feedback.extend(_collect_layer_test_feedback(module_name, layer, result, tr_path))
         written.append(tr_path)
+        tr_json_path = os.path.join(output_base, report_json_rel_path)
+        _write_json_artifact(
+            tr_json_path,
+            build_layer_test_report_payload(module_name, layer, result),
+        )
+        written.append(tr_json_path)
+        artifacts["layers"][layer] = {
+            "spec": spec_path,
+            "test_plan": tp_path,
+            "test_plan_json": tp_json_path,
+            "test_report": tr_path,
+            "test_report_json": tr_json_path,
+            "spec_ref": spec_rel_path,
+            "test_plan_ref": plan_rel_path,
+            "test_report_ref": report_rel_path,
+        }
 
     # Aggregated module-level test plan and report.
     tp_path = os.path.join(output_base, "specs", "07_module_test_plan.md")
     _render_to_file_checked(
         "test_plan",
         tp_path,
-        extract_layer_test_plan_vars(module_name, "L1_behavior"),
+        extract_module_test_plan_vars(module_name, layer_tests),
         feedback,
         validate=True,
     )
     written.append(tp_path)
+    tp_json_path = os.path.join(output_base, "specs", "07_module_test_plan.json")
+    _write_json_artifact(
+        tp_json_path,
+        build_module_test_plan_payload(module_name, layer_tests),
+    )
+    written.append(tp_json_path)
 
     tr_path = os.path.join(output_base, "specs", "08_module_test_report.md")
-    result = run_layer_tests(module_name, "L1_behavior")
     _render_to_file_checked(
         "test_report",
         tr_path,
-        extract_layer_test_report_vars(module_name, "L1_behavior", result),
+        extract_module_test_report_vars(module_name, layer_results),
         feedback,
         validate=True,
     )
     written.append(tr_path)
+    tr_json_path = os.path.join(output_base, "specs", "08_module_test_report.json")
+    _write_json_artifact(
+        tr_json_path,
+        build_module_test_report_payload(module_name, layer_results),
+    )
+    written.append(tr_json_path)
+    artifacts["module_test_plan"] = tp_path
+    artifacts["module_test_plan_json"] = tp_json_path
+    artifacts["module_test_report"] = tr_path
+    artifacts["module_test_report_json"] = tr_json_path
 
     # Compatibility aliases for older module-level documentation names that
     # predate the 00/07/08 numbering.
@@ -1570,7 +2115,7 @@ def generate_module_docs(
     _render_to_file_checked(
         "test_plan",
         legacy_tp_path,
-        extract_layer_test_plan_vars(module_name, "L1_behavior"),
+        extract_module_test_plan_vars(module_name, layer_tests),
         feedback,
         validate=True,
     )
@@ -1580,7 +2125,7 @@ def generate_module_docs(
     _render_to_file_checked(
         "test_report",
         legacy_tr_path,
-        extract_layer_test_report_vars(module_name, "L1_behavior", result),
+        extract_module_test_report_vars(module_name, layer_results),
         feedback,
         validate=True,
     )
@@ -1588,6 +2133,7 @@ def generate_module_docs(
 
     feedback_path = _write_docgen_feedback(output_base, module_name, feedback)
     written.append(feedback_path)
+    artifacts["docgen_feedback"] = feedback_path
 
     if strict and feedback:
         raise ValueError(
@@ -1595,7 +2141,26 @@ def generate_module_docs(
             f"see {feedback_path}"
         )
 
-    return written
+    return {
+        "module": module_name,
+        "written": written,
+        "feedback": feedback,
+        "feedback_path": feedback_path,
+        "layers": [(layer, layer_results[layer]) for layer, _, _, _ in _LAYER_ORDER],
+        "layer_results": layer_results,
+        "layer_tests": layer_tests,
+        "artifacts": artifacts,
+    }
+
+
+def generate_module_docs(
+    module_name: str,
+    output_base: Optional[str] = None,
+    *,
+    strict: bool = False,
+) -> List[str]:
+    """Generate all per-layer and module-level documents for a module."""
+    return generate_module_bundle(module_name, output_base=output_base, strict=strict)["written"]
 
 
 def generate_all_docs(

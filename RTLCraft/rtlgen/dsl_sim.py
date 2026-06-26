@@ -376,16 +376,25 @@ class DSLSimValidator:
         return report
 
     def _validate_single(self, name: str, mod_cls: type) -> ModuleSimResult:
-        from rtlgen.sim import Simulator, SimValue
-
-        result = ModuleSimResult(module_name=name)
-
         try:
             mod = mod_cls()
         except Exception as e:
+            result = ModuleSimResult(module_name=name)
             result.errors.append(f"Instantiation failed: {e}")
             result.simulation_ok = False
             return result
+
+        return self.validate_module_instance(mod, module_name=name)
+
+    def validate_module_instance(
+        self,
+        mod: Module,
+        module_name: Optional[str] = None,
+        vectors: Optional[List[Dict[str, Any]]] = None,
+    ) -> ModuleSimResult:
+        from rtlgen.sim import Simulator, SimValue
+
+        result = ModuleSimResult(module_name=module_name or mod.name)
 
         # Static completeness check
         checker = SignalCompletenessChecker(mod)
@@ -400,19 +409,20 @@ class DSLSimValidator:
             return result
 
         # Generate test vectors
-        gen = TestVectorGenerator(mod)
-        vectors = gen.generate_all(num_random=20)
+        if vectors is None:
+            gen = TestVectorGenerator(mod)
+            vectors = gen.generate_all(num_random=20)
 
         output_names = list(mod._outputs.keys())
         has_clk = "clk" in mod._inputs
-        has_rst = any(n in mod._inputs for n in ("rst_n", "rst", "reset_n", "reset"))
+        rst_name = self._detect_reset_name(mod)
+        has_rst = rst_name is not None
 
         try:
             sim = Simulator(mod, use_xz=self._use_xz)
 
             # Reset sequence
             if has_rst:
-                rst_name = "rst_n" if "rst_n" in mod._inputs else "rst"
                 sim.reset(rst_name, cycles=2)
 
             # Check for X/Z immediately after reset
@@ -462,6 +472,17 @@ class DSLSimValidator:
             result.simulation_ok = False
 
         return result
+
+    @staticmethod
+    def _detect_reset_name(mod: Module) -> Optional[str]:
+        for candidate in ("rst_n", "reset_n", "rst", "reset", "aresetn"):
+            if candidate in mod._inputs:
+                return candidate
+        for name in mod._inputs:
+            lname = name.lower()
+            if "rst" in lname or "reset" in lname:
+                return name
+        return None
 
     def _write_report(self, report: DSLSimReport):
         # JSON report

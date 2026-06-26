@@ -1,7 +1,7 @@
 """
 rtlgen.dsl_analyzer — Extract structured port/interface/FSM info from hand-written DSL modules.
 
-Loads Module classes from dsl_modules.py and introspects:
+Loads Module classes from the skill Layer 3 DSL entrypoint and introspects:
   - Port declarations (Input/Output with exact widths)
   - Sub-module instantiations and port maps (from ClusterTop/MeshTop)
   - State registers and array declarations
@@ -18,12 +18,28 @@ from rtlgen.core import Module, Input, Output, Reg, Wire, Array, SubmoduleInst
 
 
 def load_dsl_module(skill_name: str) -> Optional[Any]:
-    """Load the dsl_modules.py from a skill directory."""
+    """Load the preferred Layer 3 DSL entrypoint from a skill directory."""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    dsl_path = os.path.join(project_root, "skills", skill_name, "dsl_modules.py")
-    if not os.path.isfile(dsl_path):
+    candidates = [
+        (
+            os.path.join(project_root, "skills", skill_name, "dsl_modules.py"),
+            f"skills.{skill_name}.dsl_modules",
+        ),
+        (
+            os.path.join(project_root, "skills", skill_name, "layer3_dsl", "__init__.py"),
+            f"skills.{skill_name}.layer3_dsl",
+        ),
+    ]
+    dsl_path = None
+    full_name = None
+    for path, module_name in candidates:
+        if os.path.isfile(path):
+            dsl_path = path
+            full_name = module_name
+            break
+    if dsl_path is None or full_name is None:
         return None
-    full_name = f"skills.{skill_name}.dsl_modules"
+
     spec = importlib.util.spec_from_file_location(full_name, dsl_path)
     if spec is None or spec.loader is None:
         return None
@@ -92,7 +108,7 @@ def extract_submodule_connections(mod_cls: type) -> List[Dict[str, Any]]:
         # The SubmoduleInst object stores the port map
         for entry in getattr(inst, "_top_level", []):
             if isinstance(entry, SubmoduleInst):
-                if entry.instance_name == inst_name:
+                if entry.name == inst_name:
                     for port_name, signal in entry.port_map.items():
                         sig_name = _signal_name(signal)
                         sig_width = _signal_width(signal)
@@ -140,7 +156,7 @@ def build_port_database(skill_name: str) -> Dict[str, Any]:
     if dsl_mod is None:
         return {"ports": {}, "state": {}, "connections": {}, "interface_map": {}}
 
-    dsl_module_name = f"skills.{skill_name}.dsl_modules"
+    dsl_module_name = dsl_mod.__name__
     ports_db = {}
     state_db = {}
     conn_db = {}
@@ -149,7 +165,8 @@ def build_port_database(skill_name: str) -> Dict[str, Any]:
     for attr_name in dir(dsl_mod):
         attr = getattr(dsl_mod, attr_name)
         if isinstance(attr, type) and issubclass(attr, Module) and attr is not Module:
-            if getattr(attr, '__module__', None) == dsl_module_name:
+            mod_name = getattr(attr, "__module__", "")
+            if mod_name == dsl_module_name or mod_name.startswith(f"{dsl_module_name}."):
                 name = attr.__name__
                 ports_db[name] = extract_module_ports(attr)
                 state_db[name] = extract_module_state(attr)

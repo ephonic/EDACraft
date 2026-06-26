@@ -76,6 +76,7 @@ from rtlgen_x.verify import (
     ready_valid_reference_model,
     ready_valid_sequence,
     register_reference_model,
+    run_python_uvm_rtl_test,
     wishbone_clocked_protocol_sequence,
     wishbone_clocked_reference_model,
     check_wishbone_trace,
@@ -187,6 +188,40 @@ class DslPythonUvmAccum(Module):
                 self.acc <<= 0
             with Else():
                 self.acc <<= self.acc + self.inp
+
+
+class DslPythonUvmDualClockCounter(Module):
+    def __init__(self):
+        super().__init__("dsl_python_uvm_dual_clock_counter")
+        self.wr_clk = Input(1, "wr_clk")
+        self.rd_clk = Input(1, "rd_clk")
+        self.wr_rst = Input(1, "wr_rst")
+        self.rd_rst = Input(1, "rd_rst")
+        self.wr_en = Input(1, "wr_en")
+        self.rd_en = Input(1, "rd_en")
+        self.out = Output(4, "out")
+        self.wptr = Reg(4, "wptr")
+        self.rptr = Reg(4, "rptr")
+
+        @self.comb
+        def _comb():
+            self.out <<= self.wptr + self.rptr
+
+        @self.seq(self.wr_clk, self.wr_rst)
+        def _wr_seq():
+            with If(self.wr_rst == 1):
+                self.wptr <<= 0
+            with Else():
+                with If(self.wr_en == 1):
+                    self.wptr <<= self.wptr + 1
+
+        @self.seq(self.rd_clk, self.rd_rst)
+        def _rd_seq():
+            with If(self.rd_rst == 1):
+                self.rptr <<= 0
+            with Else():
+                with If(self.rd_en == 1):
+                    self.rptr <<= self.rptr + 1
 
 
 class DslReadyValidAsyncBridgeHarness(Module):
@@ -831,6 +866,86 @@ def test_python_uvm_accepts_dsl_module():
     assert report.passed is True
     assert report.traces[1].outputs == {"out": 5}
     assert report.traces[2].outputs == {"out": 7}
+
+
+def test_python_uvm_rtl_test_runs_python_vip_against_verilator(tmp_path):
+    report = run_python_uvm_rtl_test(
+        DslPythonUvmAccum(),
+        (
+            {"inp": 5},
+            {"inp": 2},
+            {"inp": 1},
+        ),
+        rtl_backend="verilator",
+        build_dir=tmp_path / "python_uvm_rtl_verilator",
+        name="python_uvm_rtl_accum",
+    )
+
+    assert report.cosim.skipped_reason is None
+    assert report.cosim.rtl_backend == "verilator"
+    assert report.cosim.dsl_matches_rtl is True
+    assert report.cosim.compiled_matches_rtl is True
+    assert report.python_uvm.passed is True
+    assert report.python_uvm.total_cycles == 3
+    assert report.python_uvm.traces[0].outputs == {"out": 5}
+    assert report.python_uvm.traces[-1].expected == {"out": 8}
+    assert report.python_uvm.coverage["input_bins"]["inp"][5] == 1
+
+
+def test_python_uvm_rtl_test_supports_multiclock_verilator(tmp_path):
+    report = run_python_uvm_rtl_test(
+        DslPythonUvmDualClockCounter(),
+        (
+            PythonUvmSequenceItem(
+                inputs={"wr_rst": 1, "rd_rst": 1, "wr_en": 0, "rd_en": 0},
+                active_domains=("wr_clk", "rd_clk"),
+                label="reset",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"wr_rst": 0, "rd_rst": 0, "wr_en": 1, "rd_en": 0},
+                active_domains=("wr_clk",),
+                label="write0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"wr_en": 1, "rd_en": 0},
+                active_domains=("wr_clk",),
+                label="write1",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"wr_en": 0, "rd_en": 1},
+                active_domains=("rd_clk",),
+                label="read0",
+            ),
+            PythonUvmSequenceItem(
+                inputs={"wr_en": 0, "rd_en": 1},
+                active_domains=("rd_clk",),
+                label="read1",
+            ),
+        ),
+        rtl_backend="verilator",
+        build_dir=tmp_path / "python_uvm_rtl_multiclk",
+        expected_fn=lambda cycle, _inputs: (
+            {"out": 0}
+            if cycle == 0
+            else {"out": 1}
+            if cycle == 1
+            else {"out": 2}
+            if cycle == 2
+            else {"out": 3}
+            if cycle == 3
+            else {"out": 4}
+        ),
+        name="python_uvm_rtl_multiclk",
+    )
+
+    assert report.cosim.skipped_reason is None
+    assert report.cosim.rtl_backend == "verilator"
+    assert report.cosim.dsl_matches_rtl is True
+    assert report.cosim.compiled_matches_rtl is True
+    assert report.python_uvm.passed is True
+    assert report.python_uvm.total_cycles == 5
+    assert report.python_uvm.traces[2].outputs["out"] == 2
+    assert report.python_uvm.traces[4].outputs["out"] == 4
 
 
 def test_python_uvm_requires_active_domains_for_multi_clock_modules():

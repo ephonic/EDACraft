@@ -5,7 +5,7 @@
 | Layer       | L3 architecture |
 | Module      | EarphoneSRAM256K |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,7 +15,7 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-256 KB on-chip SRAM, APB4 slave, byte write enable.
+Single-port 256 KB APB SRAM with byte write strobes.
 
 ### 1.2 Scope
 Micro-architectural decisions for EarphoneSRAM256K.
@@ -24,13 +24,13 @@ Micro-architectural decisions for EarphoneSRAM256K.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `SRAM256K-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`), plus verification intent `SRAM256K-L2_CYCLE-TP-001` (`layer_L2_cycle/specs/02_cycle_test_plan.md`) and latest evidence `SRAM256K-L2_CYCLE-TR-001` (`layer_L2_cycle/specs/02_cycle_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `SRAM256K-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`), `SRAM256K-L3_ARCHITECTURE-TP-001` (`layer_L3_architecture/specs/03_architecture_test_plan.md`), and `SRAM256K-L3_ARCHITECTURE-TR-001` (`layer_L3_architecture/specs/03_architecture_test_report.md`) as inputs to `SRAM256K-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`).
 
 ---
 
@@ -52,7 +52,14 @@ See next layer specification for outputs.
 
 | Property | Value |
 | --- | --- |
-| Pipeline | See DSL implementation for pipeline details. |
+| Pipeline | single-cycle APB transfer with registered readback |
+| Stages | apb_request, memory_access, readback |
+| Depth Words | 65536 |
+| Data Width | 32 |
+| Byte Lanes | 4 |
+| Read Latency Cycles | 1 |
+| Write Latency Cycles | 1 |
+| Invariants | Read data is returned through a registered prdata path., Write strobes merge new byte lanes with the existing memory word., The SRAM datapath only updates while an APB transfer is selected and enabled. |
 
 
 ---
@@ -95,4 +102,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

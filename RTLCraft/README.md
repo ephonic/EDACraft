@@ -1,7 +1,9 @@
-# RTLCraft (rtlgen) — Python API for Verilog RTL Generation
+# RTLCraft (rtlgen) — Python RTL and verification tooling
 
-> An object-oriented, decorator-driven Python API for describing synthesizable Verilog / SystemVerilog digital logic.
-> This is not a black-box generator, but a **white-box framework** — enabling AI agents and developers to directly understand, manipulate, and evolve the RTL abstract syntax tree (AST).
+> RTLCraft now contains both the original `rtlgen/` framework surface and the
+> newer `rtlgen_x/` clean-core toolbox. For active development, architecture
+> exploration, executable simulation, verification, and PPA analysis, use
+> **`rtlgen_x/` as the primary entry point**.
 
 ## Project Status
 
@@ -11,18 +13,40 @@ The repository currently contains two different centers of gravity:
 2. `rtlgen_x/`: the current clean-core toolbox for architecture exploration,
    executable modeling, compiled simulation, verification, and PPA analysis
 
-For new work, the recommended entry point is **`rtlgen_x/`**, not the older
+Recent work has focused on making `rtlgen_x/` trustworthy on real agent-facing
+tasks, including LUT-backed fixed-point pipelines and generated verification
+collateral. The newest regression target is a fully pipelined FP16 SFU example
+covering `relu`, `sigmoid`, `tanh`, `sin`, and `cos`.
+
+Current `rtlgen_x` closure includes:
+
+1. lightweight architecture exploration for CPU/GPU/NPU/controller/datapath use
+   cases
+2. executable design modeling through legacy-DSL lowering and native builders
+3. Python and compiled simulation with batch, trace, parity, and cosim support
+4. local directed, streaming, Python-UVM, and exported SV/UVM verification
+5. PPA analysis with hotspot attribution for agent-guided rewrites
+6. consistent handling of LUT `init_data`, arithmetic right shift, and
+   dependent combinational wires across emitted RTL and simulators
+
+For new work, the recommended entry point is **`rtlgen_x/`**, not the older,
 document-heavy workflow stack.
 
 Start here:
 
 1. [rtlgen_x/README.md](./rtlgen_x/README.md)
-2. [rtlgen_x/TUTORIAL_UVM.md](./rtlgen_x/TUTORIAL_UVM.md)
-3. [rtlgen_x/TUTORIAL_ARCH_PPA.md](./rtlgen_x/TUTORIAL_ARCH_PPA.md)
-4. [crypto/barrett128/PPA_REPORT.md](./crypto/barrett128/PPA_REPORT.md) for a
+2. [sfu/README.md](./sfu/README.md)
+3. [rtlgen_x/TUTORIAL_UVM.md](./rtlgen_x/TUTORIAL_UVM.md)
+4. [rtlgen_x/TUTORIAL_ARCH_PPA.md](./rtlgen_x/TUTORIAL_ARCH_PPA.md)
+5. [crypto/barrett128/PPA_REPORT.md](./crypto/barrett128/PPA_REPORT.md) for a
    concrete worked example of streaming verification plus module-side PPA
 
 ---
+
+The remainder of this top-level README is largely historical reference for the
+broader `rtlgen/` surface. When the descriptions below conflict with
+`rtlgen_x/README.md`, treat `rtlgen_x/README.md` and the example directories as
+the authoritative description of the current framework direction.
 
 ## Design Philosophy
 

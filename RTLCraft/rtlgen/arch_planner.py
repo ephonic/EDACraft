@@ -6,12 +6,17 @@ pipeline structure, and flow control based on SpecIR PPA goals.
 """
 from __future__ import annotations
 
+import ast
+import re
 from typing import Any, Dict, List, Optional
 
 from rtlgen.spec_ir import (
     ArchitectureIR,
     FlowControlSpec,
+    HandshakeIR,
+    OperationSpec,
     OperatorImpl,
+    RegisterTransferSpec,
     StageSpec,
     SpecIR,
 )
@@ -37,6 +42,8 @@ class ArchitecturePlanner:
             return self._plan_fsm_controller()
         elif category == "stream_pipeline":
             return self._plan_stream_pipeline()
+        elif category == "hierarchical":
+            return self._plan_hierarchical()
         else:
             return self._plan_comb_alu()  # fallback
 
@@ -50,6 +57,7 @@ class ArchitecturePlanner:
         func = spec.function
 
         arch = ArchitectureIR(arch_type="combinational")
+        arch.signal_widths = self._port_widths()
 
         # Determine operator implementations
         expr = func.expr.lower()
@@ -73,6 +81,11 @@ class ArchitecturePlanner:
         # If latency_max > 1 and pipeline allowed, split into stages
         if spec.timing.latency_max and spec.timing.latency_max > 1 and ppa.allow_pipeline:
             arch = self._pipeline_comb_alu(arch, spec)
+        else:
+            planned = self._plan_expression_pipeline(spec, arch_type="combinational", stage_count=1)
+            arch.stages = planned.stages
+            arch.signal_widths = planned.signal_widths
+            arch.output_names = planned.output_names
 
         return arch
 
@@ -114,22 +127,9 @@ class ArchitecturePlanner:
         spec = self.spec
         ppa = spec.ppa
 
-        arch = ArchitectureIR(arch_type="pipelined_datapath")
-
         # Determine number of stages from timing
         n_stages = self._determine_pipeline_stages(spec)
-
-        # Build stage specs
-        ops = self._extract_ops(spec.function.expr)
-        for i in range(n_stages):
-            stage_ops = ops[i::n_stages] if n_stages > 1 else ops
-            arch.stages.append(StageSpec(
-                stage_id=i,
-                name=f"stage_{i}",
-                ops=stage_ops,
-                register_inputs=(i > 0),
-                register_outputs=(i < n_stages - 1),
-            ))
+        arch = self._plan_expression_pipeline(spec, arch_type="pipelined_datapath", stage_count=n_stages)
 
         # Flow control for ready-valid
         if spec.interfaces and (
@@ -141,6 +141,13 @@ class ArchitecturePlanner:
                 stall_policy="stall_all",
                 skid_buffer=(ppa.priority == "timing_first"),
             )
+            arch.handshake = HandshakeIR(
+                valid_in="in_valid",
+                ready_out="in_ready",
+                ready_in="out_ready",
+                valid_out="out_valid",
+                stall_signal="pipe_stall",
+            )
 
         # Operator implementations
         expr = spec.function.expr.lower()
@@ -149,6 +156,13 @@ class ArchitecturePlanner:
         if "+" in expr or "-" in expr:
             arch.operator_impl["add"] = self._select_adder(ppa)
 
+        return arch
+
+    def _plan_hierarchical(self) -> ArchitectureIR:
+        arch = ArchitectureIR(arch_type="hierarchical")
+        arch.signal_widths = self._port_widths()
+        arch.output_names = [p.name for p in self.spec.ports if p.direction == "output"]
+        arch.flow_control = FlowControlSpec(flow_type="none")
         return arch
 
     # ------------------------------------------------------------------
@@ -231,73 +245,301 @@ class ArchitecturePlanner:
         if n_stages <= 1:
             return arch
 
-        arch.arch_type = "pipelined_datapath"
-        ops = self._extract_ops(spec.function.expr)
-
-        for i in range(n_stages):
-            stage_ops = ops[i::n_stages] if n_stages > 1 else ops
-            arch.stages.append(StageSpec(
-                stage_id=i,
-                name=f"stage_{i}",
-                ops=stage_ops,
-                register_inputs=(i > 0),
-                register_outputs=(i < n_stages - 1),
-            ))
-
+        planned = self._plan_expression_pipeline(spec, arch_type="pipelined_datapath", stage_count=n_stages)
+        arch.arch_type = planned.arch_type
+        arch.stages = planned.stages
+        arch.signal_widths = planned.signal_widths
+        arch.output_names = planned.output_names
+        arch.handshake = planned.handshake
         return arch
 
-    @staticmethod
-    def _extract_ops(expr: str) -> List[str]:
-        """Extract individual operations from an expression string."""
-        expr = expr.strip()
-        if "=" in expr:
-            # Split "y = a * b + c" → ["mul = a * b", "add = ... + c"]
-            lhs, rhs = expr.split("=", 1)
+    def _plan_expression_pipeline(
+        self,
+        spec: SpecIR,
+        arch_type: str,
+        stage_count: int,
+    ) -> ArchitectureIR:
+        """Build a structured operation pipeline from the function expression."""
+        arch = ArchitectureIR(arch_type=arch_type)
+        arch.signal_widths = self._port_widths()
+
+        output_name, operations = self._extract_operation_specs(spec.function.expr, arch.signal_widths)
+        arch.output_names = [output_name] if output_name else []
+
+        stages = [
+            StageSpec(
+                stage_id=i,
+                name=f"stage_{i}",
+                ops=[],
+                operation_specs=[],
+                registers=[],
+                register_inputs=(i > 0),
+                register_outputs=(i < stage_count - 1),
+            )
+            for i in range(max(stage_count, 1))
+        ]
+
+        if operations:
+            assignments = self._assign_operation_stages(operations, len(stages))
+            for op, stage_id in zip(operations, assignments):
+                op.stage_id = stage_id
+                stages[stage_id].operation_specs.append(op)
+                stages[stage_id].ops.append(f"{op.output} = {op.expr}")
+            self._plan_stage_registers(stages, operations, arch.signal_widths, output_name)
+        elif output_name:
+            stages[0].ops.append(f"{output_name} = {spec.function.expr.split('=', 1)[-1].strip()}")
+
+        arch.stages = stages
+        return arch
+
+    def _port_widths(self) -> Dict[str, int]:
+        return {p.name: p.width for p in self.spec.ports}
+
+    def _extract_operation_specs(
+        self,
+        expr: str,
+        signal_widths: Dict[str, int],
+    ) -> tuple[str, List[OperationSpec]]:
+        """Lower an expression into topologically ordered operation specs."""
+        text = expr.strip()
+        if "=" in text:
+            lhs, rhs = text.split("=", 1)
+            output_name = lhs.strip()
             rhs = rhs.strip()
+        else:
+            outputs = [p.name for p in self.spec.ports if p.direction == "output"]
+            output_name = outputs[0] if outputs else "out"
+            rhs = text
 
-            # Split by operators, keeping them
-            parts: List[str] = []
-            current = ""
-            for ch in rhs:
-                if ch in "+-*&|^":
-                    if current.strip():
-                        parts.append(current.strip())
-                    parts.append(ch)
-                    current = ""
-                else:
-                    current += ch
-            if current.strip():
-                parts.append(current.strip())
+        if not rhs:
+            return output_name, []
 
-            # Group into operations
-            ops = []
-            i = 0
-            while i < len(parts):
-                if parts[i] in "+-*&|^":
-                    if i + 2 <= len(parts):
-                        ops.append(f"{parts[i-1] if i > 0 else ''} {parts[i]} {parts[i+1] if i+1 < len(parts) else ''}".strip())
-                    i += 3
-                else:
-                    i += 1
+        tree = ast.parse(rhs, mode="eval")
+        operations: List[OperationSpec] = []
+        temp_idx = 0
+        declared_output_width = self._port_widths().get(output_name)
 
-            # Simpler approach: just return the split expression
-            # by splitting on operators and prefixing with the operator
-            ops = []
-            tokens = rhs.replace(" ", "").split("(")
-            remaining = rhs
-            for op_char in ["*", "+", "-", "&", "|", "^"]:
-                if op_char in remaining:
-                    ops.append(f"{op_char}")
+        def ensure_width(token: str) -> int:
+            if token in signal_widths:
+                return signal_widths[token]
+            if self._is_literal(token):
+                value = int(token, 0)
+                return max(value.bit_length(), 1)
+            return 1
 
-            if not ops:
-                ops = [f"assign = {rhs}"]
+        def lower(node: ast.AST, is_root: bool = False) -> str:
+            nonlocal temp_idx
+            if isinstance(node, ast.Name):
+                signal_widths.setdefault(node.id, 8)
+                return node.id
+            if isinstance(node, ast.Constant):
+                token = repr(int(node.value))
+                signal_widths.setdefault(token, max(int(node.value).bit_length(), 1))
+                return token
+            if isinstance(node, ast.UnaryOp):
+                if isinstance(node.op, ast.USub) and isinstance(node.operand, ast.Constant):
+                    value = -int(node.operand.value)
+                    token = repr(value)
+                    signal_widths.setdefault(token, max(abs(value).bit_length() + 1, 1))
+                    return token
+                input_name = lower(node.operand)
+                out_name = output_name if is_root else f"tmp_{temp_idx}"
+                temp_idx += 1
+                kind = self._unary_kind(node.op)
+                width = ensure_width(input_name)
+                if is_root and declared_output_width is not None:
+                    width = declared_output_width
+                operations.append(OperationSpec(
+                    op_id=len(operations),
+                    kind=kind,
+                    output=out_name,
+                    inputs=[input_name],
+                    expr=f"{kind} {input_name}",
+                    width=width,
+                ))
+                signal_widths[out_name] = width
+                return out_name
+            if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
+                lhs_name = lower(node.left)
+                rhs_name = lower(node.comparators[0])
+                out_name = output_name if is_root else f"tmp_{temp_idx}"
+                temp_idx += 1
+                kind = self._compare_kind(node.ops[0])
+                width = declared_output_width if is_root and declared_output_width is not None else 1
+                operations.append(OperationSpec(
+                    op_id=len(operations),
+                    kind=kind,
+                    output=out_name,
+                    inputs=[lhs_name, rhs_name],
+                    expr=f"{lhs_name} {kind} {rhs_name}",
+                    width=width,
+                ))
+                signal_widths[out_name] = width
+                return out_name
+            if isinstance(node, ast.BinOp):
+                lhs_name = lower(node.left)
+                rhs_name = lower(node.right)
+                out_name = output_name if is_root else f"tmp_{temp_idx}"
+                temp_idx += 1
+                kind = self._binop_kind(node.op)
+                width = self._infer_result_width(kind, ensure_width(lhs_name), ensure_width(rhs_name))
+                if is_root and declared_output_width is not None:
+                    width = declared_output_width
+                operations.append(OperationSpec(
+                    op_id=len(operations),
+                    kind=kind,
+                    output=out_name,
+                    inputs=[lhs_name, rhs_name],
+                    expr=f"{lhs_name} {self._symbol_for_kind(kind)} {rhs_name}",
+                    width=width,
+                ))
+                signal_widths[out_name] = width
+                return out_name
+            raise ValueError(f"Unsupported expression node: {ast.dump(node)}")
 
-            # Add output assignment
-            ops = [f"assign {lhs.strip()} = {rhs}"]
+        lower(tree.body, is_root=True)
+        signal_widths[output_name] = self._port_widths().get(output_name, signal_widths.get(output_name, 1))
+        return output_name, operations
 
-            return ops
+    @staticmethod
+    def _assign_operation_stages(operations: List[OperationSpec], stage_count: int) -> List[int]:
+        if not operations:
+            return []
+        if stage_count <= 1:
+            return [0 for _ in operations]
+        if len(operations) <= stage_count:
+            return list(range(len(operations)))
+        return [min((idx * stage_count) // len(operations), stage_count - 1) for idx in range(len(operations))]
 
-        return [f"assign = {expr}"]
+    def _plan_stage_registers(
+        self,
+        stages: List[StageSpec],
+        operations: List[OperationSpec],
+        signal_widths: Dict[str, int],
+        output_name: str,
+    ) -> None:
+        producers: Dict[str, int] = {name: -1 for name in self._port_widths()}
+        consumers: Dict[str, set[int]] = {}
+
+        for op in operations:
+            producers[op.output] = op.stage_id if op.stage_id is not None else 0
+            for token in op.inputs:
+                if self._is_literal(token):
+                    continue
+                consumers.setdefault(token, set()).add(op.stage_id if op.stage_id is not None else 0)
+
+        # Force the final output to be preserved through any tail stages.
+        if output_name:
+            consumers.setdefault(output_name, set()).add(len(stages))
+
+        for stage in stages[:-1]:
+            boundary_regs: List[RegisterTransferSpec] = []
+            for signal_name, producer_stage in producers.items():
+                if producer_stage > stage.stage_id or self._is_literal(signal_name):
+                    continue
+                later_uses = consumers.get(signal_name, set())
+                if any(use_stage > stage.stage_id for use_stage in later_uses):
+                    boundary_regs.append(RegisterTransferSpec(
+                        name=f"s{stage.stage_id + 1}_{self._sanitize_identifier(signal_name)}",
+                        source=signal_name,
+                        width=signal_widths.get(signal_name, 1),
+                    ))
+            stage.registers = boundary_regs
+
+    @staticmethod
+    def _sanitize_identifier(name: str) -> str:
+        return re.sub(r"[^0-9a-zA-Z_]", "_", name).strip("_") or "sig"
+
+    @staticmethod
+    def _is_literal(token: str) -> bool:
+        try:
+            int(token, 0)
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _binop_kind(node: ast.operator) -> str:
+        mapping = {
+            ast.Add: "add",
+            ast.Sub: "sub",
+            ast.Mult: "mul",
+            ast.BitAnd: "and",
+            ast.BitOr: "or",
+            ast.BitXor: "xor",
+            ast.LShift: "shl",
+            ast.RShift: "shr",
+        }
+        for ast_type, kind in mapping.items():
+            if isinstance(node, ast_type):
+                return kind
+        raise ValueError(f"Unsupported binary operator: {type(node).__name__}")
+
+    @staticmethod
+    def _unary_kind(node: ast.unaryop) -> str:
+        mapping = {
+            ast.Invert: "not",
+            ast.USub: "neg",
+        }
+        for ast_type, kind in mapping.items():
+            if isinstance(node, ast_type):
+                return kind
+        raise ValueError(f"Unsupported unary operator: {type(node).__name__}")
+
+    @staticmethod
+    def _compare_kind(node: ast.cmpop) -> str:
+        mapping = {
+            ast.Eq: "eq",
+            ast.NotEq: "ne",
+            ast.Lt: "lt",
+            ast.LtE: "le",
+            ast.Gt: "gt",
+            ast.GtE: "ge",
+        }
+        for ast_type, kind in mapping.items():
+            if isinstance(node, ast_type):
+                return kind
+        raise ValueError(f"Unsupported comparison operator: {type(node).__name__}")
+
+    @staticmethod
+    def _symbol_for_kind(kind: str) -> str:
+        mapping = {
+            "add": "+",
+            "sub": "-",
+            "mul": "*",
+            "and": "&",
+            "or": "|",
+            "xor": "^",
+            "shl": "<<",
+            "shr": ">>",
+            "eq": "==",
+            "ne": "!=",
+            "lt": "<",
+            "le": "<=",
+            "gt": ">",
+            "ge": ">=",
+            "not": "~",
+            "neg": "-",
+        }
+        return mapping.get(kind, kind)
+
+    @staticmethod
+    def _infer_result_width(kind: str, lhs_width: int, rhs_width: int) -> int:
+        if kind in ("add", "sub"):
+            return max(lhs_width, rhs_width) + 1
+        if kind == "mul":
+            return lhs_width + rhs_width
+        if kind in ("eq", "ne", "lt", "le", "gt", "ge"):
+            return 1
+        if kind in ("shl", "shr"):
+            return lhs_width
+        return max(lhs_width, rhs_width)
+
+    def _extract_ops(self, expr: str) -> List[str]:
+        """Compatibility helper returning human-readable operation strings."""
+        widths = self._port_widths()
+        _, operations = self._extract_operation_specs(expr, widths)
+        return [f"{op.output} = {op.expr}" for op in operations] or [f"assign = {expr.strip()}"]
 
     # ------------------------------------------------------------------
     # Resource sharing planner

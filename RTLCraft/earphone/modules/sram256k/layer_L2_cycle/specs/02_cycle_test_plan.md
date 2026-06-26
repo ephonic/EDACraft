@@ -3,7 +3,7 @@
 | Document ID | SRAM256K-L2_CYCLE-TP-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -16,7 +16,7 @@
 Verification test plan for the L2 cycle of EarphoneSRAM256K.
 
 ### 1.2 Scope
-<!-- Define the DUT(s), features, and verification levels covered. -->
+
 Covers directed and cross-layer tests executed at L2 cycle.
 
 ### 1.3 Out of Scope
@@ -28,7 +28,7 @@ Full SoC integration tests; see integration/ specs.
 
 | Document ID | Title | Version |
 |-------------|-------|---------|
-| {{ ref_id }} | {{ ref_title }} | {{ ref_version }} |
+| SRAM256K-L2_CYCLE-001 | EarphoneSRAM256K L2 cycle specification | 0.1 |
 
 ---
 
@@ -36,7 +36,7 @@ Full SoC integration tests; see integration/ specs.
 
 | Term | Definition |
 |------|------------|
-| {{ term }} | {{ definition }} |
+| Layer contract | Machine-generated Markdown contract that is consumed by the next IR layer. |
 
 ---
 
@@ -46,15 +46,15 @@ Full SoC integration tests; see integration/ specs.
 |-----------|-------|
 | DUT Name | EarphoneSRAM256K |
 | DUT Version | 0.1 |
-| Hierarchy Path | {{ dut_hier }} |
-| Specification Reference | {{ spec_ref }} |
+| Hierarchy Path | earphone.modules.sram256k.layer_L2_cycle |
+| Specification Reference | layer_L2_cycle/specs/02_cycle_spec.md |
 
 ---
 
 ## 5. Verification Strategy
 
 ### 5.1 Verification Approach
-Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tests and verify functional equivalence with adjacent layers where applicable.
+Run the pytest cases listed in `layer_L2_cycle/specs/02_cycle_test_plan.md` under `earphone/modules/sram256k/layer_L2_cycle/tests`, then publish PASS/FAIL evidence in `layer_L2_cycle/specs/02_cycle_test_report.md`. Test intent: Consumes approved outputs from `SRAM256K-L1_BEHAVIOR-001` (`layer_L1_behavior/specs/01_behavior_spec.md`), plus verification intent `SRAM256K-L1_BEHAVIOR-TP-001` (`layer_L1_behavior/specs/01_behavior_test_plan.md`) and latest evidence `SRAM256K-L1_BEHAVIOR-TR-001` (`layer_L1_behavior/specs/01_behavior_test_report.md`).
 
 ### 5.2 Verification Levels
 | Level | Objective | Method | Responsibility |
@@ -66,23 +66,23 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 ### 5.3 Testbench Architecture
 ```text
 +----------------+      +----------------+      +----------------+
-|   {{ tb_agent_a }}    |<---->|      DUT       |<---->|   {{ tb_agent_b }}    |
+|   Previous-layer contract    |<---->|      DUT       |<---->|   Next-layer checker    |
 +----------------+      +----------------+      +----------------+
          ^                       ^
          |                       |
          v                       v
 +-----------------------------------------------------------+
-|                    {{ tb_scoreboard }}                     |
+|                    Layer pytest assertions and cross-layer equivalence checks                     |
 +-----------------------------------------------------------+
 ```
 
 ### 5.4 Verification Methodology
 | Method | Usage | Tools |
 |--------|-------|-------|
-| Constrained-random simulation | N/A | N/A |
+| Constrained-random simulation | Not enabled until directed layer handoff is stable | Not enabled in current pilot |
 | Directed tests | Core directed tests from test_*.py | pytest |
 | Formal verification | SVA assertions generated from constraints | Verilog formal tools (future) |
-| Emulation / FPGA prototyping | {{ emu_usage }} | {{ emu_tools }} |
+| Emulation / FPGA prototyping | Not used in the Python-layer regression | None |
 
 ---
 
@@ -93,17 +93,17 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 |---------------|------|------|
 | Line coverage | 80% | pytest-cov |
 | Branch coverage | 70% | pytest-cov |
-| FSM coverage | {{ fsm_cov_goal }} | {{ fsm_cov_tool }} |
-| Toggle coverage | {{ toggle_cov_goal }} | {{ toggle_cov_tool }} |
-| Expression coverage | {{ expr_cov_goal }} | {{ expr_cov_tool }} |
+| FSM coverage | Covered by directed state-transition assertions where the layer has FSM state | pytest assertions |
+| Toggle coverage | Covered at L6 Verilog when signal-level RTL is emitted | RTL simulator or formal tool |
+| Expression coverage | Covered by directed branch and expression tests | pytest and downstream RTL coverage |
 
 ### 6.2 Functional Coverage
 | Coverage Point | Description | Goal |
 |----------------|-------------|------|
-| {{ fc_point }} | {{ fc_desc }} | {{ fc_goal }} |
+| L2 cycle contract coverage | Checks that L2 cycle preserves required inputs, outputs, and invariants. | All discovered directed tests pass |
 
 ### 6.3 Coverage Closure Criteria
-{{ coverage_closure }}
+Close L2 cycle when `layer_L2_cycle/specs/02_cycle_test_plan.md` has corresponding PASS evidence in `layer_L2_cycle/specs/02_cycle_test_report.md` and no blocker feedback remains.
 
 ---
 
@@ -112,20 +112,22 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 ### 7.1 Test Case Summary
 | TC ID | Name | Type | Priority | Objective | Status |
 |-------|------|------|----------|-----------|--------|
-| TC-001 | {{ tc_name_01 }} | {{ tc_type_01 }} | {{ tc_prio_01 }} | {{ tc_obj_01 }} | {{ tc_status_01 }} |
+| TC-001 | test_describe | Directed | P1 | Validate describe. | Planned |
+
+_Single suite summary shown above._
 
 ### 7.2 Detailed Test Cases
 
-#### TC-001: {{ tc_name_01 }}
+#### TC-001: test_describe
 | Attribute | Description |
 |-----------|-------------|
-| Objective | {{ tc_obj_01 }} |
-| Preconditions | {{ tc_pre_01 }} |
-| Input stimulus | {{ tc_stim_01 }} |
-| Expected result | {{ tc_exp_01 }} |
-| Pass/Fail criteria | {{ tc_pass_01 }} |
-| Coverage targeted | {{ tc_cov_01 }} |
-| Dependencies | {{ tc_dep_01 }} |
+| Objective | Validate describe. |
+| Preconditions | Layer model initialized |
+| Input stimulus | Run pytest test case |
+| Expected result | Test passes with no assertion failures |
+| Pass/Fail criteria | Assertion passes |
+| Coverage targeted | Functional coverage of the exercised feature |
+| Dependencies | None |
 
 ---
 
@@ -133,7 +135,7 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 
 | TC ID | Scenario | Input | Expected Output | Priority |
 |-------|----------|-------|-----------------|----------|
-| D-01 | {{ dir_scenario_01 }} | {{ dir_input_01 }} | {{ dir_exp_01 }} | {{ dir_prio_01 }} |
+| D-01 | L2 cycle directed regression | Layer source, generated spec, and adjacent-layer contract artifacts | Layer-local behavior matches the contract and produces PASS evidence | P1 |
 
 ---
 
@@ -141,7 +143,7 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 
 | Test Name | Constraint Focus | Iterations | Seed Strategy | Regression Count |
 |-----------|------------------|------------|---------------|------------------|
-| {{ rand_test }} | {{ rand_focus }} | {{ rand_iter }} | {{ rand_seed }} | {{ rand_regress }} |
+| L2 cycle randomized smoke vectors | Future randomized contract perturbations | 0 in current pilot | record seed when enabled | 0 in current pilot |
 
 ---
 
@@ -149,7 +151,7 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 
 | TC ID | Scenario | Rationale |
 |-------|----------|-----------|
-| C-01 | {{ corner_scenario_01 }} | {{ corner_rationale_01 }} |
+| C-01 | Reset, idle, and boundary protocol behavior | These states commonly reveal broken layer refinement. |
 
 ---
 
@@ -158,10 +160,10 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 ### 11.1 Regression Environments
 | Environment | Tool | Frequency | Scope |
 |-------------|------|-----------|-------|
-| {{ regress_env }} | {{ regress_tool }} | {{ regress_freq }} | {{ regress_scope }} |
+| local-pytest | pytest | per flow run | EarphoneSRAM256K L2 cycle |
 
 ### 11.2 Regression Pass Criteria
-{{ regress_pass_criteria }}
+All layer tests pass and strict document feedback has zero blockers.
 
 ---
 
@@ -170,13 +172,13 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 ### 12.1 Severity Definitions
 | Severity | Definition | Response Time |
 |----------|------------|---------------|
-| S0 - Blocker | {{ s0_def }} | {{ s0_time }} |
-| S1 - Critical | {{ s1_def }} | {{ s1_time }} |
-| S2 - Major | {{ s2_def }} | {{ s2_time }} |
-| S3 - Minor | {{ s3_def }} | {{ s3_time }} |
+| S0 - Blocker | Blocks layer handoff or invalidates an upstream contract. | Immediate repair before next layer generation |
+| S1 - Critical | Breaks required behavior but has a bounded workaround. | Repair before sign-off |
+| S2 - Major | Reduces coverage or traceability without breaking execution. | Repair before milestone closure |
+| S3 - Minor | Documentation or polish issue without behavioral impact. | Repair during cleanup |
 
 ### 12.2 Bug Tracking Process
-{{ bug_tracking }}
+Issues are emitted into docgen_feedback.json with detected layer and upstream target layer.
 
 ---
 
@@ -184,7 +186,7 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 
 | Milestone | Target Date | Deliverable | Owner |
 |-----------|-------------|-------------|-------|
-| {{ milestone }} | {{ milestone_date }} | {{ milestone_deliverable }} | {{ milestone_owner }} |
+| L2 cycle handoff | 2026-06-18 | layer_L2_cycle/specs/02_cycle_spec.md, layer_L2_cycle/specs/02_cycle_test_plan.md, layer_L2_cycle/specs/02_cycle_test_report.md | RTLCraft Agent |
 
 ---
 
@@ -192,7 +194,7 @@ Run the layer-specific pytest suite under earphone/modules/sram256k/L2_cycle/tes
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
-| {{ risk }} | {{ risk_impact }} | {{ risk_likelihood }} | {{ risk_mitigation }} |
+| Layer contract drift | Downstream code may satisfy stale or incomplete intent | Medium during migration | Strict placeholder checks, layer tests, and upstream feedback blockers |
 
 ---
 
@@ -212,4 +214,4 @@ The verification phase is considered complete when:
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

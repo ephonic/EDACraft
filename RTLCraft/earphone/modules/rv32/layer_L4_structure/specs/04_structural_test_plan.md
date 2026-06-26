@@ -3,7 +3,7 @@
 | Document ID | RV32-L4_STRUCTURE-TP-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -114,6 +114,15 @@ Close L4 structure when `layer_L4_structure/specs/04_structural_test_plan.md` ha
 |-------|------|------|----------|-----------|--------|
 | TC-001 | test_structure_contract_contains_required_subblocks | Directed | P1 | Validate structure contract contains required subblocks. | Planned |
 
+
+
+Additional discovered test cases:
+
+| TC ID | Name | Type | Priority | Objective | Status |
+| --- | --- | --- | --- | --- | --- |
+| RV32-L4_STRUCTURE-TC-001 | test_structure_contract_contains_required_subblocks | Directed | P1 | Validate structure contract contains required subblocks. | Planned |
+| RV32-L4_STRUCTURE-TC-002 | test_structure_contract_subblocks_have_interfaces | Directed | P1 | Validate structure contract subblocks have interfaces. | Planned |
+
 ### 7.2 Detailed Test Cases
 
 #### TC-001: test_structure_contract_contains_required_subblocks
@@ -184,7 +193,7 @@ Issues are emitted into docgen_feedback.json with detected layer and upstream ta
 
 | Milestone | Target Date | Deliverable | Owner |
 |-----------|-------------|-------------|-------|
-| L4 structure handoff | 2026-06-15 | layer_L4_structure/specs/04_structural_spec.md, layer_L4_structure/specs/04_structural_test_plan.md, layer_L4_structure/specs/04_structural_test_report.md | RTLCraft Agent |
+| L4 structure handoff | 2026-06-18 | layer_L4_structure/specs/04_structural_spec.md, layer_L4_structure/specs/04_structural_test_plan.md, layer_L4_structure/specs/04_structural_test_report.md | RTLCraft Agent |
 
 ---
 
@@ -212,4 +221,4 @@ The verification phase is considered complete when:
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

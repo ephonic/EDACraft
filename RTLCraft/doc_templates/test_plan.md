@@ -114,6 +114,8 @@
 |-------|------|------|----------|-----------|--------|
 | TC-001 | {{ tc_name_01 }} | {{ tc_type_01 }} | {{ tc_prio_01 }} | {{ tc_obj_01 }} | {{ tc_status_01 }} |
 
+{{ test_case_inventory }}
+
 ### 7.2 Detailed Test Cases
 
 #### TC-001: {{ tc_name_01 }}

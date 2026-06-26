@@ -1,0 +1,64 @@
+{
+  "doc_id": "RV32-MOD-TR-001",
+  "layers": {
+    "L1_behavior": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/rv32/layer_L1_behavior/tests -q --tb=short",
+      "duration": 0.24999499320983887,
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0,
+      "total": 5
+    },
+    "L2_cycle": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/rv32/layer_L2_cycle/tests -q --tb=short",
+      "duration": 0.2675790786743164,
+      "failed": 0,
+      "passed": 3,
+      "skipped": 0,
+      "total": 3
+    },
+    "L3_architecture": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/rv32/layer_L3_architecture/tests -q --tb=short",
+      "duration": 0.24800586700439453,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    },
+    "L4_structure": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/rv32/layer_L4_structure/tests -q --tb=short",
+      "duration": 0.2547628879547119,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    },
+    "L5_dsl": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/rv32/layer_L5_dsl/tests -q --tb=short",
+      "duration": 0.24932193756103516,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    },
+    "L6_verilog": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/rv32/layer_L6_verilog/tests -q --tb=short",
+      "duration": 0.30109190940856934,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    }
+  },
+  "module_name": "rv32",
+  "schema_version": "2026-06-18.module_test_report.v1",
+  "scope": "module",
+  "summary": {
+    "failed": 0,
+    "overall_result": "PASS",
+    "passed": 16,
+    "skipped": 0,
+    "total": 16
+  },
+  "test_plan_ref": "RV32-MOD-TP-001"
+}

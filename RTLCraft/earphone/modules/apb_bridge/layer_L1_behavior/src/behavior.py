@@ -8,16 +8,19 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 
-# 1 MB peripheral region split into 8 slave slots.
+# APB peripheral region split into 8 slave slots.
+# The L5 DSL selects the slot using m_paddr[29:22], which corresponds to
+# 4 MB-aligned regions, so the L1 decoder uses the same 4 MB slot size.
+SLOT_SIZE = 4 * 1024 * 1024
 APB_SLAVE_SLOTS: List[Tuple[str, int, int]] = [
-    ("QSPI",    0x00000, 0x10000),
-    ("SRAM",    0x10000, 0x10000),
-    ("SPI",     0x20000, 0x10000),
-    ("UART",    0x30000, 0x10000),
-    ("I2C",     0x40000, 0x10000),
-    ("I2S",     0x50000, 0x10000),
-    ("BTLE",    0x60000, 0x10000),
-    ("SIMD16",  0x70000, 0x10000),
+    ("QSPI",    0 * SLOT_SIZE, SLOT_SIZE),
+    ("SRAM",    1 * SLOT_SIZE, SLOT_SIZE),
+    ("SPI",     2 * SLOT_SIZE, SLOT_SIZE),
+    ("UART",    3 * SLOT_SIZE, SLOT_SIZE),
+    ("I2C",     4 * SLOT_SIZE, SLOT_SIZE),
+    ("I2S",     5 * SLOT_SIZE, SLOT_SIZE),
+    ("BTLE",    6 * SLOT_SIZE, SLOT_SIZE),
+    ("SIMD16",  7 * SLOT_SIZE, SLOT_SIZE),
 ]
 
 
@@ -35,7 +38,7 @@ def describe() -> Dict[str, Any]:
         "layer": "L1_behavior",
         "status": "implemented",
         "description": "AHB-to-APB address decoder and response multiplexer functional model.",
-        "region_size_bytes": 1024 * 1024,
+        "region_size_bytes": 8 * SLOT_SIZE,
         "num_slave_slots": len(APB_SLAVE_SLOTS),
         "slave_slots": ", ".join(name for name, _, _ in APB_SLAVE_SLOTS),
     }

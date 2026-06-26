@@ -3,7 +3,7 @@
 | Document ID | RV32-L6_VERILOG-TP-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -112,20 +112,29 @@ Close L6 verilog when `layer_L6_verilog/specs/06_verilog_test_plan.md` has corre
 ### 7.1 Test Case Summary
 | TC ID | Name | Type | Priority | Objective | Status |
 |-------|------|------|----------|-----------|--------|
-| TC-001 | missing_layer_tests | Directed | P0 | Strict sign-off must add at least one layer-local test. | Blocked |
+| TC-001 | test_emit_verilog_returns_source_and_line_count | Directed | P1 | Validate emit verilog returns source and line count. | Planned |
+
+
+
+Additional discovered test cases:
+
+| TC ID | Name | Type | Priority | Objective | Status |
+| --- | --- | --- | --- | --- | --- |
+| RV32-L6_VERILOG-TC-001 | test_emit_verilog_returns_source_and_line_count | Directed | P1 | Validate emit verilog returns source and line count. | Planned |
+| RV32-L6_VERILOG-TC-002 | test_emit_verilog_writes_output_file | Directed | P1 | Validate emit verilog writes output file. | Planned |
 
 ### 7.2 Detailed Test Cases
 
-#### TC-001: missing_layer_tests
+#### TC-001: test_emit_verilog_returns_source_and_line_count
 | Attribute | Description |
 |-----------|-------------|
-| Objective | Strict sign-off must add at least one layer-local test. |
-| Preconditions | layer_L6_verilog/specs/06_verilog_spec.md exists |
-| Input stimulus | Add pytest tests for this layer |
-| Expected result | At least one test is discovered and reported |
-| Pass/Fail criteria | Test inventory is non-empty |
-| Coverage targeted | Layer-local minimum coverage |
-| Dependencies | Consumes approved outputs from `RV32-L5_DSL-001` (`layer_L5_dsl/specs/05_dsl_spec.md`), plus verification intent `RV32-L5_DSL-TP-001` (`layer_L5_dsl/specs/05_dsl_test_plan.md`) and latest evidence `RV32-L5_DSL-TR-001` (`layer_L5_dsl/specs/05_dsl_test_report.md`). |
+| Objective | Validate emit verilog returns source and line count. |
+| Preconditions | Layer model initialized |
+| Input stimulus | Run pytest test case |
+| Expected result | Test passes with no assertion failures |
+| Pass/Fail criteria | Assertion passes |
+| Coverage targeted | Functional coverage of the exercised feature |
+| Dependencies | None |
 
 ---
 
@@ -184,7 +193,7 @@ Issues are emitted into docgen_feedback.json with detected layer and upstream ta
 
 | Milestone | Target Date | Deliverable | Owner |
 |-----------|-------------|-------------|-------|
-| L6 verilog handoff | 2026-06-15 | layer_L6_verilog/specs/06_verilog_spec.md, layer_L6_verilog/specs/06_verilog_test_plan.md, layer_L6_verilog/specs/06_verilog_test_report.md | RTLCraft Agent |
+| L6 verilog handoff | 2026-06-18 | layer_L6_verilog/specs/06_verilog_spec.md, layer_L6_verilog/specs/06_verilog_test_plan.md, layer_L6_verilog/specs/06_verilog_test_report.md | RTLCraft Agent |
 
 ---
 
@@ -212,4 +221,4 @@ The verification phase is considered complete when:
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

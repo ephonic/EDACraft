@@ -5,7 +5,7 @@
 | Layer       | L3 architecture |
 | Module      | EarphoneAPBBridge |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,7 +15,7 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-Simple APB4 address decoder for 8 slave slots.
+APB4 address decoder and response mux for eight peripheral slots.
 
 ### 1.2 Scope
 Micro-architectural decisions for EarphoneAPBBridge.
@@ -24,13 +24,13 @@ Micro-architectural decisions for EarphoneAPBBridge.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `APB_BRIDGE-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`), plus verification intent `APB_BRIDGE-L2_CYCLE-TP-001` (`layer_L2_cycle/specs/02_cycle_test_plan.md`) and latest evidence `APB_BRIDGE-L2_CYCLE-TR-001` (`layer_L2_cycle/specs/02_cycle_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `APB_BRIDGE-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`), `APB_BRIDGE-L3_ARCHITECTURE-TP-001` (`layer_L3_architecture/specs/03_architecture_test_plan.md`), and `APB_BRIDGE-L3_ARCHITECTURE-TR-001` (`layer_L3_architecture/specs/03_architecture_test_report.md`) as inputs to `APB_BRIDGE-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`).
 
 ---
 
@@ -52,7 +52,14 @@ See next layer specification for outputs.
 
 | Property | Value |
 | --- | --- |
-| Pipeline | See DSL implementation for pipeline details. |
+| Pipeline | single-cycle combinational decode |
+| Stages | decode, select_fanout, response_mux |
+| Decode Field | m_paddr[29:22] |
+| Slot Count | 8 |
+| Slave Region Size Bytes | 4194304 |
+| Host Protocol | APB4 master ingress to APB4 peripheral fanout |
+| Timing | Decode is combinational; the selected slave determines pready and pslverr timing. |
+| Invariants | Exactly one slave slot is selected for an in-range address., The selected slave's pready and pslverr status are returned to the master., All request fields are broadcast unchanged into the selected APB slot. |
 
 
 ---
@@ -95,4 +102,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

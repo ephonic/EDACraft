@@ -5,7 +5,7 @@
 | Layer       | L1 behavior |
 | Module      | EarphoneSRAM256K |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -24,13 +24,13 @@ Cycle-unaware functional behavior of EarphoneSRAM256K.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes the module contract `SRAM256K-MOD-001` and top-level SoC requirements as the seed SpecIR.
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `SRAM256K-L1_BEHAVIOR-001` (`layer_L1_behavior/specs/01_behavior_spec.md`), `SRAM256K-L1_BEHAVIOR-TP-001` (`layer_L1_behavior/specs/01_behavior_test_plan.md`), and `SRAM256K-L1_BEHAVIOR-TR-001` (`layer_L1_behavior/specs/01_behavior_test_report.md`) as inputs to `SRAM256K-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`).
 
 ---
 
@@ -97,4 +97,4 @@ Python unit tests against the functional reference model.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

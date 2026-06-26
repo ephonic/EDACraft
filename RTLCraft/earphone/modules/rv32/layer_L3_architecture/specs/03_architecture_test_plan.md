@@ -3,7 +3,7 @@
 | Document ID | RV32-L3_ARCHITECTURE-TP-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -112,20 +112,29 @@ Close L3 architecture when `layer_L3_architecture/specs/03_architecture_test_pla
 ### 7.1 Test Case Summary
 | TC ID | Name | Type | Priority | Objective | Status |
 |-------|------|------|----------|-----------|--------|
-| TC-001 | missing_layer_tests | Directed | P0 | Strict sign-off must add at least one layer-local test. | Blocked |
+| TC-001 | test_architecture_contract_contains_required_pipeline_and_units | Directed | P1 | Validate architecture contract contains required pipeline and units. | Planned |
+
+
+
+Additional discovered test cases:
+
+| TC ID | Name | Type | Priority | Objective | Status |
+| --- | --- | --- | --- | --- | --- |
+| RV32-L3_ARCHITECTURE-TC-001 | test_architecture_contract_contains_required_pipeline_and_units | Directed | P1 | Validate architecture contract contains required pipeline and units. | Planned |
+| RV32-L3_ARCHITECTURE-TC-002 | test_architecture_contract_names_core_shape | Directed | P1 | Validate architecture contract names core shape. | Planned |
 
 ### 7.2 Detailed Test Cases
 
-#### TC-001: missing_layer_tests
+#### TC-001: test_architecture_contract_contains_required_pipeline_and_units
 | Attribute | Description |
 |-----------|-------------|
-| Objective | Strict sign-off must add at least one layer-local test. |
-| Preconditions | layer_L3_architecture/specs/03_architecture_spec.md exists |
-| Input stimulus | Add pytest tests for this layer |
-| Expected result | At least one test is discovered and reported |
-| Pass/Fail criteria | Test inventory is non-empty |
-| Coverage targeted | Layer-local minimum coverage |
-| Dependencies | Consumes approved outputs from `RV32-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`), plus verification intent `RV32-L2_CYCLE-TP-001` (`layer_L2_cycle/specs/02_cycle_test_plan.md`) and latest evidence `RV32-L2_CYCLE-TR-001` (`layer_L2_cycle/specs/02_cycle_test_report.md`). |
+| Objective | Validate architecture contract contains required pipeline and units. |
+| Preconditions | Layer model initialized |
+| Input stimulus | Run pytest test case |
+| Expected result | Test passes with no assertion failures |
+| Pass/Fail criteria | Assertion passes |
+| Coverage targeted | Functional coverage of the exercised feature |
+| Dependencies | None |
 
 ---
 
@@ -184,7 +193,7 @@ Issues are emitted into docgen_feedback.json with detected layer and upstream ta
 
 | Milestone | Target Date | Deliverable | Owner |
 |-----------|-------------|-------------|-------|
-| L3 architecture handoff | 2026-06-15 | layer_L3_architecture/specs/03_architecture_spec.md, layer_L3_architecture/specs/03_architecture_test_plan.md, layer_L3_architecture/specs/03_architecture_test_report.md | RTLCraft Agent |
+| L3 architecture handoff | 2026-06-18 | layer_L3_architecture/specs/03_architecture_spec.md, layer_L3_architecture/specs/03_architecture_test_plan.md, layer_L3_architecture/specs/03_architecture_test_report.md | RTLCraft Agent |
 
 ---
 
@@ -212,4 +221,4 @@ The verification phase is considered complete when:
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

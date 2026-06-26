@@ -1,0 +1,64 @@
+{
+  "doc_id": "QSPI-MOD-TR-001",
+  "layers": {
+    "L1_behavior": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/qspi/layer_L1_behavior/tests -q --tb=short",
+      "duration": 5.5004541873931885,
+      "failed": 0,
+      "passed": 3,
+      "skipped": 0,
+      "total": 3
+    },
+    "L2_cycle": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/qspi/layer_L2_cycle/tests -q --tb=short",
+      "duration": 14.414577960968018,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    },
+    "L3_architecture": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/qspi/layer_L3_architecture/tests -q --tb=short",
+      "duration": 0.2660360336303711,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    },
+    "L4_structure": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/qspi/layer_L4_structure/tests -q --tb=short",
+      "duration": 0.17001080513000488,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    },
+    "L5_dsl": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/qspi/layer_L5_dsl/tests -q --tb=short",
+      "duration": 0.275310754776001,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    },
+    "L6_verilog": {
+      "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/qspi/layer_L6_verilog/tests -q --tb=short",
+      "duration": 0.24527215957641602,
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0,
+      "total": 2
+    }
+  },
+  "module_name": "qspi",
+  "schema_version": "2026-06-18.module_test_report.v1",
+  "scope": "module",
+  "summary": {
+    "failed": 0,
+    "overall_result": "PASS",
+    "passed": 13,
+    "skipped": 0,
+    "total": 13
+  },
+  "test_plan_ref": "QSPI-MOD-TP-001"
+}

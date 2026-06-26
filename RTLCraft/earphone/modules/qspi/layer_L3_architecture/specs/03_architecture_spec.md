@@ -5,7 +5,7 @@
 | Layer       | L3 architecture |
 | Module      | EarphoneQSPI |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,7 +15,7 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-Simplified QSPI XIP read controller.
+Memory-mapped XIP controller for external quad-SPI Flash reads.
 
 ### 1.2 Scope
 Micro-architectural decisions for EarphoneQSPI.
@@ -24,13 +24,13 @@ Micro-architectural decisions for EarphoneQSPI.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `QSPI-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`), plus verification intent `QSPI-L2_CYCLE-TP-001` (`layer_L2_cycle/specs/02_cycle_test_plan.md`) and latest evidence `QSPI-L2_CYCLE-TR-001` (`layer_L2_cycle/specs/02_cycle_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `QSPI-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`), `QSPI-L3_ARCHITECTURE-TP-001` (`layer_L3_architecture/specs/03_architecture_test_plan.md`), and `QSPI-L3_ARCHITECTURE-TR-001` (`layer_L3_architecture/specs/03_architecture_test_report.md`) as inputs to `QSPI-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`).
 
 ---
 
@@ -52,7 +52,14 @@ See next layer specification for outputs.
 
 | Property | Value |
 | --- | --- |
-| Pipeline | See DSL implementation for pipeline details. |
+| Pipeline | multi-phase read finite-state machine |
+| Phases | idle, cmd, addr, dummy, data |
+| Addr Width | 32 |
+| Data Width | 32 |
+| Read Command | 0xEB |
+| Host Protocol | req/ready host read channel to quad-SPI pad interface |
+| Timing | First-word reads span command, address, dummy, and data phases before ready is asserted. |
+| Invariants | The controller only asserts ready after the full read data phase completes., QSPI outputs drive command/address phases and release the IO bus during data capture., Chip select remains active whenever the FSM is outside the idle phase. |
 
 
 ---
@@ -95,4 +102,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

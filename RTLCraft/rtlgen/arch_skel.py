@@ -1470,7 +1470,7 @@ class ArchSkeletonGenerator:
                         state_info["depth"] = attr.depth
                     skeleton_state.append(state_info)
 
-        return GenerationContext(
+        gen_ctx = GenerationContext(
             target=module_req,
             reference_summaries=summaries,
             task_contexts=[task_ctx],
@@ -1480,6 +1480,8 @@ class ArchSkeletonGenerator:
             implementation_steps=implementation_steps,
             skeleton_state_vars=skeleton_state,
         )
+        gen_ctx.generation_task["hierarchy_mode"] = "hierarchical" if sub_modules else "leaf_only"
+        return gen_ctx
 
     _DEFAULT_CODING_RULES: List[str] = [
         "use explicit registers for state",

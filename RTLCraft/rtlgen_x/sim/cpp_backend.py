@@ -530,6 +530,11 @@ def _infer_expr_width(
     if isinstance(expr, BinaryExpr):
         if expr.op in {"==", "!=", "<", "<=", ">", ">="}:
             return 1
+        if expr.op in {"+", "-"}:
+            return max(
+                _infer_expr_width(expr.lhs, signal_map, memory_map),
+                _infer_expr_width(expr.rhs, signal_map, memory_map),
+            ) + 1
         if expr.op == "*":
             return _infer_expr_width(expr.lhs, signal_map, memory_map) + _infer_expr_width(
                 expr.rhs, signal_map, memory_map

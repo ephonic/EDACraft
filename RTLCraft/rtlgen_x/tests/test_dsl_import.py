@@ -794,6 +794,24 @@ class SignedExprTop(Module):
             self.out <<= SRA(self.u.y, 2).as_uint()[7:0]
 
 
+class DualLutInitTop(Module):
+    def __init__(self):
+        super().__init__("DualLutInitTop")
+        self.addr0 = Input(2, "addr0")
+        self.addr1 = Input(2, "addr1")
+        self.out0 = Output(8, "out0")
+        self.out1 = Output(8, "out1")
+        self.u0 = LUT(8, init_data=[1, 2, 3, 4], depth=4, name="MyLut")
+        self.u1 = LUT(8, init_data=[11, 22, 33, 44], depth=4, name="MyLut")
+
+        @self.comb
+        def _comb():
+            self.u0.addr <<= self.addr0
+            self.u1.addr <<= self.addr1
+            self.out0 <<= self.u0.dout
+            self.out1 <<= self.u1.dout
+
+
 class DeclaredDomainMailbox(Module):
     def __init__(self):
         super().__init__("DeclaredDomainMailbox")
@@ -1245,6 +1263,56 @@ def test_emit_design_skips_external_verilog_blackbox_shell():
     assert "module UsesExternalParameterizedLeaf" in text
     assert "ext_param_leaf #(.WIDTH(16), .LATENCY(2)) leaf (" in text
     assert "module ext_param_leaf" not in text
+
+
+def test_emit_design_keeps_distinct_lut_modules_when_init_data_differs():
+    text = VerilogEmitter().emit_design(DualLutInitTop())
+
+    assert "module MyLut (" in text
+    assert "module MyLut_1 (" in text
+    assert "lut[0] = 8'd1;" in text
+    assert "lut[0] = 8'd11;" in text
+    assert "MyLut u0 (" in text
+    assert "MyLut_1 u1 (" in text
+
+
+def test_emit_design_keeps_distinct_rom_modules_when_init_file_differs():
+    class InitFileLeaf(Module):
+        def __init__(self, init_file, name="InitFileLeaf"):
+            super().__init__(name)
+            self.addr = Input(2, "addr")
+            self.dout = Output(8, "dout")
+            self.mem = self.add_memory(Memory(8, 4, "mem", init_file=init_file))
+
+            @self.comb
+            def _comb():
+                self.dout <<= self.mem[self.addr]
+
+    class DualInitFileTop(Module):
+        def __init__(self):
+            super().__init__("DualInitFileTop")
+            self.addr0 = Input(2, "addr0")
+            self.addr1 = Input(2, "addr1")
+            self.out0 = Output(8, "out0")
+            self.out1 = Output(8, "out1")
+            self.u0 = InitFileLeaf("rom0.hex", name="RomLeaf")
+            self.u1 = InitFileLeaf("rom1.hex", name="RomLeaf")
+
+            @self.comb
+            def _comb():
+                self.u0.addr <<= self.addr0
+                self.u1.addr <<= self.addr1
+                self.out0 <<= self.u0.dout
+                self.out1 <<= self.u1.dout
+
+    text = VerilogEmitter().emit_design(DualInitFileTop())
+
+    assert 'module RomLeaf (' in text
+    assert 'module RomLeaf_1 (' in text
+    assert '$readmemh("rom0.hex", mem);' in text
+    assert '$readmemh("rom1.hex", mem);' in text
+    assert 'RomLeaf u0 (' in text
+    assert 'RomLeaf_1 u1 (' in text
 
 
 def test_collect_external_verilog_artifacts_from_mixed_design():
@@ -3895,6 +3963,29 @@ def test_dsl_init_data_reaches_lowered_runtime():
     assert lowered.module.memories[0].init == (0xFF, 0x03, 0x55, 0x80)
     assert sim.step({"addr": 0}) == {"dout": 0xFF}
     assert sim.step({"addr": 1}) == {"dout": 0x03}
+
+
+def test_dsl_init_file_reaches_lowered_runtime(tmp_path):
+    init_file = tmp_path / "mem.hex"
+    init_file.write_text("0b\n16\n21\n2c\n")
+
+    class InitFileMem(Module):
+        def __init__(self):
+            super().__init__("InitFileMem")
+            self.addr = Input(2, "addr")
+            self.dout = Output(8, "dout")
+            self.mem = self.add_memory(Memory(8, 4, "mem", init_file=str(init_file)))
+
+            @self.comb
+            def _comb():
+                self.dout <<= self.mem[self.addr]
+
+    lowered = lower_dsl_module_to_sim(InitFileMem())
+    sim = PythonSimulator(lowered.module)
+
+    assert lowered.module.memories[0].init == (0x0B, 0x16, 0x21, 0x2C)
+    assert sim.step({"addr": 0}) == {"dout": 0x0B}
+    assert sim.step({"addr": 3}) == {"dout": 0x2C}
 
 
 def test_dsl_runs_on_lowered_python_runtime():

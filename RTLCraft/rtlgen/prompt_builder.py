@@ -17,7 +17,19 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 
-def build_generation_prompt(gen_ctx: Any, task: Optional[Dict] = None) -> str:
+def _resolve_hierarchy_mode(gen_ctx: Any, hierarchy_mode: Optional[str] = None) -> str:
+    task_cfg = getattr(gen_ctx, "generation_task", {}) or {}
+    mode = hierarchy_mode or task_cfg.get("hierarchy_mode", "monolithic")
+    if mode not in {"monolithic", "hierarchical", "leaf_only"}:
+        return "monolithic"
+    return mode
+
+
+def build_generation_prompt(
+    gen_ctx: Any,
+    task: Optional[Dict] = None,
+    hierarchy_mode: Optional[str] = None,
+) -> str:
     """Build a Claude agent prompt from GenerationContext.
 
     Args:
@@ -31,6 +43,7 @@ def build_generation_prompt(gen_ctx: Any, task: Optional[Dict] = None) -> str:
     ref_summaries = getattr(gen_ctx, "reference_summaries", [])
     coding_rules = getattr(gen_ctx, "coding_rules", [])
     verification_contract = getattr(gen_ctx, "verification_contract", [])
+    mode = _resolve_hierarchy_mode(gen_ctx, hierarchy_mode)
 
     parts: List[str] = []
 
@@ -252,9 +265,17 @@ def build_generation_prompt(gen_ctx: Any, task: Optional[Dict] = None) -> str:
         parts.append("## 5. Module Architecture: Sub-Module Decomposition")
         parts.append("")
         parts.append("This module is decomposed into the following sub-modules.")
-        parts.append("You MUST implement this module as a monolithic module")
-        parts.append("that incorporates the functionality of ALL sub-modules.")
-        parts.append("Do NOT instantiate sub-modules as separate classes.")
+        if mode == "hierarchical":
+            parts.append("You MAY implement this design hierarchically.")
+            parts.append("Prefer explicit child modules and clear port maps when the decomposition is meaningful.")
+            parts.append("Only collapse sub-modules into one module when the decomposition would be artificial.")
+        elif mode == "leaf_only":
+            parts.append("Treat this prompt as a leaf-module implementation task.")
+            parts.append("Use the sub-module list as context, but only implement the current target module here.")
+        else:
+            parts.append("You MUST implement this module as a monolithic module")
+            parts.append("that incorporates the functionality of ALL sub-modules.")
+            parts.append("Do NOT instantiate sub-modules as separate classes.")
         parts.append("")
 
         for i, sm in enumerate(sub_modules, 1):
@@ -279,7 +300,12 @@ def build_generation_prompt(gen_ctx: Any, task: Optional[Dict] = None) -> str:
         parts.append("")
         parts.append("The following are ALL sub-tasks for this PE type.")
         parts.append("Each step defines a sub-module or functional block.")
-        parts.append("Implement ALL steps as a SINGLE monolithic module.")
+        if mode == "hierarchical":
+            parts.append("You may map these steps to helper modules or child blocks where that improves clarity.")
+        elif mode == "leaf_only":
+            parts.append("Use these steps as context for the current leaf module instead of implementing the whole hierarchy.")
+        else:
+            parts.append("Implement ALL steps as a SINGLE monolithic module.")
         parts.append("")
 
         for step in impl_steps:
@@ -410,17 +436,28 @@ def build_generation_prompt(gen_ctx: Any, task: Optional[Dict] = None) -> str:
     parts.append("")
     parts.append("Generate a complete RTLCraft DSL module that:")
     parts.append("1. Declares ALL input and output ports as specified above")
-    parts.append("2. Implements ALL sub-modules as a SINGLE monolithic module")
-    parts.append("3. Follows the implementation steps in order")
+    if mode == "hierarchical":
+        parts.append("2. Uses hierarchy when it clarifies the design, with explicit child modules and port maps")
+        parts.append("3. Keeps the top-level behavior consistent with the full decomposition")
+    elif mode == "leaf_only":
+        parts.append("2. Focuses on the current leaf module and does not try to rebuild the whole parent hierarchy")
+        parts.append("3. Uses the decomposition context only to understand surrounding interfaces and expectations")
+    else:
+        parts.append("2. Implements ALL sub-modules as a SINGLE monolithic module")
+        parts.append("3. Follows the implementation steps in order")
     parts.append("4. Uses the skeleton state variables (do NOT rename them)")
     parts.append("5. Uses reference patterns as GUIDANCE (not verbatim code)")
     parts.append("6. Follows all coding rules")
     parts.append("7. Is complete and synthesizable")
     parts.append("")
-    parts.append("IMPORTANT: The generated module must implement COMPLETE")
-    parts.append("functionality — not just the current sub-task. Include ALL")
-    parts.append("pipeline stages, ALL forwarding paths, ALL hazard detection,")
-    parts.append("and ALL control logic as described in the Implementation Steps.")
+    if mode == "leaf_only":
+        parts.append("IMPORTANT: The generated module must fully implement the current target module,")
+        parts.append("including all local state, control, and datapath behavior needed at this leaf boundary.")
+    else:
+        parts.append("IMPORTANT: The generated module must implement COMPLETE")
+        parts.append("functionality — not just the current sub-task. Include ALL")
+        parts.append("pipeline stages, ALL forwarding paths, ALL hazard detection,")
+        parts.append("and ALL control logic as described in the Implementation Steps.")
     parts.append("")
     parts.append("Output the DSL code as a Python class inheriting from `Module`.")
     parts.append("Include ONLY the class definition — no imports, no test code.")

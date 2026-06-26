@@ -5,7 +5,7 @@
 | Layer       | L2 cycle |
 | Module      | EarphoneI2C |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -24,13 +24,13 @@ Cycle-accurate protocol and timing behavior of EarphoneI2C.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `I2C-L1_BEHAVIOR-001` (`layer_L1_behavior/specs/01_behavior_spec.md`), plus verification intent `I2C-L1_BEHAVIOR-TP-001` (`layer_L1_behavior/specs/01_behavior_test_plan.md`) and latest evidence `I2C-L1_BEHAVIOR-TR-001` (`layer_L1_behavior/specs/01_behavior_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `I2C-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`), `I2C-L2_CYCLE-TP-001` (`layer_L2_cycle/specs/02_cycle_test_plan.md`), and `I2C-L2_CYCLE-TR-001` (`layer_L2_cycle/specs/02_cycle_test_report.md`) as inputs to `I2C-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`).
 
 ---
 
@@ -95,4 +95,4 @@ Cycle-accurate simulation and cross-layer equivalence with L1.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

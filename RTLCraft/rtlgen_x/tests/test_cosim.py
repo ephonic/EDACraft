@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from rtlgen_x.dsl import Else, If, Input, Memory, Module, Output, Reg
@@ -210,11 +212,391 @@ def test_dsl_rtl_cosim_returns_skip_when_tool_missing(monkeypatch):
     report = run_dsl_rtl_cosim(
         DslCosimAccum(),
         ({"inp": 1},),
+        rtl_backend="iverilog",
     )
 
     assert report.skipped_reason == "iverilog"
     assert report.dsl_matches_rtl is False
     assert report.compiled_matches_rtl is False
+
+
+def test_dsl_rtl_cosim_explicit_vcs_skips_when_missing(monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.delenv("RTLGEN_X_REMOTE_VCS_HOST", raising=False)
+    monkeypatch.setattr(cosim_mod, "_find_local_vcs", lambda: None)
+
+    report = run_dsl_rtl_cosim(
+        DslCosimAccum(),
+        ({"inp": 1},),
+        rtl_backend="vcs",
+    )
+
+    assert report.rtl_backend == "vcs"
+    assert report.skipped_reason == "vcs"
+
+
+def test_dsl_rtl_cosim_auto_backend_reports_iverilog_when_verilator_missing(monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.setattr(cosim_mod, "_find_local_verilator", lambda: None)
+    monkeypatch.setattr(cosim_mod, "_find_local_vcs", lambda: None)
+    monkeypatch.setattr(cosim_mod.rtl_cosim, "_compile_and_run", lambda *args, **kwargs: "CYCLE 0 out=1\nCOSIM_DONE\n")
+    monkeypatch.setattr(cosim_mod.rtl_cosim, "_parse_sv_output", lambda stdout: ({"out": 1},))
+
+    report = run_dsl_rtl_cosim(
+        DslCosimAccum(),
+        ({"inp": 1},),
+        rtl_backend="auto",
+    )
+
+    assert report.rtl_backend == "iverilog"
+
+
+def test_dsl_rtl_cosim_auto_backend_prefers_vcs_over_iverilog_when_verilator_missing(monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.delenv("RTLGEN_X_REMOTE_VCS_HOST", raising=False)
+    monkeypatch.setattr(cosim_mod, "_find_local_verilator", lambda: None)
+    monkeypatch.setattr(cosim_mod, "_find_local_vcs", lambda: "/tools/bin/vcs")
+    monkeypatch.setattr(cosim_mod, "_run_reference_trace", lambda *args, **kwargs: ({"out": 1},))
+    monkeypatch.setattr(cosim_mod, "_run_compiled_trace", lambda *args, **kwargs: ({"out": 1},))
+    monkeypatch.setattr(
+        cosim_mod,
+        "_run_vcs_trace",
+        lambda *args, **kwargs: (
+            ({"out": 1},),
+            cosim_mod._ExternalSimRunResult(
+                stdout="CYCLE 0 out=1\nCOSIM_DONE\n",
+                cache_enabled=True,
+                cache_hit=False,
+                cache_key="fake_vcs_key",
+                cache_dir="/tmp/fake_vcs_cache",
+            ),
+        ),
+    )
+
+    report = run_dsl_rtl_cosim(
+        DslCosimAccum(),
+        ({"inp": 1},),
+        rtl_backend="auto",
+    )
+
+    assert report.rtl_backend == "vcs"
+
+
+def test_dsl_rtl_cosim_auto_backend_prefers_remote_vcs_when_configured(monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.setenv("RTLGEN_X_REMOTE_VCS_HOST", "10.134.143.28")
+    monkeypatch.setattr(cosim_mod, "_find_local_verilator", lambda: None)
+    monkeypatch.setattr(cosim_mod, "_find_local_vcs", lambda: None)
+    monkeypatch.setattr(cosim_mod, "_run_reference_trace", lambda *args, **kwargs: ({"out": 1},))
+    monkeypatch.setattr(cosim_mod, "_run_compiled_trace", lambda *args, **kwargs: ({"out": 1},))
+    monkeypatch.setattr(
+        cosim_mod,
+        "_run_vcs_trace",
+        lambda *args, **kwargs: (
+            ({"out": 1},),
+            cosim_mod._ExternalSimRunResult(
+                stdout="CYCLE 0 out=1\nCOSIM_DONE\n",
+                cache_enabled=True,
+                cache_hit=False,
+                cache_key="remote_vcs_key",
+                cache_dir="/tmp/remote_vcs_cache",
+            ),
+        ),
+    )
+
+    report = run_dsl_rtl_cosim(
+        DslCosimAccum(),
+        ({"inp": 1},),
+        rtl_backend="auto",
+    )
+
+    assert report.rtl_backend == "vcs"
+
+
+def test_dsl_rtl_cosim_explicit_vcs_uses_remote_when_configured(monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.setenv("RTLGEN_X_REMOTE_VCS_HOST", "10.134.143.28")
+    monkeypatch.setattr(cosim_mod, "_find_local_vcs", lambda: None)
+    monkeypatch.setattr(cosim_mod, "_run_reference_trace", lambda *args, **kwargs: ({"out": 1},))
+    monkeypatch.setattr(cosim_mod, "_run_compiled_trace", lambda *args, **kwargs: ({"out": 1},))
+    monkeypatch.setattr(
+        cosim_mod,
+        "_compile_and_run_with_vcs",
+        lambda *args, **kwargs: cosim_mod._ExternalSimRunResult(
+            stdout="CYCLE 0 out=1\nCOSIM_DONE\n",
+            cache_enabled=True,
+            cache_hit=False,
+            cache_key="remote_vcs_key",
+            cache_dir="/tmp/remote_vcs_cache",
+        ),
+    )
+
+    report = run_dsl_rtl_cosim(
+        DslCosimAccum(),
+        ({"inp": 1},),
+        rtl_backend="vcs",
+    )
+
+    assert report.rtl_backend == "vcs"
+    assert report.skipped_reason is None
+
+
+def test_compile_and_run_with_remote_vcs_uses_ssh_pipeline(tmp_path, monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    calls = []
+
+    class _Completed:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_ssh(host, command, *, step, input_data=None, text=True, check=True):
+        calls.append((host, command, step, input_data is not None, text, check))
+        if "./simv +VECTOR_FILE=vectors.txt" in command:
+            return _Completed(stdout="CYCLE 0 out=1\nCOSIM_DONE\n")
+        return _Completed(stdout="")
+
+    monkeypatch.setattr(cosim_mod, "_run_remote_ssh", fake_ssh)
+
+    result = cosim_mod._compile_and_run_with_remote_vcs(
+        host="10.134.143.28",
+        source_script="/apps/EDAs/syn.bash",
+        remote_root="$HOME/rtlgen_x/cosim_vcs",
+        tb_sv="module tb_top; endmodule\n",
+        dut_src="module dut; endmodule\n",
+        top_module="tb_top",
+        vectors_text="0 1\n",
+        build_dir=tmp_path / "remote_vcs_cache",
+    )
+
+    assert result.stdout == "CYCLE 0 out=1\nCOSIM_DONE\n"
+    assert result.cache_enabled is True
+    assert result.cache_hit is False
+    assert any(
+        "mkdir -p" in command and "tar xzf - -C" in command
+        for _host, command, *_rest in calls
+    )
+    assert any("vcs -full64 -sverilog" in command for _host, command, *_rest in calls)
+    assert any("./simv +VECTOR_FILE=vectors.txt" in command for _host, command, *_rest in calls)
+    assert len(calls) == 3
+
+
+def test_compile_and_run_with_remote_vcs_warm_cache_only_uploads_vectors(tmp_path, monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    calls = []
+
+    class _Completed:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_ssh(host, command, *, step, input_data=None, text=True, check=True):
+        calls.append((host, command, step, input_data is not None, text, check))
+        if "./simv +VECTOR_FILE=vectors.txt" in command:
+            return _Completed(stdout="CYCLE 0 out=1\nCOSIM_DONE\n")
+        return _Completed(stdout="")
+
+    monkeypatch.setattr(cosim_mod, "_run_remote_ssh", fake_ssh)
+
+    cache_root = tmp_path / "remote_vcs_cache"
+    first = cosim_mod._compile_and_run_with_remote_vcs(
+        host="10.134.143.28",
+        source_script="/apps/EDAs/syn.bash",
+        remote_root="$HOME/rtlgen_x/cosim_vcs",
+        tb_sv="module tb_top; endmodule\n",
+        dut_src="module dut; endmodule\n",
+        top_module="tb_top",
+        vectors_text="0 1\n",
+        build_dir=cache_root,
+    )
+    cold_calls = list(calls)
+    calls.clear()
+    result = cosim_mod._compile_and_run_with_remote_vcs(
+        host="10.134.143.28",
+        source_script="/apps/EDAs/syn.bash",
+        remote_root="$HOME/rtlgen_x/cosim_vcs",
+        tb_sv="module tb_top; endmodule\n",
+        dut_src="module dut; endmodule\n",
+        top_module="tb_top",
+        vectors_text="0 1\n",
+        build_dir=cache_root,
+    )
+
+    assert first.cache_hit is False
+    assert len(cold_calls) == 3
+    assert result.cache_enabled is True
+    assert result.cache_hit is True
+    assert len(calls) == 2
+    assert calls[0][2] == "upload remote VCS vectors"
+    assert calls[1][2] == "run remote VCS simulation"
+
+
+def test_compile_and_run_with_remote_vcs_surfaces_ssh_failure(tmp_path, monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    def failing_ssh(host, command, *, step, input_data=None, text=True, check=True):
+        raise cosim_mod.rtl_cosim.CosimError(
+            f"remote vcs ssh step failed: {step}\n"
+            f"host={host}\n"
+            f"command={command}\n"
+            "returncode=255\n"
+            "stdout=\n"
+            "stderr=ssh: connect to host 10.134.143.28 port 22: Operation not permitted"
+        )
+
+    monkeypatch.setattr(cosim_mod, "_run_remote_ssh", failing_ssh)
+
+    with pytest.raises(cosim_mod.rtl_cosim.CosimError, match="Operation not permitted"):
+        cosim_mod._compile_and_run_with_remote_vcs(
+            host="10.134.143.28",
+            source_script="/apps/EDAs/syn.bash",
+            remote_root="$HOME/rtlgen_x/cosim_vcs",
+            tb_sv="module tb_top; endmodule\n",
+            dut_src="module dut; endmodule\n",
+            top_module="tb_top",
+            vectors_text="0 1\n",
+            build_dir=tmp_path / "remote_vcs_cache",
+        )
+
+
+def test_dsl_rtl_cosim_cached_external_sim_reuses_compiled_artifact(tmp_path, monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    compile_calls = []
+    run_calls = []
+
+    def fake_compile(root_path, **kwargs):
+        compile_calls.append(root_path)
+        obj_dir = root_path / "obj_dir"
+        obj_dir.mkdir(parents=True, exist_ok=True)
+        exe = obj_dir / "Vtb_top"
+        exe.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        exe.chmod(0o755)
+
+    def fake_cached_external_sim(**kwargs):
+        root_path, _tempdir = cosim_mod._prepare_external_sim_root(
+            kwargs["backend"],
+            kwargs["compile_key"],
+            kwargs["build_dir"],
+        )
+        for filename, contents in kwargs["source_files"].items():
+            (root_path / filename).write_text(contents, encoding="utf-8")
+        (root_path / kwargs["vector_filename"]).write_text(kwargs["vectors_text"], encoding="utf-8")
+        stamp_path = root_path / ".compile_stamp"
+        if not stamp_path.exists():
+            kwargs["compile_runner"](root_path)
+            stamp_path.write_text(kwargs["compile_key"], encoding="utf-8")
+        run_calls.append(root_path)
+        return cosim_mod._ExternalSimRunResult(
+            stdout="CYCLE 0 out=1\nCOSIM_DONE\n",
+            cache_enabled=kwargs["build_dir"] is not None,
+            cache_hit=stamp_path.exists(),
+            cache_key=kwargs["compile_key"],
+            cache_dir=str(root_path),
+        )
+
+    monkeypatch.setattr(cosim_mod, "_run_verilator_compile", fake_compile)
+    monkeypatch.setattr(cosim_mod, "_compile_and_run_cached_external_sim", fake_cached_external_sim)
+
+    kwargs = dict(
+        verilator="/tools/bin/verilator",
+        tb_sv="module tb_top; endmodule\n",
+        dut_src="module dut; endmodule\n",
+        top_module="tb_top",
+        vectors_text="0 1\n",
+        build_dir=tmp_path / "cache_root",
+    )
+    first = cosim_mod._compile_and_run_with_verilator(**kwargs)
+    second = cosim_mod._compile_and_run_with_verilator(**kwargs)
+
+    assert first.stdout == "CYCLE 0 out=1\nCOSIM_DONE\n"
+    assert second.stdout == first.stdout
+    assert first.cache_enabled is True
+    assert first.cache_hit is True
+    assert second.cache_hit is True
+    assert first.cache_key == second.cache_key
+    assert len(compile_calls) == 1
+    assert len(run_calls) == 2
+
+
+def test_prepare_external_sim_root_normalizes_relative_build_dir(tmp_path, monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.chdir(tmp_path)
+    root_path, tempdir = cosim_mod._prepare_external_sim_root(
+        "verilator",
+        "abc123",
+        Path("build") / "relative_cache",
+    )
+    try:
+        assert tempdir is None
+        assert root_path.is_absolute()
+        assert root_path == (tmp_path / "build" / "relative_cache" / "abc123").resolve()
+    finally:
+        if tempdir is not None:
+            tempdir.cleanup()
+
+
+def test_dsl_rtl_cosim_report_exposes_cache_metadata(tmp_path):
+    build_root = tmp_path / "cosim_cache_meta"
+
+    first = run_dsl_rtl_cosim(
+        DslCosimAccum(),
+        (
+            {"inp": 5},
+            {"inp": 2},
+        ),
+        rtl_backend="verilator",
+        build_dir=build_root,
+    )
+    second = run_dsl_rtl_cosim(
+        DslCosimAccum(),
+        (
+            {"inp": 5},
+            {"inp": 2},
+        ),
+        rtl_backend="verilator",
+        build_dir=build_root,
+    )
+
+    assert first.skipped_reason is None
+    assert first.cache_enabled is True
+    assert first.cache_hit is False
+    assert first.cache_key is not None
+    assert first.cache_dir is not None
+    assert second.cache_enabled is True
+    assert second.cache_hit is True
+    assert second.cache_key == first.cache_key
+    assert second.cache_dir == first.cache_dir
+
+
+def test_dsl_rtl_cosim_explicit_verilator_executes_when_available(tmp_path):
+    report = run_dsl_rtl_cosim(
+        DslCosimAccum(),
+        (
+            {"inp": 5},
+            {"inp": 2},
+            {"inp": 1},
+        ),
+        rtl_backend="verilator",
+        build_dir=tmp_path / "cosim_verilator",
+    )
+
+    assert report.skipped_reason is None
+    assert report.rtl_backend == "verilator"
+    assert report.dsl_matches_rtl is True
+    assert report.compiled_matches_rtl is True
+    assert report.compiled_trace[-1]["out"] == 8
+    assert report.rtl_trace[-1]["out"] == 8
 
 
 def test_dsl_rtl_cosim_supports_valid_gated_streaming_outputs(tmp_path):
@@ -360,11 +742,46 @@ def test_dsl_multiclock_rtl_cosim_returns_skip_when_tool_missing(monkeypatch):
         (
             ({"wr_rst": 1, "rd_rst": 1}, ("wr_clk", "rd_clk")),
         ),
+        rtl_backend="iverilog",
     )
 
     assert report.skipped_reason == "iverilog"
     assert report.dsl_matches_rtl is False
     assert report.compiled_matches_rtl is False
+
+
+def test_dsl_multiclock_rtl_cosim_explicit_verilator_skips_when_missing(monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.setattr(cosim_mod, "_find_local_verilator", lambda: None)
+
+    report = run_dsl_multiclock_rtl_cosim(
+        DslCosimDualClockMailbox(),
+        (
+            ({"wr_rst": 1, "rd_rst": 1}, ("wr_clk", "rd_clk")),
+        ),
+        rtl_backend="verilator",
+    )
+
+    assert report.rtl_backend == "verilator"
+    assert report.skipped_reason == "verilator"
+
+
+def test_dsl_multiclock_rtl_cosim_explicit_vcs_skips_when_missing(monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.setattr(cosim_mod, "_find_local_vcs", lambda: None)
+
+    report = run_dsl_multiclock_rtl_cosim(
+        DslCosimDualClockMailbox(),
+        (
+            ({"wr_rst": 1, "rd_rst": 1}, ("wr_clk", "rd_clk")),
+        ),
+        rtl_backend="vcs",
+    )
+
+    assert report.rtl_backend == "vcs"
+    assert report.skipped_reason == "vcs"
 
 
 def test_dsl_multiclock_rtl_cosim_rejects_direct_clock_drives():

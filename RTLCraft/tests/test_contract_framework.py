@@ -250,6 +250,38 @@ class TestDesignGate:
 
 
 class TestDesignScaffold:
+    def test_layers_for_profile(self):
+        assert DesignScaffold.layers_for_profile("leaf_min") == [
+            ("SpecIR", "BehaviorIR"),
+            ("BehaviorIR", "CycleIR"),
+            ("CycleIR", "DSL"),
+            ("DSL", "Verilog"),
+        ]
+        assert DesignScaffold.layers_for_profile("leaf_arch") == [
+            ("SpecIR", "BehaviorIR"),
+            ("BehaviorIR", "CycleIR"),
+            ("CycleIR", "ArchitectureIR"),
+            ("ArchitectureIR", "DSL"),
+            ("DSL", "Verilog"),
+        ]
+
+    def test_unknown_profile_raises(self):
+        with pytest.raises(ValueError):
+            DesignScaffold.layers_for_profile("does_not_exist")
+
+    def test_make_scaffold_with_profile(self):
+        scaffold = make_scaffold(profile="leaf_min")
+        assert scaffold.profile == "leaf_min"
+        assert scaffold.layers == DesignScaffold.layers_for_profile("leaf_min")
+
+    def test_explicit_layers_override_profile(self):
+        scaffold = make_scaffold(
+            profile="hier_full",
+            layers=[("SpecIR", "BehaviorIR"), ("BehaviorIR", "DSL")],
+        )
+        assert scaffold.profile == "hier_full"
+        assert scaffold.layers == [("SpecIR", "BehaviorIR"), ("BehaviorIR", "DSL")]
+
     def test_scaffold_run_clean(self):
         scaffold = make_scaffold()
 

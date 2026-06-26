@@ -3,7 +3,7 @@
 | Document ID | RV32-MOD-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Module ID   | RV32 |
@@ -236,4 +236,4 @@ rtlgen VerilogEmitter, VerilogLinter, and optional downstream synthesis feedback
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

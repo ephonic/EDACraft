@@ -1,7 +1,8 @@
 """Agent design scaffold for standardized Spec2RTL workflows.
 
-The DesignScaffold enforces a repeatable loop across the 6-layer IR while
-recording decisions, propagating constraints, and handling feedback.
+The DesignScaffold supports a small set of built-in layer profiles so projects
+can choose an appropriate refinement depth instead of forcing every module to
+materialize the same six authored layers.
 """
 
 from __future__ import annotations
@@ -42,6 +43,31 @@ class DesignScaffold:
     loop until resolved; WARNING/INFO feedback is logged.
     """
 
+    LAYER_PROFILES: Dict[str, List[Tuple[str, str]]] = {
+        "leaf_min": [
+            ("SpecIR", "BehaviorIR"),
+            ("BehaviorIR", "CycleIR"),
+            ("CycleIR", "DSL"),
+            ("DSL", "Verilog"),
+        ],
+        "leaf_arch": [
+            ("SpecIR", "BehaviorIR"),
+            ("BehaviorIR", "CycleIR"),
+            ("CycleIR", "ArchitectureIR"),
+            ("ArchitectureIR", "DSL"),
+            ("DSL", "Verilog"),
+        ],
+        "hier_full": [
+            ("SpecIR", "BehaviorIR"),
+            ("BehaviorIR", "CycleIR"),
+            ("CycleIR", "ArchitectureIR"),
+            ("ArchitectureIR", "StructuralIR"),
+            ("StructuralIR", "DSL"),
+            ("DSL", "Verilog"),
+        ],
+    }
+
+    DEFAULT_PROFILE = "hier_full"
     DEFAULT_LAYERS = [
         ("SpecIR", "BehaviorIR"),
         ("BehaviorIR", "CycleIR"),
@@ -56,16 +82,29 @@ class DesignScaffold:
         propagator: ConstraintPropagator,
         emitter: LayerEmitter,
         layers: Optional[List[Tuple[str, str]]] = None,
+        profile: Optional[str] = None,
     ):
         self.propagator = propagator
         self.emitter = emitter
-        self.layers = layers or list(self.DEFAULT_LAYERS)
+        self.profile = profile or self.DEFAULT_PROFILE
+        if layers is not None:
+            self.layers = list(layers)
+        else:
+            self.layers = self.layers_for_profile(self.profile)
         self.entities: List[IREntity] = []
         self.decisions: List[DesignDecision] = []
         self.feedback: List[ConstraintFeedback] = []
         self.gates: List[DesignGate] = []
         self.artifacts: Dict[str, str] = {}
         self.max_iterations = 3
+
+    @classmethod
+    def layers_for_profile(cls, profile: str) -> List[Tuple[str, str]]:
+        """Return a copy of the layer path for a built-in profile."""
+        if profile not in cls.LAYER_PROFILES:
+            supported = ", ".join(sorted(cls.LAYER_PROFILES))
+            raise ValueError(f"Unknown scaffold profile '{profile}'. Supported profiles: {supported}")
+        return list(cls.LAYER_PROFILES[profile])
 
     def register_entity(self, entity: IREntity) -> "DesignScaffold":
         self.entities.append(entity)
@@ -210,6 +249,8 @@ class DesignScaffold:
 def make_scaffold(
     propagator: Optional[ConstraintPropagator] = None,
     emitter: Optional[LayerEmitter] = None,
+    profile: str = DesignScaffold.DEFAULT_PROFILE,
+    layers: Optional[List[Tuple[str, str]]] = None,
 ) -> DesignScaffold:
     """Factory for a DesignScaffold with default propagator and no-op emitter."""
     if propagator is None:
@@ -221,4 +262,4 @@ def make_scaffold(
                 return {}
 
         emitter = NoopEmitter()
-    return DesignScaffold(propagator, emitter)
+    return DesignScaffold(propagator, emitter, layers=layers, profile=profile)

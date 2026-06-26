@@ -49,7 +49,11 @@ from rtlgen_x.dsl.core import (
     SwitchNode,
     UnaryOp,
 )
-from rtlgen_x.dsl.adapter import validate_authoring_intent
+from rtlgen_x.dsl.adapter import (
+    DslLoweringError,
+    _normalize_cross_module_assignments,
+    validate_authoring_intent,
+)
 
 
 @dataclass
@@ -179,13 +183,14 @@ class VerilogEmitter:
     # -----------------------------------------------------------------
     def emit(self, module: Module) -> str:
         """生成单个模块的 Verilog 代码。"""
-        validate_authoring_intent(module)
-        self._validate_storage_codegen_subset(module)
+        self._validate_emit_boundary(module)
+        module = _normalize_cross_module_assignments(module)
         self.lines = []
         self._extra_port_wires: List[Tuple[str, str]] = []
         self._port_expr_names: set[str] = set()
         self._port_expr_map: Dict[Tuple[str, str], str] = {}
         self._memory_decl_map: Dict[str, Any] = {}
+        self._current_emit_module_name = self._emitted_sv_module_name(module)
         # Build mapping from submodule port signal id to instance name.
         # This lets us emit prefixed names (e.g. u_valu_wid) when a submodule
         # port is referenced directly, avoiding name collisions between different
@@ -208,20 +213,49 @@ class VerilogEmitter:
             _collect_submods(body)
         for _, _, _, _, body in module._seq_blocks:
             _collect_submods(body)
-        self._emit_module(module)
-        del self._memory_decl_map
-        del self._submod_port_inst_map
-        return "\n".join(self.lines)
+        try:
+            self._emit_module(module)
+            return "\n".join(self.lines)
+        finally:
+            del self._memory_decl_map
+            del self._submod_port_inst_map
+            if hasattr(self, "_current_emit_module_name"):
+                del self._current_emit_module_name
+
+    def _validate_emit_boundary(self, module: Module) -> None:
+        validate_authoring_intent(module)
+        self._validate_storage_codegen_subset(module)
+
+    def _storage_codegen_contract_problems(self, memory: Memory) -> List[str]:
+        read_ports = int(getattr(memory, "read_ports", 1))
+        write_ports = int(getattr(memory, "write_ports", 1))
+        read_style = getattr(memory, "read_style", "async")
+        read_latency = int(getattr(memory, "read_latency", 0))
+
+        problems: List[str] = []
+        if read_ports != 1:
+            problems.append(f"read_ports={read_ports}")
+        if write_ports != 1:
+            problems.append(f"write_ports={write_ports}")
+        if read_style != "async":
+            problems.append(f"read_style={read_style!r}")
+        if read_latency != 0:
+            problems.append(f"read_latency={read_latency}")
+        return problems
 
     def _validate_storage_codegen_subset(self, module: Module) -> None:
         for memory in getattr(module, "_memories", {}).values():
-            read_style = getattr(memory, "read_style", "async")
-            read_latency = int(getattr(memory, "read_latency", 0))
-            if read_style == "sync" or read_latency != 0:
-                raise NotImplementedError(
-                    "VerilogEmitter does not yet synthesize explicit sync-read/read-latency memories; "
-                    "use the executable lowering path for simulation, or author explicit sampled-output RTL"
-                )
+            problems = self._storage_codegen_contract_problems(memory)
+            if not problems:
+                continue
+            details = ", ".join(problems)
+            raise DslLoweringError(
+                f"module '{self._preferred_sv_module_name(module)}' memory '{memory.name}' uses "
+                f"unsupported storage contract for emitted RTL ({details}); current VerilogEmitter "
+                "storage subset requires read_ports=1, write_ports=1, "
+                "read_style='async', read_latency=0. Use the executable lowering/cosim path "
+                "for simulation, or author explicit sampled-output / multi-port RTL."
+            )
 
     def emit_with_lint(self, module: Module, auto_fix: bool = False, rules: Optional[List[str]] = None) -> Tuple[str, "LintResult"]:
         """生成 Verilog 并运行 lint，返回 (verilog_text, lint_result)。"""
@@ -238,7 +272,7 @@ class VerilogEmitter:
         自动基于模块结构（端口+参数）进行去重，避免同名/同构模块重复输出。
         如果 include_assertions=True，还会为带有 _module_assertions 的模块生成 SVA bind 模块。
         """
-        validate_authoring_intent(top_module)
+        self._validate_emit_boundary(top_module)
         visited: set = set()
         order: List[Module] = []
 
@@ -269,6 +303,8 @@ class VerilogEmitter:
         def dfs(mod: Module):
             if id(mod) in visited:
                 return
+            if getattr(mod, "_external_verilog", False):
+                return
             visited.add(id(mod))
             for _, sub in mod._submodules:
                 dfs(sub)
@@ -283,16 +319,49 @@ class VerilogEmitter:
 
         # 结构指纹去重：接口（inputs/outputs/params）相同的模块只输出一次
         # 使用 _type_name + 端口结构作为指纹，忽略实例名差异
+        def _storage_fingerprint(mod: Module) -> tuple:
+            storage = []
+            for name, mem in sorted(mod._memories.items()):
+                storage.append(
+                    (
+                        "memory",
+                        name,
+                        mem.width,
+                        mem.depth,
+                        getattr(mem, "init_file", "") or "",
+                        bool(getattr(mem, "init_zero", False)),
+                        tuple(int(v) for v in getattr(mem, "init_data", ()) or ()),
+                        getattr(mem, "read_during_write", "write_first"),
+                        getattr(mem, "read_ports", 1),
+                        getattr(mem, "write_ports", 1),
+                        getattr(mem, "read_style", "async"),
+                        getattr(mem, "read_latency", 0),
+                        getattr(mem, "byte_enable_granularity", None),
+                    )
+                )
+            for name, arr in sorted(mod._arrays.items()):
+                storage.append(
+                    (
+                        "array",
+                        name,
+                        arr.width,
+                        arr.depth,
+                        getattr(getattr(arr, "_vtype", None), "__name__", ""),
+                    )
+                )
+            return tuple(storage)
+
         def _fingerprint(mod: Module) -> tuple:
             return (
                 getattr(mod, '_type_name', mod.name),
                 tuple((n, s.width) for n, s in sorted(mod._inputs.items())),
                 tuple((n, s.width) for n, s in sorted(mod._outputs.items())),
                 tuple(sorted((n, p.value) for n, p in mod._params.items())),
+                _storage_fingerprint(mod),
             )
 
         fingerprint_to_canonical: Dict[tuple, Module] = {}
-        name_remap: Dict[str, str] = {}
+        name_remap: Dict[int, str] = {}
         id_remap: Dict[int, str] = {}
         deduped_order: List[Module] = []
         used_names: set = set()
@@ -301,8 +370,9 @@ class VerilogEmitter:
             if fp in fingerprint_to_canonical:
                 canonical = fingerprint_to_canonical[fp]
                 canonical_name = self._preferred_sv_module_name(canonical)
-                name_remap[mod.name] = canonical_name
+                name_remap[id(mod)] = canonical_name
                 id_remap[id(mod)] = canonical_name
+                setattr(mod, "_emitted_module_name", canonical_name)
             else:
                 fingerprint_to_canonical[fp] = mod
                 base_name = self._preferred_sv_module_name(mod)
@@ -312,13 +382,16 @@ class VerilogEmitter:
                     unique_name = f"{base_name}_{suffix}"
                     suffix += 1
                 used_names.add(unique_name)
-                name_remap[mod.name] = unique_name
+                name_remap[id(mod)] = unique_name
                 id_remap[id(mod)] = unique_name
+                setattr(mod, "_emitted_module_name", unique_name)
                 deduped_order.append(mod)
 
         self._module_name_remap = name_remap
         self._module_id_remap = id_remap
         try:
+            for mod in deduped_order:
+                self._validate_emit_boundary(mod)
             parts = []
             for mod in deduped_order:
                 parts.append(self.emit(mod))
@@ -365,7 +438,14 @@ class VerilogEmitter:
 
     def _preferred_sv_module_name(self, module: Module) -> str:
         """Return the user-authored HDL name for a module."""
-        return getattr(module, "name", None) or getattr(module, "_type_name", "module")
+        emitted_name = getattr(module, "_emitted_module_name", None)
+        if emitted_name:
+            return emitted_name
+        return (
+            getattr(module, "_verilog_module_name", None)
+            or getattr(module, "name", None)
+            or getattr(module, "_type_name", "module")
+        )
 
     def _emitted_sv_module_name(self, module: Module) -> str:
         """Return the actual emitted HDL declaration name for a module."""
@@ -373,7 +453,7 @@ class VerilogEmitter:
         if id(module) in id_remap:
             return id_remap[id(module)]
         preferred = self._preferred_sv_module_name(module)
-        return getattr(self, "_module_name_remap", {}).get(preferred, preferred)
+        return getattr(self, "_module_name_remap", {}).get(id(module), preferred)
 
     # -----------------------------------------------------------------
     # Module header emission (from ModuleDoc)
@@ -523,11 +603,6 @@ class VerilogEmitter:
         ):
             self._emit_section_comment("Internal declarations")
         self._emit_internal_decls(module)
-
-        # Audit Fix 0522 — Section 2.2: Resolve cross-module assignments
-        # (e.g., ifu.clk <<= self.clk) into proper submodule port connections
-        # instead of redundant "assign clk = clk;" statements.
-        self._resolve_cross_module_assignments(module)
 
         # Pre-collect helper wires so review output can present them before
         # the instance list that consumes them.
@@ -1186,9 +1261,12 @@ class VerilogEmitter:
             self.lines.append(f"{prefix}{stmt.mem_name}[{addr}] {op} {value};")
             return
         if memory is None or getattr(memory, "byte_enable_granularity", None) is None:
-            raise NotImplementedError(
-                f"memory '{stmt.mem_name}' uses byte-enable writes but does not expose "
-                "byte_enable_granularity metadata to the emitter"
+            module_name = getattr(self, "_current_emit_module_name", "<module>")
+            raise DslLoweringError(
+                f"module '{module_name}' memory '{stmt.mem_name}' uses byte-enable writes, "
+                "but the emitter cannot resolve byte_enable_granularity metadata. "
+                "Register the storage object on the module with self.add_memory(...) "
+                "or declare Memory(..., byte_enable_granularity=...) on self."
             )
         granularity = int(memory.byte_enable_granularity)
         lane_count = int(memory.width) // granularity
@@ -1826,138 +1904,6 @@ class VerilogEmitter:
 
         inst = SubmoduleInst(inst_name, submod, params, port_map)
         self._emit_submodule_inst(inst)
-
-    def _resolve_cross_module_assignments(self, module: Module):
-        """Audit Fix 0522 — Section 2.2: Convert cross-module assignments
-        (e.g., submod.port <<= self.sig) into proper port_map entries for
-        implicit submodules, and remove the original Assign statements
-        to avoid redundant "assign x = x;" output.
-
-        This handles two patterns:
-        1. self.sub = SubModule()  (registered in _submodules via __setattr__)
-        2. sub = SubModule()       (local variable, connected via direct assignment)
-        """
-        from rtlgen_x.dsl.core import Assign, Input, Output, Signal, SubmoduleInst
-
-        # =====================================================================
-        # Phase 1: Detect local-variable submodules from cross-module assignments
-        # =====================================================================
-        # Scan all Assign statements to find targets that belong to a submodule
-        # not yet registered in module._submodules.
-        local_submod_ports: Dict[int, Dict[str, Any]] = {}  # id(submod) -> info
-
-        def _collect_local_submods(body: List[Any]) -> List[int]:
-            to_remove: List[int] = []
-            for i, stmt in enumerate(body):
-                if not isinstance(stmt, Assign):
-                    continue
-                target = stmt.target
-                if not isinstance(target, Signal):
-                    continue
-                if not hasattr(target, '_parent_module') or target._parent_module is None:
-                    continue
-                submod = target._parent_module
-                if submod is module:
-                    continue
-                if not isinstance(submod, Module):
-                    continue
-                # Skip if already registered in _submodules
-                if any(id(s) == id(submod) for _, s in module._submodules):
-                    continue
-
-                # Find port name in the submodule
-                port_name = None
-                for pname, psig in list(submod._inputs.items()) + list(submod._outputs.items()):
-                    if psig is target:
-                        port_name = pname
-                        break
-                if port_name is None:
-                    continue
-
-                submod_id = id(submod)
-                if submod_id not in local_submod_ports:
-                    # Generate a unique instance name
-                    base_name = getattr(submod, '_type_name', submod.name)
-                    existing_names = {n for n, _ in module._submodules}
-                    for info in local_submod_ports.values():
-                        existing_names.add(info["inst_name"])
-                    inst_name = base_name
-                    if inst_name in existing_names:
-                        j = 1
-                        while f"{inst_name}_{j}" in existing_names:
-                            j += 1
-                        inst_name = f"{inst_name}_{j}"
-                    local_submod_ports[submod_id] = {
-                        "submod": submod,
-                        "inst_name": inst_name,
-                        "ports": {},
-                    }
-
-                local_submod_ports[submod_id]["ports"][port_name] = stmt.value
-                to_remove.append(i)
-            return to_remove
-
-        # Scan _top_level
-        top_remove = _collect_local_submods(module._top_level)
-        for i in reversed(top_remove):
-            module._top_level.pop(i)
-
-        # Scan _comb_blocks
-        for body in module._comb_blocks:
-            comb_remove = _collect_local_submods(body)
-            for i in reversed(comb_remove):
-                body.pop(i)
-
-        # Register local submodules and create SubmoduleInst nodes
-        for info in local_submod_ports.values():
-            submod = info["submod"]
-            inst_name = info["inst_name"]
-            port_map = info["ports"]
-
-            # Add to _submodules
-            module._submodules.append((inst_name, submod))
-            # Create SubmoduleInst — values may be Signal or Expr, both are fine
-            inst = SubmoduleInst(inst_name, submod, {}, port_map)
-            module._top_level.append(inst)
-
-        # =====================================================================
-        # Phase 2: Original logic — remove redundant assigns for ALL registered
-        # submodules (including those just registered in Phase 1).
-        # =====================================================================
-        submod_port_map: Dict[int, Tuple[str, Module, str]] = {}
-        for inst_name, submod in module._submodules:
-            for pname, sig in submod._inputs.items():
-                submod_port_map[id(sig)] = (inst_name, submod, pname)
-            for pname, sig in submod._outputs.items():
-                submod_port_map[id(sig)] = (inst_name, submod, pname)
-
-        if not submod_port_map:
-            return
-
-        # Scan top-level assigns for cross-module connections
-        to_remove: List[int] = []
-        for i, stmt in enumerate(module._top_level):
-            if not isinstance(stmt, Assign):
-                continue
-            target_id = id(stmt.target) if hasattr(stmt.target, '__class__') else None
-            if target_id and target_id in submod_port_map:
-                to_remove.append(i)
-
-        # Remove cross-module assigns in reverse order to preserve indices
-        for i in reversed(to_remove):
-            module._top_level.pop(i)
-
-        # Also scan comb blocks for cross-module assigns
-        for body in module._comb_blocks:
-            to_remove_comb: List[int] = []
-            for i, stmt in enumerate(body):
-                if not isinstance(stmt, Assign):
-                    continue
-                target_id = id(stmt.target) if hasattr(stmt.target, '__class__') else None
-                if target_id and target_id in submod_port_map:
-                    to_remove_comb.append(i)
-            for i in reversed(to_remove_comb):
-                body.pop(i)
 
     # -----------------------------------------------------------------
     # Expressions
@@ -2611,8 +2557,10 @@ class VerilogEmitter:
                     if isinstance(expr.rhs, BinOp) and expr.rhs.width == 1:
                         return self._emit_expr(expr.rhs, parent_op, for_lhs)
 
-            # Arithmetic right shift: emit Verilog >>> operator
-            if op_str == '>>>':
+            # Arithmetic right shift: emit Verilog >>> operator. The lowered
+            # runtimes treat signed '>>' as arithmetic, so the emitted RTL must
+            # preserve that same intent for signed LHS expressions.
+            if op_str == '>>>' or (op_str == '>>' and self._is_signed(expr.lhs)):
                 lhs_str = self._emit_expr(expr.lhs, expr.op, for_lhs)
                 rhs_str = self._emit_expr(expr.rhs, expr.op, for_lhs)
                 s = f"{lhs_str} >>> {rhs_str}"

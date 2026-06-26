@@ -351,7 +351,42 @@ def SRA(signal: Any, shift: Any) -> Signal:
         y = SRA(x, 3)   # Verilog: x >>> 3
     """
     from rtlgen_x.dsl.core import _make_binop
-    return _make_binop(">>>", signal, shift, width=_to_expr(signal).width)
+
+    operand = _to_expr(signal)
+    signed_operand = Signal(width=operand.width, signed=True)
+    signed_operand._expr = _UnaryOp("$signed", operand, operand.width)
+    return _make_binop(">>>", signed_operand, shift, width=operand.width)
+
+
+def RoundShiftRight(signal: Any, shift: int) -> Signal:
+    """Round then arithmetic-right-shift a signed fixed-point value.
+
+    This helper encodes the common fixed-point idiom:
+
+        (value + 2**(shift-1)).as_sint() >>> shift
+
+    so Python simulation, compiled simulation, and emitted RTL all preserve
+    signed rounding intent across backends.
+    """
+    if shift < 0:
+        raise ValueError("RoundShiftRight shift must be >= 0")
+
+    operand = _to_expr(signal)
+    if shift == 0:
+        rounded = Signal(width=operand.width, signed=True)
+        rounded._expr = _UnaryOp("$signed", operand, operand.width)
+        return rounded
+
+    bias = 1 << (shift - 1)
+    signed_operand = Signal(width=operand.width, signed=True)
+    signed_operand._expr = _UnaryOp("$signed", operand, operand.width)
+    signed_bias = Const(bias, operand.width).as_sint()
+    biased = _make_binop("+", signed_operand, signed_bias)
+    signed_biased = Signal(width=biased.width, signed=True)
+    signed_biased._expr = _UnaryOp("$signed", biased._expr, biased.width)
+    rounded = _make_binop(">>>", signed_biased, shift, width=biased.width)
+    rounded.signed = True
+    return rounded
 
 
 

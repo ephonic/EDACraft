@@ -143,6 +143,14 @@ Authoring contract:
    `cond` is a DSL value
 4. do not rely on Python container truthiness for DSL objects such as
    `Array`, `ArrayProxy`, `MemProxy`, `Vector`, or `Parameter`
+5. do not leave design-visible signals or storage as host-local Python
+   variables such as `tmp = Wire(...)`, `rf = Array(...)`, or
+   `mem = Memory(...)` when they participate in authored RTL; register them on
+   the module with `self.<name> = ...` or helper methods such as
+   `self.add_memory(...)`
+6. do not pass unknown child-port names in explicit `instantiate(..., port_map=...)`
+   calls; every `port_map` key must match a real input/output port on the child
+   module
 
 Use these DSL forms instead:
 
@@ -150,6 +158,11 @@ Use these DSL forms instead:
 2. `a & b`, `a | b`, `~a` for bitwise logic
 3. `Mux(cond, a, b)` for value selection
 4. explicit index/read/compare expressions for array and memory elements
+5. `SRA(...)` for arithmetic right shift intent, `RoundShiftRight(...)` for
+   signed fixed-point round-then-shift intent, plus `.as_sint()` /
+   `.as_uint()` when signedness should be explicit in datapath arithmetic
+6. explicit submodule port bindings whose keys exactly match the child module's
+   declared input/output port names
 
 This boundary is enforced intentionally so Python cannot silently consume a DSL
 condition before lowering or emitted-RTL checks ever see it.
@@ -212,6 +225,8 @@ What is already part of the current contract:
    close across authoring, lowering, Python execution, compiled execution,
    emitted RTL, generated reference-model rendering, and RTL cosim for the
    executable storage subset
+7. public lowering and emitted-RTL entry points now reject untracked local
+   `Wire` / `Array` / `Memory` objects instead of silently repairing them later
 
 What is still incomplete:
 
@@ -220,7 +235,9 @@ What is still incomplete:
 2. richer storage-port shape behavior beyond the current comb-read / seq-write
    executable subset
 3. emitted RTL closure for sync-read memories without requiring authors to
-   write the sampled-output structure explicitly themselves
+   write the sampled-output structure explicitly themselves; current
+   `VerilogEmitter` support is intentionally fail-fast outside the
+   single-read/single-write `read_style="async"/read_latency=0` subset
 
 These remaining gaps are why generic storage policy is still marked `partial`
 in the support matrix even though `read_during_write` and byte-enable writes

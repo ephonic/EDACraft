@@ -31,7 +31,14 @@ DEFAULT_APPROVAL_GATES = [
     ApprovalRequirement(
         gate_id="CP0_MODULE",
         label="Module layer approval",
-        artifacts=["earphone/modules/{module}/specs/00_module_spec.md"],
+        artifacts=[
+            "earphone/modules/{module}/specs/00_module_spec.md",
+            "earphone/modules/{module}/specs/07_module_test_plan.md",
+            "earphone/modules/{module}/specs/07_module_test_plan.json",
+            "earphone/modules/{module}/specs/08_module_test_report.md",
+            "earphone/modules/{module}/specs/08_module_test_report.json",
+            "earphone/modules/{module}/specs/docgen_feedback.json",
+        ],
         scope="module",
     ),
     ApprovalRequirement(
@@ -46,6 +53,7 @@ DEFAULT_APPROVAL_GATES = [
             "earphone/top/layer_L5_dsl/specs/05_dsl_spec.md",
             "earphone/top/layer_L6_verilog/specs/06_verilog_spec.md",
             "earphone/specs/09_constraint_traceability.md",
+            "earphone/specs/10_design_issues.md",
             "earphone/specs/11_decision_log.md",
         ],
         scope="soc",

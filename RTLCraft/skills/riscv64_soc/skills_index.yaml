@@ -1,0 +1,259 @@
+skills:
+- id: module:riscv64_soc:RV64Core
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: RV64Core
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id001
+  - riscv_core
+  - 5_stage_pipeline
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - fetch_decode_execute
+  - branch_predictor
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: RV64Core module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:riscv64_soc:L1Cache
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: L1Cache
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id002
+  - l1_cache
+  - instruction_data_cache
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - tag_compare
+  - hit_miss
+  datapath_patterns:
+  - mux_select
+  useful_for: *id002
+  summary: L1Cache module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:riscv64_soc:CoherenceDir
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: CoherenceDir
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id003
+  - coherence_directory
+  - mesi
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - directory_table
+  - snoop_filter
+  datapath_patterns:
+  - mux_select
+  useful_for: *id003
+  summary: CoherenceDir module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:riscv64_soc:L2CacheSlice
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: L2CacheSlice
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id004
+  - l2_cache
+  - slice
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - set_associative
+  - replacement_policy
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: L2CacheSlice module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:riscv64_soc:NoCBuffer
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: NoCBuffer
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id005
+  - noc_buffer
+  - fifo
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - credit_based_flow
+  - virtual_channel
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: NoCBuffer module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:riscv64_soc:NoCRouter
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: NoCRouter
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id006
+  - noc_router
+  - mesh
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - dimension_order_routing
+  - vc_allocator
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: NoCRouter module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:riscv64_soc:ClusterTop
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: ClusterTop
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id007
+  - cluster_top
+  - multi_core
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - shared_l2
+  - coherence_bus
+  datapath_patterns:
+  - mux_select
+  useful_for: *id007
+  summary: ClusterTop module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:riscv64_soc:MeshTop
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: MeshTop
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id008
+  - mesh_top
+  - noc_network
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - 2d_mesh
+  - wormhole_routing
+  datapath_patterns:
+  - mux_select
+  useful_for: *id008
+  summary: MeshTop module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:riscv64_soc:DRAMCtrl
+  source:
+    file: skills/riscv64_soc/dsl_modules.py
+    class: DRAMCtrl
+  kind: module
+  domain: riscv64_soc
+  behavior_tags: &id009
+  - dram_controller
+  - memory_controller
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - refresh_timer
+  - row_buffer
+  datapath_patterns:
+  - mux_select
+  useful_for: *id009
+  summary: DRAMCtrl module in riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: pattern:riscv64_soc:cache_coherence_mesi
+  kind: pattern
+  domain: riscv64_soc
+  behavior_tags: &id010
+  - cache_coherence_mesi
+  control_patterns:
+  - cache_coherence_mesi
+  datapath_patterns:
+  - mux_select
+  useful_for: *id010
+  summary: Reusable cache_coherence_mesi pattern for riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:riscv64_soc:mesh_noc
+  kind: pattern
+  domain: riscv64_soc
+  behavior_tags: &id011
+  - mesh_noc
+  control_patterns:
+  - mesh_noc
+  datapath_patterns:
+  - mux_select
+  useful_for: *id011
+  summary: Reusable mesh_noc pattern for riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:riscv64_soc:directory_based
+  kind: pattern
+  domain: riscv64_soc
+  behavior_tags: &id012
+  - directory_based
+  control_patterns:
+  - directory_based
+  datapath_patterns:
+  - mux_select
+  useful_for: *id012
+  summary: Reusable directory_based pattern for riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:riscv64_soc:ddr_controller
+  kind: pattern
+  domain: riscv64_soc
+  behavior_tags: &id013
+  - ddr_controller
+  control_patterns:
+  - ddr_controller
+  datapath_patterns:
+  - mux_select
+  useful_for: *id013
+  summary: Reusable ddr_controller pattern for riscv64_soc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true

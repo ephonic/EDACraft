@@ -5,7 +5,7 @@
 | Layer       | L4 structure |
 | Module      | EarphoneI2C |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,7 +15,7 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-Structural decomposition of EarphoneI2C.
+Structural decomposition into APB register control, byte FSM, and open-drain pad logic.
 
 ### 1.2 Scope
 Structural decomposition of EarphoneI2C.
@@ -24,13 +24,13 @@ Structural decomposition of EarphoneI2C.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `I2C-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`), plus verification intent `I2C-L3_ARCHITECTURE-TP-001` (`layer_L3_architecture/specs/03_architecture_test_plan.md`) and latest evidence `I2C-L3_ARCHITECTURE-TR-001` (`layer_L3_architecture/specs/03_architecture_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `I2C-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`), `I2C-L4_STRUCTURE-TP-001` (`layer_L4_structure/specs/04_structural_test_plan.md`), and `I2C-L4_STRUCTURE-TR-001` (`layer_L4_structure/specs/04_structural_test_report.md`) as inputs to `I2C-L5_DSL-001` (`layer_L5_dsl/specs/05_dsl_spec.md`).
 
 ---
 
@@ -52,7 +52,8 @@ See next layer specification for outputs.
 
 | Property | Value |
 | --- | --- |
-| Subblocks | See DSL implementation for sub-block details. |
+| Subblocks | apb_register_bank, byte_controller_fsm, open_drain_pad_ctrl |
+| External Interfaces | apb_slave, i2c_pads |
 
 
 ---
@@ -95,4 +96,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

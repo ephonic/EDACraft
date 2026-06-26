@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "rtlcraf"
+version = "0.1.0"
+description = "Python API for Verilog RTL Generation — white-box DSL, simulator, PPA analyzer, and skill-guided AI generation"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [
+    {name = "Fudan University", email = "efouth@gmail.com"},
+]
+keywords = ["RTL", "Verilog", "SystemVerilog", "HLS", "ASIC", "FPGA", "EDA"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+dependencies = [
+    # Core dependencies
+    "numpy",
+]
+
+[project.optional-dependencies]
+full = [
+    "pyverilog",          # Verilog import
+    "anthropic",          # LLM-driven generation
+    "z3-solver",          # SMT equivalence checking
+    "iverilog",           # Co-simulation
+    "pytest>=7.0",        # Testing
+    "pytest-cov",         # Coverage
+]
+ai = [
+    "anthropic",
+]
+smt = [
+    "z3-solver",
+]
+verilog_import = [
+    "pyverilog",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.urls]
+Homepage = "https://github.com/ephonic/RTLCraft"
+Documentation = "https://github.com/ephonic/RTLCraft/blob/main/README.md"
+Tutorial = "https://github.com/ephonic/RTLCraft/blob/main/Tutorial.md"
+
+[tool.setuptools.packages.find]
+include = ["rtlgen*", "skills*"]
+exclude = ["tests*", "design_scripts*", "generated*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+exclude = [
+    "generated*",
+    "skills/",
+    "design_scripts/",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",   # line too long (handled by custom rule)
+    "E741",   # ambiguous variable name
+]

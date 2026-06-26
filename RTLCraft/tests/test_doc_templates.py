@@ -121,6 +121,51 @@ class TestDocTemplates:
             assert "RV32-L2_CYCLE-TP-001" in markdown
             assert "RV32-L2_CYCLE-TR-001" in markdown
 
+    def test_rv32_module_bundle_emits_structured_handoff_artifacts(self):
+        from earphone.docgen import generate_module_bundle
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_base = os.path.join(tmpdir, "rv32")
+            bundle = generate_module_bundle("rv32", output_base=output_base, strict=True)
+
+            module_plan_md = Path(bundle["artifacts"]["module_test_plan"])
+            module_report_md = Path(bundle["artifacts"]["module_test_report"])
+            module_plan_json = Path(bundle["artifacts"]["module_test_plan_json"])
+            module_report_json = Path(bundle["artifacts"]["module_test_report_json"])
+
+            assert module_plan_md.exists()
+            assert module_report_md.exists()
+            assert module_plan_json.exists()
+            assert module_report_json.exists()
+
+            plan_payload = json.loads(module_plan_json.read_text(encoding="utf-8"))
+            report_payload = json.loads(module_report_json.read_text(encoding="utf-8"))
+
+            assert plan_payload["schema_version"] == "2026-06-18.module_test_plan.v1"
+            assert plan_payload["scope"] == "module"
+            assert [entry["layer"] for entry in plan_payload["layers"]] == [
+                "L1_behavior",
+                "L2_cycle",
+                "L3_architecture",
+                "L4_structure",
+                "L5_dsl",
+                "L6_verilog",
+            ]
+            assert report_payload["schema_version"] == "2026-06-18.module_test_report.v1"
+            assert report_payload["scope"] == "module"
+            assert report_payload["summary"]["total"] == sum(result["total"] for _, result in bundle["layers"])
+            assert set(report_payload["layers"]) == {
+                "L1_behavior",
+                "L2_cycle",
+                "L3_architecture",
+                "L4_structure",
+                "L5_dsl",
+                "L6_verilog",
+            }
+
+            assert "Layer handoff inventory" in module_plan_md.read_text(encoding="utf-8")
+            assert "Layer execution summary" in module_report_md.read_text(encoding="utf-8")
+
     def test_docgen_discovers_earphone_modules(self):
         from earphone.docgen import discover_modules
 

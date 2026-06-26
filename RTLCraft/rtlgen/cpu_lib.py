@@ -47,6 +47,7 @@ class PCGen(Module):
         l0_btb_valid = Array(1, cfg.l0_btb_entries, "l0_btb_valid")
         init = Reg(1, "init")
         XLEN = 64
+        pc_step = _const(cfg.fetch_width * 4, XLEN)
 
         with self.seq(self.clk, ~self.rst_n):
             with If(~self.rst_n): init <<= 0; pc <<= _const(0x1000, XLEN)
@@ -57,11 +58,11 @@ class PCGen(Module):
                 with Elif(self.btb_hit == 1):
                     pc <<= self.btb_target
                 with Else():
-                    pc <<= pc + 8  # 2-wide fetch
+                    pc <<= pc + pc_step
 
         with self.comb:
             with If(init == 0): self.pc <<= _const(0, XLEN); self.pc_next <<= _const(0, XLEN)
-            with Else(): self.pc <<= pc; self.pc_next <<= pc + 8
+            with Else(): self.pc <<= pc; self.pc_next <<= pc + pc_step
 
 
 # ===================================================================
@@ -85,7 +86,9 @@ class BPred(Module):
         pht = Array(2, cfg.bht_entries, "pht")
         ras = Array(64, cfg.ras_depth, "ras")
         ras_ptr = Reg(3, "ras_ptr")
-        history = Reg(cfg.bht_entries.bit_length(), "history")
+        bht_idx_w = max(cfg.bht_entries - 1, 1).bit_length()
+        btb_idx_w = max(cfg.btb_entries - 1, 1).bit_length()
+        history = Reg(bht_idx_w, "history")
         init = Reg(1, "init")
 
         with self.seq(self.clk, ~self.rst_n):
@@ -101,11 +104,12 @@ class BPred(Module):
                 self.pred_taken <<= _const(0, 1); self.btb_hit <<= _const(0, 1)
                 self.pred_target <<= _const(0, 64)
             with Else():
-                idx = (self.fetch_pc >> 2) % cfg.bht_entries
+                idx = (self.fetch_pc >> 2)[bht_idx_w - 1:0]
+                btb_idx = (self.fetch_pc >> 2)[btb_idx_w - 1:0]
                 counter = pht[idx]
                 self.pred_taken <<= (counter >= 2)
-                self.btb_hit <<= btb_valid[idx % cfg.btb_entries]
-                self.pred_target <<= btb_target[idx % cfg.btb_entries]
+                self.btb_hit <<= btb_valid[btb_idx]
+                self.pred_target <<= btb_target[btb_idx]
 
 
 # ===================================================================
@@ -119,16 +123,17 @@ class RenameTable(Module):
         self.rename_req = Input(1, "rename_req")
         self.arch_rd_0 = Input(5, "arch_rd_0"); self.arch_rd_1 = Input(5, "arch_rd_1")
         self.rename_done = Output(1, "rename_done")
-        self.phys_rd_0 = Output(7, "phys_rd_0"); self.phys_rd_1 = Output(7, "phys_rd_1")
+        phys_w = max(cfg.phys_int_regs - 1, 1).bit_length()
+        self.phys_rd_0 = Output(phys_w, "phys_rd_0"); self.phys_rd_1 = Output(phys_w, "phys_rd_1")
 
-        map_table = Array(7, 32, "map_table")
-        free_list = Reg(7, "free_list_ptr")
-        checkpoint = Array(7, 32, "checkpoint")
+        map_table = Array(phys_w, 32, "map_table")
+        free_list = Reg(phys_w, "free_list_ptr")
+        checkpoint = Array(phys_w, 32, "checkpoint")
         init = Reg(1, "init")
         PRF = cfg.phys_int_regs
 
         with self.seq(self.clk, ~self.rst_n):
-            with If(~self.rst_n): init <<= 0; free_list <<= _const(32, 7)
+            with If(~self.rst_n): init <<= 0; free_list <<= _const(32, phys_w)
             with Else():
                 init <<= 1
                 with If(self.rename_req == 1):
@@ -138,7 +143,7 @@ class RenameTable(Module):
         with self.comb:
             with If(init == 0):
                 self.rename_done <<= _const(0, 1)
-                self.phys_rd_0 <<= _const(0, 7); self.phys_rd_1 <<= _const(0, 7)
+                self.phys_rd_0 <<= _const(0, phys_w); self.phys_rd_1 <<= _const(0, phys_w)
             with Else():
                 self.rename_done <<= self.rename_req
                 self.phys_rd_0 <<= map_table[self.arch_rd_0]
@@ -159,7 +164,11 @@ class IssueQueue(Module):
         self.full = Output(1, "full")
 
         entries = Array(160, depth, "entries"); ready = Array(1, depth, "ready")
-        head = Reg(5, "head"); tail = Reg(5, "tail"); count = Reg(5, "count")
+        ptr_w = max(depth - 1, 1).bit_length()
+        cnt_w = max(depth, 1).bit_length() + 1
+        head = Reg(ptr_w, "head"); tail = Reg(ptr_w, "tail"); count = Reg(cnt_w, "count")
+        head_next = Wire(ptr_w, "head_next")
+        tail_next = Wire(ptr_w, "tail_next")
         init = Reg(1, "init")
 
         with self.seq(self.clk, ~self.rst_n):
@@ -167,11 +176,13 @@ class IssueQueue(Module):
             with Else():
                 init <<= 1
                 with If(self.enqueue == 1 and count < depth):
-                    entries[tail] <<= self.uop_in; tail <<= tail + 1; count <<= count + 1
+                    entries[tail] <<= self.uop_in; tail <<= tail_next; count <<= count + 1
                 with If(self.issue_valid == 1 and count > 0):
-                    head <<= head + 1; count <<= count - 1
+                    head <<= head_next; count <<= count - 1
 
         with self.comb:
+            head_next <<= Mux(head == depth - 1, Const(0, ptr_w), head + 1)
+            tail_next <<= Mux(tail == depth - 1, Const(0, ptr_w), tail + 1)
             with If(init == 0):
                 self.issue_uop <<= _const(0, 160); self.issue_valid <<= _const(0, 1)
                 self.full <<= _const(0, 1)
@@ -233,7 +244,10 @@ class ReorderBuffer(Module):
         self.retire_data = Output(192, "retire_data")
 
         entries = Array(192, depth, "rob_entry")
-        head = Reg(7, "head"); tail = Reg(7, "tail")
+        ptr_w = max(depth - 1, 1).bit_length()
+        head = Reg(ptr_w, "head"); tail = Reg(ptr_w, "tail")
+        head_next = Wire(ptr_w, "head_next")
+        tail_next = Wire(ptr_w, "tail_next")
         init = Reg(1, "init")
 
         with self.seq(self.clk, ~self.rst_n):
@@ -241,16 +255,18 @@ class ReorderBuffer(Module):
             with Else():
                 init <<= 1
                 with If(self.alloc == 1):
-                    entries[tail] <<= self.uop_data; tail <<= tail + 1
+                    entries[tail] <<= self.uop_data; tail <<= tail_next
                 with If(self.commit_ready == 1 and head != tail):
-                    head <<= head + 1
+                    head <<= head_next
 
         with self.comb:
+            head_next <<= Mux(head == depth - 1, Const(0, ptr_w), head + 1)
+            tail_next <<= Mux(tail == depth - 1, Const(0, ptr_w), tail + 1)
             with If(init == 0):
                 self.full <<= _const(0, 1); self.retire_valid <<= _const(0, 1)
                 self.retire_data <<= _const(0, 192)
             with Else():
-                self.full <<= ((tail + 1) % depth) == head
+                self.full <<= (tail_next == head)
                 self.retire_valid <<= (head != tail)
                 self.retire_data <<= entries[head]
 
@@ -274,8 +290,10 @@ class LSUUnit(Module):
 
         ld_q_addr = Array(64, ld_depth, "ld_q_addr"); ld_q_valid = Array(1, ld_depth, "ld_q_valid")
         st_q_addr = Array(64, st_depth, "st_q_addr"); st_q_data = Array(64, st_depth, "st_q_data")
-        ld_head = Reg(4, "ld_head"); ld_tail = Reg(4, "ld_tail")
-        st_head = Reg(4, "st_head"); st_tail = Reg(4, "st_tail")
+        ld_ptr_w = max(ld_depth - 1, 1).bit_length()
+        st_ptr_w = max(st_depth - 1, 1).bit_length()
+        ld_head = Reg(ld_ptr_w, "ld_head"); ld_tail = Reg(ld_ptr_w, "ld_tail")
+        st_head = Reg(st_ptr_w, "st_head"); st_tail = Reg(st_ptr_w, "st_tail")
         init = Reg(1, "init")
 
         with self.seq(self.clk, ~self.rst_n):

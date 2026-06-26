@@ -1,0 +1,372 @@
+skills:
+# ─── Top-level modules ───
+
+- id: module:hetero_riscv4:NoCBuffer
+  source:
+    file: skills/hetero_riscv4/dsl_modules.py
+    class: NoCBuffer
+  kind: module
+  domain: hetero_riscv4
+  behavior_tags: &id001
+  - noc_buffer
+  - fifo
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - credit_based_flow
+  - push_pop_pointer
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: >
+    Depth-4 FIFO buffer for NoC router input ports. Manages data array with read/write pointers and count register.
+    Supports push (valid_in & ready_out & !pop), pop (!empty & pop), and simultaneous push+pop. Generates ready_out
+    when not full, valid_out when not empty, full/empty flags for credit-based flow control. Data read from
+    buf_data[read_pointer]. Reset clears all pointers and count to zero.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+
+- id: module:hetero_riscv4:EfficiencyCore
+  source:
+    file: skills/hetero_riscv4/dsl_modules.py
+    class: EfficiencyCore
+  kind: module
+  domain: hetero_riscv4
+  behavior_tags: &id002
+  - efficiency_core
+  - in_order
+  - rv64i
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - simple_pipeline
+  - low_power
+  - 3_stage_pipeline
+  datapath_patterns:
+  - mux_select
+  - alu_chain
+  - sign_extend
+  useful_for: *id002
+  summary: >
+    3-stage RV64I in-order CPU pipeline (Fetch→Execute→Writeback). Fetch stage requests instructions from I-Cache,
+    latches 32-bit instruction on cache valid. Combined decode+execute extracts opcode/funct3/funct7, generates
+    I/S/B/U/J immediates with sign extension, reads register file with WB forwarding, computes ADD/SUB/XOR/OR/AND/
+    SLL/SRL/SRA/SLT/SLTU/LUI/AUIPC/JAL/JALR via Mux chain, branch BEQ/BNE comparison with PC redirect. Writeback
+    writes ALU result or load data to 32-entry register file. Stall detection for cache miss.
+  sub_modules:
+  - name: PCReg
+    description: "Program counter with branch redirect and stall freeze, advances by 4 per cycle"
+    behavior_tags: [program_counter, branch_redirect, icache_addr]
+    keywords: [pc_reg, branch_target, advance, stall, control_flow]
+  - name: FetchStage
+    description: "I-Cache request/response interface, latches instruction and PC, generates stall signal"
+    behavior_tags: [instruction_fetch, icache, pipeline]
+    keywords: [fetch, icache_req, icache_addr, instruction_latch, cache_stall]
+  - name: DecodeALU
+    description: "Instruction decode + ALU Mux chain + branch comparison + register forwarding, combined stage"
+    behavior_tags: [instruction_decode, alu, branch, forwarding]
+    keywords: [decode, opcode, immediate, alu, mux_chain, rtype, itype, branch_compare, forwarding, sign_extend]
+  - name: WritebackReg
+    description: "Register file writeback with retire signal and forwarding data to decode stage"
+    behavior_tags: [writeback, regfile, retire, forwarding]
+    keywords: [writeback, regfile, retire_valid, forwarding, register_write, wb_en]
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+
+- id: module:hetero_riscv4:PerformanceCore
+  source:
+    file: skills/hetero_riscv4/dsl_modules.py
+    class: PerformanceCore
+  kind: module
+  domain: hetero_riscv4
+  behavior_tags: &id003
+  - performance_core
+  - in_order
+  - rv64i
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - 5_stage_pipeline
+  - forwarding
+  - hazard_detection
+  - early_branch
+  datapath_patterns:
+  - mux_select
+  - alu_chain
+  - sign_extend
+  - load_extend
+  useful_for: *id003
+  summary: >
+    Full 5-stage RV64I in-order CPU pipeline (Fetch→Decode→Execute→Memory→Writeback). Fetch requests 64-bit
+    I-Cache line, latches 32-bit instruction with PC. Decode extracts fields, generates 5 immediate types,
+    performs early branch comparison (BEQ/BNE/JAL/JALR) with PC redirect, register read with 3-stage forwarding
+    bypass from EX/MEM/WB. Execute stage has dedicated ALU Mux chain for R/I-type/LUI/AUIPC/JAL/JALR. Memory
+    handles D-Cache load/store with sign/zero extension (LB/LBU/LH/LHU/LW/LWU/LD). Writeback writes result to
+    32-entry register file. Stall detection and branch flush for all 5 stages.
+  sub_modules:
+  - name: PCReg
+    description: "64-bit PC register initialized to 0x1000, advances by 4, redirects on branch, stalls on cache miss"
+    behavior_tags: [program_counter, branch_redirect, icache_addr]
+    keywords: [pc_reg, branch_target, advance_by_4, stall_freeze, control_flow, redirect]
+  - name: FetchStage
+    description: "I-Cache request on slot empty, latches 32-bit instruction from 64-bit line, generates stall"
+    behavior_tags: [instruction_fetch, icache, pipeline]
+    keywords: [fetch, icache_req, icache_addr, instruction_latch, cache_stall, pipeline_flush, pc_capture]
+  - name: DecodeStage
+    description: "Decode fields, generate immediates, early branch compare (BEQ/BNE/JAL/JALR), 3-stage forwarding"
+    behavior_tags: [instruction_decode, branch, forwarding, early_branch]
+    keywords: [decode, opcode, immediate, branch_compare, branch_target, early_branch, redirect, forwarding_mux]
+  - name: ExecuteALU
+    description: "Dedicated ALU Mux chain for R-type/I-type/LUI/AUIPC/JAL/JALR, cache address calculation"
+    behavior_tags: [alu, execute, mux_chain]
+    keywords: [alu, execute, rtype, itype, mux_chain, add_sub_xor_shift, lui_auipc, jal_jalr, wb_en, cache_addr]
+  - name: MemoryStage
+    description: "Load/store with D-Cache interface, sign/zero extension for LB/LBU/LH/LHU/LW/LWU/LD"
+    behavior_tags: [load_store, memory, dcache, sign_extend]
+    keywords: [memory, load_store, dcache, sign_extend, zero_extend, lb_lh_lw_ld, memory_stage]
+  - name: WritebackReg
+    description: "Register file writeback with retire signal, 64-bit forwarding to decode stage"
+    behavior_tags: [writeback, regfile, retire, forwarding]
+    keywords: [writeback, regfile, retire_valid, forwarding, register_write, wb_en, status]
+  - name: HazardUnit
+    description: "I-Cache and D-Cache stall detection, pipeline freeze, branch redirect flush all stages"
+    behavior_tags: [stall, hazard, pipeline_control]
+    keywords: [hazard, stall, icache_stall, dcache_stall, pipeline_freeze, branch_flush, valid_propagation]
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+
+- id: module:hetero_riscv4:L1CacheSmall
+  source:
+    file: skills/hetero_riscv4/dsl_modules.py
+    class: L1CacheSmall
+  kind: module
+  domain: hetero_riscv4
+  behavior_tags: &id004
+  - l1_cache_small
+  - low_power
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - small_tag_array
+  - 2_way_set_associative
+  - lru_replacement
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: >
+    16KB 2-way set-associative L1 cache for efficiency cores. 128 sets, 64B line, 51-bit tag. Dual-port data
+    RAM (2 ways × 512-bit), dual-port tag RAM, valid RAM, MSI state RAM, LRU bit per set. 4-state FSM:
+    IDLE→CHECK(hit/miss)→REFILL(from NoC)→PROBE(coherence invalidation). Tag comparison on both ways in
+    parallel, hit selects data from matching way. Miss triggers NoC refill with LRU-selected way storage.
+    Coherence probe checks tag and invalidates matching entry.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+
+- id: module:hetero_riscv4:L1CacheBig
+  source:
+    file: skills/hetero_riscv4/dsl_modules.py
+    class: L1CacheBig
+  kind: module
+  domain: hetero_riscv4
+  behavior_tags: &id005
+  - l1_cache_big
+  - high_performance
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - set_associative
+  - multi_bank
+  - lru_replacement
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: >
+    64KB 8-way set-associative L1 cache for performance cores. 128 sets, 64B line, 51-bit tag. Same FSM
+    structure as L1CacheSmall: IDLE→CHECK→REFILL→PROBE. Hit selects data from matching way, miss triggers
+    NoC refill with LRU replacement. Coherence probe invalidation for MSI protocol. Higher associativity
+    provides better hit rate for performance-critical workloads.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+
+- id: module:hetero_riscv4:CoherenceDir
+  source:
+    file: skills/hetero_riscv4/dsl_modules.py
+    class: CoherenceDir
+  kind: module
+  domain: hetero_riscv4
+  behavior_tags: &id006
+  - coherence_directory
+  - mesi
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - directory_table
+  - snoop_filter
+  - sharers_bitmask
+  - invalidation
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: >
+    Directory-based MSI coherence controller for 4-core system. 64-entry direct-mapped directory with tag,
+    MSI state, 4-bit sharers bitmask, owner core_id. 5-state FSM: IDLE→LOOKUP→PROBE(sharers invalidate)→
+    UPDATE→WB(writeback for M→S downgrade). Shared read adds requester to sharers. Exclusive write
+    invalidates current owner, grants modified state. M-state read triggers writeback then grants shared.
+    Generates probe_targets bitmask for snoop invalidation and writeback_to_core for M→S downgrade.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+
+- id: module:hetero_riscv4:NoCRouter
+  source:
+    file: skills/hetero_riscv4/dsl_modules.py
+    class: NoCRouter
+  kind: module
+  domain: hetero_riscv4
+  behavior_tags: &id007
+  - noc_router
+  - mesh
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - dimension_order_routing
+  - per_output_arbitration
+  - fixed_priority
+  - credit_based_flow
+  datapath_patterns:
+  - crossbar_mux
+  - fifo_buffer
+  useful_for: *id007
+  summary: >
+    5-port mesh NoC router (East/West/North/South/Local) with XY dimension-order routing. Each input port
+    has depth-4 FIFO buffer. Per-input routing extracts dest_x[5:3] and dest_y[9:6] from flit header,
+    compares with current coordinates to select output port. Per-output fixed-priority arbitration
+    (E>W>N>S>J) grants independently to each output. Crossbar selects winning input data. Input popped
+    when it wins grant AND downstream is ready. Credit-based flow control with ready=!full.
+  sub_modules:
+  - name: NoCBuffer
+    description: "Depth-4 FIFO with data array, count, read/write pointers, push/pop, full/empty detection"
+    behavior_tags: [noc_buffer, fifo]
+    keywords: [fifo, buffer, push_pop, read_write_pointer, count, full_empty, depth_4]
+  - name: XYRouter
+    description: "Dimension-order XY routing from flit header bits, coordinate comparison, port selection"
+    behavior_tags: [xy_routing, dimension_order, routing]
+    keywords: [xy_routing, dimension_order, coordinate_compare, port_selection, east_west_north_south, flit_header]
+  - name: CrossbarArb
+    description: "Per-output fixed-priority arbiter with cascaded Mux crossbar, independent per output port"
+    behavior_tags: [crossbar, arbitration, mux]
+    keywords: [crossbar, arbitration, fixed_priority, grant, mux_select, per_output, independent]
+  - name: FlowCtrl
+    description: "Credit-based flow control, ready=!full, push on valid&ready, pop on grant&downstream_ready"
+    behavior_tags: [flow_control, credit, valid_ready]
+    keywords: [credit, flow_control, ready_valid, push_pop, backpressure, downstream_ready]
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+
+- id: module:hetero_riscv4:HeteroMeshTop
+  source:
+    file: skills/hetero_riscv4/dsl_modules.py
+    class: HeteroMeshTop
+  kind: module
+  domain: hetero_riscv4
+  behavior_tags: &id008
+  - hetero_mesh_top
+  - soc_integration
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - big_little_cluster
+  - coherent_noc
+  - hierarchical_instantiation
+  datapath_patterns:
+  - wire_interconnect
+  useful_for: *id008
+  summary: >
+    Complete 2×2 mesh SoC topology instantiating 13 submodules: 4 CPU cores (2 PerfCore + 2 EffCore),
+    4 L1 caches (2 L1Big + 2 L1Sm), 1 CoherenceDir, 4 NoCRouters. Layout: PerfCore0+L1Big0 at (0,0)
+    connected to PerfCore1+L1Big1 at (1,0), EffCore0+L1Sm0 at (0,1) connected to EffCore1+L1Sm1 at (1,1),
+    vertical connections between rows. Wires all I-Cache, D-Cache, coherence probe, and NoC interconnect
+    signals. External retire observation ports for all 4 cores.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+
+# ─── Pattern entries ───
+
+- id: pattern:hetero_riscv4:heterogeneous_core
+  kind: pattern
+  domain: hetero_riscv4
+  behavior_tags: &id009
+  - heterogeneous_core
+  control_patterns:
+  - heterogeneous_core
+  datapath_patterns:
+  - mux_select
+  useful_for: *id009
+  summary: Reusable heterogeneous_core pattern for hetero_riscv4 domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+
+- id: pattern:hetero_riscv4:big_little
+  kind: pattern
+  domain: hetero_riscv4
+  behavior_tags: &id010
+  - big_little
+  control_patterns:
+  - big_little
+  datapath_patterns:
+  - mux_select
+  useful_for: *id010
+  summary: Reusable big_little pattern for hetero_riscv4 domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+
+- id: pattern:hetero_riscv4:cache_coherence
+  kind: pattern
+  domain: hetero_riscv4
+  behavior_tags: &id011
+  - cache_coherence
+  control_patterns:
+  - cache_coherence
+  datapath_patterns:
+  - mux_select
+  useful_for: *id011
+  summary: Reusable cache_coherence pattern for hetero_riscv4 domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+
+- id: pattern:hetero_riscv4:mesh_noc
+  kind: pattern
+  domain: hetero_riscv4
+  behavior_tags: &id012
+  - mesh_noc
+  control_patterns:
+  - mesh_noc
+  datapath_patterns:
+  - mux_select
+  useful_for: *id012
+  summary: Reusable mesh_noc pattern for hetero_riscv4 domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true

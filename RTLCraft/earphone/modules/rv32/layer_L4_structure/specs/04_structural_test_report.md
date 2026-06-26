@@ -3,7 +3,7 @@
 | Document ID | RV32-L4_STRUCTURE-TR-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Test Plan Reference | RV32-L4_STRUCTURE-TP-001 |
@@ -76,6 +76,8 @@ Command: /opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-mai
 |-------|-------|--------|--------|---------|----------|
 | L4 structure | 2 | 2 | 0 | 0 | N/A |
 
+_Single layer suite; no additional aggregation._
+
 ### 4.2 Results by Priority
 | Priority | Total | Passed | Failed | Skipped |
 |----------|-------|--------|--------|---------|
@@ -97,7 +99,7 @@ Command: /opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-mai
 ### 5.1 Passing Test Cases
 | TC ID | Name | Duration | Notes |
 |-------|------|----------|-------|
-| TC-PASS | L4 structure pytest suite | 0.72s | 2 tests passed |
+| TC-PASS | L4 structure pytest suite | 0.25s | 2 tests passed |
 
 ### 5.2 Failing Test Cases
 | TC ID | Name | Severity | Root Cause | Owner | Status |
@@ -160,13 +162,13 @@ Command: /opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-mai
 
 | Run ID | Date | Total | Pass | Fail | Skip | Duration | Result |
 |--------|------|-------|------|------|------|----------|--------|
-| rv32-L4_structure-2026-06-15 | 2026-06-15 | 2 | 2 | 0 | 0 | 0.72s | PASS |
+| rv32-L4_structure-2026-06-18 | 2026-06-18 | 2 | 2 | 0 | 0 | 0.25s | PASS |
 
 ---
 
 ## 10. Conclusion
 
-Layer L4 structure tests completed: 2/2 passed in 0.72s.
+Layer L4 structure tests completed: 2/2 passed in 0.25s.
 
 ---
 
@@ -174,10 +176,10 @@ Layer L4 structure tests completed: 2/2 passed in 0.72s.
 
 | Role | Name | Signature | Date |
 |------|------|-----------|------|
-| Verification Lead | RTLCraft Agent | generated | 2026-06-15 |
-| Design Lead | RTLCraft Agent | generated | 2026-06-15 |
-| System Architect | System Architect | pending review | 2026-06-15 |
-| Project Manager | Project Owner | pending review | 2026-06-15 |
+| Verification Lead | RTLCraft Agent | generated | 2026-06-18 |
+| Design Lead | RTLCraft Agent | generated | 2026-06-18 |
+| System Architect | System Architect | pending review | 2026-06-18 |
+| Project Manager | Project Owner | pending review | 2026-06-18 |
 
 ---
 
@@ -193,7 +195,7 @@ collected 2 items
 
 earphone/modules/rv32/layer_L4_structure/tests/test_structure.py ..      [100%]
 
-============================== 2 passed in 0.34s ===============================
+============================== 2 passed in 0.09s ===============================
 
 ### Appendix B: Tool Command History
 /opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/rv32/layer_L4_structure/tests -q --tb=short
@@ -207,4 +209,4 @@ No raw coverage report generated in this pilot flow.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial report. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial report. |

@@ -153,6 +153,17 @@ For multi-clock designs:
 12. single-clock queue closure is also stronger now: `SyncFIFO` is no longer a
     stub-style helper, and its lowering, executable simulation, Python-UVM,
     and generated directed UVM paths are all regression-covered
+13. register design-visible temporaries and storage on the module itself:
+    use `self.tmp = Wire(...)`, `self.rf = Array(...)`, and
+    `self.add_memory(Memory(...))` or `self.mem = Memory(...)` rather than
+    host-local `tmp = Wire(...)` / `rf = Array(...)` / `mem = Memory(...)`
+14. use `SRA(...)` for arithmetic right shifts, `RoundShiftRight(...)` for
+    signed fixed-point round-then-shift patterns, and use `.as_sint()` /
+    `.as_uint()` to make signed/unsigned intent explicit when mixing datapath
+    arithmetic
+15. for explicit submodule instantiation, keep `port_map` keys identical to
+    the child module's declared port names; unknown keys now fail fast at
+    lowering / emit boundaries instead of being silently ignored
 
 Current static CDC scope is intentionally modest: it can recognize several
 safe structural patterns, but it does not try to prove arbitrary pulse/toggle
@@ -494,9 +505,10 @@ The authoring helpers also fail earlier than before: conflicting reuse of the
 same reset signal under different semantics is rejected at declaration time,
 and missing domain-name lookups report the currently known declared domains.
 
-The removed AST/JIT simulator surface and `DSLSimValidator` are no longer part
-of `rtlgen_x`. DSL modules are expected to lower into the internal executable
-model and run on `PythonSimulator` or the compiled C++ backend.
+The removed AST/JIT simulator surface is no longer present in the repository,
+and `DSLSimValidator` remains only as a removal stub. DSL modules are expected
+to lower into the internal executable model and run on `PythonSimulator` or
+the compiled C++ backend.
 
 #### 2.2 Lowering semantics
 
@@ -579,7 +591,8 @@ Recent latch closure is important here:
    now close through lowering, Python simulation, compiled simulation, emitted
    RTL, and RTL cosim for the executable single-read/single-write async-read
    subset
-10. arithmetic right shift via `SRA(...)` lowers and emits consistently
+10. arithmetic right shift via `SRA(...)` and signed round-then-shift via
+    `RoundShiftRight(...)` lower and emit consistently
 11. combinational assignments are topologically ordered during lowering so
    dependent wire chains evaluate correctly in the executable model
 12. lowered multiply expressions preserve full product width instead of truncating
@@ -716,8 +729,9 @@ Storage initialization boundary:
    is now explicit metadata on the DSL/storage model; executable lowering
    accepts `read_ports=1`, `write_ports=1`, and either
    `read_style="async"/read_latency=0` or `read_style="sync"/read_latency=1`
-5. emitted RTL does not yet infer sync-read storage behavior automatically, so
-   `VerilogEmitter` keeps fail-fast behavior for `read_style="sync"` memories
+5. emitted RTL currently closes only the single-read/single-write
+   `read_style="async"/read_latency=0` subset, so `VerilogEmitter` now fails
+   fast on sync-read, non-zero-latency, or multi-port memory contracts
 6. `Memory(..., byte_enable_granularity=...)` plus
    `mem.write(addr, value, byte_enable=...)` now make byte-enable intent
    explicit and now close across lowered Python simulation, compiled
@@ -1715,8 +1729,9 @@ The current framework is strong, but it still has clear boundaries.
 
 1. `archsim` is lightweight by design; it is for exploration, not full
    microarchitectural golden modeling
-2. `rtlgen_x` no longer exposes the removed AST/JIT simulator path; the supported
-   execution loop is lowering plus `PythonSimulator` / compiled simulation
+2. `rtlgen_x` no longer ships the historical AST/JIT simulator implementation;
+   the supported execution loop is lowering plus `PythonSimulator` / compiled
+   simulation
 3. `iverilog` can be used for local RTL/collateral smoke, but full UVM closure
    still depends on an external simulator environment
 4. PPA is analysis-first; rewrite authority should remain with the agent or the

@@ -711,7 +711,13 @@ def _collect_initial_values(module) -> tuple[Dict[str, int], Dict[str, tuple[int
     for source_memory in module._memories.values():
         memory_defs[source_memory.name] = source_memory
         init = [0] * source_memory.depth
-        if getattr(source_memory, "init_data", None):
+        if getattr(source_memory, "init_file", None):
+            init = _load_memory_init_file(
+                source_memory.init_file,
+                width=source_memory.width,
+                depth=source_memory.depth,
+            )
+        elif getattr(source_memory, "init_data", None):
             for idx, value in enumerate(source_memory.init_data[: source_memory.depth]):
                 init[idx] = int(value) & _mask_for_width(source_memory.width)
         memory_values[source_memory.name] = init
@@ -721,6 +727,35 @@ def _collect_initial_values(module) -> tuple[Dict[str, int], Dict[str, tuple[int
     for body in module._init_blocks:
         _eval_initial_stmt_list(body, signal_defs, signal_values, memory_defs, memory_values)
     return signal_values, {name: tuple(values) for name, values in memory_values.items()}
+
+
+def _load_memory_init_file(path: str, *, width: int, depth: int) -> List[int]:
+    file_path = Path(path)
+    if not file_path.is_file():
+        raise DslLoweringError(f"memory init_file '{path}' does not exist")
+
+    mask = _mask_for_width(width)
+    values: List[int] = []
+    for raw_line in file_path.read_text().splitlines():
+        line = raw_line.split("//", 1)[0].strip()
+        if not line:
+            continue
+        for token in line.split():
+            token = token.replace("_", "")
+            if not token:
+                continue
+            try:
+                value = int(token, 16)
+            except ValueError as exc:
+                raise DslLoweringError(
+                    f"memory init_file '{path}' contains non-hex token '{token}'"
+                ) from exc
+            values.append(value & mask)
+            if len(values) >= depth:
+                return values[:depth]
+    if len(values) < depth:
+        values.extend([0] * (depth - len(values)))
+    return values
 
 
 def _collect_clock_domains(module) -> tuple[ClockDomain, ...]:

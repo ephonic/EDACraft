@@ -383,7 +383,7 @@ def _legacy_entrypoint_approval_ok() -> bool:
         print("\n[Approval] Legacy full-SoC entry point blocked")
         for blocker in blockers:
             print(f"  - {blocker}")
-        print("  Use `python -m earphone.flow --module all --check` to refresh evidence before approval.")
+        print("  Use `python -m earphone.flow --module all --check --top-level` to refresh evidence before approval.")
         return False
     return True
 

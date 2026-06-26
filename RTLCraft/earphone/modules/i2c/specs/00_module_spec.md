@@ -3,7 +3,7 @@
 | Document ID | I2C-MOD-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Module ID   | I2C |
@@ -26,7 +26,7 @@ APB I2C master byte controller for 7-bit address single-byte transactions.
 Used inside the Smart Earphone SoC as the EarphoneI2C block.
 
 ### 1.4 Block Diagram
-<!-- Insert or describe the internal block diagram. -->
+
 See layer_L4_structure/specs/04_structural_spec.md for the internal decomposition of EarphoneI2C.
 
 ```text
@@ -44,7 +44,7 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 
 | Document ID | Title | Version | Description |
 |-------------|-------|---------|-------------|
-| {{ ref_id }} | {{ ref_title }} | {{ ref_version }} | {{ ref_desc }} |
+| EARPHONE-SOC-SPEC | Smart Earphone SoC Design Specification | 0.1 | Top-level requirements, architecture, PPA targets, and roadmap. |
 
 ---
 
@@ -52,7 +52,7 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 
 | Term | Definition |
 |------|------------|
-| {{ term }} | {{ definition }} |
+| IR | Intermediate representation used for staged Spec2RTL lowering. |
 
 ---
 
@@ -69,16 +69,16 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 #### Functional Ports
 | Port Name | Width | Direction | Protocol / Encoding | Description |
 |-----------|-------|-----------|---------------------|-------------|
-| TBD | TBD | TBD | TBD | See per-layer specs for detailed port lists. |
+| Top-level interface group | module-specific | Input/Output | module-local protocol | See per-layer specs for detailed port lists. |
 
 ### 4.2 Interface Timing
-<!-- Describe key timing relationships, handshakes, and latency. -->
-{{ interface_timing }}
+
+Layer-specific timing assumptions are captured in the L2 CycleIR and L3 ArchitectureIR specs.
 
 ### 4.3 Protocol Compliance
 | Protocol | Version | Compliance Level | Notes |
 |----------|---------|------------------|-------|
-| {{ proto_name }} | {{ proto_version }} | {{ proto_level }} | {{ proto_notes }} |
+| Module-local protocol | 0.1 | Project-defined | Detailed port semantics are defined in the L5 DSL spec and generated Verilog. |
 
 ---
 
@@ -86,7 +86,7 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 
 | Parameter Name | Type | Default | Range | Description |
 |----------------|------|---------|-------|-------------|
-| TBD | TBD | TBD | TBD | See L5 DSL spec for configurable parameters. |
+| Module parameters | contract | See L3/L5 specs | module-specific | Configuration captured in layer contracts rather than free-form template text. |
 
 ---
 
@@ -96,10 +96,10 @@ See layer_L4_structure/specs/04_structural_spec.md for the internal decompositio
 EarphoneI2C operation is described per-IR-layer in the layer_L*/specs/ documents.
 
 ### 6.2 State Machine(s)
-<!-- Describe or provide a state diagram for complex control logic. -->
+
 | State | Encoding | Description | Exit Conditions |
 |-------|----------|-------------|-----------------|
-| {{ state }} | {{ state_enc }} | {{ state_desc }} | {{ state_exit }} |
+| Operational | implementation-defined | Normal active state for EarphoneI2C. | Reset, stall, or module-specific completion. |
 
 ### 6.3 Data Path
 See L4 StructuralIR spec.
@@ -107,7 +107,7 @@ See L4 StructuralIR spec.
 ### 6.4 Error Handling
 | Error Condition | Detection | Response | Reporting |
 |-----------------|-----------|----------|-----------|
-| {{ err_cond }} | {{ err_detect }} | {{ err_response }} | {{ err_report }} |
+| Invalid or unsupported transaction | Protocol decode or functional guard | Ignore, return safe value, or assert module-specific error status | Layer tests and generated verification reports |
 
 ---
 
@@ -116,15 +116,15 @@ See L4 StructuralIR spec.
 ### 7.1 Major Sub-blocks
 | Sub-block | Description | Interface |
 |-----------|-------------|-----------|
-| {{ subblock }} | {{ subblock_desc }} | {{ subblock_if }} |
+| Control / Datapath | Module-specific control and datapath partition. | See L4 StructuralIR contract. |
 
 ### 7.2 Pipeline Stages
 | Stage | Latency | Description |
 |-------|---------|-------------|
-| {{ stage }} | {{ stage_lat }} | {{ stage_desc }} |
+| Layer-defined | Layer-defined | Pipeline and latency details are defined in L2/L3 contracts. |
 
 ### 7.3 Critical Path Considerations
-{{ critical_path }}
+Tracked through L5 DSL lint/PPA analysis and L6 Verilog reports.
 
 ---
 
@@ -133,16 +133,16 @@ See L4 StructuralIR spec.
 ### 8.1 Clocking
 | Clock Name | Frequency | Source | Notes |
 |------------|-----------|--------|-------|
-| {{ mod_clk }} | {{ mod_clk_freq }} | {{ mod_clk_src }} | {{ mod_clk_notes }} |
+| clk | 48-160 MHz target | clk_sys | Earphone-class low-power system clock domain. |
 
 ### 8.2 Reset
 | Reset Name | Type | Active Level | Description |
 |------------|------|--------------|-------------|
-| {{ mod_rst }} | {{ mod_rst_type }} | {{ mod_rst_active }} | {{ mod_rst_desc }} |
+| rst_n | asynchronous assert, synchronous release | active low | Resets architectural and control state to layer-specified defaults. |
 
 ### 8.3 Timing Diagrams
-<!-- Insert timing diagrams for key operations. -->
-{{ timing_diagrams }}
+
+See L2 CycleIR test plan and cross-layer traces.
 
 ---
 
@@ -151,31 +151,31 @@ See L4 StructuralIR spec.
 ### 9.1 Register Summary
 | Address Offset | Register Name | Width | Access | Reset Value | Description |
 |----------------|---------------|-------|--------|-------------|-------------|
-| {{ reg_offset }} | {{ reg_name }} | {{ reg_width }} | {{ reg_access }} | {{ reg_reset }} | {{ reg_desc }} |
+| N/A | Internal state | module-specific | internal | layer-specified | State elements are listed in L1/L2/L5 specs. |
 
 ### 9.2 Register Detail
 
-#### {{ reg_name }}
+#### Internal state
 | Bit | Field | Access | Reset | Description |
 |-----|-------|--------|-------|-------------|
-| {{ bit_range }} | {{ field_name }} | {{ field_access }} | {{ field_reset }} | {{ field_desc }} |
+| N/A | N/A | N/A | N/A | No externally visible register field described at this level. |
 
 ---
 
 ## 10. Power Management
 
 ### 10.1 Power Domain
-{{ power_domain }}
+clk_sys low-power domain unless the module spec states otherwise.
 
 ### 10.2 Clock Gating
 | Clock Enable Signal | Controlled Logic | Idle Behavior |
 |---------------------|------------------|---------------|
-| {{ ce_signal }} | {{ ce_logic }} | {{ ce_idle }} |
+| module clock enable | state registers and datapath flops | hold state and suppress unnecessary switching |
 
 ### 10.3 Low-Power Modes
 | Mode | Entry | Exit | Impact |
 |------|-------|------|--------|
-| {{ lp_mode }} | {{ lp_entry }} | {{ lp_exit }} | {{ lp_impact }} |
+| idle | no active request or layer-specific stall | new request, interrupt, or reset release | reduced dynamic switching |
 
 ---
 
@@ -192,7 +192,7 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 ### 11.3 Assertions
 | ID | Assertion | Severity | Description |
 |----|-----------|----------|-------------|
-| A-01 | {{ assertion_01 }} | {{ assertion_sev_01 }} | {{ assertion_desc_01 }} |
+| A-01 | Layer contract invariants hold during active operation | error | Assertions are generated from verification intents and constraints. |
 
 ---
 
@@ -201,12 +201,12 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 ### 12.1 Constraints
 | ID | Constraint | Source |
 |----|------------|--------|
-| C-01 | {{ constraint_01 }} | {{ constraint_src_01 }} |
+| C-01 | Module specification compliance | Top-level SoC spec and layer contracts |
 
 ### 12.2 Assumptions
 | ID | Assumption | Rationale |
 |----|------------|-----------|
-| A-01 | {{ assumption_01 }} | {{ assumption_rationale_01 }} |
+| A-01 | Little-endian data representation unless specified otherwise | Matches RV32/APB memory semantics in the Earphone SoC. |
 
 ---
 
@@ -215,12 +215,12 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 ### 13.1 Synthesis Target
 | Item | Target |
 |------|--------|
-| Technology | {{ tech }} |
-| Frequency | {{ synth_freq }} |
-| Area Goal | {{ area_goal }} |
+| Technology | 22nm / 28nm low-power CMOS target |
+| Frequency | 48-160 MHz |
+| Area Goal | module-specific PPA budget |
 
 ### 13.2 Tool Settings
-{{ tool_settings }}
+rtlgen VerilogEmitter, VerilogLinter, and optional downstream synthesis feedback.
 
 ---
 
@@ -228,7 +228,7 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 
 | ID | Deliverable | Format | Owner |
 |----|-------------|--------|-------|
-| D-01 | {{ mod_deliverable_01 }} | {{ mod_deliverable_fmt_01 }} | {{ mod_deliverable_owner_01 }} |
+| D-01 | i2c layer contracts, source, tests, reports, and generated RTL where applicable | Markdown, JSON, Python, Verilog | RTLCraft Agent |
 
 ---
 
@@ -236,4 +236,4 @@ L1 behavior tests → L2 cycle tests → L3 DSL tests → L6 Verilog tests.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

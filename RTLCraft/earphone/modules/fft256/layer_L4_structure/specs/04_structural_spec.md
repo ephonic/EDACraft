@@ -5,7 +5,7 @@
 | Layer       | L4 structure |
 | Module      | EarphoneFFT256 |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,7 +15,7 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-Structural decomposition of EarphoneFFT256.
+Structural wrapper around the FFT256Core streaming datapath.
 
 ### 1.2 Scope
 Structural decomposition of EarphoneFFT256.
@@ -24,13 +24,13 @@ Structural decomposition of EarphoneFFT256.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `FFT256-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`), plus verification intent `FFT256-L3_ARCHITECTURE-TP-001` (`layer_L3_architecture/specs/03_architecture_test_plan.md`) and latest evidence `FFT256-L3_ARCHITECTURE-TR-001` (`layer_L3_architecture/specs/03_architecture_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `FFT256-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`), `FFT256-L4_STRUCTURE-TP-001` (`layer_L4_structure/specs/04_structural_test_plan.md`), and `FFT256-L4_STRUCTURE-TR-001` (`layer_L4_structure/specs/04_structural_test_report.md`) as inputs to `FFT256-L5_DSL-001` (`layer_L5_dsl/specs/05_dsl_spec.md`).
 
 ---
 
@@ -52,7 +52,8 @@ See next layer specification for outputs.
 
 | Property | Value |
 | --- | --- |
-| Subblocks | See DSL implementation for sub-block details. |
+| Subblocks | input_adapter, fft256_core, output_adapter |
+| External Interfaces | streaming_input, streaming_output |
 
 
 ---
@@ -95,4 +96,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

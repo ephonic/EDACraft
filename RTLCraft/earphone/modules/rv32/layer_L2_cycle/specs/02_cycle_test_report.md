@@ -3,7 +3,7 @@
 | Document ID | RV32-L2_CYCLE-TR-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Test Plan Reference | RV32-L2_CYCLE-TP-001 |
@@ -76,6 +76,8 @@ Command: /opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-mai
 |-------|-------|--------|--------|---------|----------|
 | L2 cycle | 3 | 3 | 0 | 0 | N/A |
 
+_Single layer suite; no additional aggregation._
+
 ### 4.2 Results by Priority
 | Priority | Total | Passed | Failed | Skipped |
 |----------|-------|--------|--------|---------|
@@ -97,7 +99,7 @@ Command: /opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-mai
 ### 5.1 Passing Test Cases
 | TC ID | Name | Duration | Notes |
 |-------|------|----------|-------|
-| TC-PASS | L2 cycle pytest suite | 1.10s | 3 tests passed |
+| TC-PASS | L2 cycle pytest suite | 0.27s | 3 tests passed |
 
 ### 5.2 Failing Test Cases
 | TC ID | Name | Severity | Root Cause | Owner | Status |
@@ -160,13 +162,13 @@ Command: /opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-mai
 
 | Run ID | Date | Total | Pass | Fail | Skip | Duration | Result |
 |--------|------|-------|------|------|------|----------|--------|
-| rv32-L2_cycle-2026-06-15 | 2026-06-15 | 3 | 3 | 0 | 0 | 1.10s | PASS |
+| rv32-L2_cycle-2026-06-18 | 2026-06-18 | 3 | 3 | 0 | 0 | 0.27s | PASS |
 
 ---
 
 ## 10. Conclusion
 
-Layer L2 cycle tests completed: 3/3 passed in 1.10s.
+Layer L2 cycle tests completed: 3/3 passed in 0.27s.
 
 ---
 
@@ -174,10 +176,10 @@ Layer L2 cycle tests completed: 3/3 passed in 1.10s.
 
 | Role | Name | Signature | Date |
 |------|------|-----------|------|
-| Verification Lead | RTLCraft Agent | generated | 2026-06-15 |
-| Design Lead | RTLCraft Agent | generated | 2026-06-15 |
-| System Architect | System Architect | pending review | 2026-06-15 |
-| Project Manager | Project Owner | pending review | 2026-06-15 |
+| Verification Lead | RTLCraft Agent | generated | 2026-06-18 |
+| Design Lead | RTLCraft Agent | generated | 2026-06-18 |
+| System Architect | System Architect | pending review | 2026-06-18 |
+| Project Manager | Project Owner | pending review | 2026-06-18 |
 
 ---
 
@@ -193,7 +195,7 @@ collected 3 items
 
 earphone/modules/rv32/layer_L2_cycle/tests/test_cycle.py ...             [100%]
 
-============================== 3 passed in 0.22s ===============================
+============================== 3 passed in 0.09s ===============================
 
 ### Appendix B: Tool Command History
 /opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/rv32/layer_L2_cycle/tests -q --tb=short
@@ -207,4 +209,4 @@ No raw coverage report generated in this pilot flow.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial report. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial report. |

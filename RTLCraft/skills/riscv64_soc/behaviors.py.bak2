@@ -1,0 +1,627 @@
+"""
+skills.riscv64_soc.behaviors — Four-Layer Behavioral Models for 64-Core RISC-V SoC
+
+Layer 1 — Functional (no timing):
+  Pure combinatorial function: inputs → outputs. No state, no clocks.
+
+Layer 2 — Cycle-Level (register-accurate):
+  CycleContext-based models with pipeline registers, FSM states.
+  Match RTL timing exactly. Suitable as golden reference for verification.
+
+Layer 3 — Module Skeleton Decomposition:
+  Sub-module breakdown with port interfaces and interconnection maps.
+
+Layer 4 — RTL-to-DSL Reference:
+  DSL module classes converted from reference Verilog (ref_rtl/).
+"""
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from rtlgen.arch_def import CycleContext
+from rtlgen.behaviors import TemplateRegistry
+
+
+# ============================================================================
+# Layer 1: Functional Models (pure combinatorial, no timing)
+# ============================================================================
+# These functions compute outputs from inputs in zero "logical" time.
+# They are the golden functional reference: what the module SHOULD do.
+
+def rv64_core_functional(**kwargs) -> Callable:
+    """Functional RV64 core: compute next PC and retire from instruction stream.
+
+    No pipeline stages — just instruction-at-a-time functional model.
+    """
+    def func(instr: int = 0x00000013, pc: int = 0x1000,
+             regfile: Optional[Dict[int, int]] = None) -> Dict:
+        rf = regfile or {}
+        opcode = instr & 0x7F
+        rd = (instr >> 7) & 0x1F
+        rs1 = (instr >> 15) & 0x1F
+        imm_i = (instr >> 20) & 0xFFF
+        # Sign extend
+        if imm_i & 0x800:
+            imm_i |= ~0xFFF
+
+        result = pc + 4
+        write_reg = False
+
+        if opcode == 0x13:  # OP-IMM
+            if (instr >> 12) & 0x7 == 0:  # ADDI
+                result = rf.get(rs1, 0) + imm_i
+                write_reg = True
+            else:
+                result = rf.get(rs1, 0)  # pass through for other ops
+                write_reg = True
+        elif opcode == 0x33:  # OP
+            rs2 = (instr >> 20) & 0x1F
+            funct7 = (instr >> 25) & 0x7F
+            funct3 = (instr >> 12) & 0x7
+            a = rf.get(rs1, 0); b = rf.get(rs2, 0)
+            if funct3 == 0 and funct7 == 0:
+                result = a + b; write_reg = True
+            elif funct3 == 0 and funct7 == 0x20:
+                result = a - b; write_reg = True
+
+        return {
+            "next_pc": pc + 4,
+            "result": result,
+            "write_reg": write_reg,
+            "rd": rd if write_reg else 0,
+            "retire": True,
+        }
+    return func
+
+
+def l1_cache_functional(**kwargs) -> Callable:
+    """Functional L1 cache: tag lookup, hit/miss decision.
+
+    No FSM states — just combinatorial tag match + data return.
+    """
+    def func(addr: int, tag_array: dict, data_array: dict,
+             valid_array: dict) -> Dict:
+        INDEX_WIDTH = 6; OFFSET_WIDTH = 6
+        index = (addr >> OFFSET_WIDTH) & ((1 << INDEX_WIDTH) - 1)
+        tag = addr >> (OFFSET_WIDTH + INDEX_WIDTH)
+        hit = valid_array.get(index, False) and tag_array.get(index) == tag
+        return {
+            "hit": hit,
+            "rdata": data_array.get(index, {}).get(tag, 0) if hit else 0,
+            "miss": not hit,
+        }
+    return func
+
+
+def noc_router_functional(**kwargs) -> Callable:
+    """Functional NoC router: XY routing computation.
+
+    No buffers — just route decision from coordinates.
+    """
+    def func(x: int, y: int, dest_x: int, dest_y: int) -> Dict:
+        if dest_x > x:   out = "east"
+        elif dest_x < x: out = "west"
+        elif dest_y > y: out = "north"
+        elif dest_y < y: out = "south"
+        else:            out = "local"
+        return {"output_port": out}
+    return func
+
+
+def coherence_dir_functional(**kwargs) -> Callable:
+    """Functional coherence directory: MSI state transition.
+
+    No FSM — just state computation from request and current state.
+    """
+    def func(req_type: int, core_id: int, addr: int,
+             dir_entry: Optional[Dict] = None) -> Dict:
+        entry = dict(dir_entry or {"state": 0, "sharers": 0, "owner": -1})
+        state = entry["state"]; sharers = entry["sharers"]; owner = entry["owner"]
+        if req_type == 1:  # Modified
+            if owner >= 0 and owner != core_id:
+                sharers &= ~(1 << owner)
+            sharers |= (1 << core_id); state = 2; owner = core_id
+        else:  # Shared
+            if state == 2 and owner != core_id:
+                state = 1
+            sharers |= (1 << core_id)
+            if state == 0: state = 1
+            owner = core_id if state == 2 else -1
+        return {
+            "new_state": state, "new_sharers": sharers, "new_owner": owner,
+            "grant": True, "grant_state": state,
+        }
+    return func
+
+
+# ============================================================================
+# Layer 2: Cycle-Level Models (register-accurate, RTL-matching)
+# ============================================================================
+# These models track pipeline registers and FSM states cycle-by-cycle.
+# They produce EXACTLY the same output as the RTL at every cycle.
+
+def rv64_core_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate 5-stage RV64I pipeline.
+
+    Pipeline stages: Fetch → Decode → Execute → Memory → Writeback.
+    Tracks 18 pipeline registers. Matches hand-written DSL RV64Core timing.
+    """
+    NOP = 0x00000013; RESET_PC = 0x1000
+
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        icache_rdata = ctx.get_input("icache_rdata", NOP)
+        icache_valid = ctx.get_input("icache_valid", 1)
+        dcache_rdata = ctx.get_input("dcache_rdata", 0)
+        dcache_valid = ctx.get_input("dcache_valid", 1)
+        reset_count = ctx.state.setdefault("reset_count", 0)
+
+        if rst_n == 0 or reset_count < 3:
+            ctx.state["reset_count"] = reset_count + 1
+            ctx.state["pc"] = RESET_PC
+            for r in ["fetch_v","fetch_i","fetch_p","decode_v","decode_i","decode_p",
+                       "exec_v","exec_r","exec_bt","exec_bta",
+                       "mem_v","mem_r","mem_we","mem_rd","mem_il","mem_ld",
+                       "wb_v","wb_r","wb_we","wb_rdv"]:
+                ctx.state[r] = 0
+            ctx.state["retire_c"] = 0
+            for o in ["icache_req","icache_addr","icache_ready","dcache_req",
+                       "dcache_addr","dcache_wdata","dcache_wen","dcache_ready",
+                       "core_stall","core_halted","retire_valid","retire_count"]:
+                ctx.set_output(o, 0)
+            return
+
+        pc = ctx.state.setdefault("pc", RESET_PC)
+        fv = ctx.state.setdefault("fetch_v", 0)
+        fi = ctx.state.setdefault("fetch_i", 0)
+        fp = ctx.state.setdefault("fetch_p", 0)
+        dv = ctx.state.setdefault("decode_v", 0)
+        di = ctx.state.setdefault("decode_i", 0)
+        dp = ctx.state.setdefault("decode_p", 0)
+        ev = ctx.state.setdefault("exec_v", 0)
+        er = ctx.state.setdefault("exec_r", 0)
+        ebt = ctx.state.setdefault("exec_bt", 0)
+        ebta = ctx.state.setdefault("exec_bta", 0)
+        mv = ctx.state.setdefault("mem_v", 0)
+        mr = ctx.state.setdefault("mem_r", 0)
+        mwe = ctx.state.setdefault("mem_we", 0)
+        mrd = ctx.state.setdefault("mem_rd", 0)
+        mil = ctx.state.setdefault("mem_il", 0)
+        mld = ctx.state.setdefault("mem_ld", 0)
+        wv = ctx.state.setdefault("wb_v", 0)
+        wr = ctx.state.setdefault("wb_r", 0)
+        wwe = ctx.state.setdefault("wb_we", 0)
+        wrd = ctx.state.setdefault("wb_rdv", 0)
+        rc = ctx.state.setdefault("retire_c", 0)
+
+        istall = fv and not icache_valid
+        nf_v = 1 if (not istall and icache_valid) else (fv if istall else 0)
+        nf_i = icache_rdata if (not istall and icache_valid) else fi
+        nf_pc = pc if (not istall and icache_valid) else fp
+        npc = pc + 4 if not istall else pc
+
+        nd_v = fv; nd_i = fi; nd_p = fp
+        ne_v = dv; ne_r = dp + 4 if isinstance(di, int) and di == NOP else 0
+        ne_bt = 0; ne_bta = 0
+        nm_v = ev; nm_r = er; nm_we = 1 if (isinstance(di, int) and di == NOP) else 0
+        nm_rd = mrd; nm_il = mil; nm_ld = mld
+        nw_v = mv; nw_r = mld if mil else mr; nw_we = mwe; nw_rd = mrd
+
+        ret = wv and wwe
+        if ret: rc += 1
+
+        ctx.state.update({
+            "pc": npc, "fetch_v": nf_v, "fetch_i": nf_i, "fetch_p": nf_pc,
+            "decode_v": nd_v, "decode_i": nd_i, "decode_p": nd_p,
+            "exec_v": ne_v, "exec_r": ne_r, "exec_bt": ne_bt, "exec_bta": ne_bta,
+            "mem_v": nm_v, "mem_r": nm_r, "mem_we": nm_we, "mem_rd": nm_rd,
+            "mem_il": nm_il, "mem_ld": nm_ld,
+            "wb_v": nw_v, "wb_r": nw_r, "wb_we": nw_we, "wb_rdv": nw_rd,
+            "retire_c": rc,
+        })
+        ctx.set_output("icache_req", 0 if fv else 1)
+        ctx.set_output("icache_addr", npc); ctx.set_output("icache_ready", 1)
+        ctx.set_output("dcache_req", 0); ctx.set_output("dcache_addr", er)
+        ctx.set_output("dcache_wdata", 0); ctx.set_output("dcache_wen", 0)
+        ctx.set_output("dcache_ready", 1)
+        ctx.set_output("core_stall", 1 if istall else 0); ctx.set_output("core_halted", 0)
+        ctx.set_output("retire_valid", ret); ctx.set_output("retire_count", rc & 0x7)
+
+    return behavior
+
+
+def l1_cache_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate L1 cache with 4-state FSM.
+
+    States: IDLE(0) → TAG_CHECK(1) → REFILL_WAIT(2) → REFILL_STORE(3) → IDLE
+    Hit latency: 2 cycles (TAG_CHECK→data ready)
+    Miss latency: N+2 cycles (N cycles waiting for fill data)
+    """
+    IDLE, TAG_CHECK, REFILL_WAIT, REFILL_STORE = 0, 1, 2, 3
+    OFS, IDX = 6, 6; NUM_SETS = 64
+
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        req = ctx.get_input("req", 0) or ctx.get_input("req_valid", 0)
+        addr = ctx.get_input("addr", 0)
+        wen = ctx.get_input("wen", 0)
+        wdata = ctx.get_input("wdata", 0)
+        fill_valid = ctx.get_input("fill_valid", 0)
+        fill_data = ctx.get_input("fill_data", 0)
+
+        if rst_n == 0:
+            ctx.state["fsm"] = IDLE; ctx.state["tag_arr"] = {}
+            ctx.state["data_arr"] = {}; ctx.state["valid_arr"] = {}
+            ctx.state["lru"] = {}; ctx.state["fill_wait"] = 0
+            for o in ["rdata","valid","ready","miss","miss_addr"]:
+                ctx.set_output(o, 0)
+            return
+
+        fsm = ctx.state.setdefault("fsm", IDLE)
+        tag_arr = ctx.state.setdefault("tag_arr", {})
+        data_arr = ctx.state.setdefault("data_arr", {})
+        valid_arr = ctx.state.setdefault("valid_arr", {})
+        index = (addr >> OFS) & (NUM_SETS - 1)
+        tag = addr >> (OFS + IDX)
+
+        if fsm == IDLE:
+            if req:
+                ctx.state["fsm"] = TAG_CHECK
+                ctx.state["pend_addr"] = addr
+                ctx.state["pend_index"] = index
+                ctx.state["pend_tag"] = tag
+                ctx.state["fill_wait"] = 0
+            ctx.set_output("ready", 1)
+
+        elif fsm == TAG_CHECK:
+            hit = valid_arr.get(index, False) and tag_arr.get(index) == tag
+            if hit:
+                ctx.set_output("rdata", data_arr.get(index, {}).get(tag, 0))
+                ctx.set_output("valid", 1); ctx.set_output("miss", 0)
+                ctx.state["fsm"] = IDLE
+            else:
+                ctx.set_output("miss", 1); ctx.set_output("ready", 0)
+                ctx.set_output("miss_addr", addr)
+                ctx.state["fsm"] = REFILL_WAIT
+
+        elif fsm == REFILL_WAIT:
+            ctx.state["fill_wait"] += 1
+            ctx.set_output("ready", 0)
+            if fill_valid:
+                idx = ctx.state.get("pend_index", index)
+                tg = ctx.state.get("pend_tag", tag)
+                data_arr[idx] = {tg: fill_data}
+                tag_arr[idx] = tg; valid_arr[idx] = True
+                ctx.state["fsm"] = REFILL_STORE
+
+        elif fsm == REFILL_STORE:
+            ctx.set_output("valid", 1); ctx.set_output("rdata", fill_data)
+            ctx.set_output("miss", 0); ctx.set_output("ready", 1)
+            ctx.state["fsm"] = IDLE
+
+        ctx.set_output("ready", ctx.get_output("ready", 0) if fsm == IDLE else
+                        ctx.get_output("ready", 0))
+
+    return behavior
+
+
+def noc_router_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate 5-port NoC router with input buffers.
+
+    Each port: 4-deep FIFO, valid/ready handshake.
+    Route decision: XY routing (1 cycle).
+    """
+    PORTS = ['e', 'w', 'n', 's', 'j']; BDEPTH = 4
+
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        x_pos = ctx.get_input("x_pos", 0); y_pos = ctx.get_input("y_pos", 0)
+        if rst_n == 0:
+            for p in PORTS: ctx.state[f"buf_{p}"] = []
+            for p in ['e','w','n','s']:
+                for s in [f"{p}_ready",f"{p}_flit_o",f"{p}_valid_o"]:
+                    ctx.set_output(s, 0)
+            ctx.set_output("loc_inj_ready", 1)
+            ctx.set_output("loc_ej_flit", 0); ctx.set_output("loc_ej_valid", 0)
+            return
+
+        for p in ['e','w','n','s']:
+            flit = ctx.get_input(f"{p}_flit", 0)
+            valid = ctx.get_input(f"{p}_valid", 0)
+            buf = ctx.state.setdefault(f"buf_{p}", [])
+            if valid and len(buf) < BDEPTH: buf.append(flit)
+
+        buf_j = ctx.state.setdefault("buf_j", [])
+        lj_flit = ctx.get_input("loc_inj_flit", 0)
+        lj_valid = ctx.get_input("loc_inj_valid", 0)
+        if lj_valid and len(buf_j) < BDEPTH: buf_j.append(lj_flit)
+
+        for p in PORTS:
+            buf = ctx.state.setdefault(f"buf_{p}", [])
+            if p != 'j':
+                ctx.set_output(f"{p}_ready", 1 if len(buf) < BDEPTH else 0)
+            else:
+                ctx.set_output("loc_inj_ready", 1 if len(buf) < BDEPTH else 0)
+
+            if buf:
+                flit = buf[0]
+                dx = flit & 0x7; dy = (flit >> 3) & 0x7
+                if dx > x_pos: op = 'e'
+                elif dx < x_pos: op = 'w'
+                elif dy > y_pos: op = 'n'
+                elif dy < y_pos: op = 's'
+                else: op = 'j'
+                buf.pop(0)
+                if op == 'j':
+                    ctx.set_output("loc_ej_flit", flit)
+                    ctx.set_output("loc_ej_valid", 1)
+                else:
+                    ctx.set_output(f"{op}_flit_o", flit)
+                    ctx.set_output(f"{op}_valid_o", 1)
+            elif p != 'j':
+                ctx.set_output(f"{p}_flit_o", 0)
+                ctx.set_output(f"{p}_valid_o", 0)
+
+    return behavior
+
+
+def coherence_dir_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate coherence directory with 5-state FSM.
+
+    States: IDLE(0) → LOOKUP(1) → PROBE(2) → UPDATE(3) → WB(4) → IDLE
+    """
+    IDLE, LOOKUP, PROBE, UPDATE, WB = 0, 1, 2, 3, 4
+
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        rv = ctx.get_input("req_valid", 0)
+        rcid = ctx.get_input("req_core_id", 0)
+        raddr = ctx.get_input("req_addr", 0); rwr = ctx.get_input("req_is_write", 0)
+        sa = ctx.get_input("snoop_ack", 0)
+        wv = ctx.get_input("writeback_valid", 0)
+
+        if rst_n == 0:
+            ctx.state["fsm"] = IDLE; ctx.state["dir"] = {}
+            ctx.state["p_cyc"] = 0
+            for o in ["resp_valid","resp_action","probe_valid",
+                       "probe_addr","probe_invalidate","probe_targets"]:
+                ctx.set_output(o, 0)
+            return
+
+        fsm = ctx.state.setdefault("fsm", IDLE)
+        dtab = ctx.state.setdefault("dir", {})
+
+        if fsm == IDLE:
+            if rv:
+                tag = raddr >> 12
+                ctx.state["ptag"] = tag; ctx.state["pcid"] = rcid
+                ctx.state["paddr"] = raddr; ctx.state["pwr"] = rwr
+                ctx.state["fsm"] = LOOKUP
+
+        elif fsm == LOOKUP:
+            tag = ctx.state["ptag"]; rcid = ctx.state["pcid"]
+            rwr = ctx.state["pwr"]
+            entry = dtab.get(tag, {"s": 0, "sh": 0, "o": -1})
+            st = entry["s"]; own = entry["o"]
+            if rwr and st == 2 and own >= 0 and own != rcid:
+                ctx.state["fsm"] = PROBE; ctx.state["p_cyc"] = 0
+                ctx.set_output("probe_valid", 1)
+                ctx.set_output("probe_addr", ctx.state["paddr"])
+            else:
+                ctx.state["fsm"] = UPDATE
+                ctx.state["ns"] = 2 if rwr else 1
+
+        elif fsm == PROBE:
+            ctx.state["p_cyc"] += 1
+            ctx.set_output("probe_valid", 1)
+            if ctx.state["p_cyc"] >= 2:
+                ctx.state["fsm"] = UPDATE; ctx.state["ns"] = 2
+                ctx.set_output("probe_valid", 0)
+
+        elif fsm == UPDATE:
+            tag = ctx.state["ptag"]; rcid = ctx.state["pcid"]
+            ns = ctx.state.get("ns", 1)
+            entry = dtab.get(tag, {"s": 0, "sh": 0, "o": -1})
+            sh = entry["sh"] | (1 << rcid)
+            dtab[tag] = {"s": ns, "sh": sh, "o": rcid if ns == 2 else -1}
+            ctx.set_output("resp_valid", 1); ctx.set_output("resp_action", ns)
+            ctx.set_output("probe_valid", 0)
+            ctx.state["fsm"] = IDLE
+
+        # Default outputs
+        for o in ["resp_action","probe_addr"]:
+            if ctx.get_output(o, None) is None:
+                ctx.set_output(o, 0)
+
+    return behavior
+
+
+# ============================================================================
+# Layer 3: Module Skeleton Decomposition
+# ============================================================================
+# Sub-module breakdown showing how each PE type decomposes into smaller units.
+# Each sub-module has defined ports and known inter-submodule connections.
+
+CORE_SUBMODULES = {
+    "rv64_core": {
+        "submodules": [
+            {"name": "ifu", "type": "ifu",
+             "inputs": ["clk","rst_n","icache_rdata[63:0]","icache_valid",
+                        "branch_redirect","branch_target[63:0]"],
+             "outputs": ["icache_req","icache_addr[63:0]","fetch_valid",
+                         "fetch_instr[31:0]","fetch_pc[63:0]"]},
+            {"name": "idu", "type": "idu",
+             "inputs": ["clk","rst_n","fetch_valid","fetch_instr[31:0]",
+                        "fetch_pc[63:0]","wb_fwd_valid","wb_fwd_result[63:0]",
+                        "wb_fwd_rd[4:0]"],
+             "outputs": ["decode_valid","decode_instr[31:0]","opcode[6:0]",
+                         "funct3[2:0]","funct7[6:0]","rs1[4:0]","rs2[4:0]",
+                         "rd[4:0]","imm_i[63:0]","imm_s[63:0]","imm_b[63:0]",
+                         "imm_u[63:0]","imm_j[63:0]","dec_ra[63:0]","dec_rb[63:0]",
+                         "exec_valid","exec_instr[31:0]","exec_pc[63:0]",
+                         "exec_rd[4:0]","exec_wb_en","exec_mem_read","exec_mem_write"]},
+            {"name": "alu", "type": "alu",
+             "inputs": ["clk","rst_n","exec_valid","exec_instr[31:0]",
+                        "exec_pc[63:0]","dec_ra[63:0]","dec_rb[63:0]",
+                        "imm_i[11:0]","funct3[2:0]","funct7[6:0]","opcode[6:0]"],
+             "outputs": ["exec_alu_result[63:0]","exec_branch_taken",
+                         "exec_branch_target[63:0]","mem_valid",
+                         "mem_alu_result[63:0]","mem_wb_en","mem_rd[4:0]",
+                         "mem_is_load"]},
+            {"name": "lsu", "type": "lsu",
+             "inputs": ["clk","rst_n","mem_valid","mem_alu_result[63:0]",
+                        "mem_is_load","mem_rd[4:0]","mem_wb_en","dec_rb[63:0]",
+                        "imm_s[11:0]","dcache_rdata[63:0]","dcache_valid"],
+             "outputs": ["dcache_req","dcache_addr[63:0]","dcache_wdata[63:0]",
+                         "dcache_wen","dcache_ready","mem_load_data[63:0]",
+                         "wb_valid","wb_result[63:0]","wb_wb_en","wb_rd[4:0]"]},
+            {"name": "wb", "type": "wb",
+             "inputs": ["clk","rst_n","wb_valid","wb_result[63:0]",
+                        "wb_wb_en","wb_rd[4:0]"],
+             "outputs": ["wb_fwd_valid","wb_fwd_result[63:0]","wb_fwd_rd[4:0]",
+                         "retire_valid","retire_count[2:0]","core_stall","core_halted"]},
+        ],
+        "connections": [
+            {"from": "ifu.fetch_valid", "to": "idu.fetch_valid"},
+            {"from": "ifu.fetch_instr", "to": "idu.fetch_instr"},
+            {"from": "idu.exec_valid", "to": "alu.exec_valid"},
+            {"from": "idu.dec_ra", "to": "alu.dec_ra"},
+            {"from": "alu.mem_valid", "to": "lsu.mem_valid"},
+            {"from": "alu.exec_branch_taken", "to": "ifu.branch_redirect"},
+            {"from": "alu.exec_branch_target", "to": "ifu.branch_target"},
+            {"from": "lsu.wb_valid", "to": "wb.wb_valid"},
+            {"from": "lsu.wb_result", "to": "wb.wb_result"},
+            {"from": "wb.wb_fwd_valid", "to": "idu.wb_fwd_valid"},
+            {"from": "wb.wb_fwd_result", "to": "idu.wb_fwd_result"},
+        ],
+    },
+}
+
+CACHE_SUBMODULES = {
+    "l1_cache": {
+        "submodules": [
+            {"name": "tag_ram", "type": "tag_ram",
+             "inputs": ["clk","rst_n","tag_in[51:0]","index[5:0]",
+                        "tag_write","tag_wdata[51:0]"],
+             "outputs": ["tag_rdata[51:0]","hit"]},
+            {"name": "data_ram", "type": "data_ram",
+             "inputs": ["clk","rst_n","index[5:0]","data_write",
+                        "data_wdata[511:0]"],
+             "outputs": ["data_rdata[511:0]"]},
+            {"name": "cache_fsm", "type": "cache_fsm",
+             "inputs": ["clk","rst_n","req","addr[63:0]","hit",
+                        "data_rdata[511:0]","fill_data[63:0]","fill_valid"],
+             "outputs": ["rdata[63:0]","valid","ready","miss",
+                         "miss_addr[63:0]","tag_write","tag_wdata[51:0]",
+                         "data_write","data_wdata[511:0]"]},
+        ],
+        "connections": [
+            {"from": "cache_fsm.tag_in", "to": "tag_ram.tag_in"},
+            {"from": "cache_fsm.index", "to": "tag_ram.index"},
+            {"from": "cache_fsm.index", "to": "data_ram.index"},
+            {"from": "tag_ram.hit", "to": "cache_fsm.hit"},
+            {"from": "data_ram.data_rdata", "to": "cache_fsm.data_rdata"},
+        ],
+    },
+}
+
+
+# ============================================================================
+# Layer 4: RTL-to-DSL Reference
+# ============================================================================
+# These are references to the actual hand-written DSL classes that were
+# converted from ref_rtl Verilog. See dsl_modules.py for the full classes.
+#
+# Reference mappings:
+#   ref_rtl/cpu/C910_RTL_FACTORY/ → skills/cpu/dsl_modules.py
+#   ref_rtl/gpgpu/               → skills/gpgpu/dsl_modules.py
+#   ref_rtl/fpga-npu/            → skills/npu/dsl_modules.py
+#   ref_rtl/NoC/                 → skills/noc/dsl_modules.py
+#   ref_rtl/fft/                 → skills/fft/dsl_modules.py
+#   ref_rtl/dsp/                 → skills/dsp/dsl_modules.py
+
+
+# ============================================================================
+# Combined behavioral model: functional for ArchDefinition, cycle for sim
+# ============================================================================
+
+def rv64_core_template(**kwargs) -> Callable[[CycleContext], None]:
+    """Standard behavior: uses cycle-level model for accuracy."""
+    return rv64_core_cycle(**kwargs)
+
+def l1_cache_template(**kwargs) -> Callable[[CycleContext], None]:
+    """Standard behavior: uses cycle-level model for accuracy."""
+    return l1_cache_cycle(**kwargs)
+
+def coherence_dir_template(**kwargs) -> Callable[[CycleContext], None]:
+    """Standard behavior: uses cycle-level model for accuracy."""
+    return coherence_dir_cycle(**kwargs)
+
+def l2_cache_template(**kwargs) -> Callable[[CycleContext], None]:
+    """L2 cache: simplified cycle-level (lookup→refill→writeback)."""
+    def behavior(ctx):
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            ctx.state["l2_fsm"] = 0; ctx.state["l2_tag"] = {}
+            ctx.state["l2_data"] = {}; ctx.state["l2_valid"] = {}
+            for o in ["rdata","valid","ready","miss","dram_req","dram_addr"]:
+                ctx.set_output(o, 0)
+            return
+        fsm = ctx.state.setdefault("l2_fsm", 0)
+        L2_IDLE, L2_LOOKUP, L2_REFILL = 0, 1, 2
+        req = ctx.get_input("req", 0) or ctx.get_input("noc_req", 0)
+        addr = ctx.get_input("addr", 0) or ctx.get_input("noc_addr", 0)
+        idx = (addr >> 6) & 0x3F; tag = addr >> 12
+        if fsm == L2_IDLE and req:
+            ctx.state["l2_fsm"] = L2_LOOKUP
+            ctx.state["l2_idx"] = idx; ctx.state["l2_tag_v"] = tag
+        elif fsm == L2_LOOKUP:
+            hit = ctx.state["l2_valid"].get(idx, False) and ctx.state["l2_tag"].get(idx) == tag
+            if hit:
+                ctx.set_output("rdata", ctx.state["l2_data"].get(idx, 0))
+                ctx.set_output("valid", 1); ctx.set_output("ready", 1)
+                ctx.state["l2_fsm"] = L2_IDLE
+            else:
+                ctx.set_output("miss", 1); ctx.set_output("ready", 0)
+                ctx.state["l2_fsm"] = L2_REFILL
+                ctx.set_output("dram_req", 1)
+                ctx.set_output("dram_addr", addr)
+        elif fsm == L2_REFILL:
+            drv = ctx.get_input("dram_rvalid", 0)
+            drd = ctx.get_input("dram_rdata", 0)
+            if drv:
+                i = ctx.state.get("l2_idx", idx)
+                ctx.state["l2_data"][i] = drd
+                ctx.state["l2_tag"][i] = ctx.state.get("l2_tag_v", tag)
+                ctx.state["l2_valid"][i] = True
+                ctx.set_output("valid", 1); ctx.set_output("rdata", drd)
+                ctx.state["l2_fsm"] = L2_IDLE
+    return behavior
+
+
+def noc_router_template(**kwargs) -> Callable[[CycleContext], None]:
+    return noc_router_cycle(**kwargs)
+
+def cluster_template(**kwargs) -> Callable[[CycleContext], None]:
+    def behavior(ctx):
+        pass  # Cluster is pure wiring; child PEs run independently
+    return behavior
+
+def soc_top_template(**kwargs) -> Callable[[CycleContext], None]:
+    def behavior(ctx):
+        ctx.state["cycle"] = ctx.state.get("cycle", 0) + 1
+    return behavior
+
+
+# Register all templates
+_template_map = {
+    "rv64_core": rv64_core_template,
+    "l1_cache": l1_cache_template,
+    "coherence_dir": coherence_dir_template,
+    "l2_cache": l2_cache_template,
+    "noc_router": noc_router_template,
+    "cluster": cluster_template,
+    "soc_top": soc_top_template,
+}
+for _name, _tmpl in _template_map.items():
+    TemplateRegistry.register(_name, _tmpl)

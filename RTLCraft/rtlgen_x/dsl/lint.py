@@ -18,6 +18,9 @@ rtlgen_x.dsl.lint — Verilog Linter & Auto-Fixer
     - style_mux_chain           : 级联三元运算符建议用 case
     - style_nested_if           : 深层 if-else 嵌套 (>4 级)
     - signed_mix                : 有符号与无符号信号混合运算检测
+    - signed_shift              : signed/unsigned 右移意图不清晰
+    - signed_multiply           : signed/unsigned 乘法意图不清晰
+    - signed_compare            : signed/unsigned 比较意图不清晰
     - hardware_division         : 检测非2的幂次硬件除法器（变量除法 / %）
     - hardware_multiplier       : 检测硬件乘法器 *
     - combinational_depth       : 估算组合逻辑算术链深度
@@ -70,6 +73,9 @@ class VerilogLinter:
             "style_mux_chain",
             "style_nested_if",
             "signed_mix",
+            "signed_shift",
+            "signed_multiply",
+            "signed_compare",
             "hardware_division",
             "hardware_multiplier",
             "combinational_depth",
@@ -119,6 +125,26 @@ class VerilogLinter:
                 issues.extend(self._check_style_mux_chain(mod_info, lines))
             if "style_nested_if" in self.rules:
                 issues.extend(self._check_style_nested_if(mod_info, lines))
+            if "signed_shift" in self.rules:
+                issues.extend(self._check_signed_shift(mod_info, lines))
+            if "signed_multiply" in self.rules:
+                issues.extend(self._check_signed_binary_op_mix(
+                    mod_info,
+                    lines,
+                    ops={"*"},
+                    rule="signed_multiply",
+                    summary="multiply",
+                    guidance="Wrap both operands with $signed(...) or $unsigned(...) to make multiply intent explicit.",
+                ))
+            if "signed_compare" in self.rules:
+                issues.extend(self._check_signed_binary_op_mix(
+                    mod_info,
+                    lines,
+                    ops={"<", "<=", ">", ">=", "==", "!="},
+                    rule="signed_compare",
+                    summary="compare",
+                    guidance="Cast both sides with $signed(...) or $unsigned(...) before comparing to make the intent explicit.",
+                ))
             if "signed_mix" in self.rules:
                 issues.extend(self._check_signed_mix(mod_info, lines))
             if "hardware_division" in self.rules:
@@ -148,6 +174,7 @@ class VerilogLinter:
         end_line: int            # endmodule 行（0-based）
         ports: Set[str] = field(default_factory=set)
         declared: Dict[str, Tuple[str, int]] = field(default_factory=dict)  # name -> (vartype, width)
+        signed_declared: Set[str] = field(default_factory=set)
         assigned: Dict[str, List[Tuple[int, str]]] = field(default_factory=dict)  # name -> [(line, context),...]
         referenced: Set[str] = field(default_factory=set)
         always_blocks: List[Tuple[int, int, str, List[int]]] = field(default_factory=list)
@@ -178,6 +205,11 @@ class VerilogLinter:
         return modules
 
     def _scan_module(self, slice_lines: List[str], info: "VerilogLinter._ModuleInfo", offset: int):
+        def _register_decl(name: str, vartype: str, width: int, raw_text: str) -> None:
+            info.declared[name] = (vartype, width)
+            if re.search(r"\bsigned\b", raw_text):
+                info.signed_declared.add(name)
+
         in_always = False
         always_start = 0
         always_sens = ""
@@ -185,24 +217,27 @@ class VerilogLinter:
         begin_depth = 0
 
         for idx, raw in enumerate(slice_lines):
+            raw_no_comment = raw.split("//", 1)[0]
             line = raw.strip()
             line_no = offset + idx
 
             # 端口声明（在模块头中）
-            port_re = re.compile(r"\b(input|output|inout)\b(?:\s+reg)?(?:\s*\[([^\]]+)\]\s*)?\s+(\w+)")
-            for m in port_re.finditer(raw):
+            port_re = re.compile(
+                r"\b(input|output|inout)\b(?:\s+(?:reg|wire|logic))*?(?:\s+signed)?(?:\s*\[([^\]]+)\]\s*)?\s+([a-zA-Z_]\w*)"
+            )
+            for m in port_re.finditer(raw_no_comment):
                 info.ports.add(m.group(3))
-                info.declared[m.group(3)] = (m.group(1), self._width_from_range(m.group(2)))
+                _register_decl(m.group(3), m.group(1), self._width_from_range(m.group(2)), raw_no_comment)
 
             # 内部信号声明
-            decl_re = re.compile(r"\b(logic|wire|reg)\s+(?:\[([^\]]+)\]\s*)?(\w+)")
-            for m in decl_re.finditer(raw):
-                info.declared[m.group(3)] = (m.group(1), self._width_from_range(m.group(2)))
+            decl_re = re.compile(r"\b(logic|wire|reg)\b(?:\s+signed)?(?:\s*\[([^\]]+)\]\s*)?\s+([a-zA-Z_]\w*)")
+            for m in decl_re.finditer(raw_no_comment):
+                _register_decl(m.group(3), m.group(1), self._width_from_range(m.group(2)), raw_no_comment)
 
             # array 声明: logic [7:0] arr [0:15];
-            arr_re = re.compile(r"\b(logic|wire|reg)\s+(?:\[([^\]]+)\]\s*)?(\w+)\s*\[")
-            for m in arr_re.finditer(raw):
-                info.declared[m.group(3)] = (m.group(1), self._width_from_range(m.group(2)))
+            arr_re = re.compile(r"\b(logic|wire|reg)\b(?:\s+signed)?(?:\s*\[([^\]]+)\]\s*)?([a-zA-Z_]\w*)\s*\[")
+            for m in arr_re.finditer(raw_no_comment):
+                _register_decl(m.group(3), m.group(1), self._width_from_range(m.group(2)), raw_no_comment)
 
             # parameter/localparam 不算信号
 
@@ -1425,29 +1460,240 @@ class VerilogLinter:
     def _check_signed_mix(
         self, info: "VerilogLinter._ModuleInfo", lines: List[str]
     ) -> List[LintIssue]:
-        """检测 $signed 与普通信号引用在同一算术表达式中混合。"""
+        """检测 $signed 与普通信号引用在同一风险表达式中混合。"""
         issues: List[LintIssue] = []
+        issues.extend(self._check_signed_binary_op_mix(
+            info,
+            lines,
+            ops={"+", "-", "*", "/", "%", "<<", ">>", ">>>", "<", "<=", ">", ">=", "==", "!="},
+            rule="signed_mix",
+            summary="operate",
+            guidance="Use $signed(...) or $unsigned(...) consistently on both operands to clarify intent.",
+        ))
+        return issues
+
+    # -----------------------------------------------------------------
+    # Rule: signed_shift — signed/unsigned 右移意图不清晰
+    # -----------------------------------------------------------------
+    def _check_signed_shift(
+        self, info: "VerilogLinter._ModuleInfo", lines: List[str]
+    ) -> List[LintIssue]:
+        """检测有符号右移/算术右移的意图是否明确。"""
+        issues: List[LintIssue] = []
+        def _lhs_name(lhs: str) -> str:
+            return lhs.split("[", 1)[0]
+
+        def _expr_is_signed(expr: str) -> bool:
+            return "$signed(" in expr or re.search(r"\bSRA\s*\(", expr) is not None
+
+        def _is_declared_signed(name: str) -> bool:
+            if name in info.signed_declared:
+                return True
+            decl = info.declared.get(name)
+            if decl is None:
+                return False
+            vartype, _ = decl
+            return vartype in {"signed", "reg_signed"}
+
+        def _scan_assignment(lhs: str, rhs: str, line_no: int) -> None:
+            lhs_name = _lhs_name(lhs)
+            rhs = rhs.split("//", 1)[0]
+            op = ">>>" if ">>>" in rhs else ">>" if ">>" in rhs else ""
+            if not op:
+                return
+            shift_pos = rhs.find(op)
+            lhs_expr = rhs[:shift_pos].strip()
+
+            def _expr_looks_signed(expr: str) -> bool:
+                if _expr_is_signed(expr):
+                    return True
+                for token in re.findall(r"\b[a-zA-Z_]\w*\b", expr):
+                    if _is_declared_signed(token):
+                        return True
+                return False
+
+            lhs_signed = _expr_looks_signed(lhs_expr)
+            if op == ">>>":
+                if not lhs_signed:
+                    issues.append(LintIssue(
+                        rule="signed_shift",
+                        line=line_no,
+                        message=f"Expression for '{lhs_name}' uses '>>>' but its left operand is not explicitly signed. "
+                                f"Use SRA(...), or cast the left operand with $signed(...) to make the arithmetic shift intent clear.",
+                        severity="warning",
+                    ))
+                return
+            if lhs_signed:
+                issues.append(LintIssue(
+                    rule="signed_shift",
+                    line=line_no,
+                    message=f"Signed left operand in '{lhs_name}' is shifted with '>>'. Prefer SRA(...), '>>>', or wrap the left operand with $signed(...) "
+                            f"so the shift intent is explicit across simulation and emitted RTL.",
+                    severity="warning",
+                ))
 
         for start, end, sens, body in info.always_blocks:
             for bl in body:
-                raw = lines[bl]
-                m = re.search(r"(\w+)\s*[<]?=\s*(.+);", raw)
-                if not m:
-                    continue
-                target = m.group(1)
-                expr = m.group(2)
-                has_signed = "$signed(" in expr
-                if has_signed:
-                    op_refs = re.findall(r"[+\-*]\s+(\w+)", expr)
-                    for ref in op_refs:
-                        if ref not in ("$signed", target) and not ref.startswith("1'd") and not ref.startswith("'d"):
-                            issues.append(LintIssue(
-                                rule="signed_mix",
-                                line=bl + 1,
-                                message=f"Signal '{ref}' participates in signed arithmetic "
-                                        f"without $signed() wrapper. Clarify with $signed({ref}).",
-                                severity="warning",
-                            ))
+                raw = lines[bl].split("//", 1)[0]
+                m = re.search(r"(\w+)\s*(?:\[[^\]]+\])?\s*(?:=(?!=)|<=)\s*(.+);", raw)
+                if m:
+                    _scan_assignment(m.group(1), m.group(2), bl + 1)
+
+        for idx in range(info.start_line, info.end_line + 1):
+            raw = lines[idx].split("//", 1)[0]
+            assign_m = re.match(r"\s*assign\s+(\w+)\s*=\s*(.+);", raw)
+            if assign_m:
+                _scan_assignment(assign_m.group(1), assign_m.group(2), idx + 1)
+
+        return issues
+
+    def _check_signed_binary_op_mix(
+        self,
+        info: "VerilogLinter._ModuleInfo",
+        lines: List[str],
+        *,
+        ops: Set[str],
+        rule: str,
+        summary: str,
+        guidance: str,
+    ) -> List[LintIssue]:
+        """Heuristically detect signed/unsigned mix for binary operators."""
+
+        issues: List[LintIssue] = []
+        seen: Set[tuple[int, str, str, str, str]] = set()
+
+        def _lhs_name(lhs: str) -> str:
+            return lhs.split("[", 1)[0]
+
+        def _is_declared_signed(name: str) -> bool:
+            if name in info.signed_declared:
+                return True
+            decl = info.declared.get(name)
+            if decl is None:
+                return False
+            vartype, _ = decl
+            return vartype in {"signed", "reg_signed"}
+
+        def _token_is_numeric(token: str) -> bool:
+            token = token.strip()
+            return bool(re.match(r"^(?:\d+)?'[bdhoBDHO][0-9a-fA-F_xXzZ]+$", token) or re.match(r"^\d+$", token))
+
+        def _strip_outer_parens(expr: str) -> str:
+            expr = expr.strip()
+            while expr.startswith("(") and expr.endswith(")"):
+                depth = 0
+                balanced = True
+                for idx, ch in enumerate(expr):
+                    if ch == "(":
+                        depth += 1
+                    elif ch == ")":
+                        depth -= 1
+                        if depth == 0 and idx != len(expr) - 1:
+                            balanced = False
                             break
+                if not balanced or depth != 0:
+                    break
+                expr = expr[1:-1].strip()
+            return expr
+
+        def _split_binary_expr(expr: str) -> Optional[tuple[str, str, str]]:
+            expr = _strip_outer_parens(expr)
+            for op in ("<<<", ">>>", "<<", ">>", "<=", ">=", "==", "!=", "<", ">", "*", "+", "-", "/", "%"):
+                depth = 0
+                idx = 0
+                while idx <= len(expr) - len(op):
+                    ch = expr[idx]
+                    if ch == "(":
+                        depth += 1
+                        idx += 1
+                        continue
+                    if ch == ")":
+                        depth = max(depth - 1, 0)
+                        idx += 1
+                        continue
+                    if depth == 0 and expr.startswith(op, idx):
+                        lhs = expr[:idx].strip()
+                        rhs = expr[idx + len(op):].strip()
+                        if lhs and rhs:
+                            return lhs, op, rhs
+                    idx += 1
+            return None
+
+        def _expr_looks_signed(expr: str) -> Optional[bool]:
+            expr = _strip_outer_parens(expr)
+            if not expr:
+                return None
+            if "$unsigned(" in expr:
+                return False
+            if "$signed(" in expr or re.search(r"\bSRA\s*\(", expr):
+                return True
+            split = _split_binary_expr(expr)
+            if split is not None:
+                lhs, _, rhs = split
+                lhs_signed = _expr_looks_signed(lhs)
+                rhs_signed = _expr_looks_signed(rhs)
+                if lhs_signed is None or rhs_signed is None:
+                    return None
+                if lhs_signed == rhs_signed:
+                    return lhs_signed
+                return None
+            tokens = re.findall(r"\b[a-zA-Z_]\w*\b", expr)
+            signed_tokens = [token for token in tokens if _is_declared_signed(token)]
+            if signed_tokens:
+                unsigned_tokens = [
+                    token for token in tokens
+                    if token not in signed_tokens and token not in {"signed", "unsigned", "SRA"}
+                ]
+                if unsigned_tokens:
+                    return None
+                return True
+            if _token_is_numeric(expr):
+                return False
+            if tokens:
+                return False
+            return None
+
+        def _scan_assignment(lhs: str, rhs: str, line_no: int) -> None:
+            lhs_name = _lhs_name(lhs)
+            rhs = rhs.split("//", 1)[0].strip()
+            split = _split_binary_expr(rhs)
+            if split is None:
+                return
+            left_expr, op, right_expr = split
+            if op not in ops:
+                return
+
+            left_signed = _expr_looks_signed(left_expr)
+            right_signed = _expr_looks_signed(right_expr)
+            if left_signed is None or right_signed is None or left_signed == right_signed:
+                return
+
+            signed_expr, unsigned_expr = (
+                (left_expr, right_expr) if left_signed else (right_expr, left_expr)
+            )
+            key = (line_no, op, lhs_name, signed_expr, unsigned_expr)
+            if key in seen:
+                return
+            seen.add(key)
+            issues.append(LintIssue(
+                rule=rule,
+                line=line_no,
+                message=f"Signed expression '{signed_expr}' and unsigned expression '{unsigned_expr}' "
+                        f"are mixed with '{op}' while driving '{lhs_name}'. {guidance}",
+                severity="warning",
+            ))
+
+        for start, end, sens, body in info.always_blocks:
+            for bl in body:
+                raw = lines[bl].split("//", 1)[0]
+                m = re.search(r"(\w+)\s*(?:\[[^\]]+\])?\s*(?:=(?!=)|<=)\s*(.+);", raw)
+                if m:
+                    _scan_assignment(m.group(1), m.group(2), bl + 1)
+
+        for idx in range(info.start_line, info.end_line + 1):
+            raw = lines[idx].split("//", 1)[0]
+            assign_m = re.match(r"\s*assign\s+(\w+)\s*=\s*(.+);", raw)
+            if assign_m:
+                _scan_assignment(assign_m.group(1), assign_m.group(2), idx + 1)
 
         return issues

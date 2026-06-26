@@ -5,7 +5,7 @@
 | Layer       | L3 architecture |
 | Module      | EarphoneFFT256 |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -15,7 +15,7 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-256-point streaming FFT accelerator wrapper.
+Streaming 256-point FFT wrapper around the reusable FFT256Core datapath.
 
 ### 1.2 Scope
 Micro-architectural decisions for EarphoneFFT256.
@@ -24,13 +24,13 @@ Micro-architectural decisions for EarphoneFFT256.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `FFT256-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`), plus verification intent `FFT256-L2_CYCLE-TP-001` (`layer_L2_cycle/specs/02_cycle_test_plan.md`) and latest evidence `FFT256-L2_CYCLE-TR-001` (`layer_L2_cycle/specs/02_cycle_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `FFT256-L3_ARCHITECTURE-001` (`layer_L3_architecture/specs/03_architecture_spec.md`), `FFT256-L3_ARCHITECTURE-TP-001` (`layer_L3_architecture/specs/03_architecture_test_plan.md`), and `FFT256-L3_ARCHITECTURE-TR-001` (`layer_L3_architecture/specs/03_architecture_test_report.md`) as inputs to `FFT256-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`).
 
 ---
 
@@ -52,7 +52,13 @@ See next layer specification for outputs.
 
 | Property | Value |
 | --- | --- |
-| Pipeline | See DSL implementation for pipeline details. |
+| Pipeline | streaming shell around a reusable FFT pipeline |
+| Stages | input_stream, fft_core, output_stream |
+| Points | 256 |
+| Sample Width | 16 |
+| Numeric Format | Q1.15 complex samples |
+| Throughput | 1 complex sample per cycle after pipeline fill |
+| Invariants | Transforms 256 complex input samples into 256 complex output samples., The wrapper preserves the streaming valid handshake on input and output., The reusable FFT256Core instance owns the butterfly pipeline state. |
 
 
 ---
@@ -95,4 +101,4 @@ Python unit tests + cross-layer equivalence checks.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

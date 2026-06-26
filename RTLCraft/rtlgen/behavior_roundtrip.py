@@ -54,8 +54,18 @@ def dsl_to_behavior_adapter(module: Module) -> Callable[[CycleContext], None]:
     """
     from rtlgen.sim import Simulator
 
-    input_names = [n for n in getattr(module, "_inputs", {}) if n not in ("clk", "rst_n")]
+    reset_candidates = [
+        name for name in getattr(module, "_inputs", {})
+        if ("rst" in name.lower() or "reset" in name.lower())
+    ]
+    clock_candidates = [
+        name for name in getattr(module, "_inputs", {})
+        if name.lower() in ("clk", "clock")
+    ]
+    excluded_inputs = set(reset_candidates) | set(clock_candidates)
+    input_names = [n for n in getattr(module, "_inputs", {}) if n not in excluded_inputs]
     output_names = list(getattr(module, "_outputs", {}).keys())
+    reset_name = reset_candidates[0] if reset_candidates else None
 
     # Build a Simulator once, lazily
     sim_holder: Dict[str, Any] = {"sim": None}
@@ -63,7 +73,8 @@ def dsl_to_behavior_adapter(module: Module) -> Callable[[CycleContext], None]:
     def adapter_behavior(ctx: CycleContext):
         if sim_holder["sim"] is None:
             sim_holder["sim"] = Simulator(module)
-            sim_holder["sim"].reset(cycles=2)
+            if reset_name is not None:
+                sim_holder["sim"].reset(rst=reset_name, cycles=2)
 
         sim = sim_holder["sim"]
 
@@ -71,7 +82,7 @@ def dsl_to_behavior_adapter(module: Module) -> Callable[[CycleContext], None]:
         for name in input_names:
             val = ctx.get_input(name, 0)
             if name in sim.state:
-                sim.state[name] = val
+                sim.set(name, val)
 
         # Step one full clock cycle (comb → seq → commit → comb)
         sim.step(do_trace=False)
@@ -351,7 +362,7 @@ def _extract_roundtrip_events(
 
     for cycle_idx, frame in enumerate(trace):
         cycle_events = {"_cycle": cycle_idx}
-        has_event = True  # Always record if there's data
+        has_event = False
 
         for sig in key_signals:
             val = frame.get(sig, 0)
@@ -359,10 +370,12 @@ def _extract_roundtrip_events(
 
             if val != prev_val and val != 0:
                 cycle_events[sig] = val
+                has_event = True
 
             prev[sig] = val
 
-        events.append(cycle_events)
+        if has_event:
+            events.append(cycle_events)
 
     return events
 

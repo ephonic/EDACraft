@@ -5,7 +5,7 @@
 | Layer       | L5 dsl |
 | Module      | EarphoneFFT256 |
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -24,13 +24,13 @@ RTL-ready DSL description of EarphoneFFT256.
 
 ## 2. Inputs from Previous Layer
 
-See previous layer specification for inputs.
+Consumes approved outputs from `FFT256-L4_STRUCTURE-001` (`layer_L4_structure/specs/04_structural_spec.md`), plus verification intent `FFT256-L4_STRUCTURE-TP-001` (`layer_L4_structure/specs/04_structural_test_plan.md`) and latest evidence `FFT256-L4_STRUCTURE-TR-001` (`layer_L4_structure/specs/04_structural_test_report.md`).
 
 ---
 
 ## 3. Outputs to Next Layer
 
-See next layer specification for outputs.
+Emits `FFT256-L5_DSL-001` (`layer_L5_dsl/specs/05_dsl_spec.md`), `FFT256-L5_DSL-TP-001` (`layer_L5_dsl/specs/05_dsl_test_plan.md`), and `FFT256-L5_DSL-TR-001` (`layer_L5_dsl/specs/05_dsl_test_report.md`) as inputs to `FFT256-L6_VERILOG-001` (`layer_L6_verilog/specs/06_verilog_spec.md`).
 
 ---
 
@@ -108,4 +108,4 @@ DSL simulation and cross-layer equivalence with L1/L2.
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

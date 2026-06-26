@@ -86,6 +86,21 @@ def _to_int(v: Union[int, SimValue]) -> int:
     return int(v) if isinstance(v, SimValue) else v
 
 
+def _mask(width: int) -> int:
+    return (1 << width) - 1 if width > 0 else 0
+
+
+def _sign_extend_int(value: int, width: int) -> int:
+    masked = value & _mask(width)
+    if width > 0 and (masked & (1 << (width - 1))):
+        return masked - (1 << width)
+    return masked
+
+
+def _truncate_int(value: int, width: int) -> int:
+    return value & _mask(width)
+
+
 
 
 # -----------------------------------------------------------------
@@ -648,11 +663,40 @@ class Simulator:
         if do_trace:
             self._do_trace()
 
-    def reset(self, rst: str = "rst", cycles: int = 2):
+    @staticmethod
+    def _is_active_low_reset_name(name: str) -> bool:
+        lowered = name.lower()
+        return (
+            lowered.endswith("_n")
+            or lowered in ("rstn", "resetn", "rst_b", "reset_b")
+        )
+
+    def _auto_detect_reset(self) -> str:
+        """Pick a likely reset port from the module inputs."""
+        candidates = [
+            "rst",
+            "rst_n",
+            "reset",
+            "reset_n",
+            "rstn",
+            "resetn",
+            "rst_b",
+            "reset_b",
+        ]
+        inputs = self.module._inputs
+        for name in candidates:
+            if name in inputs:
+                return name
+        for name in inputs:
+            if name.lower() in candidates:
+                return name
+        return "rst"
+
+    def reset(self, rst: Optional[str] = None, cycles: int = 2):
         """执行复位序列（自动检测 active-high / active-low）。
         当 JIT 启用时，使用快速路径直接清零 state。"""
-        active_low = (rst.endswith("_n") or rst.endswith("_N") or
-                      rst.lower() in ("rstn", "resetn", "rst_b", "reset_b"))
+        rst_name = rst or self._auto_detect_reset()
+        active_low = self._is_active_low_reset_name(rst_name)
         if self._jit is not None:
             # Fast path: directly zero all state, then apply reset value
             for i in range(len(self._jit.state)):
@@ -666,29 +710,29 @@ class Simulator:
                     arr[k] = 0
             # Hold reset for 'cycles' steps to let seq logic propagate
             if active_low:
-                self._jit.set(rst, 0)
+                self._jit.set(rst_name, 0)
             else:
-                self._jit.set(rst, 1)
+                self._jit.set(rst_name, 1)
             for _ in range(cycles):
                 self._jit.step()
             if active_low:
-                self._jit.set(rst, 1)
+                self._jit.set(rst_name, 1)
             else:
-                self._jit.set(rst, 0)
+                self._jit.set(rst_name, 0)
             self._sync_from_jit()
             return
 
         # Fallback AST interpreter path
         if active_low:
-            self.set(rst, 0)
+            self.set(rst_name, 0)
         else:
-            self.set(rst, 1)
+            self.set(rst_name, 1)
         for _ in range(cycles):
             self.step()
         if active_low:
-            self.set(rst, 1)
+            self.set(rst_name, 1)
         else:
-            self.set(rst, 0)
+            self.set(rst_name, 0)
 
     def run_golden_test(self, golden_tests: List[Dict[str, Any]],
                         behavior_ref: Optional[Callable] = None,
@@ -1483,6 +1527,17 @@ class Simulator:
             return self._binop(expr.op, l, r, expr.width)
         if isinstance(expr, UnaryOp):
             v = self._eval_expr(expr.operand, loop_vars)
+            if expr.op == "$signed":
+                if self.use_xz:
+                    raw = _make_xz(v, expr.width)
+                    signed_v = _sign_extend_int(raw.v, expr.width)
+                    return SimValue(_truncate_int(signed_v, expr.width), raw.x_mask, raw.z_mask, expr.width)
+                return _sign_extend_int(int(v) if isinstance(v, SimValue) else v, expr.width)
+            if expr.op == "$unsigned":
+                if self.use_xz:
+                    raw = _make_xz(v, expr.width)
+                    return SimValue(raw.v & _mask(expr.width), raw.x_mask, raw.z_mask, expr.width)
+                return _truncate_int(int(v) if isinstance(v, SimValue) else v, expr.width)
             return self._unop(expr.op, v, expr.width)
         if isinstance(expr, PartSelect):
             v = self._eval_expr(expr.operand, loop_vars)
@@ -1666,12 +1721,21 @@ class Simulator:
     def _unop(self, op: str, operand, width: int):
         if self.use_xz:
             v = _make_xz(operand, width)
+            if op == "$signed":
+                signed_v = _sign_extend_int(v.v, width)
+                return SimValue(_truncate_int(signed_v, width), v.x_mask, v.z_mask, width)
+            if op == "$unsigned":
+                return SimValue(v.v & _mask(width), v.x_mask, v.z_mask, width)
             if op == "~":
                 new_v = (~v.v) & ((1 << width) - 1)
                 return SimValue(new_v, v.x_mask, v.z_mask, width)
             raise ValueError(f"Unsupported unary op: {op}")
         v_i = int(operand) if isinstance(operand, SimValue) else operand
         mask = (1 << width) - 1
+        if op == "$signed":
+            return _sign_extend_int(v_i, width)
+        if op == "$unsigned":
+            return v_i & mask
         if op == "~":
             return (~v_i) & mask
         if op == "&":

@@ -133,3 +133,20 @@ OFO_CONFIG = CPUConfig(
     itlb_entries=32, dtlb_entries=32, jtlb_entries=1024,
     pa_width=40, va_width=39,
 )
+
+HIGH_PERF_RV64_4CORE_CONFIG = CPUConfig(
+    fetch_width=4, decode_width=4, issue_width=6, commit_width=4,
+    pipeline_stages=12, fetch_stages=3, decode_stages=2, execute_stages=4,
+    rob_depth=192, iq_entries=48,
+    load_queue_depth=32, store_queue_depth=32,
+    phys_int_regs=192, phys_fp_regs=128,
+    btb_entries=1024, btb_ways=4, bht_entries=8192, ras_depth=16,
+    l0_btb_entries=8, use_loop_buffer=True,
+    l1_icache_size=65536, l1_icache_ways=4, l1_icache_line=64,
+    l1_dcache_size=65536, l1_dcache_ways=4, l1_dcache_line=64,
+    l2_cache_size=2097152, l2_cache_ways=16,
+    itlb_entries=64, dtlb_entries=64, jtlb_entries=2048,
+    pa_width=48, va_width=39,
+    multi_processing=True, vector_enable=False, fp_enable=True,
+    debug_enable=True, perf_counters=True,
+)

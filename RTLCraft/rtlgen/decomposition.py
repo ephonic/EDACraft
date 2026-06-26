@@ -48,7 +48,7 @@ from rtlgen.core import (
     Input,
     Output,
 )
-from rtlgen.spec_ir import SpecIR, PortSpec, FunctionSpec, PPASpec, TimingSpec
+from rtlgen.spec_ir import SpecIR, PortSpec, FunctionSpec, InterfaceSpec, PPASpec, TimingSpec
 
 
 def _port_spec(p) -> PortSpec:
@@ -1819,21 +1819,29 @@ def submodule_to_spec(sm: BehavioralSpec, parent_name: str = "Module") -> SpecIR
         category = "comb_alu"
 
     ports = list(sm.port_list())
+    interfaces = None
 
     # 为流水线模块自动补全 valid/ready 流控端口
     if category == "stream_pipeline":
+        interfaces = InterfaceSpec(input_protocol="ready_valid", output_protocol="ready_valid")
         port_names = {p.name for p in ports}
-        if "valid_in" not in port_names:
-            ports.append(PortSpec(name="valid_in", direction="input", width=1))
-        if "valid_out" not in port_names:
-            ports.append(PortSpec(name="valid_out", direction="output", width=1))
+        handshake_ports = [
+            PortSpec(name="in_valid", direction="input", width=1),
+            PortSpec(name="in_ready", direction="output", width=1),
+            PortSpec(name="out_valid", direction="output", width=1),
+            PortSpec(name="out_ready", direction="input", width=1),
+        ]
+        for port in handshake_ports:
+            if port.name not in port_names:
+                ports.append(port)
 
     return SpecIR(
         name=f"{parent_name}_{sm.name}",
         category=category,
         function=FunctionSpec(expr=""),
         ports=ports,
-        timing=TimingSpec(),
+        interfaces=interfaces,
+        timing=TimingSpec(latency_max=max(sm.latency, 1) if category == "stream_pipeline" else None),
         ppa=PPASpec(),
     )
 

@@ -3,7 +3,7 @@
 | Document ID | RV32-L2_CYCLE-TP-001 |
 |-------------|--------------|
 | Version     | 0.1 |
-| Date        | 2026-06-15 |
+| Date        | 2026-06-18 |
 | Author      | RTLCraft Agent |
 | Owner       | Design Team |
 | Status      | Draft |
@@ -114,6 +114,16 @@ Close L2 cycle when `layer_L2_cycle/specs/02_cycle_test_plan.md` has correspondi
 |-------|------|------|----------|-----------|--------|
 | TC-001 | test_describe_cycle_contract | Directed | P1 | Validate describe cycle contract. | Planned |
 
+
+
+Additional discovered test cases:
+
+| TC ID | Name | Type | Priority | Objective | Status |
+| --- | --- | --- | --- | --- | --- |
+| RV32-L2_CYCLE-TC-001 | test_describe_cycle_contract | Directed | P1 | Validate describe cycle contract. | Planned |
+| RV32-L2_CYCLE-TC-002 | test_fetch_advances_pc_and_exposes_icache_request | Directed | P1 | Validate fetch advances pc and exposes icache request. | Planned |
+| RV32-L2_CYCLE-TC-003 | test_reset_initializes_cycle_state | Directed | P1 | Validate reset initializes cycle state. | Planned |
+
 ### 7.2 Detailed Test Cases
 
 #### TC-001: test_describe_cycle_contract
@@ -184,7 +194,7 @@ Issues are emitted into docgen_feedback.json with detected layer and upstream ta
 
 | Milestone | Target Date | Deliverable | Owner |
 |-----------|-------------|-------------|-------|
-| L2 cycle handoff | 2026-06-15 | layer_L2_cycle/specs/02_cycle_spec.md, layer_L2_cycle/specs/02_cycle_test_plan.md, layer_L2_cycle/specs/02_cycle_test_report.md | RTLCraft Agent |
+| L2 cycle handoff | 2026-06-18 | layer_L2_cycle/specs/02_cycle_spec.md, layer_L2_cycle/specs/02_cycle_test_plan.md, layer_L2_cycle/specs/02_cycle_test_report.md | RTLCraft Agent |
 
 ---
 
@@ -212,4 +222,4 @@ The verification phase is considered complete when:
 
 | Version | Date | Author | Description |
 |---------|------|--------|-------------|
-| 0.1 | 2026-06-15 | RTLCraft Agent | Initial draft. |
+| 0.1 | 2026-06-18 | RTLCraft Agent | Initial draft. |

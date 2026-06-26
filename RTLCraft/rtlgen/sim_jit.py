@@ -45,6 +45,17 @@ from rtlgen.core import (
 )
 
 
+def _mask(width: int) -> int:
+    return (1 << width) - 1 if width > 0 else 0
+
+
+def _sign_extend_int(value: int, width: int) -> int:
+    masked = value & _mask(width)
+    if width > 0 and (masked & (1 << (width - 1))):
+        return masked - (1 << width)
+    return masked
+
+
 # -----------------------------------------------------------------
 # JITModule
 # -----------------------------------------------------------------
@@ -399,6 +410,10 @@ class JITModule:
             op = expr.op
             w = expr.width
             mask = (1 << w) - 1
+            if op == "$signed":
+                return lambda: _sign_extend_int(v_fn(), w)
+            if op == "$unsigned":
+                return lambda: v_fn() & mask
             if op == "~":
                 return lambda: (~v_fn()) & mask
             if op == "&":
