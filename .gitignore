@@ -15,3 +15,16 @@ dist/
 *.swo
 backend/
 work/
+syn/libs/
+*.db
+*.pyc
+__pycache__/
+*.log
+*.out
+*.org
+*_org
+.run.cmd
+.synopsys_dc.setup
+*.tcl_ccs
+*.tcl_1.2
+clog*
