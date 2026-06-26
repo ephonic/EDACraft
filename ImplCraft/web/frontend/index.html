@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImplCraft — Design Management Platform</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h1>ImplCraft</h1>
+            <span class="version">v1.0</span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="#" data-page="dashboard" class="active">
+                <span class="icon">&#9632;</span> Dashboard
+            </a></li>
+            <li><a href="#" data-page="designs">
+                <span class="icon">&#9670;</span> Designs
+            </a></li>
+            <li><a href="#" data-page="stages">
+                <span class="icon">&#9654;</span> Stages
+            </a></li>
+            <li><a href="#" data-page="metrics">
+                <span class="icon">&#9650;</span> Metrics
+            </a></li>
+            <li><a href="#" data-page="scripts">
+                <span class="icon">&#9998;</span> Scripts
+            </a></li>
+            <li><a href="#" data-page="git">
+                <span class="icon">&#8853;</span> Version Control
+            </a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <div class="server-status" id="server-status">
+                <span class="status-dot online"></span> Server Online
+            </div>
+        </div>
+    </nav>
+
+    <main class="content">
+        <!-- Dashboard Page -->
+        <div id="page-dashboard" class="page active">
+            <header class="page-header">
+                <h2>Dashboard</h2>
+                <button class="btn btn-sm" onclick="App.refresh()">Refresh</button>
+            </header>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-designs">0</div>
+                    <div class="stat-label">Total Designs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-active">0</div>
+                    <div class="stat-label">Active Designs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-stages">0</div>
+                    <div class="stat-label">Stages Run</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-success" id="stat-passing">0</div>
+                    <div class="stat-label">Passing</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-danger" id="stat-failing">0</div>
+                    <div class="stat-label">Failing</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-scripts">0</div>
+                    <div class="stat-label">Scripts</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Designs Overview</h3>
+                <div id="designs-overview" class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Design</th>
+                                <th>Status</th>
+                                <th>PDK</th>
+                                <th>Clock (ns)</th>
+                                <th>WNS</th>
+                                <th>TNS</th>
+                                <th>DRC Errors</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="designs-table-body">
+                            <tr><td colspan="8" class="empty">No designs yet. Create one to get started.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Recent Activity</h3>
+                <div id="activity-feed" class="activity-list">
+                    <div class="empty">No recent activity</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Designs Page -->
+        <div id="page-designs" class="page">
+            <header class="page-header">
+                <h2>Designs</h2>
+                <button class="btn btn-primary" onclick="App.showCreateDesign()">+ New Design</button>
+            </header>
+
+            <div class="section">
+                <div id="designs-list" class="cards-grid"></div>
+            </div>
+
+            <!-- Create Design Modal -->
+            <div id="modal-create-design" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Create New Design</h3>
+                        <button class="modal-close" onclick="App.closeModal('modal-create-design')">&times;</button>
+                    </div>
+                    <form id="form-create-design" onsubmit="App.createDesign(event)">
+                        <div class="form-group">
+                            <label>Design Name</label>
+                            <input type="text" name="name" required placeholder="e.g., FullSystem">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Top Module</label>
+                                <input type="text" name="top_module" value="top">
+                            </div>
+                            <div class="form-group">
+                                <label>PDK Name</label>
+                                <input type="text" name="pdk_name" placeholder="e.g., tsmc28hpcp">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Clock Period (ns)</label>
+                                <input type="number" name="clock_period_ns" value="10.0" step="0.1">
+                            </div>
+                            <div class="form-group">
+                                <label>Target Utilization</label>
+                                <input type="number" name="target_utilization" value="0.7" step="0.05" min="0" max="1">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Config Path</label>
+                            <input type="text" name="config_path" placeholder="configs/FullSystem.yaml">
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea name="description" rows="2" placeholder="Design description..."></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="App.closeModal('modal-create-design')">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Create Design</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stages Page -->
+        <div id="page-stages" class="page">
+            <header class="page-header">
+                <h2>Flow Stages</h2>
+                <div class="header-actions">
+                    <select id="stage-design-select" onchange="App.loadStages()">
+                        <option value="">Select Design...</option>
+                    </select>
+                </div>
+            </header>
+
+            <div class="section">
+                <div class="flow-pipeline" id="flow-pipeline">
+                    <div class="flow-stages">
+                        <div class="flow-stage pending" data-stage="synthesis">
+                            <div class="stage-icon">&#9881;</div>
+                            <div class="stage-name">Synthesis</div>
+                            <div class="stage-tool">DC</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                        <div class="flow-arrow">&#8594;</div>
+                        <div class="flow-stage pending" data-stage="floorplan">
+                            <div class="stage-icon">&#9634;</div>
+                            <div class="stage-name">Floorplan</div>
+                            <div class="stage-tool">ICC2</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                        <div class="flow-arrow">&#8594;</div>
+                        <div class="flow-stage pending" data-stage="placement">
+                            <div class="stage-icon">&#9638;</div>
+                            <div class="stage-name">Placement</div>
+                            <div class="stage-tool">ICC2</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                        <div class="flow-arrow">&#8594;</div>
+                        <div class="flow-stage pending" data-stage="cts">
+                            <div class="stage-icon">&#9202;</div>
+                            <div class="stage-name">CTS</div>
+                            <div class="stage-tool">ICC2</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                        <div class="flow-arrow">&#8594;</div>
+                        <div class="flow-stage pending" data-stage="routing">
+                            <div class="stage-icon">&#8644;</div>
+                            <div class="stage-name">Routing</div>
+                            <div class="stage-tool">ICC2</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                        <div class="flow-arrow">&#8594;</div>
+                        <div class="flow-stage pending" data-stage="route_opt">
+                            <div class="stage-icon">&#9889;</div>
+                            <div class="stage-name">Route Opt</div>
+                            <div class="stage-tool">ICC2</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                        <div class="flow-arrow">&#8594;</div>
+                        <div class="flow-stage pending" data-stage="primetime">
+                            <div class="stage-icon">&#9201;</div>
+                            <div class="stage-name">PrimeTime</div>
+                            <div class="stage-tool">PT</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                        <div class="flow-arrow">&#8594;</div>
+                        <div class="flow-stage pending" data-stage="drc">
+                            <div class="stage-icon">&#10004;</div>
+                            <div class="stage-name">DRC</div>
+                            <div class="stage-tool">Calibre</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                        <div class="flow-arrow">&#8594;</div>
+                        <div class="flow-stage pending" data-stage="lvs">
+                            <div class="stage-icon">&#8801;</div>
+                            <div class="stage-name">LVS</div>
+                            <div class="stage-tool">Calibre</div>
+                            <div class="stage-status">Pending</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Stage History</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Stage</th>
+                            <th>Tool</th>
+                            <th>Status</th>
+                            <th>Elapsed</th>
+                            <th>WNS</th>
+                            <th>TNS</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stages-table-body">
+                        <tr><td colspan="8" class="empty">Select a design to view stages</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Metrics Page -->
+        <div id="page-metrics" class="page">
+            <header class="page-header">
+                <h2>QoR Metrics</h2>
+                <div class="header-actions">
+                    <select id="metrics-design-select" onchange="App.loadMetrics()">
+                        <option value="">Select Design...</option>
+                    </select>
+                </div>
+            </header>
+
+            <div class="section">
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h4>Timing (WNS/TNS)</h4>
+                        <canvas id="chart-timing"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h4>Power (mW)</h4>
+                        <canvas id="chart-power"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h4>Utilization (%)</h4>
+                        <canvas id="chart-utilization"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h4>DRC Errors</h4>
+                        <canvas id="chart-drc"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Metrics History</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Iteration</th>
+                            <th>WNS (ns)</th>
+                            <th>TNS (ns)</th>
+                            <th>Utilization</th>
+                            <th>Power (mW)</th>
+                            <th>DRC Errors</th>
+                            <th>Paths</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="metrics-table-body">
+                        <tr><td colspan="8" class="empty">Select a design to view metrics</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Scripts Page -->
+        <div id="page-scripts" class="page">
+            <header class="page-header">
+                <h2>Script Manager</h2>
+                <div class="header-actions">
+                    <select id="scripts-design-select" onchange="App.loadScripts()">
+                        <option value="">Select Design...</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="App.showGenerateScript()">+ Generate Script</button>
+                </div>
+            </header>
+
+            <div class="section">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Stage</th>
+                            <th>Filename</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Exit Code</th>
+                            <th>Generated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scripts-table-body">
+                        <tr><td colspan="8" class="empty">Select a design to view scripts</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Script Preview Modal -->
+            <div id="modal-script-preview" class="modal hidden">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3>Script Preview</h3>
+                        <button class="modal-close" onclick="App.closeModal('modal-script-preview')">&times;</button>
+                    </div>
+                    <div class="script-info">
+                        <span id="preview-filename" class="filename"></span>
+                        <span id="preview-status" class="badge"></span>
+                    </div>
+                    <pre class="code-block" id="preview-content"></pre>
+                    <div class="form-actions">
+                        <button class="btn" onclick="App.closeModal('modal-script-preview')">Close</button>
+                        <button class="btn btn-warning" id="btn-execute-script" onclick="App.executeScript(false)">Dry Run</button>
+                        <button class="btn btn-primary" id="btn-confirm-script" onclick="App.executeScript(true)">Confirm & Execute</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Generate Script Modal -->
+            <div id="modal-generate-script" class="modal hidden">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3>Generate Script</h3>
+                        <button class="modal-close" onclick="App.closeModal('modal-generate-script')">&times;</button>
+                    </div>
+                    <form id="form-generate-script" onsubmit="App.generateScript(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Stage Name</label>
+                                <select name="stage_name" required>
+                                    <option value="synthesis">Synthesis</option>
+                                    <option value="floorplan">Floorplan</option>
+                                    <option value="placement">Placement</option>
+                                    <option value="cts">CTS</option>
+                                    <option value="routing">Routing</option>
+                                    <option value="route_opt">Route Opt</option>
+                                    <option value="primetime">PrimeTime</option>
+                                    <option value="drc">DRC</option>
+                                    <option value="lvs">LVS</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Filename</label>
+                                <input type="text" name="filename" value="run.tcl">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Script Content (Tcl)</label>
+                            <textarea name="content" rows="15" class="code-editor" placeholder="# Enter Tcl script content..."></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="App.closeModal('modal-generate-script')">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Generate & Preview</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Execution Log Modal -->
+            <div id="modal-execution-log" class="modal hidden">
+                <div class="modal-content modal-large">
+                    <div class="modal-header">
+                        <h3>Execution Log</h3>
+                        <button class="modal-close" onclick="App.closeModal('modal-execution-log')">&times;</button>
+                    </div>
+                    <div class="log-header">
+                        <span id="log-status" class="badge"></span>
+                        <span id="log-exit-code"></span>
+                    </div>
+                    <pre class="log-output" id="log-content"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Git Page -->
+        <div id="page-git" class="page">
+            <header class="page-header">
+                <h2>Version Control</h2>
+                <div class="header-actions">
+                    <button class="btn" onclick="App.loadGitStatus()">Refresh</button>
+                    <button class="btn btn-primary" onclick="App.showCommitModal()">Commit</button>
+                </div>
+            </header>
+
+            <div class="section">
+                <div class="git-header">
+                    <div class="git-branch">
+                        <span class="label">Branch:</span>
+                        <span id="git-current-branch" class="branch-name">-</span>
+                    </div>
+                    <div class="git-clean" id="git-clean-status">-</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Working Tree Status</h3>
+                <div class="git-status-grid">
+                    <div class="git-section">
+                        <h4>Staged Changes</h4>
+                        <div id="git-staged" class="file-list">
+                            <div class="empty">No staged changes</div>
+                        </div>
+                    </div>
+                    <div class="git-section">
+                        <h4>Unstaged Changes</h4>
+                        <div id="git-unstaged" class="file-list">
+                            <div class="empty">No unstaged changes</div>
+                        </div>
+                    </div>
+                    <div class="git-section">
+                        <h4>Untracked Files</h4>
+                        <div id="git-untracked" class="file-list">
+                            <div class="empty">No untracked files</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Commit History</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Hash</th>
+                            <th>Author</th>
+                            <th>Message</th>
+                            <th>Changes</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="git-log-body">
+                        <tr><td colspan="5" class="empty">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Commit Modal -->
+            <div id="modal-commit" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Commit Changes</h3>
+                        <button class="modal-close" onclick="App.closeModal('modal-commit')">&times;</button>
+                    </div>
+                    <form onsubmit="App.gitCommit(event)">
+                        <div class="form-group">
+                            <label>Commit Message</label>
+                            <textarea name="message" rows="3" required placeholder="Describe your changes..."></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="App.closeModal('modal-commit')">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Commit</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

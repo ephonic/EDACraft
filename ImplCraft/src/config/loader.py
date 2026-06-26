@@ -487,3 +487,19 @@ def save_config(config: DesignConfig, path: str | Path, flow_options: dict[str, 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+
+# =============================================================================
+# Stage-specific config loaders (industrial architecture)
+# =============================================================================
+
+def load_pt_config(yaml_path: str | Path):
+    """Load PrimeTime stage config from YAML file."""
+    from .pt_config import PTStageConfig
+    return PTStageConfig.from_yaml(yaml_path)
+
+
+def load_dc_config(yaml_path: str | Path):
+    """Load DC synthesis stage config from YAML file."""
+    from .dc_config import DCStageConfig
+    return DCStageConfig.from_yaml(yaml_path)

@@ -4,16 +4,38 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "ic-backend"
-version = "0.1.0"
-description = "IC Backend Design Agent Support System — MVP"
+version = "0.2.0"
+description = "IC Backend Design Agent Support System — with Web Platform"
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "sqlalchemy>=2.0.0",
+    "pydantic>=2.0.0",
+    "python-multipart>=0.0.6",
+    "websockets>=12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "httpx>=0.25.0",
+    "ruff>=0.1.0",
 ]
 
 [project.scripts]
 ic-backend = "src.run_flow:main"
+implcraft-web = "run_web:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["src*", "web*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

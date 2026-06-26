@@ -1,0 +1,90 @@
+# =============================================================================
+# Cadence Tempus Timing Signoff Configuration
+# =============================================================================
+# Industrial-grade static timing analysis for signoff.
+# =============================================================================
+
+tempus:
+  num_cores: 8
+  license_timeout: 300
+
+  # ---- Analysis Settings ----
+  analysis:
+    enable_cppr: true                    # Common Path Pessimism Removal
+    enable_si: true                      # Signal integrity analysis
+    cppr_credit_threshold: 0.01
+    timing_derate_late: 1.0
+    timing_derate_early: 1.0
+    # ocv_derate:                        # On-Chip Variation
+    #   late: 1.05
+    #   early: 0.95
+    # aocv_derate:                       # Advanced OCV
+    #   table_file: ""
+    # socv_derate:                       # Statistical OCV
+    #   sigma: 3.0
+
+  # ---- Path Reporting ----
+  reporting:
+    max_paths: 100
+    nworst: 10
+    slack_lesser_than: 0.0
+    sort_by: "slack"                     # slack, endpoint, group
+    # report_types:
+    #   - "setup"
+    #   - "hold"
+    #   - "recovery"
+    #   - "removal"
+
+  # ---- MCMM (Multi-Corner Multi-Mode) ----
+  mcmm:
+    enabled: false
+    # scenarios:
+    #   - name: "func_ss_125c"
+    #     corner: "ss"
+    #     mode: "func"
+    #     temp: 125
+    #     voltage: 0.72
+    #     sdc_file: "constraints/func_ss.sdc"
+    #   - name: "func_ff_m40c"
+    #     corner: "ff"
+    #     mode: "func"
+    #     temp: -40
+    #     voltage: 0.88
+    #     sdc_file: "constraints/func_ff.sdc"
+    #   - name: "scan_ss_125c"
+    #     corner: "ss"
+    #     mode: "scan"
+    #     temp: 125
+    #     voltage: 0.72
+    #     sdc_file: "constraints/scan_ss.sdc"
+
+  # ---- Power Analysis ----
+  power:
+    enabled: false
+    # vcd_file: ""
+    # saif_file: ""
+    # activity_file: ""
+    # analysis_type: "average"           # average, time_based
+
+  # ---- Signoff Settings ----
+  signoff:
+    enabled: true
+    signoff_corners: ["ss", "ff"]
+    # signoff_modes: ["func"]
+    # signoff_temp: [125, -40]
+    # signoff_voltage: [0.72, 0.88]
+
+  # ---- SI Analysis ----
+  si:
+    enabled: true
+    crosstalk_delay: true
+    crosstalk_glitch: true
+    # delta_delay_threshold: 0.01
+    # glitch_threshold: 0.1
+
+  # ---- Clock Tree Analysis ----
+  clock_tree:
+    analyze_clock_trees: true
+    report_clock_waveforms: false
+    # clock_latency_analysis: true
+    # clock_uncertainty_analysis: true

@@ -126,6 +126,34 @@ class PDKConfig:
 
 
 @dataclass
+class EDAEnvironment:
+    """EDA tool environment paths — no hardcoded directories."""
+    synopsys_script: str = ""        # DC, ICC2 environment setup
+    primetime_script: str = ""       # PrimeTime environment setup
+    mentor_script: str = ""          # Calibre/Mentor environment setup
+    cadence_script: str = ""         # Innovus/Tempus/Pegasus environment setup
+
+    def get_script(self, tool_family: str) -> str:
+        """Resolve environment script for a tool family."""
+        mapping = {
+            "synopsys": self.synopsys_script,
+            "dc": self.synopsys_script,
+            "icc2": self.synopsys_script,
+            "pt": self.primetime_script,
+            "primetime": self.primetime_script,
+            "mentor": self.mentor_script,
+            "calibre": self.mentor_script,
+            "mg": self.mentor_script,
+        
+            "cadence": self.cadence_script,
+            "innovus": self.cadence_script,
+            "tempus": self.cadence_script,
+            "pegasus": self.cadence_script,}
+        return mapping.get(tool_family.lower(), "")
+
+
+
+@dataclass
 class ClockDefinition:
     """Industrial clock definition with full timing parameters."""
     name: str = ""
@@ -240,8 +268,26 @@ class RoutingConfig:
 
 
 @dataclass
+class MCMMScenario:
+    """Multi-Corner Multi-Mode scenario definition."""
+    name: str = ""
+    corner: str = "tt"                    # Process corner name
+    analysis_type: str = "bc_wc"          # bc_wc, on_chip_variation
+    setup: bool = True
+    hold: bool = True
+    leakage_power: bool = False
+    dynamic_power: bool = False
+    sdc_file: str = ""
+    clock_file: str = ""
+    tlu_plus_file: str = ""               # Max or min TLU+ depending on corner
+    operating_condition: str = ""
+
+
+@dataclass
 class SynthesisConfig:
-    """Synthesis-specific configuration."""
+    """Synthesis-specific configuration with industrial-grade options."""
+
+    # ---- Basic compile options ----
     compile_ultra: bool = True
     no_autoungroup: bool = True
     timing_high_effort: bool = True
@@ -249,17 +295,165 @@ class SynthesisConfig:
     max_incremental_loops: int = 0
     tns_effort: str = "high"
     high_resistance: bool = False
+    num_cores: int = 64
+
+    # ---- Physical awareness (DC-T) ----
+    topographical_mode: bool = False
+    tlu_plus_file: str = ""               # TLU+ parasitic file
+    tech2itf_map: str = ""                # Technology to ITF mapping
+    floorplan_file: str = ""              # Floorplan input file
+    def_file: str = ""                    # DEF floorplan input
+    physical_constraints_file: str = ""   # Additional physical constraints TCL
+    dc_obs_file: str = ""                 # Global observation (obs) file
+    floorplan_exploration: bool = False   # ICC DP floorplan exploration
+
+    # ---- Multi-Corner Multi-Mode ----
+    mcmm_enabled: bool = False
+    mcmm_scenarios: list[MCMMScenario] = field(default_factory=list)
+    mcmm_default_scenario: str = ""
+
+    # ---- Power optimization ----
     power_optimization: bool = True
     power_effort: str = "high"
+    leakage_optimization: bool = True
+    dynamic_optimization: bool = True
+    power_prediction: bool = False        # Requires DC-T
+    clock_gating: bool = True
+    self_gating: bool = False
+    clock_gating_style: str = "integrated"   # integrated, discrete
+    clock_gating_positive_edge: bool = True
+    clock_gating_control_point: str = "before"  # before, after
     physically_aware_cg: bool = True
     flatten_cg: bool = True
+
+    # ---- Timing settings ----
     critical_range_ns: float = 0.0
     max_transition_dc: float = 0.5
     max_fanout_dc: int = 20
+    max_capacitance_dc: float = 0.5
     awe_effort: int = 10
     arnoldi_effort: int = 10
     enable_register_merging: bool = False
-    num_cores: int = 64
+
+    # ---- Congestion optimization ----
+    congestion_optimization: bool = False
+
+    # ---- DFT / Scan ----
+    scan_insertion: bool = False
+    scan_style: str = "multiplexed"       # multiplexed, clocked
+    scan_coverage: bool = False           # Retain DFT coverage cells
+
+    # ---- SVF / ECO support ----
+    svf_enabled: bool = True
+
+    # ---- VT control ----
+    vt_dont_use_patterns: dict[str, list[str]] = field(default_factory=dict)
+    vt_release_patterns: dict[str, list[str]] = field(default_factory=dict)
+
+    # ---- Hierarchy management ----
+    keep_hierarchies: list[str] = field(default_factory=list)
+    flatten_all: bool = False
+    flatten_start_level: int = 2
+    size_only_patterns: list[str] = field(default_factory=list)  # Patterns for set_size_only
+
+    # ---- Non-Default Routing Rules ----
+    ndr_constraints_file: str = ""
+    compile_constraints_file: str = ""
+    place_constraints_file: str = ""
+
+    # ---- Auto-weight adjustment ----
+    auto_weight_adjustment: bool = False
+
+    # ---- Port buffers ----
+    insert_port_buffers: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PTConfig:
+    """PrimeTime sign-off STA configuration."""
+    # Basic options
+    num_cores: int = 8
+    significant_digits: int = 3
+    
+    # Netlist and parasitics
+    netlist_file: str = ""           # Gate-level netlist
+    sdc_file: str = ""               # SDC constraints
+    spef_file: str = ""              # SPEF parasitics
+    spef_format: str = "auto"        # auto, SPEF, DSPF
+    
+    # Libraries
+    search_path: list[str] = field(default_factory=list)
+    target_library: list[str] = field(default_factory=list)
+    link_library: list[str] = field(default_factory=list)
+    symbol_library: list[str] = field(default_factory=list)
+    
+    # Multi-VT and dont_use
+    vt_groups: dict[str, str] = field(default_factory=dict)  # lib_pattern -> vt_group_name
+    dont_use_patterns: list[str] = field(default_factory=list)
+    custom_dont_use: list[str] = field(default_factory=list)
+    custom_remove_dontuse: list[str] = field(default_factory=list)
+    
+    # Timing settings
+    timing_derate_late: float = 1.0
+    timing_derate_early: float = 1.0
+    enable_cppr: bool = True
+    cppr_threshold_ps: float = 1.0
+    enable_si_analysis: bool = True
+    save_pin_arrival_and_slack: bool = True
+    delay_calc_mode: str = "full_design"
+    
+    # Power analysis
+    enable_power_analysis: bool = True
+    vcd_file: str = ""
+    vcd_strip_path: str = ""
+    vcd_time_range: list[float] = field(default_factory=list)
+    saif_file: str = ""
+    saif_strip_path: str = ""
+    power_analysis_mode: str = "averaged"  # averaged, time_based
+    power_mode: str = "averaged"
+    
+    # Path Group Analysis
+    report_transition: bool = True
+    report_net: bool = True
+    report_capacitance: bool = True
+    max_paths: int = 20
+    nworst: int = 1
+    slack_lesser_than: float = 0.0
+    
+    # ECO fixing
+    enable_eco: bool = False
+    eco_physical_mode: str = "placement"  # placement, none
+    lef_library: str = ""
+    final_def: str = ""
+    fix_setup: bool = False
+    fix_hold: bool = False
+    fix_drc: bool = False
+    fix_power: bool = False
+    fix_leakage: bool = False
+    setup_opt_margin: float = 0.0
+    hold_opt_margin: float = 0.0
+    setup_opt_slack: float = 0.0
+    hold_opt_slack: float = 0.0
+    fix_setup_groups: list[str] = field(default_factory=list)
+    fix_hold_groups: list[str] = field(default_factory=list)
+    fix_drc_buffer_list: list[str] = field(default_factory=list)
+    fix_hold_buffer_list: list[str] = field(default_factory=list)
+    eco_power_priority: list[str] = field(default_factory=list)
+    power_opt_margin: float = 0.0
+    eco_scripts_output: str = ""
+    
+    # Model extraction
+    enable_model_extraction: bool = False
+    input_transition: float = 0.3
+    
+    # Session and reports
+    save_session: bool = True
+    session_name: str = ""
+    report_path: str = "./PT/report"
+    output_path: str = "./PT/out"
+    
+    # Analysis coverage
+    enable_analysis_coverage: bool = True
 
 
 @dataclass
@@ -275,7 +469,9 @@ class DesignConfig:
     scenario: str = "func.tt0p9v.wc.cmax_25c.setup"
     pdk: PDKConfig = field(default_factory=PDKConfig)
     libraries: LibraryConfig = field(default_factory=LibraryConfig)
-    rtl_files: list[str] = field(default_factory=list)
+    rtl_files: list[str] = field(default_factory=list)  # Explicit file list (backward compat)
+    rtl_dir: str = ""                   # RTL directory path
+    rtl_filelist: str = ""              # filelist.f path (industry standard)
     sdc_file: str = ""
     clocks: list[ClockDefinition] = field(default_factory=list)
     timing_derate: TimingDerateConfig = field(default_factory=TimingDerateConfig)
@@ -283,6 +479,8 @@ class DesignConfig:
     placement: PlacementConfig = field(default_factory=PlacementConfig)
     routing: RoutingConfig = field(default_factory=RoutingConfig)
     synthesis: SynthesisConfig = field(default_factory=SynthesisConfig)
+    pt: PTConfig = field(default_factory=PTConfig)
+    eda: EDAEnvironment = field(default_factory=EDAEnvironment)
     target_utilization: float = 0.7
 
     def __post_init__(self):
@@ -396,6 +594,18 @@ class DesignState:
             else:
                 synthesis = syn_data
 
+            pt_data = cfg_data.get("pt", {})
+            if isinstance(pt_data, dict):
+                pt = PTConfig(**{k: v for k, v in pt_data.items() if k in PTConfig.__dataclass_fields__})
+            else:
+                pt = pt_data
+
+            eda_data = cfg_data.get("eda", {})
+            if isinstance(eda_data, dict):
+                eda = EDAEnvironment(**{k: v for k, v in eda_data.items() if k in EDAEnvironment.__dataclass_fields__})
+            else:
+                eda = eda_data
+
             state.config = DesignConfig(
                 design_name=cfg_data.get("design_name", "top"),
                 top_module=cfg_data.get("top_module", "top"),
@@ -408,6 +618,8 @@ class DesignState:
                 pdk=pdk,
                 libraries=libraries,
                 rtl_files=cfg_data.get("rtl_files", []),
+                rtl_dir=cfg_data.get("rtl_dir", ""),
+                rtl_filelist=cfg_data.get("rtl_filelist", ""),
                 sdc_file=cfg_data.get("sdc_file", ""),
                 clocks=clocks,
                 timing_derate=timing_derate,
@@ -415,6 +627,8 @@ class DesignState:
                 placement=placement,
                 routing=routing,
                 synthesis=synthesis,
+                pt=pt,
+                eda=eda,
                 target_utilization=float(cfg_data.get("target_utilization", 0.7)),
             )
 

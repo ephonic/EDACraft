@@ -1,0 +1,49 @@
+# =============================================================================
+# ICC2 Physical Implementation Configuration
+# =============================================================================
+# Synopsys ICC2 place and route options.
+# =============================================================================
+
+icc2:
+  num_cores: 8
+
+  # ---- Floorplan ----
+  floorplan:
+    utilization: 0.7
+    aspect_ratio: 1.0
+    core_offset: [10, 10, 10, 10]       # Left, bottom, right, top
+    # macro_placement_file: ""
+    # pin_assignment_file: ""
+
+  # ---- Placement ----
+  placement:
+    timing_driven: true
+    congestion_driven: true
+    power_driven: false
+    effort: "high"                       # low, medium, high
+    # placement_constraints_file: ""
+
+  # ---- CTS ----
+  cts:
+    target_skew: 0.1
+    insertion_delay: 0.0
+    balance_between_clocks: true
+    useful_skew: false
+    # clock_tree_exceptions_file: ""
+
+  # ---- Routing ----
+  routing:
+    timing_driven: true
+    si_driven: true
+    antenna_fixing: true
+    redundant_via: true
+    effort: "high"                       # low, medium, high
+    # ndr_file: ""                       # Non-default rules
+
+  # ---- Optimization ----
+  optimization:
+    setup_fixing: true
+    hold_fixing: true
+    power_optimization: false
+    incremental: true
+    # eco_constraints_file: ""

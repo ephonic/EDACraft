@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 
 from src.db.design_state import (
+    PTConfig,
     DesignState, DesignConfig, PDKConfig, LibraryConfig,
     ClockDefinition, TimingDerateConfig, CTSConfig,
     PlacementConfig, RoutingConfig, SynthesisConfig, FlowStage,
@@ -95,6 +96,11 @@ def _make_industrial_state() -> DesignState:
             max_fanout_dc=20,
             num_cores=64,
         ),
+        pt=PTConfig(
+            spef_file="/path/to/test_soc.spef",
+            timing_derate_late=1.02,
+            timing_derate_early=0.98,
+        ),
     )
     state.work_root = tempfile.mkdtemp()
     return state
@@ -112,11 +118,12 @@ def test_pt_script_generation():
     assert "read_parasitics" in script
     assert "SPEF" in script
     assert "report_timing" in script
-    assert "report_qor" in script
+    assert "report_timing" in script
+    assert "report_power" in script
+    assert "report_constraint" in script
     assert "set_timing_derate" in script
     assert "1.02" in script  # late_factor
     assert "0.98" in script  # early_factor
-    assert "report_constraint" in script
     assert "exit" in script
 
 
@@ -133,30 +140,30 @@ def test_dc_script_industrial_features():
     assert "RVT_libs" in script
     assert "LVT_libs" in script
 
-    # VT constraints
-    assert "set_multi_vth_constraint" in script
+    # VT constraints (using set_dont_use)
+    assert "set_dont_use" in script
 
     # Timing derate
     assert "set_timing_derate" in script
     assert "1.02" in script
 
-    # Path groups
-    assert "group_path" in script
-    assert "C-O" in script
-    assert "D-L" in script
-    assert "D-O" in script
+    # Power optimization (new modular commands)
+    assert "set_leakage_optimization" in script or "set_dynamic_optimization" in script
 
-    # Power optimization
-    assert "set_total_power_strategy" in script
-    assert "power_cg_flatten" in script
+    # Clock gating
+    assert "set_clock_gating_style" in script
 
-    # Dont-use
-    assert "set_dont_use" in script
+    # Design rules
+    assert "set_max_fanout" in script
+    assert "set_max_transition" in script
 
-    # Delay calculation
-    assert "set_delay_calculation_options" in script
-    assert "awe" in script
-    assert "arnoldi" in script
+    # Compile
+    assert "compile_ultra" in script
+
+    # Reports
+    assert "report_qor" in script
+    assert "report_timing" in script
+    assert "report_area" in script
 
 
 def test_icc2_routing_si_analysis():

@@ -13,7 +13,6 @@ dist/
 .env
 *.swp
 *.swo
-backend/
 work/
 syn/libs/
 *.db
@@ -29,3 +28,4 @@ __pycache__/
 *.tcl_1.2
 clog*
 syn/
+!web/backend/

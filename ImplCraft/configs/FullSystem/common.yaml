@@ -1,0 +1,72 @@
+# =============================================================================
+# Common Design Configuration
+# =============================================================================
+# Shared settings used by all tools in the flow.
+# =============================================================================
+
+design_name: "FullSystem"
+top_module: "FullSystem_wrapper"
+scenario: "func.tt0p9v.wc.cmax_25c.setup"
+
+# ---- Die size ----
+die:
+  width_um: 2900.0
+  height_um: 1900.0
+  core_offset_um: [180, 180, 180, 180]
+  target_utilization: 0.7
+
+# ---- RTL sources ----
+# Priority: filelist > dir > files
+rtl:
+  dir: "syn/rtl"                    # RTL directory
+  # filelist: "syn/rtl/filelist.f"  # Alternative: use filelist.f
+  # files:                          # Alternative: explicit file list
+  #   - "syn/rtl/top.v"
+  #   - "syn/rtl/sub.v"
+
+# ---- SDC constraints ----
+sdc_file: "syn/CMD/FullSystem.sdc"
+
+# ---- Libraries ----
+libraries:
+  std_cell:
+    - "tcbn28hpcplusbwp30p140tt0p9v25c.db"
+  io:
+    - "tphn28hpcpgv18tt0p9v1p8v25c.db"
+  macro:
+    - "ts1n28hpcphvtb128x96m4swbaso_180a_tt0p9v25c.db"
+    - "ts1n28hpcphvtb128x32m4swbaso_180a_tt0p9v25c.db"
+  main_lib_name: "tcbn28hpcplusbwp30p140"
+  driver_cell: "BUFFX4"
+  # dont_use_cells: []
+  # vt_libs:
+  #   HVT: ["lib_hvt.db"]
+  #   LVT: ["lib_lvt.db"]
+
+# ---- PDK ----
+pdk:
+  name: "tsmc28hpcp"
+  metal_stack: ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "AP"]
+  min_routing_layer: "M2"
+  max_routing_layer: "M9"
+
+# ---- EDA tool environment paths ----
+eda:
+  synopsys: "/share/apps/EDAs/syn22.bash"
+  primetime: "/share/apps/EDAs/syn22.bash"
+  mentor: "/share/apps/EDAs/mg.bash"
+
+# ---- Clocks ----
+clocks:
+  - name: "sys_clk"
+    period_ns: 10.0
+    pin_or_port: "sys_clk"
+    setup_uncertainty_ns: 0.5
+    hold_uncertainty_ns: 0.3
+    transition_ns: 0.15
+    clock_type: "CTS"
+
+# ---- Timing derate (OCV) ----
+timing_derate:
+  late: 1.05
+  early: 0.95

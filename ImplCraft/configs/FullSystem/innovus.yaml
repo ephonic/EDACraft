@@ -1,0 +1,161 @@
+# =============================================================================
+# Cadence Innovus Physical Implementation Configuration
+# =============================================================================
+# Industrial-grade place and route options for signoff-quality results.
+# =============================================================================
+
+innovus:
+  num_cores: 8
+  license_timeout: 300
+
+  # ---- Design Import ----
+  import:
+    # netlist_file: ""                   # Auto-detected from DC output
+    # lef_files: []                      # From common libraries
+    # def_file: ""                       # Optional initial DEF
+    # floorplan_file: ""                 # Optional .fp file
+
+  # ---- Floorplan ----
+  floorplan:
+    utilization: 0.70
+    aspect_ratio: 1.0
+    core_to_io: [10, 10, 10, 10]        # Left, bottom, right, top (um)
+    # die_area: [0, 0, 2900, 1900]      # Explicit die area (um)
+    # core_area: [180, 180, 2720, 1720]  # Explicit core area (um)
+    row_core_ratio: 1.0
+    dual_row: true                       # Dual-row placement
+    # macro_placement:
+    #   method: "timing_driven"          # timing_driven, min_cut, manual
+    #   snap_to_grid: true
+    #   halo: [5, 5, 5, 5]              # Macro halo (um)
+    #   channel: [10, 10]                # Macro channel spacing (um)
+    # pin_assignment:
+    #   method: "timing_driven"          # timing_driven, manual
+    #   min_spacing: 2.0                 # Minimum pin spacing (um)
+
+  # ---- Power Plan ----
+  power_plan:
+    enabled: true
+    create_rings: true
+    ring_width: 4.0                      # Power ring width (um)
+    ring_spacing: 2.0                    # Power ring spacing (um)
+    ring_offset: 3.0                     # Power ring offset from core (um)
+    create_stripes: true
+    stripe_width: 2.0                    # Power stripe width (um)
+    stripe_spacing: 20.0                 # Power stripe spacing (um)
+    stripe_layers: ["M7", "M8"]          # Stripe metal layers
+    connect_pads: true
+    # add_followpins: true               # Standard cell power rails
+
+  # ---- Placement ----
+  placement:
+    effort: "high"                       # low, medium, high
+    timing_driven: true
+    congestion_driven: true
+    power_driven: false
+    # pre_place_opt:                     # Pre-placement optimization
+    #   effort: "high"
+    #   timing_driven: true
+    # in_place_opt:                      # In-placement optimization
+    #   effort: "high"
+    #   timing_driven: true
+    #   congestion_driven: true
+    # post_place_opt:                    # Post-placement optimization
+    #   effort: "high"
+    #   incremental: true
+    # placement_constraints:
+    #   - type: "region"
+    #     name: "cpu_region"
+    #     instances: ["u_cpu/*"]
+    #     box: [100, 100, 500, 500]
+    #   - type: "fence"
+    #     name: "mem_fence"
+    #     instances: ["u_mem/*"]
+    #     box: [600, 100, 1200, 800]
+
+  # ---- CTS (Clock Tree Synthesis) ----
+  cts:
+    target_skew: 0.1                     # Target skew (ns)
+    insertion_delay: 0.0                 # Target insertion delay (ns)
+    useful_skew: false                   # Enable useful skew
+    balance_between_clocks: true
+    opt_clock_tree: true                 # Post-CTS optimization
+    # clock_tree_exceptions:
+    #   - type: "stop_pin"
+    #     pins: ["u_pll/clk_out"]
+    #   - type: "float_pin"
+    #     pins: ["u_osc/clk"]
+    #   - type: "sync_pin"
+    #     pins: ["u_adc/clk"]
+    #     ref_clock: "sys_clk"
+    # ccopt:                             # Clock Concurrent Optimization
+    #   enabled: true
+    #   effort: "high"
+    #   route_clocks: true
+
+  # ---- Routing ----
+  routing:
+    effort: "high"                       # low, medium, high
+    timing_driven: true
+    si_driven: true                      # Signal integrity driven
+    antenna_fixing: true
+    redundant_via: true                  # Redundant via insertion
+    # global_routing:
+    #   timing_driven: true
+    #   congestion_map: true
+    # track_routing:
+    #   timing_driven: true
+    # detail_routing:
+    #   timing_driven: true
+    #   si_driven: true
+    #   antenna_fixing: true
+    # search_and_repair:
+    #   iterations: 20
+    #   drc_fixing: true
+
+  # ---- Post-Route Optimization ----
+  post_route_opt:
+    enabled: true
+    effort: "high"
+    timing_driven: true
+    si_driven: true
+    hold_fixing: true
+    setup_fixing: true
+    # eco_opt:
+    #   enabled: true
+    #   setup_margin: 0.05
+    #   hold_margin: 0.02
+    #   max_buffer_insertion: 100
+
+  # ---- Metal Fill ----
+  metal_fill:
+    enabled: false
+    # rule_file: ""
+    # density_target: 0.7
+
+  # ---- Signoff Extraction ----
+  signoff_extraction:
+    enabled: false
+    # tool: "qrc"                        # Quantus QRC extraction
+    # effort: "high"
+    # rc_corner: "typical"
+
+  # ---- Analysis Settings ----
+  analysis:
+    timing:
+      enabled: true
+      corners: ["ss", "tt", "ff"]
+      # sdc_files:
+      #   ss: "constraints/func_ss.sdc"
+      #   tt: "constraints/func_tt.sdc"
+      #   ff: "constraints/func_ff.sdc"
+    power:
+      enabled: false
+      # vcd_file: ""
+      # saif_file: ""
+    ir_drop:
+      enabled: false
+      # analysis_type: "static"          # static, dynamic
+    em:
+      enabled: false
+      # analysis_type: "signal"          # signal, power

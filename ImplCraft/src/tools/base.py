@@ -26,11 +26,23 @@ class ToolAdapter(ABC):
 
     tool_name: str = "unknown"
     stage: FlowStage = FlowStage.INIT
-    env_script: str = ""  # bash script to source for tool environment
+    env_script: str = ""
+    tool_family: str = ""  # bash script to source for tool environment
 
     def __init__(self, state: DesignState):
         self.state = state
         self.work_dir: Path | None = None
+
+    @property
+    def resolved_env_script(self) -> str:
+        """Resolve environment script from config, fallback to class default."""
+        if self.state and self.state.config:
+            eda = getattr(self.state.config, "eda", None)
+            if eda and self.tool_family:
+                script = eda.get_script(self.tool_family)
+                if script:
+                    return script
+        return self.env_script
 
     @abstractmethod
     def generate_script(self) -> str:
@@ -68,8 +80,9 @@ class ToolAdapter(ABC):
         assert self.work_dir is not None
         log_path = self.work_dir / "log" / log_file
 
-        full_cmd = f"source {self.env_script} 2>/dev/null; {shell_cmd} -f {tcl_file}"
-        if not self.env_script:
+        env = self.resolved_env_script
+        full_cmd = f"source {env} 2>/dev/null; {shell_cmd} -f {tcl_file}"
+        if not env:
             full_cmd = f"{shell_cmd} -f {tcl_file}"
 
         logger.info(f"[{self.tool_name}] Running: {full_cmd}")

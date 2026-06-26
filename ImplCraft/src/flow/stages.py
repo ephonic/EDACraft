@@ -18,7 +18,8 @@ class FlowStageDefinition:
     flow_stage: FlowStage
     dependencies: list[str] = field(default_factory=list)
     sub_stage: str | None = None
-    env_script: str | None = None
+    tool_family: str = ""      # Maps to EDAEnvironment.get_script()
+    env_script: str | None = None  # Fallback if EDAEnvironment not configured
 
 
 # Default flow: DC → ICC2 (6 stages) → PT → Calibre (DRC/LVS)
@@ -29,7 +30,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         tool="DesignCompiler",
         flow_stage=FlowStage.SYNTHESIS,
         dependencies=[],
-        env_script="/share/apps/EDAs/syn22.bash",
+        tool_family="dc",
     ),
     FlowStageDefinition(
         name="create_lib",
@@ -38,7 +39,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         flow_stage=FlowStage.INIT,
         dependencies=["synthesis"],
         sub_stage="create_lib",
-        env_script="/share/apps/EDAs/syn22.bash",
+        tool_family="icc2",
     ),
     FlowStageDefinition(
         name="floorplan",
@@ -47,7 +48,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         flow_stage=FlowStage.FLOORPLAN,
         dependencies=["create_lib"],
         sub_stage="floorplan",
-        env_script="/share/apps/EDAs/syn22.bash",
+        tool_family="icc2",
     ),
     FlowStageDefinition(
         name="placement",
@@ -56,7 +57,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         flow_stage=FlowStage.PLACEMENT,
         dependencies=["floorplan"],
         sub_stage="placement",
-        env_script="/share/apps/EDAs/syn22.bash",
+        tool_family="icc2",
     ),
     FlowStageDefinition(
         name="cts",
@@ -65,7 +66,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         flow_stage=FlowStage.CTS,
         dependencies=["placement"],
         sub_stage="cts",
-        env_script="/share/apps/EDAs/syn22.bash",
+        tool_family="icc2",
     ),
     FlowStageDefinition(
         name="routing",
@@ -74,7 +75,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         flow_stage=FlowStage.ROUTING,
         dependencies=["cts"],
         sub_stage="routing",
-        env_script="/share/apps/EDAs/syn22.bash",
+        tool_family="icc2",
     ),
     FlowStageDefinition(
         name="route_opt",
@@ -83,7 +84,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         flow_stage=FlowStage.ROUTE_OPT,
         dependencies=["routing"],
         sub_stage="route_opt",
-        env_script="/share/apps/EDAs/syn22.bash",
+        tool_family="icc2",
     ),
     FlowStageDefinition(
         name="primetime",
@@ -91,7 +92,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         tool="PrimeTime",
         flow_stage=FlowStage.STA_SIGNOFF,
         dependencies=["route_opt"],
-        env_script="/share/apps/EDAs/pt.bash",
+        tool_family="pt",
     ),
     FlowStageDefinition(
         name="drc",
@@ -100,7 +101,7 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         flow_stage=FlowStage.PV_DRC,
         dependencies=["route_opt"],
         sub_stage="drc",
-        env_script="/share/apps/EDAs/mg.bash",
+        tool_family="calibre",
     ),
     FlowStageDefinition(
         name="lvs",
@@ -109,6 +110,6 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         flow_stage=FlowStage.PV_LVS,
         dependencies=["route_opt"],
         sub_stage="lvs",
-        env_script="/share/apps/EDAs/mg.bash",
+        tool_family="calibre",
     ),
 ]
