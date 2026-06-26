@@ -1762,6 +1762,18 @@ class Reg(Signal):
     pass
 
 
+def _clone_signal_shape(sig: Signal, new_name: str, *, cls=None):
+    """Clone a signal declaration while preserving semantic metadata."""
+    signal_cls = cls or sig.__class__
+    return signal_cls(
+        sig.width,
+        new_name,
+        signed=getattr(sig, "signed", False),
+        init_value=getattr(sig, "init_value", None),
+        enum_type=getattr(sig, "enum_type", None),
+        struct_type=getattr(sig, "struct_type", None),
+    )
+
 
 class Vector:
     """一维信号向量，用于减少重复声明。"""
@@ -2300,12 +2312,26 @@ class Module(IREntity, metaclass=ModuleMeta):
         for _, _, _, _, body in self._seq_blocks:
             all_stmts.extend(body)
 
+        def _is_local_sig(sig):
+            # A signal that is explicitly registered in this module's own
+            # signal tables (input/output/wire/reg) is owned by this module,
+            # even if submodule port binding temporarily changed its parent.
+            name = getattr(sig, "name", None)
+            if name is None:
+                return False
+            return (
+                name in self._inputs
+                or name in self._outputs
+                or name in self._wires
+                or name in self._regs
+            )
+
         for stmt in all_stmts:
             if not isinstance(stmt, Assign):
                 continue
 
             target_sig = _extract_target_sig(stmt)
-            if target_sig is not None and target_sig._parent_module is not None and target_sig._parent_module is not self:
+            if target_sig is not None and target_sig._parent_module is not None and target_sig._parent_module is not self and not _is_local_sig(target_sig):
                 if not isinstance(target_sig, Input):
                     owner = _owner_name(target_sig._parent_module)
                     violations.append(
@@ -2316,7 +2342,7 @@ class Module(IREntity, metaclass=ModuleMeta):
             refs = _find_refs(stmt.value)
             for ref in refs:
                 sig = ref.signal
-                if sig._parent_module is not None and sig._parent_module is not self:
+                if sig._parent_module is not None and sig._parent_module is not self and not _is_local_sig(sig):
                     owner = _owner_name(sig._parent_module)
                     if not isinstance(sig, (Input, Output)):
                         violations.append(
@@ -2493,6 +2519,34 @@ class Module(IREntity, metaclass=ModuleMeta):
         # ================================================================
         if _rule_on("width_truncation"):
             self._lint_width_truncation(violations)
+
+        # ================================================================
+        # Rule: signed_shift — 有符号移位意图不清晰
+        # ================================================================
+        if _rule_on("signed_shift"):
+            self._lint_signed_shift(violations)
+
+        # ================================================================
+        # Rule: signed_multiply — 有符号/无符号乘法混用
+        # ================================================================
+        if _rule_on("signed_multiply"):
+            self._lint_signed_mix(
+                violations,
+                ops={"*"},
+                rule_tag="SignedMultiply",
+                guidance="Use .as_sint() or .as_uint() on both multiplicands to clarify multiply intent.",
+            )
+
+        # ================================================================
+        # Rule: signed_compare — 有符号/无符号比较混用
+        # ================================================================
+        if _rule_on("signed_compare"):
+            self._lint_signed_mix(
+                violations,
+                ops={"<", "<=", ">", ">=", "==", "!="},
+                rule_tag="SignedCompare",
+                guidance="Use .as_sint() or .as_uint() on both sides before comparing to make the comparison intent explicit.",
+            )
 
         # ================================================================
         # Rule: signed_mix — 有符号与无符号信号混合运算
@@ -2847,33 +2901,217 @@ class Module(IREntity, metaclass=ModuleMeta):
             for stmt in body:
                 _scan_stmt(stmt)
 
-    def _lint_signed_mix(self, violations: List[str]):
+    def _expr_text(self, expr: Expr) -> str:
+        if isinstance(expr, Signal):
+            return expr.name or "<anonymous>"
+        if isinstance(expr, Ref):
+            return expr.signal.name or "<anonymous>"
+        if isinstance(expr, Slice):
+            return f"{self._expr_text(expr.operand)}[{expr.hi}:{expr.lo}]"
+        if isinstance(expr, BitSelect):
+            return f"{self._expr_text(expr.operand)}[{self._expr_text(expr.index)}]"
+        if isinstance(expr, PartSelect):
+            return f"{self._expr_text(expr.operand)}[{self._expr_text(expr.offset)} +: {expr.width}]"
+        if isinstance(expr, Const):
+            return f"{expr.width}'d{expr.value}"
+        if isinstance(expr, UnaryOp):
+            if expr.op in {"$signed", "$unsigned"}:
+                return f"{expr.op}({self._expr_text(expr.operand)})"
+            return f"{expr.op}{self._expr_text(expr.operand)}"
+        if isinstance(expr, BinOp):
+            return f"({self._expr_text(expr.lhs)} {expr.op} {self._expr_text(expr.rhs)})"
+        if isinstance(expr, Mux):
+            return (
+                f"Mux({self._expr_text(expr.cond)}, "
+                f"{self._expr_text(expr.true_expr)}, {self._expr_text(expr.false_expr)})"
+            )
+        if isinstance(expr, Concat):
+            return "{" + ", ".join(self._expr_text(op) for op in expr.operands) + "}"
+        return type(expr).__name__
+
+    def _signed_expr_info(self, expr: Expr) -> Optional[tuple[bool, bool, str]]:
+        """Return (is_signed, is_explicit_cast, display_text) when inferable."""
+        if isinstance(expr, Signal):
+            ref_expr = getattr(expr, "_expr", None)
+            if isinstance(ref_expr, Ref) and getattr(ref_expr, "signal", None) is expr:
+                return bool(getattr(expr, "signed", False)), False, expr.name or "<anonymous>"
+            if ref_expr is not None:
+                return self._signed_expr_info(ref_expr)
+            return bool(getattr(expr, "signed", False)), False, expr.name or "<anonymous>"
+        if isinstance(expr, Ref):
+            sig = expr.signal
+            return bool(getattr(sig, "signed", False)), False, sig.name or "<anonymous>"
+        if isinstance(expr, UnaryOp):
+            operand_text = self._expr_text(expr.operand)
+            if expr.op == "$signed":
+                return True, True, operand_text
+            if expr.op == "$unsigned":
+                return False, True, operand_text
+            return self._signed_expr_info(expr.operand)
+        # Plain slices/part-selects/bit-selects are treated as unsigned unless
+        # they are explicitly wrapped by $signed(...).
+        if isinstance(expr, (Slice, PartSelect, BitSelect)):
+            return False, False, self._expr_text(expr)
+        return None
+
+    def _lint_signed_shift(self, violations: List[str]):
+        """检查右移运算的 signed intent 是否足够清晰。"""
+
+        seen: Set[tuple[str, str, str, str]] = set()
+
+        def record(kind: str, target_name: str, expr: BinOp, message: str) -> None:
+            key = (kind, target_name, expr.op, self._expr_text(expr.lhs))
+            if key in seen:
+                return
+            seen.add(key)
+            violations.append(message)
+
+        def scan_expr(expr: Expr, target_name: str) -> None:
+            if isinstance(expr, BinOp):
+                lhs_info = self._signed_expr_info(expr.lhs)
+                if expr.op == ">>" and lhs_info is not None and lhs_info[0]:
+                    record(
+                        "signed_right_shift",
+                        target_name,
+                        expr,
+                        f"[SignedShift] Signed expression '{lhs_info[2]}' uses '>>' in assignment to "
+                        f"'{target_name}'. Prefer SRA(...), '>>>', or .as_uint() >> to make the "
+                        f"shift intent explicit across simulation and emitted RTL.",
+                    )
+                if expr.op == ">>>" and lhs_info is not None and not lhs_info[0]:
+                    record(
+                        "unsigned_arith_shift",
+                        target_name,
+                        expr,
+                        f"[SignedShift] Unsigned expression '{lhs_info[2]}' uses '>>>'. "
+                        f"If arithmetic shift is intended, cast with .as_sint() or use SRA(...).",
+                    )
+                scan_expr(expr.lhs, target_name)
+                scan_expr(expr.rhs, target_name)
+                return
+            if isinstance(expr, UnaryOp):
+                scan_expr(expr.operand, target_name)
+                return
+            if isinstance(expr, Mux):
+                scan_expr(expr.cond, target_name)
+                scan_expr(expr.true_expr, target_name)
+                scan_expr(expr.false_expr, target_name)
+                return
+            if isinstance(expr, Concat):
+                for operand in expr.operands:
+                    scan_expr(operand, target_name)
+                return
+            if isinstance(expr, Slice):
+                scan_expr(expr.operand, target_name)
+                return
+            if isinstance(expr, PartSelect):
+                scan_expr(expr.operand, target_name)
+                scan_expr(expr.offset, target_name)
+                return
+            if isinstance(expr, BitSelect):
+                scan_expr(expr.operand, target_name)
+                scan_expr(expr.index, target_name)
+
+        def scan_stmt(stmt):
+            if isinstance(stmt, Assign):
+                target_name = ""
+                if isinstance(stmt.target, Signal):
+                    target_name = stmt.target.name
+                elif isinstance(stmt.target, Ref):
+                    target_name = stmt.target.signal.name
+                scan_expr(stmt.value, target_name)
+            elif isinstance(stmt, IfNode):
+                scan_expr(stmt.cond, "<condition>")
+                for s in stmt.then_body:
+                    scan_stmt(s)
+                for cond, body in stmt.elif_bodies:
+                    scan_expr(cond, "<condition>")
+                    for s in body:
+                        scan_stmt(s)
+                for s in stmt.else_body:
+                    scan_stmt(s)
+            elif isinstance(stmt, SwitchNode):
+                scan_expr(stmt.expr, "<switch>")
+                for _, body in stmt.cases:
+                    for s in body:
+                        scan_stmt(s)
+                for s in stmt.default_body:
+                    scan_stmt(s)
+
+        for body in self._comb_blocks:
+            for stmt in body:
+                scan_stmt(stmt)
+        for _, _, _, _, body in self._seq_blocks:
+            for stmt in body:
+                scan_stmt(stmt)
+
+    def _lint_signed_mix(
+        self,
+        violations: List[str],
+        *,
+        ops: Optional[Set[str]] = None,
+        rule_tag: str = "SignedMix",
+        guidance: str = "Use .as_sint() or .as_uint() to clarify intent on both sides.",
+    ):
         """检查有符号信号与无符号信号直接混合运算（未显式 cast）。"""
-        def _check_mixed(lhs: Expr, rhs: Expr, sig_name: str):
-            l_sig = None
-            r_sig = None
-            if isinstance(lhs, Ref):
-                l_sig = lhs.signal
-            elif isinstance(lhs, Signal):
-                l_sig = lhs
-            if isinstance(rhs, Ref):
-                r_sig = rhs.signal
-            elif isinstance(rhs, Signal):
-                r_sig = rhs
-            if l_sig is not None and r_sig is not None and getattr(l_sig, "signed", False) != getattr(r_sig, "signed", False):
-                violations.append(
-                    f"[SignedMix] Signed signal '{l_sig.name}' and unsigned signal '{r_sig.name}' "
-                    f"used in the same expression assigned to '{sig_name}'. "
-                    f"Use .as_sint() or .as_uint() to clarify intent."
-                )
+        seen: Set[tuple[str, str, str, str]] = set()
+        risky_ops = ops or {
+            "+", "-", "*", "/", "%", "<<", ">>", ">>>", "<", "<=", ">", ">=", "==", "!=",
+        }
+
+        def _check_mixed(lhs: Expr, rhs: Expr, op: str, sig_name: str):
+            lhs_info = self._signed_expr_info(lhs)
+            rhs_info = self._signed_expr_info(rhs)
+            if lhs_info is None or rhs_info is None:
+                return
+            if lhs_info[0] == rhs_info[0]:
+                return
+            key = (sig_name, op, lhs_info[2], rhs_info[2])
+            if key in seen:
+                return
+            seen.add(key)
+            signed_desc, unsigned_desc = (
+                (lhs_info[2], rhs_info[2]) if lhs_info[0] else (rhs_info[2], lhs_info[2])
+            )
+            violations.append(
+                f"[{rule_tag}] Signed expression '{signed_desc}' and unsigned expression "
+                f"'{unsigned_desc}' are mixed with '{op}' in assignment to '{sig_name}'. "
+                f"{guidance}"
+            )
 
         def _scan_stmt(stmt):
             if isinstance(stmt, Assign):
                 target_name = ""
                 if isinstance(stmt.target, Signal):
                     target_name = stmt.target.name
-                if isinstance(stmt.value, BinOp):
-                    _check_mixed(stmt.value.lhs, stmt.value.rhs, target_name)
+                elif isinstance(stmt.target, Ref):
+                    target_name = stmt.target.signal.name
+
+                def scan_expr(expr: Expr):
+                    if isinstance(expr, BinOp):
+                        if expr.op in risky_ops:
+                            _check_mixed(expr.lhs, expr.rhs, expr.op, target_name)
+                        scan_expr(expr.lhs)
+                        scan_expr(expr.rhs)
+                    elif isinstance(expr, UnaryOp):
+                        scan_expr(expr.operand)
+                    elif isinstance(expr, Mux):
+                        scan_expr(expr.cond)
+                        scan_expr(expr.true_expr)
+                        scan_expr(expr.false_expr)
+                    elif isinstance(expr, Concat):
+                        for op in expr.operands:
+                            scan_expr(op)
+                    elif isinstance(expr, Slice):
+                        scan_expr(expr.operand)
+                    elif isinstance(expr, PartSelect):
+                        scan_expr(expr.operand)
+                        scan_expr(expr.offset)
+                    elif isinstance(expr, BitSelect):
+                        scan_expr(expr.operand)
+                        scan_expr(expr.index)
+
+                scan_expr(stmt.value)
             elif isinstance(stmt, IfNode):
                 for s in stmt.then_body:
                     _scan_stmt(s)
@@ -3802,14 +4040,17 @@ class ModelRegistry:
 class BlackBoxModule(Module):
     """黑盒子模块：声明端口但不定义内部逻辑。
 
-    用于尚未实现的子模块，生成 Verilog 时为实例化语句。
-    仿真时输出 0，不报错。
+    用于尚未实现的子模块，或由外部 Verilog/SystemVerilog 提供实现的 leaf module。
+    生成 Verilog 时默认为实例化语句；若 ``external_verilog=True``，则 ``emit_design(...)``
+    不会再为该模块生成空壳声明，要求调用方自行提供对应外部源文件。
 
     示例:
         bb = BlackBoxModule(
             name='future_block',
             inputs=[('din', 8)],
             outputs=[('dout', 8)],
+            parameters=[('WIDTH', 8)],
+            external_verilog=True,
         )
     """
 
@@ -3818,8 +4059,23 @@ class BlackBoxModule(Module):
         name: str,
         inputs: List[tuple],       # [(port_name, width), ...]
         outputs: List[tuple],      # [(port_name, width), ...]
+        parameters: Optional[List[tuple]] = None,  # [(param_name, default_value), ...]
+        *,
+        verilog_module_name: Optional[str] = None,
+        external_verilog: bool = False,
+        verilog_sources: Optional[List[str]] = None,
+        include_dirs: Optional[List[str]] = None,
+        defines: Optional[Dict[str, Optional[str]]] = None,
+        param_bindings: Optional[Dict[str, Any]] = None,
     ):
-        super().__init__(name)
+        super().__init__(name, param_bindings=param_bindings)
+        self._external_verilog = bool(external_verilog)
+        self._verilog_module_name = verilog_module_name or name
+        self._verilog_sources = tuple(verilog_sources or ())
+        self._verilog_include_dirs = tuple(include_dirs or ())
+        self._verilog_defines = dict(defines or {})
+        for pname, pdefault in parameters or []:
+            self.add_param(pname, pdefault)
         for pname, pw in inputs:
             setattr(self, pname, Input(pw, pname))
             self._inputs[pname] = getattr(self, pname)
@@ -3829,6 +4085,36 @@ class BlackBoxModule(Module):
 
     def __repr__(self):
         return f"BlackBoxModule({self.name})"
+
+
+def collect_external_verilog_artifacts(module: Module) -> Dict[str, Tuple[Any, ...] | Dict[str, Optional[str]]]:
+    """Collect external Verilog packaging metadata from one module hierarchy."""
+
+    seen: Set[int] = set()
+    sources: List[str] = []
+    include_dirs: List[str] = []
+    defines: Dict[str, Optional[str]] = {}
+
+    def visit(mod: Module) -> None:
+        if id(mod) in seen:
+            return
+        seen.add(id(mod))
+        if getattr(mod, "_external_verilog", False):
+            sources.extend(str(path) for path in getattr(mod, "_verilog_sources", ()))
+            include_dirs.extend(str(path) for path in getattr(mod, "_verilog_include_dirs", ()))
+            defines.update(getattr(mod, "_verilog_defines", {}))
+        for _, sub in getattr(mod, "_submodules", ()):
+            visit(sub)
+        for stmt in getattr(mod, "_top_level", ()):
+            if isinstance(stmt, SubmoduleInst):
+                visit(stmt.module)
+
+    visit(module)
+    return {
+        "sources": tuple(dict.fromkeys(sources)),
+        "include_dirs": tuple(dict.fromkeys(include_dirs)),
+        "defines": dict(defines),
+    }
 
 
 # ---------------------------------------------------------------------
@@ -4797,28 +5083,28 @@ def flatten_module(module: "Module") -> "Module":
 
         for name, sig in sub_copy._inputs.items():
             new_name = f"{prefix}{name}"
-            w = Wire(sig.width, new_name)
+            w = _clone_signal_shape(sig, new_name, cls=Wire)
             mapping[sig] = w
             flat._wires[new_name] = w
             object.__setattr__(flat, new_name, w)
 
         for name, sig in sub_copy._outputs.items():
             new_name = f"{prefix}{name}"
-            w = Wire(sig.width, new_name)
+            w = _clone_signal_shape(sig, new_name, cls=Wire)
             mapping[sig] = w
             flat._wires[new_name] = w
             object.__setattr__(flat, new_name, w)
 
         for name, sig in sub_copy._wires.items():
             new_name = f"{prefix}{name}"
-            w = Wire(sig.width, new_name)
+            w = _clone_signal_shape(sig, new_name, cls=Wire)
             mapping[sig] = w
             flat._wires[new_name] = w
             object.__setattr__(flat, new_name, w)
 
         for name, sig in sub_copy._regs.items():
             new_name = f"{prefix}{name}"
-            r = Reg(sig.width, new_name)
+            r = _clone_signal_shape(sig, new_name, cls=Reg)
             mapping[sig] = r
             flat._regs[new_name] = r
             object.__setattr__(flat, new_name, r)
@@ -4884,9 +5170,12 @@ def flatten_module(module: "Module") -> "Module":
             if port_sig is None:
                 port_sig = sub_copy._outputs.get(port_name)
             if port_sig is None:
-                port_sig = sub_copy._wires.get(port_name)
-            if port_sig is None:
-                continue
+                valid_ports = tuple(sub_copy._inputs.keys()) + tuple(sub_copy._outputs.keys())
+                valid_display = ", ".join(valid_ports) if valid_ports else "<no ports>"
+                raise ValueError(
+                    f"submodule instance '{stmt.name}' maps unknown port '{port_name}' on "
+                    f"module '{sub_copy.name}'. Valid ports: {valid_display}"
+                )
             new_sig = mapping[port_sig]
             if port_name in sub_copy._inputs:
                 top_stmts.append(Assign(new_sig, expr, blocking=True))

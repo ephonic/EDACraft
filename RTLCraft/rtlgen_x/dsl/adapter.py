@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set
@@ -19,14 +20,18 @@ from rtlgen_x.dsl.core import (
     IndexedAssign,
     MemRead,
     MemWrite,
+    Module,
     Mux,
     PartSelect,
     Ref,
     Signal,
     Slice,
+    SubmoduleInst,
     SwitchNode,
     UnaryOp,
+    Wire,
     WhenNode,
+    _clone_signal_shape,
     flatten_module,
 )
 
@@ -111,6 +116,8 @@ def validate_authoring_intent(module) -> None:
     """Reject DSL authoring patterns that violate the intended public contract."""
 
     violations = list(module.lint(rules=list(_AUTHORING_INTENT_RULES)))
+    violations.extend(_collect_untracked_authoring_object_violations(module))
+    violations.extend(_collect_invalid_submodule_port_binding_violations(module))
     if not violations:
         return
     details = "\n".join(f"- {item}" for item in violations)
@@ -119,6 +126,349 @@ def validate_authoring_intent(module) -> None:
         "These patterns are rejected at public lowering / emit boundaries:\n"
         f"{details}"
     )
+
+
+def _collect_untracked_authoring_object_violations(module) -> List[str]:
+    """Reject design-visible objects that were never registered on the module.
+
+    Common user mistake:
+
+    - `tmp = Wire(...)` instead of `self.tmp = Wire(...)`
+    - `rf = Array(...)` instead of `self.rf = Array(...)`
+    - `mem = Memory(...)` instead of `self.add_memory(...)` / `self.mem = Memory(...)`
+
+    These objects can appear in authored statements, but if they are not
+    attached to the module they should fail fast at public boundaries rather
+    than being silently repaired later.
+    """
+
+    if not hasattr(module, "_inputs"):
+        return []
+
+    violations: List[str] = []
+    seen: Set[tuple[str, str, str]] = set()
+
+    def record(kind: str, path: str, name: str, message: str) -> None:
+        key = (kind, path, name)
+        if key in seen:
+            return
+        seen.add(key)
+        violations.append(message)
+
+    def signal_display(signal: Signal) -> str:
+        return getattr(signal, "name", "") or "<anonymous>"
+
+    def module_path(parent_path: str, child_name: str) -> str:
+        return f"{parent_path}.{child_name}" if parent_path else child_name
+
+    def visit_module(mod, path: str, stack: Set[int]) -> None:
+        if id(mod) in stack:
+            return
+        stack = set(stack)
+        stack.add(id(mod))
+
+        known_signal_ids = {
+            id(sig)
+            for table in (mod._inputs, mod._outputs, mod._wires, mod._regs)
+            for sig in table.values()
+        }
+        known_memory_names = set(mod._memories.keys()) | {
+            mem.name for mem in mod._memories.values() if getattr(mem, "name", "")
+        }
+        known_array_names = set(mod._arrays.keys()) | {
+            arr.name for arr in mod._arrays.values() if getattr(arr, "name", "")
+        }
+
+        def is_base_declared_signal(sig: Signal) -> bool:
+            ref_expr = getattr(sig, "_expr", None)
+            return isinstance(ref_expr, Ref) and getattr(ref_expr, "signal", None) is sig
+
+        def maybe_flag_signal(sig: Signal) -> None:
+            if id(sig) in known_signal_ids:
+                return
+            if getattr(sig, "_parent_module", None) is not None:
+                return
+            if not is_base_declared_signal(sig):
+                return
+
+            name = signal_display(sig)
+            if name == "<anonymous>":
+                guidance = (
+                    "Give it a stable name and assign it to self.<name>, or use the "
+                    "module helper constructors so lowering and emitted RTL can track it."
+                )
+            else:
+                guidance = (
+                    f"Assign it to 'self.{name}' or create it via the module helper "
+                    "constructors so lowering and emitted RTL can track it."
+                )
+            record(
+                "signal",
+                path,
+                name,
+                f"[UntrackedSignal] {type(sig).__name__} '{name}' is used in module '{path}' "
+                f"but was never registered on self. {guidance}",
+            )
+
+        def maybe_flag_memory(mem_name: str) -> None:
+            if mem_name in known_memory_names:
+                return
+            display = mem_name or "<anonymous>"
+            if display == "<anonymous>":
+                guidance = "Register it on self or via self.add_memory(...)."
+            else:
+                guidance = (
+                    f"Assign it to 'self.{display}' or register it with self.add_memory(...)."
+                )
+            record(
+                "memory",
+                path,
+                display,
+                f"[UntrackedMemory] Memory '{display}' is used in module '{path}' but was never "
+                f"registered on self. {guidance}",
+            )
+
+        def maybe_flag_array(array_name: str) -> None:
+            if array_name in known_array_names:
+                return
+            display = array_name or "<anonymous>"
+            if display == "<anonymous>":
+                guidance = "Register it on self before using it in authored logic."
+            else:
+                guidance = f"Assign it to 'self.{display}' before using it in authored logic."
+            record(
+                "array",
+                path,
+                display,
+                f"[UntrackedArray] Array '{display}' is used in module '{path}' but was never "
+                f"registered on self. {guidance}",
+            )
+
+        def visit_expr(expr) -> None:
+            if expr is None or isinstance(expr, int):
+                return
+            if isinstance(expr, Signal):
+                maybe_flag_signal(expr)
+                ref_expr = getattr(expr, "_expr", None)
+                if ref_expr is not None and not (
+                    isinstance(ref_expr, Ref) and getattr(ref_expr, "signal", None) is expr
+                ):
+                    visit_expr(ref_expr)
+                return
+            if isinstance(expr, Ref):
+                maybe_flag_signal(expr.signal)
+                return
+            if isinstance(expr, BinOp):
+                visit_expr(expr.lhs)
+                visit_expr(expr.rhs)
+                return
+            if isinstance(expr, UnaryOp):
+                visit_expr(expr.operand)
+                return
+            if isinstance(expr, Slice):
+                visit_expr(expr.operand)
+                if not isinstance(expr.hi, int):
+                    visit_expr(expr.hi)
+                if not isinstance(expr.lo, int):
+                    visit_expr(expr.lo)
+                return
+            if isinstance(expr, PartSelect):
+                visit_expr(expr.operand)
+                visit_expr(expr.offset)
+                return
+            if isinstance(expr, BitSelect):
+                visit_expr(expr.operand)
+                visit_expr(expr.index)
+                return
+            if isinstance(expr, Concat):
+                for operand in expr.operands:
+                    visit_expr(operand)
+                return
+            if isinstance(expr, Mux):
+                visit_expr(expr.cond)
+                visit_expr(expr.true_expr)
+                visit_expr(expr.false_expr)
+                return
+            if isinstance(expr, MemRead):
+                maybe_flag_memory(expr.mem_name)
+                visit_expr(expr.addr)
+                return
+            if isinstance(expr, ArrayRead):
+                maybe_flag_array(expr.array_name)
+                visit_expr(expr.index)
+                return
+
+        explicit_children: List[tuple[str, object]] = []
+
+        def visit_stmt(stmt) -> None:
+            if isinstance(stmt, DslAssign):
+                visit_expr(stmt.target)
+                visit_expr(stmt.value)
+                return
+            if isinstance(stmt, IndexedAssign):
+                maybe_flag_signal(stmt.target_signal)
+                visit_expr(stmt.index)
+                visit_expr(stmt.value)
+                return
+            if isinstance(stmt, ArrayWrite):
+                maybe_flag_array(stmt.array_name)
+                visit_expr(stmt.index)
+                visit_expr(stmt.value)
+                return
+            if isinstance(stmt, MemWrite):
+                maybe_flag_memory(stmt.mem_name)
+                visit_expr(stmt.addr)
+                visit_expr(stmt.value)
+                if stmt.byte_enable is not None:
+                    visit_expr(stmt.byte_enable)
+                return
+            if isinstance(stmt, IfNode):
+                visit_expr(stmt.cond)
+                for body_stmt in stmt.then_body:
+                    visit_stmt(body_stmt)
+                for _, body in stmt.elif_bodies:
+                    for body_stmt in body:
+                        visit_stmt(body_stmt)
+                for body_stmt in stmt.else_body:
+                    visit_stmt(body_stmt)
+                return
+            if isinstance(stmt, SwitchNode):
+                visit_expr(stmt.expr)
+                for case_value, body in stmt.cases:
+                    visit_expr(case_value)
+                    for body_stmt in body:
+                        visit_stmt(body_stmt)
+                for body_stmt in stmt.default_body:
+                    visit_stmt(body_stmt)
+                return
+            if isinstance(stmt, WhenNode):
+                for cond, body in stmt.branches:
+                    if cond is not None:
+                        visit_expr(cond)
+                    for body_stmt in body:
+                        visit_stmt(body_stmt)
+                return
+            if stmt.__class__.__name__ == "SubmoduleInst":
+                explicit_children.append((stmt.name, stmt.module))
+                for expr in getattr(stmt, "port_map", {}).values():
+                    visit_expr(expr)
+                for param in getattr(stmt, "params", {}).values():
+                    if isinstance(param, (Signal, Expr)):
+                        visit_expr(param)
+
+        for stmt in mod._top_level:
+            visit_stmt(stmt)
+        for body in mod._comb_blocks:
+            for stmt in body:
+                visit_stmt(stmt)
+        for body in mod._latch_blocks:
+            for stmt in body:
+                visit_stmt(stmt)
+        for body in mod._init_blocks:
+            for stmt in body:
+                visit_stmt(stmt)
+        for _, _, _, _, body in mod._seq_blocks:
+            for stmt in body:
+                visit_stmt(stmt)
+
+        for child_name, child_module in mod._submodules:
+            visit_module(child_module, module_path(path, child_name), stack)
+        for child_name, child_module in explicit_children:
+            visit_module(child_module, module_path(path, child_name), stack)
+
+    visit_module(module, getattr(module, "name", module.__class__.__name__), set())
+    return violations
+
+
+def _collect_invalid_submodule_port_binding_violations(module) -> List[str]:
+    """Reject explicit submodule port_map keys that do not exist on the child.
+
+    Historically some downstream paths silently ignored unknown port names
+    during flattening, which made simple typos behave like missing wiring.
+    That is too error-prone for the public DSL contract, so we fail fast at
+    authoring boundaries instead.
+    """
+
+    if not hasattr(module, "_top_level"):
+        return []
+
+    violations: List[str] = []
+    seen: Set[tuple[str, str, str]] = set()
+
+    def module_path(parent_path: str, child_name: str) -> str:
+        return f"{parent_path}.{child_name}" if parent_path else child_name
+
+    def record(path: str, inst_name: str, port_name: str, module_name: str, valid_ports: Sequence[str]) -> None:
+        key = (path, inst_name, port_name)
+        if key in seen:
+            return
+        seen.add(key)
+        valid_display = ", ".join(valid_ports) if valid_ports else "<no ports>"
+        violations.append(
+            f"[UnknownSubmodulePort] Instance '{path}' maps unknown port '{port_name}' on "
+            f"submodule '{module_name}'. Valid ports: {valid_display}. "
+            "Fix the port_map key or rename the child port to match the authored connection."
+        )
+
+    def visit_module(mod, path: str, stack: Set[int]) -> None:
+        if id(mod) in stack:
+            return
+        stack = set(stack)
+        stack.add(id(mod))
+
+        explicit_children = []
+
+        def visit_stmt(stmt) -> None:
+            if stmt.__class__.__name__ == "SubmoduleInst":
+                explicit_children.append((stmt.name, stmt.module))
+                valid_ports = tuple(stmt.module._inputs.keys()) + tuple(stmt.module._outputs.keys())
+                valid_set = set(valid_ports)
+                for port_name in getattr(stmt, "port_map", {}).keys():
+                    if port_name not in valid_set:
+                        record(
+                            module_path(path, stmt.name),
+                            stmt.name,
+                            port_name,
+                            getattr(stmt.module, "name", stmt.module.__class__.__name__),
+                            valid_ports,
+                        )
+            for body_name in ("then_body", "else_body", "default_body"):
+                body = getattr(stmt, body_name, None)
+                if body:
+                    for nested in body:
+                        visit_stmt(nested)
+            for _, body in getattr(stmt, "elif_bodies", []):
+                for nested in body:
+                    visit_stmt(nested)
+            for _, body in getattr(stmt, "cases", []):
+                for nested in body:
+                    visit_stmt(nested)
+            for _, body in getattr(stmt, "branches", []):
+                for nested in body:
+                    visit_stmt(nested)
+
+        for stmt in mod._top_level:
+            visit_stmt(stmt)
+        for body in mod._comb_blocks:
+            for stmt in body:
+                visit_stmt(stmt)
+        for body in mod._latch_blocks:
+            for stmt in body:
+                visit_stmt(stmt)
+        for body in mod._init_blocks:
+            for stmt in body:
+                visit_stmt(stmt)
+        for _, _, _, _, body in mod._seq_blocks:
+            for stmt in body:
+                visit_stmt(stmt)
+
+        for child_name, child_module in mod._submodules:
+            visit_module(child_module, module_path(path, child_name), stack)
+        for child_name, child_module in explicit_children:
+            visit_module(child_module, module_path(path, child_name), stack)
+
+    visit_module(module, getattr(module, "name", module.__class__.__name__), set())
+    return violations
 
 
 @dataclass(frozen=True)
@@ -159,13 +509,15 @@ def lower_dsl_module_to_sim(
     """
 
     validate_authoring_intent(module)
+    module = _normalize_cross_module_assignments(module)
     flatten_fn = _select_flatten_module(module)
     lowered_source = flatten_fn(module) if flatten else module
+    lowered_source = copy.deepcopy(lowered_source)
     _reject_unsupported_module_features(lowered_source)
     clock_domains = _collect_clock_domains(lowered_source)
     _register_implicit_signals(lowered_source)
     state_inits, memory_inits = _collect_initial_values(module)
-    if lowered_source is not module and getattr(lowered_source, "_init_blocks", None):
+    if lowered_source is not module:
         lowered_state_inits, lowered_memory_inits = _collect_initial_values(lowered_source)
         state_inits.update(lowered_state_inits)
         memory_inits.update(lowered_memory_inits)
@@ -1077,7 +1429,8 @@ def _topologically_order_comb_assignments(
     for position, assignment in other_items:
         ordered_by_original_pos[position] = assignment
 
-    return [ordered_by_original_pos[idx] for idx in range(len(assignments))]
+    ordered_positions = sorted(ordered_by_original_pos.keys())
+    return [ordered_by_original_pos[idx] for idx in ordered_positions]
 
 
 def _lower_sync_read_memories_into_executable_subset(
@@ -1311,6 +1664,11 @@ def _lower_ast_expr_no_env(expr):
         width = max(expr.bit_length(), 1)
         return ConstExpr(expr, width)
     if isinstance(expr, _SIGNAL_TYPES):
+        ref_expr = getattr(expr, "_expr", None)
+        if ref_expr is not None and not (
+            isinstance(ref_expr, _REF_TYPES) and getattr(ref_expr, "signal", None) is expr
+        ):
+            return _lower_ast_expr_no_env(ref_expr)
         return SignalRef(expr.name)
     if isinstance(expr, _CONST_TYPES):
         return ConstExpr(expr.value, expr.width)
@@ -1561,6 +1919,11 @@ def _lower_expr(expr, env: _LoweringEnv):
         width = max(expr.bit_length(), 1)
         return ConstExpr(expr, width)
     if isinstance(expr, _SIGNAL_TYPES):
+        ref_expr = getattr(expr, "_expr", None)
+        if ref_expr is not None and not (
+            isinstance(ref_expr, _REF_TYPES) and getattr(ref_expr, "signal", None) is expr
+        ):
+            return _lower_expr(ref_expr, env)
         return env.read(expr.name)
     if isinstance(expr, _CONST_TYPES):
         return ConstExpr(expr.value, expr.width)
@@ -1912,6 +2275,257 @@ def _select_flatten_module(module):
     if RtlgenModule and isinstance(module, RtlgenModule) and rtlgen_flatten_module is not None:
         return rtlgen_flatten_module
     return flatten_module
+
+
+def _normalize_cross_module_assignments(module):
+    """Return a copy with parent<->child port assigns folded into port_map.
+
+    This mirrors the authoring-time cleanup already used by Verilog emission so
+    that lowering/flattening sees the same intended structural hierarchy for
+    patterns like:
+
+    - ``self.u_leaf = Child()``
+    - ``self.u_leaf.clk <<= self.clk``
+    - ``self.mid <<= self.u_leaf.y``
+
+    Without this step, legal parent-owned interconnect patterns can survive as
+    plain combinational assignments that target child input ports directly,
+    which later lowering correctly rejects as non-local combinational writes.
+    """
+
+    normalized = copy.deepcopy(module)
+
+    def direct_signal(expr):
+        if isinstance(expr, Signal):
+            ref_expr = getattr(expr, "_expr", None)
+            if isinstance(ref_expr, Ref) and getattr(ref_expr, "signal", None) is not None:
+                return ref_expr.signal
+            return expr
+        if isinstance(expr, Ref):
+            return expr.signal
+        return None
+
+    def infer_param_overrides(parent_module: Module, submodule: Module) -> Dict[str, object]:
+        params: Dict[str, object] = {}
+        for pname, param in submodule._params.items():
+            if hasattr(parent_module, pname):
+                val = getattr(parent_module, pname)
+                if isinstance(val, (Signal, int, str)):
+                    params[pname] = val
+                elif hasattr(val, "value") and isinstance(getattr(val, "value"), (int, str)):
+                    params[pname] = val
+        for pname, val in getattr(submodule, "_param_bindings", {}).items():
+            params[pname] = val
+        return params
+
+    def alloc_instance_name(parent_module: Module, submodule: Module, reserved: Set[str]) -> str:
+        base_name = getattr(submodule, "_type_name", submodule.name)
+        inst_name = base_name
+        if inst_name in reserved:
+            suffix = 1
+            while f"{inst_name}_{suffix}" in reserved:
+                suffix += 1
+            inst_name = f"{inst_name}_{suffix}"
+        reserved.add(inst_name)
+        return inst_name
+
+    def find_port_name(submodule: Module, signal: Signal) -> Optional[str]:
+        for pname, psig in list(submodule._inputs.items()) + list(submodule._outputs.items()):
+            if psig is signal:
+                return pname
+        return None
+
+    def ensure_helper_wire(parent_module: Module, wire_name: str, source_signal: Signal) -> Wire:
+        existing = parent_module._wires.get(wire_name)
+        if existing is not None:
+            return existing
+        helper = _clone_signal_shape(source_signal, wire_name, cls=Wire)
+        helper._parent_module = parent_module
+        parent_module._wires[wire_name] = helper
+        object.__setattr__(parent_module, wire_name, helper)
+        return helper
+
+    def visit_module(mod: Module, stack: Set[int]) -> None:
+        if id(mod) in stack:
+            return
+        stack = set(stack)
+        stack.add(id(mod))
+
+        explicit_by_submod: Dict[int, SubmoduleInst] = {
+            id(stmt.module): stmt for stmt in mod._top_level if isinstance(stmt, SubmoduleInst)
+        }
+        registered_names = {id(sub): name for name, sub in mod._submodules}
+        reserved_names = {name for name, _ in mod._submodules}
+        reserved_names.update(
+            stmt.name for stmt in mod._top_level if isinstance(stmt, SubmoduleInst)
+        )
+
+        submodule_infos: Dict[int, Dict[str, object]] = {}
+
+        def ensure_submodule_info(submodule: Module) -> Dict[str, object]:
+            submod_id = id(submodule)
+            if submod_id in submodule_infos:
+                return submodule_infos[submod_id]
+            inst_name = registered_names.get(submod_id)
+            if inst_name is None:
+                inst_name = alloc_instance_name(mod, submodule, reserved_names)
+            info = {
+                "submod": submodule,
+                "inst_name": inst_name,
+                "inputs": {},
+                "outputs": {},
+            }
+            submodule_infos[submod_id] = info
+            return info
+
+        def rewrite_child_output_expr(expr, owner_module: Module):
+            if expr is None or isinstance(expr, int):
+                return expr
+
+            signal = direct_signal(expr)
+            signal_owner = getattr(signal, "_parent_module", None) if signal is not None else None
+            if (
+                signal is not None
+                and isinstance(signal_owner, Module)
+                and signal_owner is not owner_module
+            ):
+                port_name = find_port_name(signal_owner, signal)
+                if port_name is not None and port_name in signal_owner._outputs:
+                    info = ensure_submodule_info(signal_owner)
+                    helper_name = f"{info['inst_name']}_{port_name}"
+                    helper = ensure_helper_wire(owner_module, helper_name, signal)
+                    info["outputs"][port_name] = helper
+                    return helper if isinstance(expr, Signal) else Ref(helper)
+
+            if isinstance(expr, Signal):
+                ref_expr = getattr(expr, "_expr", None)
+                if isinstance(ref_expr, Ref):
+                    return expr
+            if isinstance(expr, Ref):
+                return expr
+            if isinstance(expr, BinOp):
+                return BinOp(
+                    expr.op,
+                    rewrite_child_output_expr(expr.lhs, owner_module),
+                    rewrite_child_output_expr(expr.rhs, owner_module),
+                    expr.width,
+                )
+            if isinstance(expr, UnaryOp):
+                return UnaryOp(expr.op, rewrite_child_output_expr(expr.operand, owner_module), expr.width)
+            if isinstance(expr, Slice):
+                return Slice(rewrite_child_output_expr(expr.operand, owner_module), expr.hi, expr.lo)
+            if isinstance(expr, PartSelect):
+                return PartSelect(
+                    rewrite_child_output_expr(expr.operand, owner_module),
+                    rewrite_child_output_expr(expr.offset, owner_module),
+                    expr.width,
+                )
+            if isinstance(expr, BitSelect):
+                return BitSelect(
+                    rewrite_child_output_expr(expr.operand, owner_module),
+                    rewrite_child_output_expr(expr.index, owner_module),
+                )
+            if isinstance(expr, Concat):
+                return Concat([rewrite_child_output_expr(op, owner_module) for op in expr.operands], expr.width)
+            if isinstance(expr, Mux):
+                return Mux(
+                    rewrite_child_output_expr(expr.cond, owner_module),
+                    rewrite_child_output_expr(expr.true_expr, owner_module),
+                    rewrite_child_output_expr(expr.false_expr, owner_module),
+                    expr.width,
+                )
+            if isinstance(expr, MemRead):
+                return MemRead(
+                    expr.mem_name,
+                    rewrite_child_output_expr(expr.addr, owner_module),
+                    expr.width,
+                )
+            if isinstance(expr, ArrayRead):
+                return ArrayRead(
+                    expr.array_name,
+                    rewrite_child_output_expr(expr.index, owner_module),
+                    expr.width,
+                )
+            return expr
+
+        def normalize_body(body: List[object]) -> None:
+            to_remove: List[int] = []
+            for i, stmt in enumerate(body):
+                if not isinstance(stmt, DslAssign):
+                    continue
+
+                target_expr = getattr(stmt, "target", None)
+                value_expr = getattr(stmt, "value", None)
+                target_signal = direct_signal(target_expr)
+                value_signal = direct_signal(value_expr)
+
+                target_owner = getattr(target_signal, "_parent_module", None) if target_signal is not None else None
+                value_owner = getattr(value_signal, "_parent_module", None) if value_signal is not None else None
+
+                # Parent drives child input port.
+                if (
+                    target_signal is not None
+                    and isinstance(target_owner, Module)
+                    and target_owner is not mod
+                ):
+                    port_name = find_port_name(target_owner, target_signal)
+                    if port_name is not None and port_name in target_owner._inputs:
+                        info = ensure_submodule_info(target_owner)
+                        info["inputs"][port_name] = value_expr
+                        to_remove.append(i)
+                        continue
+
+                # Parent consumes child output port.
+                rewritten_value = rewrite_child_output_expr(value_expr, mod)
+                if rewritten_value is not value_expr:
+                    stmt.value = rewritten_value
+
+            for i in reversed(to_remove):
+                body.pop(i)
+
+        normalize_body(mod._top_level)
+        for body in mod._comb_blocks:
+            normalize_body(body)
+
+        for info in submodule_infos.values():
+            submod = info["submod"]
+            inst_name = info["inst_name"]
+            if not any(id(existing) == id(submod) for _, existing in mod._submodules):
+                mod._submodules.append((inst_name, submod))
+
+            inst = explicit_by_submod.get(id(submod))
+            if inst is None:
+                port_map: Dict[str, object] = {}
+                for pname in submod._inputs.keys():
+                    if pname in info["inputs"]:
+                        port_map[pname] = info["inputs"][pname]
+                    elif hasattr(mod, pname):
+                        val = getattr(mod, pname)
+                        if isinstance(val, Signal):
+                            port_map[pname] = val
+                        elif isinstance(val, (int, Const)):
+                            port_map[pname] = Const(int(val), 1) if isinstance(val, int) else val
+                port_map.update(info["outputs"])
+                mod._top_level.append(
+                    SubmoduleInst(
+                        inst_name,
+                        submod,
+                        infer_param_overrides(mod, submod),
+                        port_map,
+                    )
+                )
+            else:
+                inst.port_map.update(info["inputs"])
+                inst.port_map.update(info["outputs"])
+
+        explicit_children = [stmt.module for stmt in mod._top_level if isinstance(stmt, SubmoduleInst)]
+        for _, child in mod._submodules:
+            visit_module(child, stack)
+        for child in explicit_children:
+            visit_module(child, stack)
+
+    visit_module(normalized, set())
+    return normalized
 
 
 def _logic_not(expr):

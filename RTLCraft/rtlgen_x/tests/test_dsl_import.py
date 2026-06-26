@@ -3,6 +3,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
+import numpy as np
 import pytest
 
 from rtlgen_x.dsl import (
@@ -14,7 +15,9 @@ from rtlgen_x.dsl import (
     AXI4Stream,
     AXI4Lite,
     AXI4LiteRegisterBank,
+    BlackBoxModule,
     ClockDomainSpec,
+    collect_external_verilog_artifacts,
     ConnectivitySite,
     Else,
     EmitProfile,
@@ -41,6 +44,7 @@ from rtlgen_x.dsl import (
     ReqRspQueue,
     Reg,
     ResetDomainSpec,
+    RoundShiftRight,
     RoundRobinArbiter,
     SRA,
     SkidBuffer,
@@ -66,6 +70,7 @@ from rtlgen_x.dsl import (
     emit_marker_sequence_report_markdown,
     emit_readability_report_markdown,
     VerilogEmitter,
+    VerilogLinter,
     validate_authoring_intent,
     Wishbone,
     WishboneRegisterBank,
@@ -117,6 +122,36 @@ class BitUpdate(Module):
                 self.state <<= 0xA0
             with Else():
                 self.state[2] <<= self.flag
+
+
+class ExternalParameterizedLeaf(BlackBoxModule):
+    def __init__(self):
+        super().__init__(
+            name="ExternalParameterizedLeaf",
+            verilog_module_name="ext_param_leaf",
+            inputs=[("din", 8)],
+            outputs=[("dout", 8)],
+            parameters=[("WIDTH", 8), ("LATENCY", 1)],
+            external_verilog=True,
+            verilog_sources=["rtl/ext_param_leaf.sv"],
+            include_dirs=["rtl/include"],
+            defines={"EXT_PARAM_LEAF": "1"},
+        )
+
+
+class UsesExternalParameterizedLeaf(Module):
+    def __init__(self):
+        super().__init__("UsesExternalParameterizedLeaf")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+        self.leaf = ExternalParameterizedLeaf()
+        self.leaf._param_bindings["WIDTH"] = 16
+        self.leaf._param_bindings["LATENCY"] = 2
+
+        @self.comb
+        def _comb():
+            self.leaf.din <<= self.din
+            self.dout <<= self.leaf.dout
 
 
 class NamedByString(Module):
@@ -214,6 +249,50 @@ class SliceUpdate(Module):
                 self.state <<= 0xA0
             with Else():
                 self.state[3:0] <<= self.nibble
+
+
+def _jpeg_reference_idct2(coeffs):
+    from jpeg_decoder.dsl_modules import IDCT_FRAC, IDCT_TABLE
+
+    transform = np.array(IDCT_TABLE, dtype=float).reshape(8, 8) / (1 << IDCT_FRAC)
+    coeffs_fp = coeffs.astype(float)
+    row_out = np.zeros((8, 8), dtype=float)
+    for v in range(8):
+        for col in range(8):
+            row_sum = sum(coeffs_fp[v][u] * transform[u][col] for u in range(8))
+            row_out[v][col] = np.floor(row_sum + 0.5)
+    temp = np.zeros((8, 8), dtype=float)
+    for row in range(8):
+        for col in range(8):
+            col_sum = sum(row_out[u][col] * transform[u][row] for u in range(8))
+            temp[row][col] = np.floor(col_sum + 0.5)
+    return np.clip(temp + 128, 0, 255).astype(np.uint8)
+
+
+def _run_jpeg_idct_sim(sim, block, coeff_width):
+    for value in block:
+        sim.step({
+            "clk": 0,
+            "rst": 0,
+            "in_data": value & ((1 << coeff_width) - 1),
+            "in_valid": 1,
+            "out_ready": 1,
+        })
+
+    outputs = []
+    for _ in range(1200):
+        observed = sim.step({
+            "clk": 0,
+            "rst": 0,
+            "in_data": 0,
+            "in_valid": 0,
+            "out_ready": 1,
+        })
+        if observed.get("out_valid"):
+            outputs.append(observed["out_data"])
+        if len(outputs) >= 64:
+            break
+    return outputs
 
 
 class DynamicPartSelectUpdate(Module):
@@ -548,6 +627,33 @@ class PortExprTop(Module):
         )
 
 
+class InvalidPortLeaf(Module):
+    def __init__(self):
+        super().__init__("InvalidPortLeaf")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.din
+
+
+class InvalidPortTop(Module):
+    def __init__(self):
+        super().__init__("InvalidPortTop")
+        self.a = Input(8, "a")
+        self.y = Output(8, "y")
+        leaf = InvalidPortLeaf()
+        self.instantiate(
+            leaf,
+            "u_leaf",
+            port_map={
+                "din": self.a,
+                "dout_typo": self.y,
+            },
+        )
+
+
 class ReadyValidAsyncBridgeTop(Module):
     def __init__(self):
         super().__init__("ReadyValidAsyncBridgeTop")
@@ -612,6 +718,80 @@ class FlattenTop(Module):
             "u_leaf",
             port_map={"clk": self.clk, "a": self.a, "addr": self.addr, "y": self.y},
         )
+
+
+class ImplicitArrayReadLeaf(Module):
+    def __init__(self):
+        super().__init__("ImplicitArrayReadLeaf")
+        self.addr = Input(2, "addr")
+        self.dout = Output(8, "dout")
+        self.rf = Array(8, 4, "rf")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.rf[self.addr]
+
+
+class ImplicitArrayReadTop(Module):
+    def __init__(self):
+        super().__init__("ImplicitArrayReadTop")
+        self.addr = Input(2, "addr")
+        self.out = Output(8, "out")
+        self.u = ImplicitArrayReadLeaf()
+
+        @self.comb
+        def _comb():
+            self.u.addr <<= self.addr
+            self.out <<= self.u.dout
+
+
+class ImplicitMemoryReadLeaf(Module):
+    def __init__(self):
+        super().__init__("ImplicitMemoryReadLeaf")
+        self.addr = Input(2, "addr")
+        self.dout = Output(8, "dout")
+        self.mem = self.add_memory(Memory(8, 4, "mem", init_data=[1, 2, 3, 4]))
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.mem[self.addr]
+
+
+class ImplicitMemoryReadTop(Module):
+    def __init__(self):
+        super().__init__("ImplicitMemoryReadTop")
+        self.addr = Input(2, "addr")
+        self.out = Output(8, "out")
+        self.u = ImplicitMemoryReadLeaf()
+
+        @self.comb
+        def _comb():
+            self.u.addr <<= self.addr
+            self.out <<= self.u.dout
+
+
+class SignedExprLeaf(Module):
+    def __init__(self):
+        super().__init__("SignedExprLeaf")
+        self.a = Input(8, "a", signed=True)
+        self.y = Output(8, "y", signed=True)
+
+        @self.comb
+        def _comb():
+            self.y <<= self.a
+
+
+class SignedExprTop(Module):
+    def __init__(self):
+        super().__init__("SignedExprTop")
+        self.a = Input(8, "a", signed=True)
+        self.out = Output(8, "out")
+        self.u = SignedExprLeaf()
+
+        @self.comb
+        def _comb():
+            self.u.a <<= self.a
+            self.out <<= SRA(self.u.y, 2).as_uint()[7:0]
 
 
 class DeclaredDomainMailbox(Module):
@@ -760,6 +940,29 @@ class ArithmeticShiftLane(Module):
         @self.comb
         def _comb():
             self.out <<= SRA(self.inp.as_sint(), self.shamt).as_uint()[7:0]
+
+
+class ArithmeticShiftUnsignedLane(Module):
+    def __init__(self):
+        super().__init__("ArithmeticShiftUnsignedLane")
+        self.inp = Input(8, "inp")
+        self.shamt = Input(3, "shamt")
+        self.out = Output(8, "out")
+
+        @self.comb
+        def _comb():
+            self.out <<= SRA(self.inp, self.shamt).as_uint()[7:0]
+
+
+class FixedPointRoundShiftLane(Module):
+    def __init__(self):
+        super().__init__("FixedPointRoundShiftLane")
+        self.inp = Input(16, "inp")
+        self.out = Output(17, "out")
+
+        @self.comb
+        def _comb():
+            self.out <<= RoundShiftRight(self.inp.as_sint(), 3).as_uint()
 
 
 class TinyRegFile(Module):
@@ -1025,6 +1228,31 @@ def test_dsl_emit_prefers_explicit_module_name():
 
     assert "module named_by_string" in text
     assert "module NamedByString" not in text
+
+
+def test_dsl_emits_external_parameterized_blackbox_instance():
+    text = VerilogEmitter().emit(UsesExternalParameterizedLeaf())
+
+    assert "module UsesExternalParameterizedLeaf" in text
+    assert "ext_param_leaf #(.WIDTH(16), .LATENCY(2)) leaf (" in text
+    assert ".din(din)" in text
+    assert ".dout(dout)" in text
+
+
+def test_emit_design_skips_external_verilog_blackbox_shell():
+    text = VerilogEmitter().emit_design(UsesExternalParameterizedLeaf())
+
+    assert "module UsesExternalParameterizedLeaf" in text
+    assert "ext_param_leaf #(.WIDTH(16), .LATENCY(2)) leaf (" in text
+    assert "module ext_param_leaf" not in text
+
+
+def test_collect_external_verilog_artifacts_from_mixed_design():
+    artifacts = collect_external_verilog_artifacts(UsesExternalParameterizedLeaf())
+
+    assert artifacts["sources"] == ("rtl/ext_param_leaf.sv",)
+    assert artifacts["include_dirs"] == ("rtl/include",)
+    assert artifacts["defines"] == {"EXT_PARAM_LEAF": "1"}
 
 
 def test_dsl_emits_extracted_concat_without_constructor_collision():
@@ -3685,6 +3913,9 @@ def test_dsl_ast_simulation_surfaces_are_removed_from_public_api():
     assert not hasattr(dsl_mod, "DSLSimValidator")
     assert not hasattr(rtlgen_x, "Simulator")
 
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("rtlgen_x.dsl.sim_jit")
+
     sim_mod = importlib.import_module("rtlgen_x.dsl.sim")
     with pytest.raises(DslSimulationRemovedError):
         sim_mod.Simulator(Accum())
@@ -3899,6 +4130,271 @@ def test_dsl_sra_helper_round_trip_to_verilog_and_sim():
     assert ">>>" in emitted
 
 
+def test_dsl_sra_helper_casts_unsigned_lhs_to_signed_intent():
+    lowered = lower_dsl_module_to_sim(ArithmeticShiftUnsignedLane())
+    sim = PythonSimulator(lowered.module)
+
+    observed = sim.step({"inp": 0x88, "shamt": 2})
+    assert observed == {"out": 0xE2}
+
+    emitted = VerilogEmitter().emit(ArithmeticShiftUnsignedLane())
+    assert "$signed(inp)" in emitted
+    assert ">>>" in emitted
+
+
+def test_dsl_round_shift_right_helper_handles_negative_intermediates():
+    lowered = lower_dsl_module_to_sim(FixedPointRoundShiftLane())
+    sim = PythonSimulator(lowered.module)
+
+    observed_neg = sim.step({"inp": ((1 << 16) - 13)})
+    observed_neg_tie = sim.step({"inp": ((1 << 16) - 12)})
+    observed_pos = sim.step({"inp": 13})
+    observed_pos_tie = sim.step({"inp": 12})
+
+    assert observed_neg == {"out": ((-2) & ((1 << 17) - 1))}
+    assert observed_neg_tie == {"out": ((-1) & ((1 << 17) - 1))}
+    assert observed_pos == {"out": 2}
+    assert observed_pos_tie == {"out": 2}
+
+    emitted = VerilogEmitter().emit(FixedPointRoundShiftLane())
+    assert ">>>" in emitted
+    assert "$signed" in emitted
+
+
+def test_dsl_lint_flags_plain_signed_right_shift_for_clarity():
+    class SignedShiftLintLane(Module):
+        def __init__(self):
+            super().__init__("SignedShiftLintLane")
+            self.inp = Input(16, "inp")
+            self.shamt = Input(4, "shamt")
+            self.out = Output(16, "out")
+
+            with self.comb:
+                self.out <<= (self.inp[7:0].as_sint() >> self.shamt).as_uint()[7:0]
+
+    violations = SignedShiftLintLane().lint(rules=["signed_shift"])
+
+    assert any("SignedShift" in item for item in violations)
+    assert any("SRA" in item for item in violations)
+
+
+def test_verilog_linter_flags_signed_shift_intent_and_accepts_sra():
+    linter = VerilogLinter(rules=["signed_shift"])
+
+    unsafe_unsigned = """
+module SignedShiftVerilogLane (
+    input [7:0] inp,
+    output [7:0] out
+);
+    assign out = inp >>> 2'd2;
+endmodule
+"""
+    violations = linter.lint(unsafe_unsigned).issues
+    assert any(item.rule == "signed_shift" for item in violations)
+    assert any("explicitly signed" in item.message.lower() for item in violations)
+
+    unsafe_signed = """
+module SignedShiftVerilogLane2 (
+    input signed [7:0] inp,
+    output [7:0] out
+);
+    assign out = inp >> 2'd2;
+endmodule
+"""
+    violations_signed = linter.lint(unsafe_signed).issues
+    assert any(item.rule == "signed_shift" for item in violations_signed)
+    assert any("signed signal" in item.message.lower() or "signed left operand" in item.message.lower() for item in violations_signed)
+
+    safe = """
+module SraVerilogLane (
+    input [7:0] inp,
+    output [7:0] out
+);
+    assign out = $signed(inp) >>> 2'd2;
+endmodule
+"""
+    violations_ok = linter.lint(safe).issues
+    assert not violations_ok
+
+
+def test_dsl_emitter_preserves_arithmetic_intent_for_signed_right_shift():
+    class SignedShiftEmitLane(Module):
+        def __init__(self):
+            super().__init__("SignedShiftEmitLane")
+            self.inp = Input(16, "inp")
+            self.shamt = Input(4, "shamt")
+            self.out = Output(16, "out")
+
+            with self.comb:
+                self.out <<= (self.inp[7:0].as_sint() >> self.shamt).as_uint()[7:0]
+
+    emitted = VerilogEmitter().emit(SignedShiftEmitLane())
+
+    assert ">>>" in emitted
+
+
+def test_dsl_lint_flags_nested_signed_unsigned_mix():
+    class SignedUnsignedMixLane(Module):
+        def __init__(self):
+            super().__init__("SignedUnsignedMixLane")
+            self.a = Input(8, "a")
+            self.b = Input(8, "b")
+            self.out = Output(16, "out")
+
+            @self.comb
+            def _comb():
+                self.out <<= (self.a.as_sint() * self.b).as_uint()
+
+    violations = SignedUnsignedMixLane().lint(rules=["signed_mix"])
+
+    assert any("SignedMix" in item for item in violations)
+    assert any("'*'" in item for item in violations)
+
+
+def test_dsl_lint_flags_signed_unsigned_multiply_with_specific_rule():
+    class SignedUnsignedMultiplyLane(Module):
+        def __init__(self):
+            super().__init__("SignedUnsignedMultiplyLane")
+            self.a = Input(8, "a")
+            self.b = Input(8, "b")
+            self.out = Output(16, "out")
+
+            @self.comb
+            def _comb():
+                self.out <<= (self.a.as_sint() * self.b).as_uint()
+
+    violations = SignedUnsignedMultiplyLane().lint(rules=["signed_multiply"])
+
+    assert any("SignedMultiply" in item for item in violations)
+    assert any("multiply intent" in item for item in violations)
+
+
+def test_dsl_lint_flags_signed_unsigned_compare_with_specific_rule():
+    class SignedUnsignedCompareLane(Module):
+        def __init__(self):
+            super().__init__("SignedUnsignedCompareLane")
+            self.a = Input(8, "a")
+            self.b = Input(8, "b")
+            self.out = Output(1, "out")
+
+            @self.comb
+            def _comb():
+                self.out <<= self.a.as_sint() < self.b
+
+    violations = SignedUnsignedCompareLane().lint(rules=["signed_compare"])
+
+    assert any("SignedCompare" in item for item in violations)
+    assert any("comparison intent" in item for item in violations)
+
+
+def test_verilog_linter_flags_signed_multiply_and_compare_intent():
+    multiply_linter = VerilogLinter(rules=["signed_multiply"])
+    compare_linter = VerilogLinter(rules=["signed_compare"])
+
+    unsafe_multiply = """
+module SignedMultiplyVerilogLane (
+    input [7:0] a,
+    input [7:0] b,
+    output [15:0] out
+);
+    assign out = $signed(a) * b;
+endmodule
+"""
+    multiply_violations = multiply_linter.lint(unsafe_multiply).issues
+    assert any(item.rule == "signed_multiply" for item in multiply_violations)
+    assert any("multiply intent explicit" in item.message.lower() for item in multiply_violations)
+
+    safe_multiply = """
+module SignedMultiplyVerilogLaneSafe (
+    input [7:0] a,
+    input [7:0] b,
+    output [15:0] out
+);
+    assign out = $signed(a) * $signed(b);
+endmodule
+"""
+    assert not multiply_linter.lint(safe_multiply).issues
+
+    unsafe_compare = """
+module SignedCompareVerilogLane (
+    input [7:0] a,
+    input [7:0] b,
+    output out
+);
+    assign out = $signed(a) < b;
+endmodule
+"""
+    compare_violations = compare_linter.lint(unsafe_compare).issues
+    assert any(item.rule == "signed_compare" for item in compare_violations)
+    assert any("intent explicit" in item.message.lower() for item in compare_violations)
+
+    safe_compare = """
+module SignedCompareVerilogLaneSafe (
+    input [7:0] a,
+    input [7:0] b,
+    output out
+);
+    assign out = $signed(a) < $signed(b);
+endmodule
+"""
+    assert not compare_linter.lint(safe_compare).issues
+
+
+def test_dsl_round_shift_right_helper_matches_compiled_simulator(tmp_path):
+    lowered = lower_dsl_module_to_sim(FixedPointRoundShiftLane())
+    py_sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        FixedPointRoundShiftLane(),
+        build_dir=tmp_path / "round_shift_right",
+    )
+
+    try:
+        for raw_inp, expected in (
+            (((1 << 16) - 13), ((-2) & ((1 << 17) - 1))),
+            (((1 << 16) - 12), ((-1) & ((1 << 17) - 1))),
+            (13, 2),
+            (12, 2),
+        ):
+            inputs = {"inp": raw_inp}
+            assert py_sim.step(inputs) == {"out": expected}
+            assert compiled.step(inputs) == {"out": expected}
+    finally:
+        compiled.close()
+
+
+def test_jpeg_idct_signed_level_shift_matches_reference_and_compiled(tmp_path):
+    from jpeg_decoder.dsl_modules import COEFF_WIDTH, JpegIdct8x8
+
+    coeffs = np.zeros((8, 8), dtype=np.int16)
+    coeffs[0, 0] = 128
+    coeffs[0, 1] = 64
+    coeffs[1, 0] = -32
+    expected = _jpeg_reference_idct2(coeffs)
+    block = coeffs.flatten().tolist()
+
+    lowered = lower_dsl_module_to_sim(JpegIdct8x8())
+    py_sim = PythonSimulator(lowered.module)
+    py_sim.reset()
+    py_outputs = _run_jpeg_idct_sim(py_sim, block, COEFF_WIDTH)
+    py_pixels = np.array(py_outputs[:64], dtype=np.uint8).reshape(8, 8)
+
+    compiled = build_compiled_simulator_from_dsl(
+        JpegIdct8x8(),
+        build_dir=tmp_path / "jpeg_idct_signed_level_shift",
+    )
+    try:
+        compiled.reset()
+        cpp_outputs = _run_jpeg_idct_sim(compiled, block, COEFF_WIDTH)
+    finally:
+        compiled.close()
+    cpp_pixels = np.array(cpp_outputs[:64], dtype=np.uint8).reshape(8, 8)
+
+    assert np.array_equal(py_pixels, expected)
+    assert np.array_equal(cpp_pixels, expected)
+    assert py_pixels[0, 7] == 128
+    assert cpp_pixels[0, 7] == 128
+
+
 def test_dsl_lowered_simd16_matches_behavior_model_for_signed_int_ops():
     pytest.importorskip("earphone.modules.simd16.layer_L1_behavior.src.behavior")
     from earphone.modules.simd16.layer_L1_behavior.src.behavior import (
@@ -4053,6 +4549,98 @@ def test_dsl_connectivity_report_tracks_explicit_submodule_port_maps():
     assert any(conn.instance == "u_leaf" and conn.port == "dout" and conn.connected_signals == ("y",) for conn in report.port_connections)
 
 
+def test_dsl_lowering_supports_implicit_submodule_parent_interconnect():
+    lowered = lower_dsl_module_to_sim(QueryTop())
+    signal_names = {signal.name for signal in lowered.module.signals}
+    assignment_targets = {assignment.target for assignment in lowered.module.assignments}
+
+    assert "u_leaf_state" in signal_names
+    assert "u_leaf_mem" in {memory.name for memory in lowered.module.memories}
+    assert "u_leaf_y" in assignment_targets
+    assert "mid" in assignment_targets
+    assert "y" in assignment_targets
+
+
+def test_dsl_verilog_emitter_preserves_implicit_submodule_parent_interconnect():
+    text = VerilogEmitter().emit(QueryTop())
+
+    assert "QueryLeaf u_leaf (" in text
+    assert ".clk(clk)" in text
+    assert ".rst(rst)" in text
+    assert ".a(a)" in text
+    assert ".addr(addr)" in text
+    assert ".y(u_leaf_y)" in text
+    assert "assign mid = u_leaf_y;" in text
+    assert "assign y = mid;" in text
+
+
+def test_dsl_lowering_supports_implicit_array_read_through_submodule():
+    lowered = lower_dsl_module_to_sim(ImplicitArrayReadTop())
+    signal_names = {signal.name for signal in lowered.module.signals}
+    assignment_targets = {assignment.target for assignment in lowered.module.assignments}
+    memories = {memory.name for memory in lowered.module.memories}
+
+    assert "u_dout" in signal_names
+    assert "u_addr" in signal_names
+    assert "u_rf" in memories
+    assert "u_dout" in assignment_targets
+    assert "out" in assignment_targets
+
+
+def test_dsl_verilog_emitter_supports_implicit_array_read_through_submodule():
+    text = VerilogEmitter().emit(ImplicitArrayReadTop())
+
+    assert "ImplicitArrayReadLeaf u (" in text
+    assert ".addr(addr)" in text
+    assert ".dout(u_dout)" in text
+    assert "assign out = u_dout;" in text
+
+
+def test_dsl_lowering_supports_implicit_memory_read_through_submodule():
+    lowered = lower_dsl_module_to_sim(ImplicitMemoryReadTop())
+    signal_names = {signal.name for signal in lowered.module.signals}
+    assignment_targets = {assignment.target for assignment in lowered.module.assignments}
+    memories = {memory.name for memory in lowered.module.memories}
+
+    assert "u_dout" in signal_names
+    assert "u_addr" in signal_names
+    assert "u_mem" in memories
+    assert "u_dout" in assignment_targets
+    assert "out" in assignment_targets
+
+
+def test_dsl_verilog_emitter_supports_implicit_memory_read_through_submodule():
+    text = VerilogEmitter().emit(ImplicitMemoryReadTop())
+
+    assert "ImplicitMemoryReadLeaf u (" in text
+    assert ".addr(addr)" in text
+    assert ".dout(u_dout)" in text
+    assert "assign out = u_dout;" in text
+
+
+def test_dsl_lowering_supports_child_output_in_parent_expression():
+    lowered = lower_dsl_module_to_sim(SignedExprTop())
+    signal_map = {signal.name: signal for signal in lowered.module.signals}
+    assignments = {assignment.target: assignment for assignment in lowered.module.assignments}
+    sim = PythonSimulator(lowered.module)
+
+    assert signal_map["u_a"].signed is True
+    assert signal_map["u_y"].signed is True
+    assert "u_y" in assignments
+    assert "SignalRef(name='u_y')" in repr(assignments["out"].expr)
+    assert sim.step({"a": 0x88}) == {"out": 0xE2}
+
+
+def test_dsl_verilog_emitter_supports_child_output_in_parent_expression():
+    text = VerilogEmitter().emit(SignedExprTop())
+
+    assert "SignedExprLeaf u (" in text
+    assert ".a($signed(a))" in text
+    assert ".y(u_y)" in text
+    assert "$signed(u_y)" in text
+    assert ">>>" in text
+
+
 def test_dsl_flatten_preserves_nested_memory_source_location():
     lowered = lower_dsl_module_to_sim(FlattenTop())
 
@@ -4114,8 +4702,59 @@ def test_dsl_verilog_emitter_supports_byte_enable_memory_writes():
 
 
 def test_dsl_verilog_emitter_rejects_sync_read_memory_inference():
-    with pytest.raises(NotImplementedError, match="sync-read/read-latency memories"):
+    with pytest.raises(DslLoweringError) as exc_info:
         VerilogEmitter().emit(SyncReadDeclaredMem())
+    message = str(exc_info.value)
+    assert "module 'SyncReadDeclaredMem'" in message
+    assert "memory 'mem'" in message
+    assert "read_style='sync'" in message
+    assert "read_latency=1" in message
+    assert "read_style='async', read_latency=0" in message
+
+
+def test_dsl_verilog_emitter_rejects_multiport_memory_metadata():
+    class MultiPortDeclaredMem(Module):
+        def __init__(self):
+            super().__init__("MultiPortDeclaredMem")
+            self.addr = Input(2, "addr")
+            self.dout = Output(8, "dout")
+            self.mem = self.add_memory(Memory(8, 4, "mem", read_ports=2))
+
+            @self.comb
+            def _comb():
+                self.dout <<= self.mem[self.addr]
+
+    with pytest.raises(DslLoweringError) as exc_info:
+        VerilogEmitter().emit(MultiPortDeclaredMem())
+    message = str(exc_info.value)
+    assert "module 'MultiPortDeclaredMem'" in message
+    assert "memory 'mem'" in message
+    assert "read_ports=2" in message
+    assert "read_ports=1, write_ports=1" in message
+
+
+def test_dsl_emit_design_preflights_child_storage_contracts():
+    class SyncReadTop(Module):
+        def __init__(self):
+            super().__init__("SyncReadTop")
+            self.clk = Input(1, "clk")
+            self.addr = Input(2, "addr")
+            self.dout = Output(8, "dout")
+            self.mid = Wire(8, "mid")
+            self.u_leaf = SyncReadDeclaredMem()
+
+            @self.comb
+            def _comb():
+                self.u_leaf.clk <<= self.clk
+                self.u_leaf.addr <<= self.addr
+                self.mid <<= self.u_leaf.dout
+                self.dout <<= self.mid
+
+    with pytest.raises(DslLoweringError) as exc_info:
+        VerilogEmitter().emit_design(SyncReadTop())
+    message = str(exc_info.value)
+    assert "module 'SyncReadDeclaredMem'" in message
+    assert "memory 'mem'" in message
 
 
 def test_dsl_compiled_simulator_supports_sync_read_storage_contract(tmp_path):
@@ -4630,6 +5269,20 @@ def test_real_sram256k_module_compiled_simulator_matches_dsl(tmp_path):
         compiled.close()
 
 
+def test_real_sram256k_module_can_be_lowered_twice_without_mutating_authoring_state():
+    module = _load_external_module(
+        "earphone/modules/sram256k/layer_L5_dsl/src/dsl.py",
+        "EarphoneSRAM256K",
+    )
+
+    first = lower_dsl_module_to_sim(module)
+    second = lower_dsl_module_to_sim(module)
+
+    assert first.module.name == "earphone_sram256k"
+    assert second.module.name == "earphone_sram256k"
+    assert len(second.module.memory_writes) == 1
+
+
 def test_real_rv32_module_compiled_simulator_matches_lowered_python(tmp_path):
     module = _load_external_module(
         "earphone/modules/rv32/layer_L5_dsl/src/dsl.py",
@@ -4916,6 +5569,84 @@ def test_validate_authoring_intent_rejects_comb_reg_assign():
 def test_validate_authoring_intent_rejects_hierarchical_read():
     with pytest.raises(DslLoweringError, match="HierarchicalRead"):
         validate_authoring_intent(ParentHierRead())
+
+
+def test_validate_authoring_intent_rejects_unknown_submodule_port_binding():
+    with pytest.raises(DslLoweringError) as exc_info:
+        validate_authoring_intent(InvalidPortTop())
+    message = str(exc_info.value)
+    assert "UnknownSubmodulePort" in message
+    assert "InvalidPortTop.u_leaf" in message
+    assert "dout_typo" in message
+    assert "din, dout" in message
+
+
+def test_dsl_flatten_rejects_unknown_submodule_port_binding():
+    with pytest.raises(DslLoweringError, match="UnknownSubmodulePort"):
+        lower_dsl_module_to_sim(InvalidPortTop())
+
+
+def test_verilog_emit_rejects_unknown_submodule_port_binding():
+    with pytest.raises(DslLoweringError, match="UnknownSubmodulePort"):
+        VerilogEmitter().emit(InvalidPortTop())
+
+
+def test_validate_authoring_intent_rejects_untracked_local_wire():
+    class LocalWireScratch(Module):
+        def __init__(self):
+            super().__init__("LocalWireScratch")
+            self.a = Input(8, "a")
+            self.out = Output(8, "out")
+            scratch = Wire(8, "scratch")
+
+            @self.comb
+            def _comb():
+                scratch.__ilshift__(self.a)
+                self.out <<= scratch
+
+    with pytest.raises(DslLoweringError) as exc_info:
+        validate_authoring_intent(LocalWireScratch())
+    message = str(exc_info.value)
+    assert "UntrackedSignal" in message
+    assert "self.scratch" in message
+
+
+def test_validate_authoring_intent_rejects_untracked_local_memory():
+    class LocalMemoryScratch(Module):
+        def __init__(self):
+            super().__init__("LocalMemoryScratch")
+            self.addr = Input(2, "addr")
+            self.out = Output(8, "out")
+            scratch = Memory(8, 4, "scratch", init_zero=True)
+
+            @self.comb
+            def _comb():
+                self.out <<= scratch[self.addr]
+
+    with pytest.raises(DslLoweringError) as exc_info:
+        validate_authoring_intent(LocalMemoryScratch())
+    message = str(exc_info.value)
+    assert "UntrackedMemory" in message
+    assert "self.scratch" in message
+
+
+def test_validate_authoring_intent_rejects_untracked_local_array():
+    class LocalArrayScratch(Module):
+        def __init__(self):
+            super().__init__("LocalArrayScratch")
+            self.addr = Input(2, "addr")
+            self.out = Output(8, "out")
+            scratch = Array(8, 4, "scratch")
+
+            @self.comb
+            def _comb():
+                self.out <<= scratch[self.addr]
+
+    with pytest.raises(DslLoweringError) as exc_info:
+        validate_authoring_intent(LocalArrayScratch())
+    message = str(exc_info.value)
+    assert "UntrackedArray" in message
+    assert "self.scratch" in message
 
 
 def test_verilog_emit_rejects_authoring_intent_violation():
