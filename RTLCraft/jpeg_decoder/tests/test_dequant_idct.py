@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 import math
 import numpy as np
 
-from rtlgen_x.dsl import EmitProfile, Input, Module, Output, VerilogEmitter, Wire, lower_dsl_module_to_sim
-from rtlgen_x.sim import PythonSimulator
+from rtlgen.dsl import EmitProfile, Input, Module, Output, VerilogEmitter, Wire, lower_dsl_module_to_sim
+from rtlgen.sim import PythonSimulator
 
 from jpeg_decoder.dsl_modules import JpegDequantZigzag, JpegIdct8x8, COEFF_WIDTH, ZIGZAG_ORDER
 

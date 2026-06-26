@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
-name = "rtlcraf"
+name = "rtlgen"
 version = "0.1.0"
-description = "Python API for Verilog RTL Generation — white-box DSL, simulator, PPA analyzer, and skill-guided AI generation"
+description = "Clean-core Python RTL DSL, simulation, verification, PPA, and SystemVerilog emission toolkit"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
@@ -51,13 +51,13 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ephonic/RTLCraft"
-Documentation = "https://github.com/ephonic/RTLCraft/blob/main/README.md"
-Tutorial = "https://github.com/ephonic/RTLCraft/blob/main/Tutorial.md"
+Homepage = "https://github.com/ephonic/EDACraft/tree/main/RTLCraft"
+Documentation = "https://github.com/ephonic/EDACraft/blob/main/RTLCraft/README.md"
+Tutorial = "https://github.com/ephonic/EDACraft/blob/main/RTLCraft/Tutorial.md"
 
 [tool.setuptools.packages.find]
-include = ["rtlgen*", "skills*"]
-exclude = ["tests*", "design_scripts*", "generated*"]
+include = ["rtlgen*"]
+exclude = ["tests*", "jpeg_decoder*", "skills*", "tools*", "design_scripts*", "generated*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -72,6 +72,7 @@ line-length = 120
 exclude = [
     "generated*",
     "skills/",
+    "tools/",
     "design_scripts/",
 ]
 

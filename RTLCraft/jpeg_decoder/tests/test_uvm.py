@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 import numpy as np
 
-from rtlgen_x.verify import (
+from rtlgen.verify import (
     PythonUvmSequenceItem,
     describe_verification_interface,
     generate_uvm_collateral,

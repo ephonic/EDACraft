@@ -1,9 +1,0 @@
-# tc
-
-## Parameters
-- `METADATA_SIZE = 1024`
-- `DATADATA_SIZE = 2000`
-- `META_FNAME_SIZE = 128`
-- `DATA_FNAME_SIZE = 128`
-- `BUF_NUM = 18`
-- `FILE_NUM = 1`

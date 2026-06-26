@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 import json
 
-from rtlgen_x.archsim import (
+from rtlgen.archsim import (
     ArchitectureModel,
     BehaviorSimulator,
     CycleSimulator,
@@ -20,7 +20,7 @@ from rtlgen_x.archsim import (
     run_stage_queue_depth_sweep,
     summarize_architecture_report,
 )
-from rtlgen_x.ppa import PpaGoals, advise_ppa, analyze_module_ppa, emit_ppa_report_markdown
+from rtlgen.ppa import PpaGoals, advise_ppa, analyze_module_ppa, emit_ppa_report_markdown
 
 from jpeg_decoder.dsl_modules import JpegDecoder, JpegDequantZigzag, JpegEntropyDecoder, JpegIdct8x8
 

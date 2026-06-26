@@ -1,7 +1,7 @@
 # JPEG Decoder Worked Example
 
 This directory is the main signed-datapath worked example for the current
-`rtlgen_x` stack.
+`rtlgen` stack.
 
 Use it when you want one realistic design that exercises:
 
@@ -14,7 +14,7 @@ Use it when you want one realistic design that exercises:
 ## What Lives Here
 
 The implementation is in
-[dsl_modules.py](/Users/yangfan/release/EDACraft-main/RTLCraft/jpeg_decoder/dsl_modules.py).
+[dsl_modules.py](./dsl_modules.py).
 
 The main modules are:
 
@@ -81,12 +81,12 @@ For this JPEG path today:
 3. for stronger emitted-RTL closure, prefer `verilator`, then `vcs` when available
 
 For the mixed DSL + external Verilog + ROM-init packaging story, see
-[../rtlgen_x/MIXED_DESIGN_COSIM_GUIDE.md](/Users/yangfan/release/EDACraft-main/RTLCraft/rtlgen_x/MIXED_DESIGN_COSIM_GUIDE.md).
+[../rtlgen/MIXED_DESIGN_COSIM_GUIDE.md](../rtlgen/MIXED_DESIGN_COSIM_GUIDE.md).
 
 ## Where The Patterns Are Documented
 
 The JPEG-specific design patterns are summarized in
-[../rtlgen_x/JPEG_DATAPATH_COOKBOOK.md](/Users/yangfan/release/EDACraft-main/RTLCraft/rtlgen_x/JPEG_DATAPATH_COOKBOOK.md).
+[../rtlgen/JPEG_DATAPATH_COOKBOOK.md](../rtlgen/JPEG_DATAPATH_COOKBOOK.md).
 
 Use that cookbook for:
 

@@ -6,8 +6,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 import numpy as np
 
-from rtlgen_x.dsl import build_compiled_simulator_from_dsl, lower_dsl_module_to_sim
-from rtlgen_x.sim import PythonSimulator
+from rtlgen.dsl import build_compiled_simulator_from_dsl, lower_dsl_module_to_sim
+from rtlgen.sim import PythonSimulator
 
 from jpeg_decoder.dsl_modules import JpegIdct8x8, COEFF_WIDTH, IDCT_TABLE, IDCT_FRAC
 

@@ -1,6 +1,6 @@
-"""JPEG baseline decoder modules for rtlgen_x.
+"""JPEG baseline decoder modules for rtlgen.
 
-This package implements a constrained baseline JPEG decoder using rtlgen_x DSL
+This package implements a constrained baseline JPEG decoder using rtlgen DSL
 standard-library components.  Supported features:
 
 * Baseline DCT, 8x8 blocks, 8-bit samples
@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from typing import List, Tuple
 
-from rtlgen_x.dsl import (
+from rtlgen.dsl import (
     APBRegisterBank,
     Array,
     Const,

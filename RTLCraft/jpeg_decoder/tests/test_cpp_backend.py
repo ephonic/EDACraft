@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 import math
 import numpy as np
 
-from rtlgen_x.dsl import build_compiled_simulator_from_dsl
-from rtlgen_x.sim import PythonSimulator
+from rtlgen.dsl import build_compiled_simulator_from_dsl
+from rtlgen.sim import PythonSimulator
 
 from jpeg_decoder.dsl_modules import JpegDecoder, ZIGZAG_ORDER, IDCT_TABLE, IDCT_FRAC
 
@@ -120,7 +120,7 @@ def main():
 
     print("Running Python simulator...")
     module = JpegDecoder()
-    py_lowered = __import__("rtlgen_x.dsl", fromlist=["lower_dsl_module_to_sim"]).lower_dsl_module_to_sim(module)
+    py_lowered = __import__("rtlgen.dsl", fromlist=["lower_dsl_module_to_sim"]).lower_dsl_module_to_sim(module)
     py_sim = PythonSimulator(py_lowered.module)
     py_sim.reset()
     py_pixels, py_cycles = run_sim(py_sim, coeffs)

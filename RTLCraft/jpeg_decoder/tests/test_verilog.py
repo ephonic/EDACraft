@@ -15,7 +15,7 @@ import subprocess
 
 import pytest
 
-from rtlgen_x.dsl import VerilogEmitter, EmitProfile
+from rtlgen.dsl import VerilogEmitter, EmitProfile
 
 from jpeg_decoder.dsl_modules import JpegDecoder, JpegIdct8x8, JpegDequantZigzag, JpegEntropyDecoder
 
