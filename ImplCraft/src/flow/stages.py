@@ -1,5 +1,9 @@
 """
 Flow Stage Definitions — defines the default backend flow with all stages.
+
+Supports two complete P&R tool chains:
+- Synopsys: DC → ICC2 (6 stages) → PT → Calibre
+- Cadence:  DC → Innovus (6 stages) → Tempus → Pegasus
 """
 from __future__ import annotations
 
@@ -22,8 +26,10 @@ class FlowStageDefinition:
     env_script: str | None = None  # Fallback if EDAEnvironment not configured
 
 
-# Default flow: DC → ICC2 (6 stages) → PT → Calibre (DRC/LVS)
-DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
+# =============================================================================
+# Synopsys Flow: DC → ICC2 (6 stages) → PT → Calibre
+# =============================================================================
+SYNOPSYS_FLOW_STAGES: list[FlowStageDefinition] = [
     FlowStageDefinition(
         name="synthesis",
         description="Logic synthesis with Design Compiler",
@@ -113,3 +119,120 @@ DEFAULT_FLOW_STAGES: list[FlowStageDefinition] = [
         tool_family="calibre",
     ),
 ]
+
+
+# =============================================================================
+# Cadence Flow: DC → Innovus (6 stages) → Tempus → Pegasus
+# =============================================================================
+CADENCE_FLOW_STAGES: list[FlowStageDefinition] = [
+    FlowStageDefinition(
+        name="synthesis",
+        description="Logic synthesis with Design Compiler",
+        tool="DesignCompiler",
+        flow_stage=FlowStage.SYNTHESIS,
+        dependencies=[],
+        tool_family="dc",
+    ),
+    FlowStageDefinition(
+        name="create_lib",
+        description="Import design into Innovus database",
+        tool="Innovus",
+        flow_stage=FlowStage.INIT,
+        dependencies=["synthesis"],
+        sub_stage="create_lib",
+        tool_family="innovus",
+    ),
+    FlowStageDefinition(
+        name="floorplan",
+        description="Floorplan, power plan, and pin assignment",
+        tool="Innovus",
+        flow_stage=FlowStage.FLOORPLAN,
+        dependencies=["create_lib"],
+        sub_stage="floorplan",
+        tool_family="innovus",
+    ),
+    FlowStageDefinition(
+        name="placement",
+        description="Timing-driven placement with congestion optimization",
+        tool="Innovus",
+        flow_stage=FlowStage.PLACEMENT,
+        dependencies=["floorplan"],
+        sub_stage="placement",
+        tool_family="innovus",
+    ),
+    FlowStageDefinition(
+        name="cts",
+        description="Clock tree synthesis with CCOPT",
+        tool="Innovus",
+        flow_stage=FlowStage.CTS,
+        dependencies=["placement"],
+        sub_stage="cts",
+        tool_family="innovus",
+    ),
+    FlowStageDefinition(
+        name="routing",
+        description="NanoRoute global + detail routing with SI analysis",
+        tool="Innovus",
+        flow_stage=FlowStage.ROUTING,
+        dependencies=["cts"],
+        sub_stage="routing",
+        tool_family="innovus",
+    ),
+    FlowStageDefinition(
+        name="route_opt",
+        description="Post-route optimization with ECO opt",
+        tool="Innovus",
+        flow_stage=FlowStage.ROUTE_OPT,
+        dependencies=["routing"],
+        sub_stage="route_opt",
+        tool_family="innovus",
+    ),
+    FlowStageDefinition(
+        name="tempus",
+        description="Sign-off static timing analysis with Tempus",
+        tool="Tempus",
+        flow_stage=FlowStage.STA_SIGNOFF,
+        dependencies=["route_opt"],
+        tool_family="tempus",
+    ),
+    FlowStageDefinition(
+        name="drc",
+        description="Design rule check with Pegasus",
+        tool="Pegasus",
+        flow_stage=FlowStage.PV_DRC,
+        dependencies=["route_opt"],
+        sub_stage="drc",
+        tool_family="pegasus",
+    ),
+    FlowStageDefinition(
+        name="lvs",
+        description="Layout vs schematic verification with Pegasus",
+        tool="Pegasus",
+        flow_stage=FlowStage.PV_LVS,
+        dependencies=["route_opt"],
+        sub_stage="lvs",
+        tool_family="pegasus",
+    ),
+]
+
+
+# Default flow (backward compatible)
+DEFAULT_FLOW_STAGES = SYNOPSYS_FLOW_STAGES
+
+
+def get_flow_stages(flow: str = "synopsys") -> list[FlowStageDefinition]:
+    """Get flow stage definitions for the specified tool chain.
+
+    Args:
+        flow: 'synopsys' for DC/ICC2/PT/Calibre, 'cadence' for DC/Innovus/Tempus/Pegasus
+
+    Returns:
+        List of FlowStageDefinition for the selected flow.
+    """
+    flows = {
+        "synopsys": SYNOPSYS_FLOW_STAGES,
+        "cadence": CADENCE_FLOW_STAGES,
+    }
+    if flow not in flows:
+        raise ValueError(f"Unknown flow: {flow}. Available: {list(flows.keys())}")
+    return flows[flow]
