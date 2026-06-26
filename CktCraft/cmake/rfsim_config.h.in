@@ -1,0 +1,11 @@
+// 由 CMake 生成的配置头。不要手动编辑。
+#ifndef RFSIM_CONFIG_H
+#define RFSIM_CONFIG_H
+
+#define RFSIM_VERSION_MAJOR @rfsim_VERSION_MAJOR@
+#define RFSIM_VERSION_MINOR @rfsim_VERSION_MINOR@
+#define RFSIM_VERSION_PATCH @rfsim_VERSION_PATCH@
+
+#define RFSIM_VERSION_STRING "@rfsim_VERSION@"
+
+#endif // RFSIM_CONFIG_H

@@ -1,0 +1,20 @@
+#@ # 
+#@ # Running lm_shell Version U-2022.12-SP6 for linux64 -- Aug 25, 2023
+#@ # Date:   Mon Apr 20 17:52:54 2026
+#@ # Run by: limuhan@mn01
+#@ 
+
+gui_set_pref_value -category {SelectByNamePalette} -key {ObjectType} -value {Logical Cells}
+open_lib /share/home/limuhan/Libraries/icc2/icc2_frame/ndm/tcbn28hpcplusbwp30p140/ndm/STDCELL_NEW_merge_db_physical_only.ndm
+change_selection [get_lib_cells -include_subcells {STDCELL_NEW_merge_db_physical_only/ANTENNABWP30P140/frame}]
+change_selection [get_lib_cells -include_subcells {STDCELL_NEW_merge_db_physical_only/AN2D0BWP30P140/frame}]
+change_selection [get_lib_cells -include_subcells {STDCELL_NEW_merge_db_physical_only/AN2D1BWP30P140/frame}]
+change_selection [get_libs {STDCELL_NEW_merge_db_physical_only}]
+open_lib /share/home/limuhan/TSMC28nm_icc2/icc_work/ndm/STDCELL.ndm
+open_lib /share/home/limuhan/TSMC28nm_icc2/icc_work/ndm/STDCELL.ndm
+change_selection [get_lib_cells -include_subcells {STDCELL/ANTENNABWP30P140UHVT/frame}]
+change_selection [get_lib_cells -include_subcells {STDCELL/ANTENNABWP30P140UHVT/timing}]
+change_selection [get_libs {STDCELL}]
+change_selection [get_libs {STDCELL_NEW_merge_db_physical_only}]
+change_selection [get_libs {STDCELL}]
+exit

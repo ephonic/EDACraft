@@ -1,0 +1,271 @@
+########################################################################################
+######  DCICC FLOW - Version 4.1.0 (2015-10-15), For T40
+######  Owner : Anonymous , rc
+########################################################################################
+#---------------------------------------------------------------------------------------
+#	Library Definitions
+#---------------------------------------------------------------------------------------
+set lib_common	{
+	alib_path	""
+	ant_rule	/mnt/Data/S40LL/std_cell/40gphs_svt/Lib/ant_rules/ant_rules.tcl
+	tf		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/astro/tf/scc40nll_vhs_9lm_2tm.tf
+	tech_lef	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/lef/tf/scc40nll_9lm_2tm.lef
+	tlu	{
+		typical		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/astro/tluplus/TD-LO40-XS-2006v0R_1PxM_2TM9k_ALPA28k/1P9M_2TM/StarRC_40LL_1P9M_2TM_ALPA28K_TYP.tluplus
+		cbest		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/astro/tluplus/TD-LO40-XS-2006v0R_1PxM_2TM9k_ALPA28k/1P9M_2TM/StarRC_40LL_1P9M_2TM_ALPA28K_CMIN.tluplus	
+		cworst		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/astro/tluplus/TD-LO40-XS-2006v0R_1PxM_2TM9k_ALPA28k/1P9M_2TM/StarRC_40LL_1P9M_2TM_ALPA28K_CMAX.tluplus
+		rcbest		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/astro/tluplus/TD-LO40-XS-2006v0R_1PxM_2TM9k_ALPA28k/1P9M_2TM/StarRC_40LL_1P9M_2TM_ALPA28K_RCMIN.tluplus
+		rcworst		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/astro/tluplus/TD-LO40-XS-2006v0R_1PxM_2TM9k_ALPA28k/1P9M_2TM/StarRC_40LL_1P9M_2TM_ALPA28K_RCMAX.tluplus
+	}
+	mapfile	{
+		itfmap		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/astro/tluplus/TD-LO40-XS-2006v0R_1PxM_2TM9k_ALPA28k/1P9M_2TM/StarRC_40LL_1P9M_2TM_cell.map
+		gdsmap		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/astro/gds2OutLayer_twinwell.map
+	}
+	operating_conditions	{
+		ff_v1p21_125c     ff_v1p21_125c
+                ff_v1p21_0c       ff_v1p21_0c
+                ff_v1p21_n40c     ff_v1p21_-40c
+                ss_v0p99_125c     ss_v0p99_125c
+                ss_v0p99_n40c     ss_v0p99_-40c
+                ss_v0p99_0c       ss_v0p99_0c
+                tt_v1p1_125c      tt_v1p1_125c
+                tt_v1p1_25c       tt_v1p1_25c
+	}
+        lib_track       {
+                dir     {M1 H M2 H M3 V M4 H M5 V M6 H M7 V M8 H M9 V M10 H AP V}
+                offset  {M1 0.07 M2 0.07 M3 0.07 M4 0.07 M5 0.07 M6 0.07 M7 0.14 M8 0.14 M9 0.42 M10 0.42 AP 0}
+        }
+	metal_layers	{
+		all	{M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 AP}
+		start	M3
+		autopin	{M5 M6}
+	}
+	autofp_script	{
+		default ../CMD/autofp_tpns.tcl
+	}
+	icv {
+		HOME_DIR	/disc/Icvalidator2014.06-SP2
+		EXE_PATH	/disc/Icvalidator2014.06-SP2/bin/AMD.64
+		DRC_RUNSET	/mnt/Data/S40LL/std_cell/40gphs_svt/Lib/ICV_DRC/N45.idrc
+		GMAP_SCRIPT	/disc/Icvalidator2014.06-SP2/contrib/generate_layer_rule_map.pl
+		DPLOG_FILE	signoff_drc_run/run_details/_icv_pcl.dp.log
+	}
+	pt {
+		eco_power_priority	{STH STN STL}
+	}
+}
+#---------------------------------------------------------------------------------------
+#	HS && ECO Libraries, 12 Track
+#---------------------------------------------------------------------------------------
+# ULVT 	: HS 12 track 40nm Channel LVT
+# LVT 	: HS 12 track 40nm Channel SVT
+# RVT 	: HS 12 track 40nm Channel HVT
+# ULVT_ECO	: HS 12 track 40nm Channel LVT ECO
+# LVT_ECO	: HS 12 track 40nm Channel SVT ECO
+# RVT_ECO	: HS 12 track 40nm Channel HVT ECO
+set lib_define {
+	ULVT	{
+		db	{
+			ff_v1p21_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/liberty/1.1v/scc40nll_vhsc40_ulvt_ff_v1p21_125c_ccs.db
+			ff_v1p21_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/liberty/1.1v/scc40nll_vhsc40_ulvt_ff_v1p21_0c_ccs.db
+			ff_v1p21_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/liberty/1.1v/scc40nll_vhsc40_ulvt_ff_v1p21_-40c_ccs.db
+			ss_v0p99_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/liberty/1.1v/scc40nll_vhsc40_ulvt_ss_v0p99_125c_ccs.db
+			ss_v0p99_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/liberty/1.1v/scc40nll_vhsc40_ulvt_ss_v0p99_-40c_ccs.db
+			ss_v0p99_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/liberty/1.1v/scc40nll_vhsc40_ulvt_ss_v0p99_0c_ccs.db
+			tt_v1p1_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/liberty/1.1v/scc40nll_vhsc40_ulvt_tt_v1p1_125c_ccs.db
+			tt_v1p1_25c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/liberty/1.1v/scc40nll_vhsc40_ulvt_tt_v1p1_25c_ccs.db
+		}
+		mw	/mnt/Data/S40LL/std_cell/Std_MW/ULVT	
+		lef		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ULVT/lef/macro/scc40nll_vhsc40_ulvt_ant.lef
+		lib_title	scc40nll_vhsc40_ulvt_.*
+		dontuse	{
+			dc_list ""
+			icc_list ""
+			param_define	40gphs_lvt_bancell
+		}
+                function_cell   {
+                        endcap          F_FILL1_12TUL40
+                        antenna         F_DIODE4_12TUL40
+                        fill_no_metal   {F_FILL128_12TUL40 F_FILL64_12TUL40 F_FILL32_12TUL40 F_FILL16_12TUL40 F_FILL8_12TUL40 F_FILL4_12TUL40 F_FILL2_12TUL40 F_FILL1_12TUL40}
+                        fill_metal      {FDCAP128_12TUL40 FDCAP64_12TUL40 FDCAP32_12TUL40 FDCAP16_12TUL40 FDCAP8_12TUL40 FDCAP4_12TUL40}
+                        predecap        FDCAP8_12TUL40
+                        listdecap       {*V16_12TUL40}
+                        welltap         {FILLTIE4_12TUL40 40}
+                        driver_inv      {INV4_12TUL40 I ZN}
+                        tie1            PULL1_12TUL40
+                        tie0            PULL0_12TUL40
+                        ctsbuf          {scc40nll_vhsc40_*/CLKINV*_12TUL40}
+                        ctsboundcell    CLKBUFV4_12TUL40
+                        delay_cell      DEL*
+                }
+                spare   {{NAND2V4_12TUL40 0.01 1 VDD} \
+                        {AND2V4_12TUL40 0.005 1 VDD} \
+                        {NOR2V4_12TUL40 0.01 1 VSS} \
+                        {OR2V4_12TUL40 0.005 1 VSS} \
+                        {XOR2V2_12TUL40 0.004 1 VSS} \
+                        {INV4_12TUL40 0.005 1 VSS} \
+                        {BUFV4_12TUL40 0.005 1 VSS} \
+                        {DGRSNQV2_12TUL40 0.003 1 VDD} \
+                        {DGRNQNV2_12TUL40 0.015 1 VDD} \
+                        {DGRNQV2_12TUL40 0.015 1 VDD}
+                }
+		eco_lib	ULVT_ECO
+	}
+	LVT	{
+		db	{
+			ff_v1p21_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/liberty/1.1v/scc40nll_vhsc40_lvt_ff_v1p21_125c_ccs.db
+			ff_v1p21_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/liberty/1.1v/scc40nll_vhsc40_lvt_ff_v1p21_0c_ccs.db
+			ff_v1p21_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/liberty/1.1v/scc40nll_vhsc40_lvt_ff_v1p21_-40c_ccs.db
+			ss_v0p99_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/liberty/1.1v/scc40nll_vhsc40_lvt_ss_v0p99_125c_ccs.db
+			ss_v0p99_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/liberty/1.1v/scc40nll_vhsc40_lvt_ss_v0p99_-40c_ccs.db
+			ss_v0p99_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/liberty/1.1v/scc40nll_vhsc40_lvt_ss_v0p99_0c_ccs.db
+			tt_v1p1_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/liberty/1.1v/scc40nll_vhsc40_lvt_tt_v1p1_125c_ccs.db
+			tt_v1p1_25c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/liberty/1.1v/scc40nll_vhsc40_lvt_tt_v1p1_25c_ccs.db
+		}
+		mw		/mnt/Data/S40LL/std_cell/Std_MW/LVT
+		lef		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_LVT/lef/macro/scc40nll_vhsc40_lvt_ant.lef
+		lib_title	scc40nll_vhsc40_lvt_.*
+		dontuse	{
+			dc_list ""
+			icc_list ""
+			param_define	40gphs_svt_bancell
+		}
+                function_cell   {
+                        endcap          F_FILL1_12TL40
+                        antenna         F_DIODE4_12TL40
+                        fill_no_metal   {F_FILL128_12TL40 F_FILL64_12TL40 F_FILL32_12TL40 F_FILL16_12TL40 F_FILL8_12TL40 F_FILL4_12TL40 F_FILL2_12TL40 F_FILL1_12TL40}
+                        fill_metal      {FDCAP128_12TL40 FDCAP64_12TL40 FDCAP32_12TL40 FDCAP16_12TL40 FDCAP8_12TL40 FDCAP4_12TL40}
+                        predecap        FDCAP8_12TL40
+                        listdecap       {*V16_12TL40}
+                        welltap         {FILLTIE4_12TL40 40}
+                        driver_inv      {INV4_12TL40 I ZN}
+                        tie1            PULL1_12TL40
+                        tie0            PULL0_12TL40
+                        ctsbuf          {scc40nll_vhsc40_*/CLKINV*_12TL40}
+                        ctsboundcell    CLKBUFV4_12TL40
+                        delay_cell      DEL*
+                }
+                spare   {{NAND2V4_12TL40 0.01 1 VDD} \
+                        {AND2V4_12TL40 0.005 1 VDD} \
+                        {NOR2V4_12TL40 0.01 1 VSS} \
+                        {OR2V4_12TL40 0.005 1 VSS} \
+                        {XOR2V2_12TL40 0.004 1 VSS} \
+                        {INV4_12TL40 0.005 1 VSS} \
+                        {BUFV4_12TL40 0.005 1 VSS} \
+                        {DGRSNQV2_12TL40 0.003 1 VDD} \
+                        {DGRNQNV2_12TL40 0.015 1 VDD} \
+                        {DGRNQV2_12TL40 0.015 1 VDD}
+                }
+		eco_lib	LVT_ECO
+	}
+	RVT	{
+		db	{
+			ff_v1p21_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/liberty/1.1v/scc40nll_vhsc40_rvt_ff_v1p21_125c_ccs.db
+			ff_v1p21_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/liberty/1.1v/scc40nll_vhsc40_rvt_ff_v1p21_0c_ccs.db
+			ff_v1p21_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/liberty/1.1v/scc40nll_vhsc40_rvt_ff_v1p21_-40c_ccs.db
+			ss_v0p99_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/liberty/1.1v/scc40nll_vhsc40_rvt_ss_v0p99_125c_ccs.db
+			ss_v0p99_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/liberty/1.1v/scc40nll_vhsc40_rvt_ss_v0p99_-40c_ccs.db
+			ss_v0p99_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/liberty/1.1v/scc40nll_vhsc40_rvt_ss_v0p99_0c_ccs.db
+			tt_v1p1_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/liberty/1.1v/scc40nll_vhsc40_rvt_tt_v1p1_125c_ccs.db
+			tt_v1p1_25c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/liberty/1.1v/scc40nll_vhsc40_rvt_tt_v1p1_25c_ccs.db
+		}
+		mw		/mnt/Data/S40LL/std_cell/Std_MW/RVT
+		lef		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_RVT/lef/macro/scc40nll_vhsc40_rvt_ant.lef
+		lib_title	scc40nll_vhsc40_rvt_.*
+		dontuse	{
+			dc_list ""
+			icc_list ""
+			param_define	40gphs_hvt_bancell
+		}
+                function_cell   {
+                        endcap          F_FILL1_12TR40
+                        antenna         F_DIODE4_12TR40
+                        fill_no_metal   {F_FILL128_12TR40 F_FILL64_12TR40 F_FILL32_12TR40 F_FILL16_12TR40 F_FILL8_12TR40 F_FILL4_12TR40 F_FILL2_12TR40 F_FILL1_12TR40}
+                        fill_metal      {FDCAP128_12TR40 FDCAP64_12TR40 FDCAP32_12TR40 FDCAP16_12TR40 FDCAP8_12TR40 FDCAP4_12TR40}
+                        predecap        FDCAP8_12TR40
+                        listdecap       {*V16_12TR40}
+                        welltap         {FILLTIE4_12TR40 40}
+                        driver_inv      {INV4_12TR40 I ZN}
+                        tie1            PULL1_12TR40
+                        tie0            PULL0_12TR40
+                        ctsbuf          {scc40nll_vhsc40_*/CLKINV*_12TR40}
+                        ctsboundcell    CLKBUFV4_12TR40
+                        delay_cell      DEL*
+                }
+                spare   {{NAND2V4_12TR40 0.01 1 VDD} \
+                        {AND2V4_12TR40 0.005 1 VDD} \
+                        {NOR2V4_12TR40 0.01 1 VSS} \
+                        {OR2V4_12TR40 0.005 1 VSS} \
+                        {XOR2V2_12TR40 0.004 1 VSS} \
+                        {INV4_12TR40 0.005 1 VSS} \
+                        {BUFV4_12TR40 0.005 1 VSS} \
+                        {DGRSNQV2_12TR40 0.003 1 VDD} \
+                        {DGRNQNV2_12TR40 0.015 1 VDD} \
+                        {DGRNQV2_12TR40 0.015 1 VDD}
+                }
+		eco_lib	RVT_ECO
+	}
+	HVT_ECO {
+		db	{
+			ff_v1p21_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_hvt_ff_v1p21_125c_ccs.db
+			ff_v1p21_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_hvt_ff_v1p21_0c_ccs.db
+			ff_v1p21_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_hvt_ff_v1p21_-40c_ccs.db
+			ss_v0p99_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_hvt_ss_v0p99_125c_ccs.db
+			ss_v0p99_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_hvt_ss_v0p99_-40c_ccs.db
+			ss_v0p99_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_hvt_ss_v0p99_0c_ccs.db
+			tt_v1p1_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_hvt_tt_v1p1_125c_ccs.db
+			tt_v1p1_25c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_hvt_tt_v1p1_25c_ccs.db
+		}
+		mw		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/astro/scc40nll_vhsc40_eco_hvt_v0p0
+		lef		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_HVT/V0p0/lef/macro/scc40nll_vhsc40_eco_hvt_v0p0_ant.lef
+		lib_title	scc40nll_vhsc40_eco_hvt_.*
+		function_cell_eco	{
+			predecap	KDCAPV4_12TH40
+			fill_no_metal	KFILLV1_12TH40
+			fill_metal	{KDCAPV1_12TH40 KDCAPV2_12TH40 KDCAPV4_12TH40 KDCAPV8_12TH40 KDCAPV16_12TH40}
+		}
+		ref_eco	""
+	}
+	LVT_ECO {
+		db	{
+			ff_v1p21_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_lvt_ff_v1p21_125c_ccs.db
+			ff_v1p21_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_lvt_ff_v1p21_0c_ccs.db
+			ff_v1p21_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_lvt_ff_v1p21_-40c_ccs.db
+			ss_v0p99_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_lvt_ss_v0p99_125c_ccs.db
+			ss_v0p99_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_lvt_ss_v0p99_-40c_ccs.db
+			ss_v0p99_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_lvt_ss_v0p99_0c_ccs.db
+			tt_v1p1_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_lvt_tt_v1p1_125c_ccs.db
+			tt_v1p1_25c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_lvt_tt_v1p1_25c_ccs.db
+		}
+		mw		/mnt/Data/S40LL/std_cell/Std_MW/LVT_ECO
+		lef		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_LVT/V0p0/lef/macro/scc40nll_vhsc40_eco_lvt_v0p0_ant.lef
+		lib_title	scc40nll_vhsc40_eco_lvt_.*
+		function_cell_eco	{
+			predecap	KDCAPV4_12TL40
+			fill_no_metal	KFILLV1_12TL40
+			fill_metal	{KDCAPV1_1_12TL40 KDCAPV2_1_12TL40 KDCAPV4_1_12TL40 KDCAPV8_1_12TL40 KDCAPV16_1_12TL40}
+		}
+		ref_eco	LVT
+	}
+	RVT_ECO {
+		db	{
+			ff_v1p21_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_rvt_ff_v1p21_125c_ccs.db
+			ff_v1p21_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_rvt_ff_v1p21_0c_ccs.db
+			ff_v1p21_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_rvt_ff_v1p21_-40c_ccs.db
+			ss_v0p99_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_rvt_ss_v0p99_125c_ccs.db
+			ss_v0p99_n40c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_rvt_ss_v0p99_-40c_ccs.db
+			ss_v0p99_0c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_rvt_ss_v0p99_0c_ccs.db
+			tt_v1p1_125c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_rvt_tt_v1p1_125c_ccs.db
+			tt_v1p1_25c	/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/synopsys/1.1v/scc40nll_vhsc40_eco_rvt_tt_v1p1_25c_ccs.db
+		}
+		mw		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/astro/scc40nll_vhsc40_eco_rvt_v0p0
+		lef		/mnt/Data/S40LL/std_cell/SCC40NLL_VHSC40_ECO_RVT/V0p0/lef/macro/scc40nll_vhsc40_eco_rvt_v0p0_ant.lef
+		lib_title	scc40nll_vhsc40_eco_rvt_.*
+		function_cell_eco	{
+			predecap	KDCAPV4_12TR40
+			fill_no_metal	KFILLV1_12TR40
+			fill_metal	{KDCAPV1_12TR40 KDCAPV2_12TR40 KDCAPV4_12TR40 KDCAPV8_12TR40 KDCAPV16_12TR40}
+		}
+		ref_eco	RVT
+	}
+}

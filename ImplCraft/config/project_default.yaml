@@ -1,0 +1,56 @@
+# ============================================================
+# IC Backend MVP — Project Configuration
+# Design: FullSystem (TSMC 28nm HPC+)
+# ============================================================
+
+design:
+  name: FullSystem
+  top_module: FullSystem
+  clock_period_ns: 10.0
+  clock_name: clk
+  die_width_um: 2900.0
+  die_height_um: 1900.0
+  core_offset_um: [180, 180, 180, 180]
+  target_utilization: 0.70
+  scenario: func.tt0p9v.wc.cmax_25c.setup
+
+pdk:
+  name: tsmc28hpcp
+  tech_file: /share/home/yangfan/backend_scripts/backend/tf/tsmcn28_10lm7X2ZUTRDL_HVH.tf
+  min_routing_layer: M2
+  max_routing_layer: M9
+
+libraries:
+  std_cell_libs:
+    - /share/home/yangfan/backend_scripts/syn/libs/tcbn28hpcplusbwp30p140ffg0p88v0c.db
+    - /share/home/yangfan/backend_scripts/syn/libs/tcbn28hpcplusbwp30p140uhvttt0p9v85c.db
+    - /share/home/yangfan/backend_scripts/syn/libs/tcbn28hpcplusbwp30p140uhvttt0p9v25c.db
+  ndm_libs:
+    - /share/home/yangfan/backend_scripts/backend/ndm/STDCELL.ndm
+    - /share/home/yangfan/backend_scripts/backend/ndm/PLL.ndm
+    - /share/home/yangfan/backend_scripts/backend/ndm/RAMNEW.ndm
+    - /share/home/yangfan/backend_scripts/backend/ndm/PORT.ndm
+  macro_libs: []
+  io_libs: []
+  dont_use_cells: []
+
+rtl:
+  files:
+    - /share/home/yangfan/backend_scripts/syn/rtl/FullSystem.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/FullSystem_wrapper.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/Inter_Crossbar.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/MTS.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/FFRAM.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/ExterDataRAM.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/Module_instance.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/ProgramCounter.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/mux6_to_1.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/DataRAM.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/FF_process.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/Logic_Element.v
+    - /share/home/yangfan/backend_scripts/syn/rtl/mux5_to_1.v
+  sdc_file: ""
+
+flow:
+  work_root: ./work
+  dry_run: false

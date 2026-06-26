@@ -1,0 +1,711 @@
+{
+  "config": {
+    "design_name": "FullSystem",
+    "top_module": "FullSystem",
+    "clock_period_ns": 10.0,
+    "clock_name": "clk",
+    "die_width_um": 2900.0,
+    "die_height_um": 1900.0,
+    "core_offset_um": [
+      180,
+      180,
+      180,
+      180
+    ],
+    "scenario": "func.tt0p9v.wc.cmax_25c.setup",
+    "pdk": {
+      "name": "tsmc28hpcp",
+      "tech_file": "/share/home/yangfan/backend_scripts/backend/tf/tsmcn28_10lm7X2ZUTRDL_HVH.tf",
+      "metal_stack": [
+        "M1",
+        "M2",
+        "M3",
+        "M4",
+        "M5",
+        "M6",
+        "M7",
+        "M8",
+        "M9",
+        "AP"
+      ],
+      "min_routing_layer": "M2",
+      "max_routing_layer": "M9",
+      "min_layer_mode": "allow_pin_connection",
+      "max_layer_mode": "hard",
+      "gds_map_file": "",
+      "lef_files": [],
+      "antenna_rule_file": "",
+      "icv_drc_runset": "",
+      "icv_fill_runset": ""
+    },
+    "libraries": {
+      "std_cell_libs": [
+        "/share/home/yangfan/backend_scripts/syn/libs/tcbn28hpcplusbwp30p140ffg0p88v0c.db",
+        "/share/home/yangfan/backend_scripts/syn/libs/tcbn28hpcplusbwp30p140uhvttt0p9v85c.db",
+        "/share/home/yangfan/backend_scripts/syn/libs/tcbn28hpcplusbwp30p140uhvttt0p9v25c.db"
+      ],
+      "macro_libs": [],
+      "io_libs": [],
+      "ndm_libs": [
+        "/share/home/yangfan/backend_scripts/backend/ndm/STDCELL.ndm",
+        "/share/home/yangfan/backend_scripts/backend/ndm/PLL.ndm",
+        "/share/home/yangfan/backend_scripts/backend/ndm/RAMNEW.ndm",
+        "/share/home/yangfan/backend_scripts/backend/ndm/PORT.ndm"
+      ],
+      "dont_use_cells": [],
+      "vt_libs": {},
+      "main_lib_name": "",
+      "eco_lib": "",
+      "vt_percentage_constraint": {},
+      "driver_cell": "",
+      "delay_cell": "",
+      "antenna_cell": "",
+      "boundary_cells": {},
+      "tap_cell": "",
+      "endcap_cell": "",
+      "decap_cells": [],
+      "filler_cells": []
+    },
+    "rtl_files": [
+      "/share/home/yangfan/backend_scripts/syn/rtl/FullSystem.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/FullSystem_wrapper.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/Inter_Crossbar.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/MTS.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/FFRAM.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/ExterDataRAM.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/Module_instance.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/ProgramCounter.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/mux6_to_1.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/DataRAM.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/FF_process.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/Logic_Element.v",
+      "/share/home/yangfan/backend_scripts/syn/rtl/mux5_to_1.v"
+    ],
+    "sdc_file": "",
+    "clocks": [
+      {
+        "name": "clk",
+        "period_ns": 10.0,
+        "setup_uncertainty_ns": 0.1,
+        "hold_uncertainty_ns": 0.05,
+        "transition_ns": 0.1,
+        "clock_type": "CTS",
+        "top_metal": "M7",
+        "mesh_region": [],
+        "mesh_trunk_multiple": 8,
+        "mesh_trunk_spacing": [
+          40.0,
+          40.0
+        ],
+        "pin_or_port": ""
+      }
+    ],
+    "timing_derate": {
+      "late_factor": 1.0,
+      "early_factor": 1.0,
+      "late_clock_factor": null,
+      "early_clock_factor": null
+    },
+    "cts": {
+      "target_skew_ns": 0.1,
+      "target_early_delay_ns": 0.0,
+      "max_transition_ns": null,
+      "max_fanout": null,
+      "leaf_max_transition_ns": null,
+      "use_leaf_max_transition_on_macros": false,
+      "max_rc_delay_ns": null,
+      "inter_clock_balance": false,
+      "ocv_clustering": true,
+      "ocv_path_sharing": true,
+      "logic_level_balance": false,
+      "routing_layers": [],
+      "stop_pin_on_macro": true
+    },
+    "placement": {
+      "target_utilization": 0.7,
+      "max_cell_density_threshold": -1.0,
+      "congestion_effort": "medium",
+      "target_routing_density": 0.6,
+      "max_net_length_um": 250.0,
+      "vt_min_filler_size": 2,
+      "consider_vt_spacing": true,
+      "consider_continuous_od_spacing": true,
+      "consider_pode_spacing": false,
+      "insert_endcap": true,
+      "insert_welltap": true,
+      "insert_predecap": true,
+      "insert_postdecap": true,
+      "insert_spare": false,
+      "insert_eco": true,
+      "tap_distance_um": 40.0,
+      "power_net": "VDD",
+      "ground_net": "VSS",
+      "macro_keepout_margin": [
+        5.0,
+        5.0,
+        5.0,
+        5.0
+      ],
+      "auto_macro_placement": true
+    },
+    "routing": {
+      "timing_driven": true,
+      "timing_driven_effort": "high",
+      "crosstalk_driven": true,
+      "track_timing_driven": true,
+      "track_crosstalk_driven": true,
+      "antenna_fixing": true,
+      "insert_diodes_during_routing": true,
+      "optimize_wire_via_effort": "high",
+      "optimize_tie_off_effort": "high",
+      "repair_shorts_over_macros_effort": "high",
+      "generate_off_grid_pin_tracks": true,
+      "si_delta_delay": true,
+      "si_route_xtalk_prevention": true,
+      "si_static_noise": true,
+      "si_timing_window": true,
+      "si_analysis_effort": "medium",
+      "redundant_via_insertion": "medium",
+      "search_repair_loop": 40,
+      "eco_route_search_repair_loops": 20,
+      "xtalk_reduction_loops": 5
+    },
+    "synthesis": {
+      "compile_ultra": true,
+      "no_autoungroup": true,
+      "timing_high_effort": true,
+      "incremental_compile": false,
+      "max_incremental_loops": 0,
+      "tns_effort": "high",
+      "high_resistance": false,
+      "power_optimization": true,
+      "power_effort": "high",
+      "physically_aware_cg": true,
+      "flatten_cg": true,
+      "critical_range_ns": 0.0,
+      "max_transition_dc": 0.5,
+      "max_fanout_dc": 20,
+      "awe_effort": 10,
+      "arnoldi_effort": 10,
+      "enable_register_merging": false,
+      "num_cores": 64
+    },
+    "target_utilization": 0.7
+  },
+  "current_stage": "INIT",
+  "stage_results": {
+    "SYNTHESIS": {
+      "stage": "SYNTHESIS",
+      "status": "PASSED",
+      "work_dir": "work/synthesis",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.002455472946166992
+    },
+    "INIT": {
+      "stage": "INIT",
+      "status": "PASSED",
+      "work_dir": "work/create_lib",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.14045071601867676
+    },
+    "FLOORPLAN": {
+      "stage": "FLOORPLAN",
+      "status": "PASSED",
+      "work_dir": "work/floorplan",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.0019114017486572266
+    },
+    "PLACEMENT": {
+      "stage": "PLACEMENT",
+      "status": "PASSED",
+      "work_dir": "work/placement",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.0022246837615966797
+    },
+    "CTS": {
+      "stage": "CTS",
+      "status": "PASSED",
+      "work_dir": "work/cts",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.0021457672119140625
+    },
+    "ROUTING": {
+      "stage": "ROUTING",
+      "status": "PASSED",
+      "work_dir": "work/routing",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.0024025440216064453
+    },
+    "ROUTE_OPT": {
+      "stage": "ROUTE_OPT",
+      "status": "PASSED",
+      "work_dir": "work/route_opt",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.0010831356048583984
+    },
+    "STA_SIGNOFF": {
+      "stage": "STA_SIGNOFF",
+      "status": "PASSED",
+      "work_dir": "work/primetime",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.0030486583709716797
+    },
+    "PV_DRC": {
+      "stage": "PV_DRC",
+      "status": "PASSED",
+      "work_dir": "work/drc",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.0017344951629638672
+    },
+    "PV_LVS": {
+      "stage": "PV_LVS",
+      "status": "PASSED",
+      "work_dir": "work/lvs",
+      "log_file": "",
+      "timing": {
+        "wns": null,
+        "tns": null,
+        "num_violating_paths": null,
+        "num_endpoints": null,
+        "max_transition_violations": null,
+        "max_capacitance_violations": null,
+        "max_fanout_violations": null,
+        "clock_skew": null
+      },
+      "area": {
+        "total_area": null,
+        "cell_area": null,
+        "utilization": null,
+        "num_std_cells": null,
+        "num_macros": null,
+        "num_io_cells": null
+      },
+      "power": {
+        "total_power_mw": null,
+        "dynamic_power_mw": null,
+        "leakage_power_mw": null,
+        "short_circuit_power_mw": null
+      },
+      "route": {
+        "drc_errors": null,
+        "total_wirelength": null,
+        "num_nets": null,
+        "num_vias": null,
+        "congestion_h": null,
+        "congestion_v": null
+      },
+      "drc": {
+        "total_errors": null,
+        "errors_by_type": {},
+        "is_clean": false
+      },
+      "lvs": {
+        "is_clean": false,
+        "num_mismatches": null,
+        "num_errors": null
+      },
+      "output_files": {},
+      "messages": [],
+      "elapsed_seconds": 0.0015990734100341797
+    }
+  },
+  "artifacts": {},
+  "work_root": "./work",
+  "history": []
+}
