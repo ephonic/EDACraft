@@ -28,3 +28,4 @@ __pycache__/
 *.tcl_ccs
 *.tcl_1.2
 clog*
+syn/
