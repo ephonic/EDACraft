@@ -1,22 +1,21 @@
 /**
  * ImplCraft Frontend Application
- * Professional design management dashboard with real-time updates.
  */
 
 const API_BASE = '/api';
 
 const App = {
     currentPage: 'dashboard',
-    charts: {},
-    currentScriptId: null,
-
-    // ─── Initialization ─────────────────────────────────────────
+    configData: null,
+    flowData: null,
+    executionStatus: null,
+    statusUpdateInterval: null,
 
     init() {
         this.setupNavigation();
         this.loadDashboard();
         this.checkServerStatus();
-        this.connectWebSocket();
+        this.startStatusPolling();
     },
 
     setupNavigation() {
@@ -42,14 +41,13 @@ const App = {
         switch (page) {
             case 'dashboard': this.loadDashboard(); break;
             case 'designs': this.loadDesignsList(); break;
-            case 'stages': this.populateDesignSelect('stage-design-select'); break;
-            case 'metrics': this.populateDesignSelect('metrics-design-select'); break;
-            case 'scripts': this.populateDesignSelect('scripts-design-select'); break;
-            case 'git': this.loadGitStatus(); break;
+            case 'config': this.loadConfig(); break;
+            case 'execution': this.loadExecutionStatus(); break;
+            case 'stages': this.loadStages(); break;
+            case 'metrics': this.loadMetrics(); break;
+            case 'scripts': this.loadScripts(); break;
         }
     },
-
-    // ─── API Helpers ────────────────────────────────────────────
 
     async api(path, options = {}) {
         try {
@@ -66,7 +64,6 @@ const App = {
                 const error = await response.json().catch(() => ({ detail: response.statusText }));
                 throw new Error(error.detail || `HTTP ${response.status}`);
             }
-            if (response.status === 204) return null;
             return await response.json();
         } catch (err) {
             console.error(`API Error [${path}]:`, err);
@@ -86,63 +83,47 @@ const App = {
         }
     },
 
-    connectWebSocket() {
-        try {
-            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            this.ws = new WebSocket(`${protocol}//${location.host}/ws/progress`);
-            this.ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'stage_update') {
-                    this.refresh();
-                }
-            };
-            this.ws.onclose = () => {
-                setTimeout(() => this.connectWebSocket(), 5000);
-            };
-        } catch (e) {
-            console.log('WebSocket not available, using polling');
-        }
+    startStatusPolling() {
+        this.statusUpdateInterval = setInterval(() => {
+            if (this.currentPage === 'execution') {
+                this.loadExecutionStatus();
+            }
+        }, 2000);
     },
 
     refresh() {
         this.switchPage(this.currentPage);
     },
 
-    // ─── Dashboard ──────────────────────────────────────────────
-
+    // Dashboard
     async loadDashboard() {
         try {
-            const [summary, overview, activity] = await Promise.all([
-                this.api('/dashboard/summary'),
-                this.api('/dashboard/designs-overview').catch(() => []),
-                this.api('/dashboard/activity').catch(() => []),
-            ]);
+            const summary = await this.api('/dashboard/summary');
+            document.getElementById('stat-designs').textContent = summary.total_designs || 0;
+            document.getElementById('stat-active').textContent = summary.active_designs || 0;
+            document.getElementById('stat-stages').textContent = summary.total_stages_run || 0;
+            document.getElementById('stat-passing').textContent = summary.passing_stages || 0;
+            document.getElementById('stat-failing').textContent = summary.failing_stages || 0;
+            document.getElementById('stat-scripts').textContent = summary.total_scripts || 0;
 
-            document.getElementById('stat-designs').textContent = summary.total_designs;
-            document.getElementById('stat-active').textContent = summary.active_designs;
-            document.getElementById('stat-stages').textContent = summary.total_stages_run;
-            document.getElementById('stat-passing').textContent = summary.passing_stages;
-            document.getElementById('stat-failing').textContent = summary.failing_stages;
-            document.getElementById('stat-scripts').textContent = summary.total_scripts;
-
-            this.renderDesignsOverview(overview);
-            this.renderActivity(activity);
+            const designs = await this.api('/designs').catch(() => []);
+            this.renderDesignsTable(designs);
         } catch (err) {
             console.error('Dashboard load failed:', err);
         }
     },
 
-    renderDesignsOverview(designs) {
+    renderDesignsTable(designs) {
         const tbody = document.getElementById('designs-table-body');
         if (!designs || designs.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="empty">No designs yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无设计项目</td></tr>';
             return;
         }
         tbody.innerHTML = designs.map(d => `
             <tr onclick="App.switchPage('stages')">
                 <td><strong>${this.esc(d.name)}</strong></td>
                 <td><span class="badge badge-${d.status}">${d.status}</span></td>
-                <td>${this.esc(d.pdk || '-')}</td>
+                <td>${this.esc(d.pdk_name || '-')}</td>
                 <td>${d.clock_period_ns}</td>
                 <td>${d.latest_metrics?.wns ?? '-'}</td>
                 <td>${d.latest_metrics?.tns ?? '-'}</td>
@@ -152,60 +133,31 @@ const App = {
         `).join('');
     },
 
-    renderActivity(activities) {
-        const container = document.getElementById('activity-feed');
-        if (!activities || activities.length === 0) {
-            container.innerHTML = '<div class="empty">No recent activity</div>';
-            return;
-        }
-        container.innerHTML = activities.slice(0, 10).map(a => `
-            <div class="activity-item">
-                <span class="activity-type">${a.type}</span>
-                <span>${this.esc(a.message)}</span>
-                <span class="activity-time">${this.formatDate(a.timestamp)}</span>
-            </div>
-        `).join('');
-    },
-
-    // ─── Designs ────────────────────────────────────────────────
-
+    // Designs
     async loadDesignsList() {
         try {
             const designs = await this.api('/designs');
             const container = document.getElementById('designs-list');
-            if (designs.length === 0) {
-                container.innerHTML = '<div class="empty">No designs. Create one to get started.</div>';
+            if (!designs || designs.length === 0) {
+                container.innerHTML = '<div class="empty">暂无设计项目</div>';
                 return;
             }
             container.innerHTML = designs.map(d => `
-                <div class="design-card" onclick="App.viewDesign(${d.id})">
-                    <h4>${this.esc(d.name)}</h4>
-                    <span class="badge badge-${d.status}">${d.status}</span>
-                    <div class="meta">
-                        <span>Module: ${this.esc(d.top_module)}</span>
-                        <span>PDK: ${this.esc(d.pdk_name || '-')}</span>
-                        <span>Clock: ${d.clock_period_ns}ns</span>
-                        <span>Stages: ${d.stage_count}</span>
+                <div class="card">
+                    <div class="card-header">
+                        <h4>${this.esc(d.name)}</h4>
+                        <span class="badge badge-${d.status}">${d.status}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-row"><span>顶层模块:</span> <span>${this.esc(d.top_module)}</span></div>
+                        <div class="card-row"><span>PDK:</span> <span>${this.esc(d.pdk_name || '-')}</span></div>
+                        <div class="card-row"><span>时钟周期:</span> <span>${d.clock_period_ns}ns</span></div>
+                        <div class="card-row"><span>利用率:</span> <span>${(d.target_utilization * 100).toFixed(1)}%</span></div>
                     </div>
                 </div>
             `).join('');
         } catch (err) {
-            console.error('Failed to load designs:', err);
-        }
-    },
-
-    async populateDesignSelect(selectId) {
-        try {
-            const designs = await this.api('/designs');
-            const select = document.getElementById(selectId);
-            const current = select.value;
-            select.innerHTML = '<option value="">Select Design...</option>';
-            designs.forEach(d => {
-                select.innerHTML += `<option value="${d.id}">${this.esc(d.name)}</option>`;
-            });
-            if (current) select.value = current;
-        } catch (err) {
-            console.error('Failed to populate select:', err);
+            console.error('Load designs failed:', err);
         }
     },
 
@@ -219,424 +171,426 @@ const App = {
         const data = {
             name: form.name.value,
             top_module: form.top_module.value,
-            pdk_name: form.pdk_name.value,
             clock_period_ns: parseFloat(form.clock_period_ns.value),
             target_utilization: parseFloat(form.target_utilization.value),
-            config_path: form.config_path.value,
-            description: form.description.value,
+            pdk_name: form.pdk_name.value,
         };
         try {
             await this.api('/designs', { method: 'POST', body: data });
             this.closeModal('modal-create-design');
             form.reset();
             this.loadDesignsList();
+            alert('设计创建成功！');
         } catch (err) {
-            alert(`Failed to create design: ${err.message}`);
+            alert('创建失败: ' + err.message);
         }
     },
 
-    async viewDesign(designId) {
-        this.switchPage('stages');
-        document.getElementById('stage-design-select').value = designId;
-        this.loadStages();
-    },
-
-    // ─── Stages ─────────────────────────────────────────────────
-
-    async loadStages() {
-        const designId = document.getElementById('stage-design-select').value;
-        if (!designId) return;
-
+    // Config
+    async loadConfig() {
         try {
-            const [stages, flowStatus] = await Promise.all([
-                this.api(`/stages/${designId}`),
-                this.api(`/stages/${designId}/flow-status`),
-            ]);
-
-            this.renderFlowPipeline(flowStatus);
-            this.renderStagesTable(stages);
+            this.configData = await this.api('/config/project');
+            this.flowData = await this.api('/config/flow');
+            this.renderConfig();
+            this.renderFlowConfig();
+            await this.loadDesignConfigs();
         } catch (err) {
-            console.error('Failed to load stages:', err);
+            console.error('Load config failed:', err);
         }
     },
 
-    renderFlowPipeline(flowStatus) {
-        const stages = flowStatus.stage_details || [];
-        const stageMap = {};
-        stages.forEach(s => { stageMap[s.stage_name] = s; });
+    renderConfig() {
+        if (!this.configData) return;
+        document.getElementById('config-project-name').value = this.configData.name || '';
+        document.getElementById('config-working-dir').value = this.configData.working_directory || '';
+        
+        // Design files
+        const filesContainer = document.getElementById('config-design-files');
+        filesContainer.innerHTML = (this.configData.design_files || []).map((f, i) => `
+            <div class="file-item">
+                <input type="text" value="${this.esc(f)}" data-index="${i}" onchange="App.updateDesignFile(${i}, this.value)">
+                <button class="btn btn-sm btn-danger" onclick="App.removeDesignFile(${i})">删除</button>
+            </div>
+        `).join('');
 
-        document.querySelectorAll('.flow-stage').forEach(el => {
-            const name = el.dataset.stage;
-            const stage = stageMap[name];
+        // Design libs
+        const libsContainer = document.getElementById('config-design-libs');
+        libsContainer.innerHTML = (this.configData.design_libraries || []).map((l, i) => `
+            <div class="file-item">
+                <input type="text" value="${this.esc(l)}" data-index="${i}" onchange="App.updateDesignLib(${i}, this.value)">
+                <button class="btn btn-sm btn-danger" onclick="App.removeDesignLib(${i})">删除</button>
+            </div>
+        `).join('');
 
-            el.className = 'flow-stage';
-            const statusEl = el.querySelector('.stage-status');
+        // EDA tools
+        document.getElementById('config-icc2-path').value = this.configData.eda_tools?.icc2_path || '';
+        document.getElementById('config-pt-path').value = this.configData.eda_tools?.pt_path || '';
+        document.getElementById('config-calibre-path').value = this.configData.eda_tools?.calibre_path || '';
+        document.getElementById('config-starrc-path').value = this.configData.eda_tools?.starrc_path || '';
+    },
 
-            if (stage) {
-                el.classList.add(stage.status);
-                statusEl.textContent = stage.status.charAt(0).toUpperCase() + stage.status.slice(1);
-            } else {
-                el.classList.add('pending');
-                statusEl.textContent = 'Pending';
+    renderFlowConfig() {
+        if (!this.flowData) return;
+        const stagesContainer = document.getElementById('config-flow-stages');
+        stagesContainer.innerHTML = (this.flowData.enabled_stages || []).map((stage, i) => `
+            <div class="stage-item">
+                <span class="stage-number">${i + 1}</span>
+                <span class="stage-name">${this.esc(stage)}</span>
+                <button class="btn btn-sm" onclick="App.moveStageUp(${i})">↑</button>
+                <button class="btn btn-sm" onclick="App.moveStageDown(${i})">↓</button>
+                <button class="btn btn-sm btn-danger" onclick="App.removeStage(${i})">×</button>
+            </div>
+        `).join('');
+
+        document.getElementById('config-parallel').checked = this.flowData.parallel_execution || false;
+        document.getElementById('config-auto-continue').checked = this.flowData.auto_continue || false;
+        document.getElementById('config-checkpoint').checked = this.flowData.checkpoint_enabled || false;
+    },
+
+    async loadDesignConfigs() {
+        try {
+            const configs = await this.api('/config/designs');
+            const container = document.getElementById('config-designs-list');
+            if (!configs || configs.length === 0) {
+                container.innerHTML = '<div class="empty">暂无设计配置</div>';
+                return;
             }
-        });
-    },
-
-    renderStagesTable(stages) {
-        const tbody = document.getElementById('stages-table-body');
-        if (!stages || stages.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="empty">No stages run yet</td></tr>';
-            return;
-        }
-        tbody.innerHTML = stages.map(s => `
-            <tr>
-                <td><strong>${this.esc(s.stage_name)}</strong></td>
-                <td>${this.esc(s.tool || '-')}</td>
-                <td><span class="badge badge-${s.status}">${s.status}</span></td>
-                <td>${s.elapsed_seconds ? s.elapsed_seconds.toFixed(1) + 's' : '-'}</td>
-                <td>${s.timing?.wns ?? '-'}</td>
-                <td>${s.timing?.tns ?? '-'}</td>
-                <td>${this.formatDate(s.created_at)}</td>
-                <td>
-                    ${s.log_file ? `<button class="btn btn-sm" onclick="App.viewStageLog(${s.id})">Log</button>` : ''}
-                </td>
-            </tr>
-        `).join('');
-    },
-
-    async viewStageLog(stageId) {
-        try {
-            const stage = await this.api(`/stages/detail/${stageId}`);
-            const designId = stage.design_id;
-            const logData = await this.api(`/stages/${designId}/log/${stage.stage_name}`);
-            document.getElementById('log-content').textContent = logData.content || 'No log content';
-            document.getElementById('log-status').textContent = stage.status;
-            document.getElementById('log-status').className = `badge badge-${stage.status}`;
-            document.getElementById('modal-execution-log').classList.remove('hidden');
+            container.innerHTML = configs.map(c => `
+                <div class="card">
+                    <div class="card-header">
+                        <h4>${this.esc(c.name)}</h4>
+                        <button class="btn btn-sm btn-danger" onclick="App.deleteDesignConfig('${c.name}')">删除</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-row"><span>顶层模块:</span> <span>${this.esc(c.top_module)}</span></div>
+                        <div class="card-row"><span>时钟周期:</span> <span>${c.clock_period_ns}ns</span></div>
+                        <div class="card-row"><span>利用率:</span> <span>${(c.target_utilization * 100).toFixed(1)}%</span></div>
+                    </div>
+                </div>
+            `).join('');
         } catch (err) {
-            alert('Failed to load log: ' + err.message);
+            console.error('Load design configs failed:', err);
         }
     },
 
-    // ─── Metrics ────────────────────────────────────────────────
-
-    async loadMetrics() {
-        const designId = document.getElementById('metrics-design-select').value;
-        if (!designId) return;
-
-        try {
-            const [metrics, trends] = await Promise.all([
-                this.api(`/metrics/${designId}`),
-                this.api(`/metrics/${designId}/trends`),
-            ]);
-
-            this.renderMetricsTable(metrics);
-            this.renderCharts(trends);
-        } catch (err) {
-            console.error('Failed to load metrics:', err);
-        }
+    addDesignFile() {
+        this.configData.design_files = this.configData.design_files || [];
+        this.configData.design_files.push('');
+        this.renderConfig();
     },
 
-    renderMetricsTable(metrics) {
-        const tbody = document.getElementById('metrics-table-body');
-        if (!metrics || metrics.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="empty">No metrics recorded</td></tr>';
-            return;
-        }
-        tbody.innerHTML = metrics.map(m => `
-            <tr>
-                <td>${m.iteration}</td>
-                <td class="${m.wns !== null && m.wns >= 0 ? 'text-success' : 'text-danger'}">${m.wns ?? '-'}</td>
-                <td>${m.tns ?? '-'}</td>
-                <td>${m.utilization !== null ? (m.utilization * 100).toFixed(1) + '%' : '-'}</td>
-                <td>${m.total_power_mw ?? '-'}</td>
-                <td>${m.drc_errors ?? '-'}</td>
-                <td>${m.num_violating_paths ?? '-'}</td>
-                <td>${this.formatDate(m.snapshot_at)}</td>
-            </tr>
-        `).join('');
+    updateDesignFile(index, value) {
+        this.configData.design_files[index] = value;
     },
 
-    renderCharts(trends) {
-        const labels = trends.iterations.map(i => `#${i}`);
-        const chartOptions = {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: { legend: { labels: { color: '#9ca3af' } } },
-            scales: {
-                x: { ticks: { color: '#6b7280' }, grid: { color: '#2d3348' } },
-                y: { ticks: { color: '#6b7280' }, grid: { color: '#2d3348' } },
-            },
+    removeDesignFile(index) {
+        this.configData.design_files.splice(index, 1);
+        this.renderConfig();
+    },
+
+    addDesignLib() {
+        this.configData.design_libraries = this.configData.design_libraries || [];
+        this.configData.design_libraries.push('');
+        this.renderConfig();
+    },
+
+    updateDesignLib(index, value) {
+        this.configData.design_libraries[index] = value;
+    },
+
+    removeDesignLib(index) {
+        this.configData.design_libraries.splice(index, 1);
+        this.renderConfig();
+    },
+
+    moveStageUp(index) {
+        if (index === 0) return;
+        const stages = this.flowData.enabled_stages;
+        [stages[index - 1], stages[index]] = [stages[index], stages[index - 1]];
+        this.flowData.stage_order = [...stages];
+        this.renderFlowConfig();
+    },
+
+    moveStageDown(index) {
+        const stages = this.flowData.enabled_stages;
+        if (index >= stages.length - 1) return;
+        [stages[index], stages[index + 1]] = [stages[index + 1], stages[index]];
+        this.flowData.stage_order = [...stages];
+        this.renderFlowConfig();
+    },
+
+    removeStage(index) {
+        this.flowData.enabled_stages.splice(index, 1);
+        this.flowData.stage_order = [...this.flowData.enabled_stages];
+        this.renderFlowConfig();
+    },
+
+    switchConfigTab(tab) {
+        document.querySelectorAll('.config-panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(`config-${tab}`).classList.add('active');
+        event.target.classList.add('active');
+    },
+
+    async saveConfig() {
+        this.configData.name = document.getElementById('config-project-name').value;
+        this.configData.working_directory = document.getElementById('config-working-dir').value;
+        this.configData.eda_tools = {
+            icc2_path: document.getElementById('config-icc2-path').value,
+            pt_path: document.getElementById('config-pt-path').value,
+            calibre_path: document.getElementById('config-calibre-path').value,
+            starrc_path: document.getElementById('config-starrc-path').value,
         };
 
-        // Timing chart
-        this._updateChart('chart-timing', {
-            labels,
-            datasets: [
-                { label: 'WNS (ns)', data: trends.wns, borderColor: '#3b82f6', tension: 0.3 },
-                { label: 'TNS (ns)', data: trends.tns, borderColor: '#ef4444', tension: 0.3 },
-            ],
-        }, chartOptions);
-
-        // Power chart
-        this._updateChart('chart-power', {
-            labels,
-            datasets: [
-                { label: 'Total Power (mW)', data: trends.total_power_mw, borderColor: '#f59e0b', tension: 0.3 },
-                { label: 'Leakage (mW)', data: trends.leakage_power_mw, borderColor: '#8b5cf6', tension: 0.3 },
-            ],
-        }, chartOptions);
-
-        // Utilization chart
-        this._updateChart('chart-utilization', {
-            labels,
-            datasets: [
-                { label: 'Utilization (%)', data: trends.utilization.map(v => v !== null ? v * 100 : null), borderColor: '#10b981', tension: 0.3, fill: true, backgroundColor: 'rgba(16,185,129,0.1)' },
-            ],
-        }, chartOptions);
-
-        // DRC chart
-        this._updateChart('chart-drc', {
-            labels,
-            datasets: [
-                { label: 'DRC Errors', data: trends.drc_errors, borderColor: '#ef4444', tension: 0.3, fill: true, backgroundColor: 'rgba(239,68,68,0.1)' },
-                { label: 'Violating Paths', data: trends.num_violating_paths, borderColor: '#f59e0b', tension: 0.3 },
-            ],
-        }, chartOptions);
-    },
-
-    _updateChart(canvasId, data, options) {
-        const canvas = document.getElementById(canvasId);
-        if (!canvas) return;
-
-        if (this.charts[canvasId]) {
-            this.charts[canvasId].data = data;
-            this.charts[canvasId].update();
-        } else {
-            this.charts[canvasId] = new Chart(canvas, {
-                type: 'line',
-                data,
-                options: { ...options, elements: { point: { radius: 4 } } },
-            });
-        }
-    },
-
-    // ─── Scripts ────────────────────────────────────────────────
-
-    async loadScripts() {
-        const designId = document.getElementById('scripts-design-select').value;
-        if (!designId) return;
+        this.flowData.parallel_execution = document.getElementById('config-parallel').checked;
+        this.flowData.auto_continue = document.getElementById('config-auto-continue').checked;
+        this.flowData.checkpoint_enabled = document.getElementById('config-checkpoint').checked;
 
         try {
-            const scripts = await this.api(`/scripts/${designId}`);
-            this.renderScriptsTable(scripts);
+            await this.api('/config/project', { method: 'PUT', body: this.configData });
+            await this.api('/config/flow', { method: 'PUT', body: this.flowData });
+            alert('配置保存成功！');
         } catch (err) {
-            console.error('Failed to load scripts:', err);
+            alert('保存失败: ' + err.message);
         }
     },
 
-    renderScriptsTable(scripts) {
-        const tbody = document.getElementById('scripts-table-body');
-        if (!scripts || scripts.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="empty">No scripts generated</td></tr>';
-            return;
+    showCreateDesignConfig() {
+        const name = prompt('设计配置名称:');
+        if (!name) return;
+        const topModule = prompt('顶层模块名:');
+        if (!topModule) return;
+        const clockPeriod = parseFloat(prompt('时钟周期 (ns):', '2.0'));
+        const utilization = parseFloat(prompt('目标利用率:', '0.7'));
+        const pdk = prompt('PDK 名称:', 'smic28nm');
+
+        this.api('/config/designs', {
+            method: 'POST',
+            body: {
+                name, top_module: topModule,
+                clock_period_ns: clockPeriod,
+                target_utilization: utilization,
+                pdk_name: pdk
+            }
+        }).then(() => {
+            this.loadDesignConfigs();
+            alert('设计配置创建成功！');
+        }).catch(err => alert('创建失败: ' + err.message));
+    },
+
+    async deleteDesignConfig(name) {
+        if (!confirm(`确定删除配置 "${name}"?`)) return;
+        try {
+            await this.api(`/config/designs/${name}`, { method: 'DELETE' });
+            this.loadDesignConfigs();
+        } catch (err) {
+            alert('删除失败: ' + err.message);
         }
-        tbody.innerHTML = scripts.map(s => `
-            <tr>
-                <td>#${s.id}</td>
-                <td>${this.esc(s.stage_name)}</td>
-                <td><code>${this.esc(s.filename)}</code></td>
-                <td>${s.script_type}</td>
-                <td><span class="badge badge-${s.status}">${s.status}</span></td>
-                <td>${s.exit_code !== null ? s.exit_code : '-'}</td>
-                <td>${this.formatDate(s.generated_at)}</td>
-                <td>
-                    <button class="btn btn-sm" onclick="App.previewScript(${s.id})">Preview</button>
-                    ${s.status === 'generated' ? `<button class="btn btn-sm btn-primary" onclick="App.confirmExecute(${s.id})">Run</button>` : ''}
-                    ${s.execution_log ? `<button class="btn btn-sm" onclick="App.viewExecLog(${s.id})">Log</button>` : ''}
-                </td>
-            </tr>
+    },
+
+    // Execution
+    async loadExecutionStatus() {
+        try {
+            this.executionStatus = await this.api('/execution/status');
+            this.renderExecutionStatus();
+        } catch (err) {
+            console.error('Load execution status failed:', err);
+        }
+    },
+
+    renderExecutionStatus() {
+        if (!this.executionStatus) return;
+
+        const status = this.executionStatus.status;
+        const statusEl = document.getElementById('exec-status');
+        statusEl.querySelector('.status-dot').className = `status-dot ${status}`;
+        statusEl.querySelector('.status-text').textContent = this.getStatusText(status);
+
+        document.getElementById('exec-started').textContent = 
+            this.executionStatus.started_at ? this.formatDate(this.executionStatus.started_at) : '-';
+        document.getElementById('exec-current').textContent = 
+            this.executionStatus.current_stage || '-';
+
+        // Render flow stages
+        const stages = this.executionStatus.stages || {};
+        const flowContainer = document.getElementById('execution-flow');
+        flowContainer.innerHTML = Object.entries(stages).map(([key, stage]) => `
+            <div class="flow-stage ${stage.status}">
+                <div class="flow-stage-header">
+                    <span class="flow-stage-name">${this.esc(stage.name)}</span>
+                    <span class="badge badge-${stage.status}">${this.getStageStatusText(stage.status)}</span>
+                </div>
+                <div class="flow-stage-body">
+                    <div class="flow-stage-desc">${this.esc(stage.description)}</div>
+                    <div class="flow-stage-tool">工具: ${this.esc(stage.tool)}</div>
+                    ${stage.duration ? `<div class="flow-stage-time">耗时: ${stage.duration.toFixed(1)}s</div>` : ''}
+                </div>
+            </div>
         `).join('');
+
+        // Render logs
+        const logs = this.executionStatus.logs || [];
+        const logsContainer = document.getElementById('execution-logs');
+        logsContainer.textContent = logs.join('\n');
+        logsContainer.scrollTop = logsContainer.scrollHeight;
+    },
+
+    getStatusText(status) {
+        const map = { idle: '空闲', running: '运行中', paused: '已暂停', completed: '已完成', failed: '失败', stopped: '已停止' };
+        return map[status] || status;
+    },
+
+    getStageStatusText(status) {
+        const map = { pending: '等待', running: '运行', completed: '完成', failed: '失败', skipped: '跳过' };
+        return map[status] || status;
+    },
+
+    async startExecution() {
+        try {
+            const flowConfig = await this.api('/config/flow');
+            await this.api('/execution/start', {
+                method: 'POST',
+                body: { stage_order: flowConfig.enabled_stages }
+            });
+            this.loadExecutionStatus();
+            alert('执行流程已启动！');
+        } catch (err) {
+            alert('启动失败: ' + err.message);
+        }
+    },
+
+    async pauseExecution() {
+        try {
+            await this.api('/execution/pause', { method: 'POST' });
+            this.loadExecutionStatus();
+        } catch (err) {
+            alert('暂停失败: ' + err.message);
+        }
+    },
+
+    async resumeExecution() {
+        try {
+            await this.api('/execution/resume', { method: 'POST' });
+            this.loadExecutionStatus();
+        } catch (err) {
+            alert('继续失败: ' + err.message);
+        }
+    },
+
+    async stopExecution() {
+        if (!confirm('确定停止执行?')) return;
+        try {
+            await this.api('/execution/stop', { method: 'POST' });
+            this.loadExecutionStatus();
+        } catch (err) {
+            alert('停止失败: ' + err.message);
+        }
+    },
+
+    // Stages
+    async loadStages() {
+        try {
+            const stages = await this.api('/execution/stages');
+            const container = document.getElementById('stages-list');
+            container.innerHTML = Object.entries(stages.statuses).map(([key, stage]) => `
+                <div class="card">
+                    <div class="card-header">
+                        <h4>${this.esc(stage.name)}</h4>
+                        <span class="badge badge-${stage.status}">${this.getStageStatusText(stage.status)}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-row"><span>描述:</span> <span>${this.esc(stage.description)}</span></div>
+                        <div class="card-row"><span>工具:</span> <span>${this.esc(stage.tool)}</span></div>
+                        <div class="card-row"><span>依赖:</span> <span>${stage.dependencies.join(', ') || '无'}</span></div>
+                        ${stage.duration ? `<div class="card-row"><span>耗时:</span> <span>${stage.duration.toFixed(1)}s</span></div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        } catch (err) {
+            console.error('Load stages failed:', err);
+        }
+    },
+
+    // Metrics
+    async loadMetrics() {
+        document.getElementById('metrics-content').innerHTML = '<div class="empty">指标分析功能开发中...</div>';
+    },
+
+    // Scripts
+    async loadScripts() {
+        try {
+            const scripts = await this.api('/scripts');
+            const tbody = document.getElementById('scripts-table-body');
+            if (!scripts || scripts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无脚本</td></tr>';
+                return;
+            }
+            tbody.innerHTML = scripts.map(s => `
+                <tr>
+                    <td>${s.id}</td>
+                    <td>${this.esc(s.filename)}</td>
+                    <td>${this.esc(s.script_type)}</td>
+                    <td><span class="badge badge-${s.status}">${s.status}</span></td>
+                    <td>${this.formatDate(s.generated_at)}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="App.previewScript(${s.id})">预览</button>
+                        <button class="btn btn-sm btn-primary" onclick="App.executeScript(${s.id})">执行</button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            console.error('Load scripts failed:', err);
+        }
     },
 
     showGenerateScript() {
-        const designId = document.getElementById('scripts-design-select').value;
-        if (!designId) {
-            alert('Please select a design first');
-            return;
-        }
         document.getElementById('modal-generate-script').classList.remove('hidden');
     },
 
     async generateScript(event) {
         event.preventDefault();
         const form = event.target;
-        const designId = document.getElementById('scripts-design-select').value;
         const data = {
-            design_id: parseInt(designId),
+            design_id: 1,
             stage_name: form.stage_name.value,
             content: form.content.value,
-            filename: form.filename.value,
-            script_type: form.filename.value.endsWith('.py') ? 'python' : 'tcl',
+            filename: 'run.tcl',
+            script_type: 'tcl'
         };
         try {
-            const result = await this.api('/scripts/generate', { method: 'POST', body: data });
+            await this.api('/scripts/generate', { method: 'POST', body: data });
             this.closeModal('modal-generate-script');
+            form.reset();
             this.loadScripts();
-            this.previewScript(result.id);
+            alert('脚本生成成功！');
         } catch (err) {
-            alert('Failed to generate script: ' + err.message);
+            alert('生成失败: ' + err.message);
         }
     },
 
-    async previewScript(scriptId) {
+    async previewScript(id) {
         try {
-            const data = await this.api(`/scripts/preview/${scriptId}`);
-            document.getElementById('preview-filename').textContent = data.filename;
-            document.getElementById('preview-status').textContent = data.status;
-            document.getElementById('preview-status').className = `badge badge-${data.status}`;
-            document.getElementById('preview-content').textContent = data.preview_content || data.content;
-            this.currentScriptId = scriptId;
-            document.getElementById('modal-script-preview').classList.remove('hidden');
+            const script = await this.api(`/scripts/preview/${id}`);
+            alert(`脚本预览:\n\n${script.content.substring(0, 500)}...`);
         } catch (err) {
-            alert('Failed to load preview: ' + err.message);
+            alert('预览失败: ' + err.message);
         }
     },
 
-    async confirmExecute(scriptId) {
-        if (!confirm('Execute this script? This will launch the EDA tool.')) return;
-        this.executeScriptById(scriptId, true);
-    },
-
-    async executeScript(confirmed) {
-        if (!this.currentScriptId) return;
-        if (confirmed && !confirm('Confirm execution? This will launch the EDA tool.')) return;
-        this.executeScriptById(this.currentScriptId, confirmed);
-    },
-
-    async executeScriptById(scriptId, confirmed) {
+    async executeScript(id) {
+        if (!confirm('确定执行此脚本?')) return;
         try {
-            const result = await this.api('/scripts/execute', {
+            await this.api('/scripts/execute', {
                 method: 'POST',
-                body: { script_id: scriptId, confirmed },
+                body: { script_id: id, confirmed: true }
             });
-            if (!confirmed) {
-                alert('Set confirmed to execute. Currently: ' + result.status);
-                return;
-            }
-            this.closeModal('modal-script-preview');
-            this.loadScripts();
-            if (result.execution_log) {
-                this.showExecLog(scriptId, result);
-            }
+            alert('脚本执行已提交！');
         } catch (err) {
-            alert('Execution failed: ' + err.message);
+            alert('执行失败: ' + err.message);
         }
     },
 
-    async viewExecLog(scriptId) {
-        try {
-            const log = await this.api(`/scripts/log/${scriptId}`);
-            this.showExecLog(scriptId, log);
-        } catch (err) {
-            alert('Failed to load log: ' + err.message);
-        }
-    },
-
-    showExecLog(scriptId, data) {
-        document.getElementById('log-status').textContent = data.status || 'unknown';
-        document.getElementById('log-status').className = `badge badge-${data.status || 'pending'}`;
-        document.getElementById('log-exit-code').textContent = data.exit_code !== null ? `Exit: ${data.exit_code}` : '';
-        document.getElementById('log-content').textContent = data.execution_log || data.log || 'No log available';
-        document.getElementById('modal-execution-log').classList.remove('hidden');
-    },
-
-    // ─── Git ────────────────────────────────────────────────────
-
-    async loadGitStatus() {
-        try {
-            const [status, log] = await Promise.all([
-                this.api('/git/status'),
-                this.api('/git/log?count=20'),
-            ]);
-
-            document.getElementById('git-current-branch').textContent = status.branch;
-            document.getElementById('git-clean-status').textContent =
-                status.is_clean ? '✓ Working tree clean' : '⚠ Uncommitted changes';
-
-            this.renderGitStatus(status);
-            this.renderGitLog(log);
-        } catch (err) {
-            document.getElementById('git-current-branch').textContent = 'N/A';
-            document.getElementById('git-clean-status').textContent = 'Git not configured';
-            console.error('Git status failed:', err);
-        }
-    },
-
-    renderGitStatus(status) {
-        const renderFileList = (files, containerId, statusClass) => {
-            const container = document.getElementById(containerId);
-            if (!files || files.length === 0) {
-                container.innerHTML = '<div class="empty">None</div>';
-                return;
-            }
-            container.innerHTML = files.map(f => {
-                const name = typeof f === 'string' ? f : f.path;
-                const st = typeof f === 'string' ? 'untracked' : f.status;
-                return `
-                    <div class="file-item">
-                        <span class="file-status file-status-${st}">${st.charAt(0).toUpperCase()}</span>
-                        <span>${this.esc(name)}</span>
-                    </div>
-                `;
-            }).join('');
-        };
-
-        renderFileList(status.staged, 'git-staged');
-        renderFileList(status.unstaged, 'git-unstaged');
-        renderFileList(status.untracked, 'git-untracked');
-    },
-
-    renderGitLog(commits) {
-        const tbody = document.getElementById('git-log-body');
-        if (!commits || commits.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="empty">No commits</td></tr>';
-            return;
-        }
-        tbody.innerHTML = commits.map(c => `
-            <tr>
-                <td><code>${this.esc(c.short_hash)}</code></td>
-                <td>${this.esc(c.author)}</td>
-                <td>${this.esc(c.message)}</td>
-                <td>+${c.insertions} -${c.deletions}</td>
-                <td>${this.formatDate(c.committed_at)}</td>
-            </tr>
-        `).join('');
-    },
-
-    showCommitModal() {
-        document.getElementById('modal-commit').classList.remove('hidden');
-    },
-
-    async gitCommit(event) {
-        event.preventDefault();
-        const message = event.target.message.value;
-        try {
-            const result = await this.api('/git/commit', {
-                method: 'POST',
-                body: { repo_path: '', action: 'commit', message, files: [] },
-            });
-            this.closeModal('modal-commit');
-            event.target.reset();
-            this.loadGitStatus();
-            alert(result.status === 'committed' ? `Committed: ${result.short_hash}` : result.message);
-        } catch (err) {
-            alert('Commit failed: ' + err.message);
-        }
-    },
-
-    // ─── Utilities ──────────────────────────────────────────────
-
+    // Utils
     closeModal(modalId) {
         document.getElementById(modalId).classList.add('hidden');
     },
@@ -652,9 +606,8 @@ const App = {
         if (!dateStr) return '-';
         const d = new Date(dateStr);
         if (isNaN(d.getTime())) return dateStr;
-        return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return d.toLocaleString('zh-CN');
     },
 };
 
-// Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => App.init());

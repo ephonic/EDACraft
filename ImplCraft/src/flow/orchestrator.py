@@ -22,6 +22,10 @@ from ..tools.dc_adapter import DCAdapter
 from ..tools.icc2_adapter import ICC2Adapter
 from ..tools.pt_adapter import PTAdapter
 from ..tools.calibre_adapter import CalibreAdapter
+from ..tools.starrc_adapter import StarRCAdapter
+from ..tools.innovus_adapter import InnovusAdapter
+from ..tools.tempus_adapter import TempusAdapter
+from ..tools.pegasus_adapter import PegasusAdapter
 from ..analysis.error_checker import ErrorChecker, ToolName
 from ..analysis.rtl_advisor import RTLAdvisor
 from .stages import FlowStageDefinition, DEFAULT_FLOW_STAGES
@@ -147,6 +151,18 @@ class FlowOrchestrator:
             logger.error(f"  Failed to create adapter: {e}")
             return False
 
+        # Handle script-only stages (e.g., DFT) that don't have adapters
+        if adapter is None:
+            if self.dry_run:
+                result = self.state.get_stage_result(stage_def.flow_stage)
+                result.status = StageStatus.PASSED
+                logger.info(f"  [DRY-RUN] {stage_def.tool} is script-only, marked as PASSED")
+                self._completed.add(stage_def.name)
+                return True
+            else:
+                logger.error(f"  {stage_def.tool} requires script generation, not supported in live mode")
+                return False
+
         # Setup work directory
         adapter.setup_work_dir(stage_def.name)
 
@@ -199,14 +215,30 @@ class FlowOrchestrator:
 
     def _create_adapter(self, stage_def: FlowStageDefinition):
         """Create the appropriate tool adapter for a stage."""
+        # Synopsys tools
         if stage_def.tool == "DesignCompiler":
             return DCAdapter(self.state)
         elif stage_def.tool == "ICC2":
             return ICC2Adapter(self.state, sub_stage=stage_def.sub_stage or "placement")
         elif stage_def.tool == "PrimeTime":
             return PTAdapter(self.state)
+        elif stage_def.tool == "StarRC":
+            return StarRCAdapter(self.state, sub_stage=stage_def.sub_stage or "spef")
+        # Cadence tools
+        elif stage_def.tool == "Innovus":
+            return InnovusAdapter(self.state, sub_stage=stage_def.sub_stage or "placement")
+        elif stage_def.tool == "Tempus":
+            return TempusAdapter(self.state)
+        # Siemens tools
         elif stage_def.tool == "Calibre":
             return CalibreAdapter(self.state, sub_stage=stage_def.sub_stage or "drc")
+        elif stage_def.tool == "Pegasus":
+            return PegasusAdapter(self.state, sub_stage=stage_def.sub_stage or "drc")
+        # DFT tools
+        elif stage_def.tool == "DFTCompiler":
+            # DFT is handled by scripts, not an adapter
+            # Return a dummy adapter for dry-run mode
+            return None
         else:
             raise ValueError(f"Unknown tool: {stage_def.tool}")
 

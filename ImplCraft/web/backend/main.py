@@ -28,6 +28,8 @@ from .api.metrics import router as metrics_router
 from .api.scripts import router as scripts_router
 from .api.git import router as git_router
 from .api.dashboard import router as dashboard_router
+from .api.config import router as config_router
+from .api.execution import router as execution_router
 
 logger = logging.getLogger("implcraft.server")
 
@@ -56,6 +58,8 @@ app.include_router(metrics_router, prefix="/api", tags=["metrics"])
 app.include_router(scripts_router, prefix="/api", tags=["scripts"])
 app.include_router(git_router, prefix="/api", tags=["git"])
 app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
+app.include_router(config_router, prefix="/api", tags=["config"])
+app.include_router(execution_router, prefix="/api", tags=["execution"])
 
 
 @app.on_event("startup")

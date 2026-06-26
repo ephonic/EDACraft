@@ -17,11 +17,13 @@ from typing import Any
 class FlowStage(Enum):
     INIT = auto()
     SYNTHESIS = auto()
+    DFT_INSERTION = auto()
     FLOORPLAN = auto()
     PLACEMENT = auto()
     CTS = auto()
     ROUTING = auto()
     ROUTE_OPT = auto()
+    PARASITIC_EXTRACTION = auto()
     STA_SIGNOFF = auto()
     PV_DRC = auto()
     PV_LVS = auto()

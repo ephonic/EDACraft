@@ -7,6 +7,7 @@ from .calibre_adapter import CalibreAdapter
 from .innovus_adapter import InnovusAdapter
 from .tempus_adapter import TempusAdapter
 from .pegasus_adapter import PegasusAdapter
+from .starrc_adapter import StarRCAdapter
 
 __all__ = [
     "ToolAdapter",
@@ -14,6 +15,7 @@ __all__ = [
     "DCAdapter",
     "ICC2Adapter",
     "PTAdapter",
+    "StarRCAdapter",
     # Cadence
     "InnovusAdapter",
     "TempusAdapter",
