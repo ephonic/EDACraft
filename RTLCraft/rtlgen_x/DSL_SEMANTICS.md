@@ -279,6 +279,13 @@ Current contract:
    locations
 4. verification traces and generated collateral are expected to stay close
    enough to the authored structure that failures remain actionable
+5. public authoring-intent and storage-contract findings use a stable diagnostic
+   shape: rule tag, severity, source location, object name, short explanation,
+   and suggested fix
+6. the W4-closed diagnostic subset includes `UntrackedSignal`,
+   `UntrackedMemory`, `UntrackedArray`, `UnknownSubmodulePort`,
+   `SignedShift`, `SignedMultiply`, `SignedCompare`, and executable/emitted-RTL
+   `UnsupportedStorageContract` failures
 
 This source mapping is part of why DSL authoring is valuable relative to plain
 RTL text editing.

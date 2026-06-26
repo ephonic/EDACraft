@@ -717,6 +717,117 @@ def test_compiled_simulator_sign_extends_signed_operands_before_multiply_and_shi
         assert sim.step({"c1": c1, "delta": delta}) == {"term": expected}
 
 
+def test_compiled_simulator_preserves_signed_addition_inside_nested_round_shift(tmp_path):
+    module = SimModule(
+        name="cpp_signed_round_shift_nested",
+        signals=(
+            Signal("prod", width=32, kind="input", signed=True),
+            Signal("acc", width=32, kind="state", init=(1 << 32) - 7283, signed=True),
+            Signal("clipped", width=33, kind="output", signed=True),
+        ),
+        assignments=(
+            Assignment(
+                "clipped",
+                MuxExpr(
+                    BinaryExpr(
+                        "<",
+                        UnaryExpr(
+                            "$signed",
+                            BinaryExpr(
+                                "+",
+                                UnaryExpr(
+                                    "$signed",
+                                    BinaryExpr(
+                                        ">>>",
+                                        UnaryExpr(
+                                            "$signed",
+                                            BinaryExpr(
+                                                "+",
+                                                UnaryExpr(
+                                                    "$signed",
+                                                    BinaryExpr("+", SignalRef("acc"), SignalRef("prod")),
+                                                ),
+                                                UnaryExpr("$signed", ConstExpr(8192, 32)),
+                                            ),
+                                        ),
+                                        ConstExpr(14, 4),
+                                    ),
+                                ),
+                                ConstExpr(128, 33),
+                            ),
+                        ),
+                        UnaryExpr("$signed", ConstExpr(0, 33)),
+                    ),
+                    ConstExpr(0, 33),
+                    MuxExpr(
+                        BinaryExpr(
+                            ">",
+                            UnaryExpr(
+                                "$signed",
+                                BinaryExpr(
+                                    "+",
+                                    UnaryExpr(
+                                        "$signed",
+                                        BinaryExpr(
+                                            ">>>",
+                                            UnaryExpr(
+                                                "$signed",
+                                                BinaryExpr(
+                                                    "+",
+                                                    UnaryExpr(
+                                                        "$signed",
+                                                        BinaryExpr(
+                                                            "+",
+                                                            SignalRef("acc"),
+                                                            SignalRef("prod"),
+                                                        ),
+                                                    ),
+                                                    UnaryExpr("$signed", ConstExpr(8192, 32)),
+                                                ),
+                                            ),
+                                            ConstExpr(14, 4),
+                                        ),
+                                    ),
+                                    ConstExpr(128, 33),
+                                ),
+                            ),
+                            UnaryExpr("$signed", ConstExpr(255, 33)),
+                        ),
+                        ConstExpr(255, 33),
+                        BinaryExpr(
+                            "+",
+                            UnaryExpr(
+                                "$signed",
+                                BinaryExpr(
+                                    ">>>",
+                                    UnaryExpr(
+                                        "$signed",
+                                        BinaryExpr(
+                                            "+",
+                                            UnaryExpr(
+                                                "$signed",
+                                                BinaryExpr("+", SignalRef("acc"), SignalRef("prod")),
+                                            ),
+                                            UnaryExpr("$signed", ConstExpr(8192, 32)),
+                                        ),
+                                    ),
+                                    ConstExpr(14, 4),
+                                ),
+                            ),
+                            ConstExpr(128, 33),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        outputs=("clipped",),
+        outputs_post_state=True,
+    )
+
+    with CppBackendScaffold(namespace="testsignednested").build(module, tmp_path) as sim:
+        assert sim.step({"prod": 0}) == {"clipped": 128}
+
+
 def test_compiled_simulator_randomized_python_parity(tmp_path):
     module = SimModule(
         name="cpp_random_parity",

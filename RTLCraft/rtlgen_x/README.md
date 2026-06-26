@@ -27,8 +27,18 @@ is regression-locked across the DSL simulator, lowered executable model,
 and emitted RTL path.
 
 For JPEG-style signed datapaths, transpose/reorder buffers, and ROM/init-file
-closure, use [JPEG_DATAPATH_COOKBOOK.md](./JPEG_DATAPATH_COOKBOOK.md) together
-with the concrete implementation in [../jpeg_decoder/dsl_modules.py](../jpeg_decoder/dsl_modules.py).
+closure, start with [../jpeg_decoder/README.md](../jpeg_decoder/README.md) and
+use [JPEG_DATAPATH_COOKBOOK.md](./JPEG_DATAPATH_COOKBOOK.md) together with the
+concrete implementation in [../jpeg_decoder/dsl_modules.py](../jpeg_decoder/dsl_modules.py).
+That path now treats Python + compiled simulators as the primary functional
+closure loop, while `iverilog` remains a local compile-smoke check for the
+emitted SystemVerilog subset.
+
+For mixed DSL + external Verilog designs that also depend on ROM `init_file`
+payloads, use [MIXED_DESIGN_COSIM_GUIDE.md](./MIXED_DESIGN_COSIM_GUIDE.md).
+It shows the current packaging contract and the recommended backend order:
+`cpp_backend` for DSL-semantics debugging, then `verilator`, then `vcs`, with
+`iverilog` kept as a lightweight compatibility backend.
 
 ## What `rtlgen_x` is
 
@@ -707,10 +717,16 @@ RTL differential checking:
 1. `run_dsl_rtl_cosim(...)`
 2. `run_dsl_multiclock_rtl_cosim(...)`
 
-This path compares compiled execution against emitted RTL using `iverilog` when
-available. For valid-gated pipelines, use `valid_signal`, `flush_cycles`, and
-`flush_inputs` so the helper only checks architecturally meaningful output
-beats.
+This path compares compiled execution against emitted RTL, defaulting to the
+best available backend selected by `rtl_backend` / `auto`. Keep `iverilog` as a
+lightweight local smoke backend; prefer `verilator` first and `vcs` when
+available for stronger emitted-RTL closure. For valid-gated pipelines, use
+`valid_signal`, `flush_cycles`, and `flush_inputs` so the helper only checks
+architecturally meaningful output beats.
+
+For the mixed DSL + external Verilog + ROM-init worked example and the exact
+packaging/backend contract, see
+[MIXED_DESIGN_COSIM_GUIDE.md](./MIXED_DESIGN_COSIM_GUIDE.md).
 
 For explicit multi-clock event stepping, use
 `run_dsl_multiclock_rtl_cosim(...)`. Each vector is either a plain input
@@ -757,6 +773,15 @@ Storage initialization boundary:
    `sync-read/read_latency=1` executable behavior are now available on the main
    lowering/simulation path; richer port-count, broader style/latency
    combinations, and emitted RTL closure for sync-read memories remain partial
+
+Storage support matrix:
+
+| Storage contract | Executable lowering / Python / C++ | Emitted RTL |
+| --- | --- | --- |
+| `read_ports=1`, `write_ports=1`, `read_style="async"`, `read_latency=0` | supported | supported |
+| `read_ports=1`, `write_ports=1`, `read_style="sync"`, `read_latency=1` | normalized into sampled executable state | deliberate fail-fast; author explicit sampled-output RTL or use cosim/executable closure |
+| byte-enable writes on the async single-port subset | supported | supported |
+| richer port counts, arbitrary latency, or macro-mapping policy | deliberate fail-fast | deliberate fail-fast |
 
 For hand-written or generated streaming RTL cosim, keep two practical rules in
 mind:

@@ -3,6 +3,11 @@
 This cookbook turns the current `jpeg_decoder/` work into a reusable
 datapath-authoring guide for `rtlgen_x`.
 
+For the rerun-first worked-example view, start with
+[../jpeg_decoder/README.md](/Users/yangfan/release/EDACraft-main/RTLCraft/jpeg_decoder/README.md).
+This cookbook stays focused on the reusable design patterns underneath that
+example.
+
 It focuses on the patterns that showed up as real pressure points during the
 JPEG bring-up:
 
@@ -14,9 +19,15 @@ JPEG bring-up:
 5. mixed DSL + external Verilog packaging when emitted RTL depends on extra
    source files or memory init files
 
+For the dedicated mixed-design worked example and backend-selection guide, use
+[MIXED_DESIGN_COSIM_GUIDE.md](./MIXED_DESIGN_COSIM_GUIDE.md). This cookbook
+keeps the JPEG-side authoring patterns; the mixed-design guide keeps the
+artifact-packaging and cosim migration story.
+
 ## Where To Start
 
-The worked example lives in [jpeg_decoder/dsl_modules.py](/Users/yangfan/release/EDACraft-main/RTLCraft/jpeg_decoder/dsl_modules.py).
+The worked example lives in
+[../jpeg_decoder/dsl_modules.py](/Users/yangfan/release/EDACraft-main/RTLCraft/jpeg_decoder/dsl_modules.py).
 
 The most useful entry points are:
 
@@ -28,9 +39,34 @@ Good first reruns are:
 
 ```bash
 PYTHONPATH=. pytest -q jpeg_decoder/tests/test_idct_basic.py
+PYTHONPATH=. pytest -q jpeg_decoder/tests/test_cpp_idct.py
 PYTHONPATH=. pytest -q jpeg_decoder/tests/test_dequant_idct.py
+PYTHONPATH=. pytest -q jpeg_decoder/tests/test_cpp_entropy_dequant.py
 PYTHONPATH=. pytest -q jpeg_decoder/tests/test_verilog.py
 ```
+
+Backend note:
+
+1. Python and compiled simulator regressions are the primary functional closure
+   path for the JPEG datapath today
+2. `jpeg_decoder/tests/test_verilog.py` keeps `iverilog -g2012` as a compile
+   smoke check for the emitted SystemVerilog subset
+3. for fuller emitted-RTL closure, prefer the stronger RTL backends already
+   wired into the repo (`verilator`, then `vcs` when available)
+
+## Pattern Index
+
+Use this table as the first jump point when authoring or debugging another
+JPEG-like datapath.
+
+| Pattern | Primary code anchor | Regression anchor | First thing to inspect when it breaks |
+|---------|---------------------|-------------------|--------------------------------------|
+| signed round + level shift + clip | `JpegIdct8x8` wires `_prod`, `_sum_next`, `_scaled`, `_final`, `_clipped` | `test_cpp_idct.py`, `test_dsl_round_shift_level_shift_and_clip_matches_compiled_simulator(...)` | missing `.as_sint()` before multiply/compare, or plain shift instead of `RoundShiftRight(...)` |
+| LUT-backed MAC | `JpegIdct8x8._idct_mem`, `_idct_lut_addr`, `_idct_lut_data` | `test_idct_basic.py`, `test_cpp_idct.py` | ROM initialization, address packing, signed interpretation of LUT data |
+| transpose buffer | `JpegIdct8x8._tbuf`, `_write_idx`, row/column mode sample select | `test_idct_basic.py`, `test_cpp_idct.py` | row/column index order and whether the write index is module-visible |
+| zig-zag reorder | `JpegDequantZigzag._zz_lut`, `_zigzag_buf`, `_raster_idx`, `_zz_idx_wire` | `test_dequant_idct.py`, `test_cpp_entropy_dequant.py` | whether input order, raster order, and inverse-zig-zag LUT agree |
+| stage handoff | `DequantIdctWrapper.dq_out`, `dq_out_valid`, `dq_out_ready` | `test_dequant_idct_wrapper_lowers_and_emits_parent_owned_handoff(...)` | parent-owned wires accidentally left as host-local `Wire(...)` temporaries |
+| emitted RTL smoke | `jpeg_decoder/tests/test_verilog.py` | `test_jpeg_verilog_iverilog_compile_smoke(...)` | reserved names, SystemVerilog subset boundaries, backend policy |
 
 ## Pattern 1: Signed Fixed-Point Datapath
 
@@ -48,9 +84,20 @@ Representative locations:
 1. `_prod <<= self._sample.as_sint() * self._idct_lut_data.as_sint()`
 2. `_scaled <<= RoundShiftRight(self._sum_next, IDCT_FRAC)`
 3. `_final <<= self._scaled.as_sint() + Const(128, ...)`
+4. `_clipped <<= Mux(_final.as_sint() < 0, 0, Mux(_final.as_sint() > 255, 255, _final))`
+
+Keep the intermediate signals module-owned. That gives diagnostics, emitted
+RTL naming, and simulator traces stable handles for the exact signed datapath
+you are trying to debug.
 
 This is the safest current pattern when the author wants Python, compiled C++,
 and emitted RTL to agree without relying on implicit signedness.
+
+The standalone regression for this contract is
+`test_dsl_round_shift_level_shift_and_clip_matches_compiled_simulator(...)` in
+[rtlgen_x/tests/test_dsl_import.py](/Users/yangfan/release/EDACraft-main/RTLCraft/rtlgen_x/tests/test_dsl_import.py).
+It covers negative intermediates, low/high clipping, and the neutral `+128`
+level-shift path outside the full JPEG integration test.
 
 ## Pattern 2: LUT / ROM-Backed MAC
 
@@ -65,6 +112,14 @@ Current JPEG example:
 1. `self._idct_mem = Memory(16, 64, "idct_mem", init_data=IDCT_TABLE)`
 2. address generation stays explicit in wires on the module
 3. the datapath reads the ROM through normal DSL memory reads
+
+Authoring checklist:
+
+1. keep the table payload in `init_data` or `init_file`, not in host-side
+   control flow hidden from the DSL
+2. keep address composition in named wires (`_lut_addr`, `_idct_lut_addr`) so
+   lowering and emitted RTL are inspectable
+3. cast the ROM data at the arithmetic use site if signed math is intended
 
 This now has two important closure properties in the stack:
 
@@ -83,6 +138,13 @@ JPEG examples:
 2. `self._tbuf = Array(16, 64, "tbuf")`
 3. `ZIGZAG_ORDER` / `INV_ZIGZAG` drive reorder intent explicitly in Python-side
    table construction
+
+Two distinct buffer patterns show up:
+
+1. transpose writes row transform output into `_tbuf[col*8 + row]`, then column
+   mode reads `_tbuf[col*8 + u]`
+2. zig-zag reorder stores input coefficients in `_zigzag_buf[zigzag_index]`,
+   then emits raster order by reading through `_zz_lut[raster_index]`
 
 Recommended authoring rules:
 
@@ -104,8 +166,25 @@ Good shape:
 2. the next child reads that parent wire
 3. top-level output is driven from the final child boundary
 
+For ready/valid boundaries, the same rule applies to all three lanes:
+
+1. payload, such as `dq_out`
+2. valid, such as `dq_out_valid`
+3. ready, such as `dq_out_ready`
+
+These must be attributes on the parent module (`self.dq_out = Wire(...)`), not
+temporary local `Wire(...)` values, so authoring-intent validation and
+flattening agree on ownership.
+
 The repo regression now locks a simple three-stage chain in
 [rtlgen_x/tests/test_dsl_import.py](/Users/yangfan/release/EDACraft-main/RTLCraft/rtlgen_x/tests/test_dsl_import.py).
+
+The JPEG-shaped regression lives in
+[../jpeg_decoder/tests/test_dequant_idct.py](/Users/yangfan/release/EDACraft-main/RTLCraft/jpeg_decoder/tests/test_dequant_idct.py):
+
+1. `test_dequant_idct_chain_matches_reference(...)` checks executable behavior
+2. `test_dequant_idct_wrapper_lowers_and_emits_parent_owned_handoff(...)` checks
+   lowering plus emitted RTL structure for the parent-owned handoff
 
 This is not a full handshake pipeline example, but it does cover the main
 hierarchical risk: multiple child stages connected through parent-owned
@@ -141,6 +220,11 @@ Recommended usage rule:
 1. if a module's emitted RTL depends on a file at runtime or compile time,
    assume it must be present in the packaging bundle too
 
+The smallest regression-backed example for that rule is in
+[rtlgen_x/tests/test_cosim.py](/Users/yangfan/release/EDACraft-main/RTLCraft/rtlgen_x/tests/test_cosim.py),
+and the walkthrough version now lives in
+[MIXED_DESIGN_COSIM_GUIDE.md](./MIXED_DESIGN_COSIM_GUIDE.md).
+
 ## Rerun / Debug Loop
 
 For a JPEG-style datapath change, the recommended loop is:
@@ -153,7 +237,10 @@ Practical order:
 
 ```bash
 PYTHONPATH=. pytest -q jpeg_decoder/tests/test_idct_basic.py
+PYTHONPATH=. pytest -q jpeg_decoder/tests/test_cpp_idct.py
 PYTHONPATH=. pytest -q jpeg_decoder/tests/test_dequant_idct.py
+PYTHONPATH=. pytest -q jpeg_decoder/tests/test_cpp_entropy_dequant.py
+PYTHONPATH=. pytest -q jpeg_decoder/tests/test_verilog.py
 PYTHONPATH=. pytest -q rtlgen_x/tests/test_dsl_import.py -k 'init_file or child_output or hierarchical'
 PYTHONPATH=. pytest -q rtlgen_x/tests/test_cosim.py -k 'cosim'
 ```
@@ -166,6 +253,15 @@ When debugging:
    missing `RoundShiftRight(...)`
 3. if hierarchy breaks, inspect whether parent-visible stage wires or storage
    were accidentally left as host-local temporaries
+
+Useful first split:
+
+1. Python fails before compiled C++:
+   start from DSL authoring, signed intent, or storage/hierarchy contract
+2. Python passes but compiled C++ fails:
+   start from backend codegen or signed width interpretation drift
+3. Python and compiled pass but emitted RTL smoke fails:
+   start from emitter/backend contract, naming, or tool-subset expectations
 
 ## Current Boundaries
 

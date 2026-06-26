@@ -139,6 +139,38 @@ def _named_dual_clock_fifo_like_module() -> SimModule:
     )
 
 
+def _signed_round_shift_module() -> SimModule:
+    return SimModule(
+        name="python_signed_round_shift",
+        signals=(
+            Signal("prod", width=32, kind="input", signed=True),
+            Signal("acc", width=32, kind="state", init=(1 << 32) - 7283, signed=True),
+            Signal("sum_next", width=32, kind="wire", signed=True),
+            Signal("scaled", width=32, kind="output", signed=True),
+        ),
+        assignments=(
+            Assignment("sum_next", BinaryExpr("+", SignalRef("acc"), SignalRef("prod"))),
+            Assignment(
+                "scaled",
+                BinaryExpr(
+                    ">>>",
+                    UnaryExpr(
+                        "$signed",
+                        BinaryExpr(
+                            "+",
+                            UnaryExpr("$signed", SignalRef("sum_next")),
+                            UnaryExpr("$signed", ConstExpr(8192, 32)),
+                        ),
+                    ),
+                    ConstExpr(14, 4),
+                ),
+            ),
+        ),
+        outputs=("scaled",),
+        outputs_post_state=True,
+    )
+
+
 def test_python_reference_matches_compiled_scalar_and_batch(tmp_path):
     module = _accum_module()
     step_rows = (
@@ -334,6 +366,15 @@ def test_python_reference_supports_signed_unsigned_and_arithmetic_shift():
         "logical_shift_out": 0x40,
         "arith_shift_out": 0xC0,
     }
+
+
+def test_python_reference_preserves_signed_addition_before_round_shift(tmp_path):
+    module = _signed_round_shift_module()
+    python_sim = PythonSimulator(module)
+    assert python_sim.step({"prod": 0}) == {"scaled": 0}
+
+    with CppBackendScaffold(namespace="pysigned").build(module, tmp_path) as cpp_sim:
+        assert cpp_sim.step({"prod": 0}) == {"scaled": 0}
 
 
 def test_python_reference_wide_logical_shift_zero_fills_unsigned_values():

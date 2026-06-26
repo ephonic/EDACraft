@@ -31,7 +31,7 @@ def reference_idct2(coeffs):
     return np.clip(np.rint(temp + 128), 0, 255).astype(np.uint8)
 
 
-def main():
+def run_idct_basic_smoke(*, verbose=False):
     module = JpegIdct8x8()
     lowered = lower_dsl_module_to_sim(module)
     sim = PythonSimulator(lowered.module)
@@ -58,16 +58,31 @@ def main():
         if result.get("out_valid"):
             outputs.append(result["out_data"])
 
-    print(f"outputs collected: {len(outputs)}")
-    if outputs:
-        got = np.array(outputs[:64], dtype=np.uint8).reshape(8, 8)
-        print("Expected:")
-        print(expected)
-        print("Got:")
-        print(got)
-        print("Match:", np.array_equal(got, expected))
-    else:
-        print("No outputs")
+    got = np.array(outputs[:64], dtype=np.uint8).reshape(8, 8) if len(outputs) >= 64 else None
+    if verbose:
+        print(f"outputs collected: {len(outputs)}")
+        if got is not None:
+            print("Expected:")
+            print(expected)
+            print("Got:")
+            print(got)
+            print("Match:", np.array_equal(got, expected))
+        else:
+            print("No complete output block")
+    return got, expected
+
+
+def test_idct_basic_dc_block_matches_reference():
+    got, expected = run_idct_basic_smoke()
+
+    assert got is not None
+    assert np.array_equal(got, expected)
+
+
+def main():
+    got, expected = run_idct_basic_smoke(verbose=True)
+    if got is None or not np.array_equal(got, expected):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

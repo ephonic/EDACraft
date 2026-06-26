@@ -20,6 +20,7 @@ from rtlgen_x.dsl import (
     ClockDomainSpec,
     collect_external_verilog_artifacts,
     ConnectivitySite,
+    Const,
     Else,
     EmitProfile,
     If,
@@ -32,6 +33,7 @@ from rtlgen_x.dsl import (
     Module,
     ModuleConnectivityReport,
     ModuleInstancePath,
+    Mux,
     Output,
     PackedStructType,
     PadLeft,
@@ -1191,6 +1193,31 @@ class FixedPointRoundShiftLane(Module):
             self.out <<= RoundShiftRight(self.inp.as_sint(), 3).as_uint()
 
 
+class FixedPointRoundClipLane(Module):
+    def __init__(self):
+        super().__init__("FixedPointRoundClipLane")
+        self.inp = Input(24, "inp", signed=True)
+        self.rounded = Wire(24, "rounded", signed=True)
+        self.shifted = Wire(25, "shifted", signed=True)
+        self.clipped = Wire(25, "clipped", signed=True)
+        self.out = Output(8, "out")
+
+        @self.comb
+        def _comb():
+            self.rounded <<= RoundShiftRight(self.inp.as_sint(), 4)
+            self.shifted <<= self.rounded.as_sint() + Const(128, 25).as_sint()
+            self.clipped <<= Mux(
+                self.shifted.as_sint() < Const(0, 25).as_sint(),
+                Const(0, 25),
+                Mux(
+                    self.shifted.as_sint() > Const(255, 25).as_sint(),
+                    Const(255, 25),
+                    self.shifted,
+                ),
+            )
+            self.out <<= self.clipped[7:0]
+
+
 class TinyRegFile(Module):
     def __init__(self):
         super().__init__("TinyRegFile")
@@ -1545,6 +1572,27 @@ def test_emit_design_keeps_distinct_rom_modules_when_init_file_differs():
     assert '$readmemh("rom1.hex", mem);' in text
     assert 'RomLeaf u0 (' in text
     assert 'RomLeaf_1 u1 (' in text
+
+
+def test_emit_design_renames_reserved_internal_signal_identifiers():
+    class ReservedNameLeaf(Module):
+        def __init__(self):
+            super().__init__("ReservedNameLeaf")
+            self.inp = Input(8, "inp")
+            self.out = Output(8, "out")
+            self.final = Wire(8, "final")
+
+            @self.comb
+            def _comb():
+                self.final <<= self.inp
+                self.out <<= self.final
+
+    text = VerilogEmitter(profile=EmitProfile.review()).emit(ReservedNameLeaf())
+
+    assert "logic [7:0] final_sv;" in text
+    assert "assign final_sv = inp;" in text
+    assert "assign out = $signed(final_sv);" in text or "assign out = final_sv;" in text
+    assert "logic [7:0] final;" not in text
 
 
 def test_collect_external_verilog_artifacts_from_mixed_design():
@@ -4517,7 +4565,12 @@ def test_dsl_lint_flags_plain_signed_right_shift_for_clarity():
     violations = SignedShiftLintLane().lint(rules=["signed_shift"])
 
     assert any("SignedShift" in item for item in violations)
+    assert any("severity=warning" in item for item in violations)
+    assert any("source=" in item for item in violations)
+    assert any("object=out" in item for item in violations)
+    assert any("suggested_fix=" in item for item in violations)
     assert any("SRA" in item for item in violations)
+    assert any(".py:" in item for item in violations)
 
 
 def test_verilog_linter_flags_signed_shift_intent_and_accepts_sra():
@@ -4608,7 +4661,12 @@ def test_dsl_lint_flags_signed_unsigned_multiply_with_specific_rule():
     violations = SignedUnsignedMultiplyLane().lint(rules=["signed_multiply"])
 
     assert any("SignedMultiply" in item for item in violations)
+    assert any("severity=warning" in item for item in violations)
+    assert any("source=" in item for item in violations)
+    assert any("object=out" in item for item in violations)
+    assert any("suggested_fix=" in item for item in violations)
     assert any("multiply intent" in item for item in violations)
+    assert any(".py:" in item for item in violations)
 
 
 def test_dsl_lint_flags_signed_unsigned_compare_with_specific_rule():
@@ -4626,7 +4684,12 @@ def test_dsl_lint_flags_signed_unsigned_compare_with_specific_rule():
     violations = SignedUnsignedCompareLane().lint(rules=["signed_compare"])
 
     assert any("SignedCompare" in item for item in violations)
+    assert any("severity=warning" in item for item in violations)
+    assert any("source=" in item for item in violations)
+    assert any("object=out" in item for item in violations)
+    assert any("suggested_fix=" in item for item in violations)
     assert any("comparison intent" in item for item in violations)
+    assert any(".py:" in item for item in violations)
 
 
 def test_verilog_linter_flags_signed_multiply_and_compare_intent():
@@ -4702,6 +4765,35 @@ def test_dsl_round_shift_right_helper_matches_compiled_simulator(tmp_path):
             assert compiled.step(inputs) == {"out": expected}
     finally:
         compiled.close()
+
+
+def test_dsl_round_shift_level_shift_and_clip_matches_compiled_simulator(tmp_path):
+    lowered = lower_dsl_module_to_sim(FixedPointRoundClipLane())
+    py_sim = PythonSimulator(lowered.module)
+    compiled = build_compiled_simulator_from_dsl(
+        FixedPointRoundClipLane(),
+        build_dir=tmp_path / "round_shift_clip",
+    )
+
+    try:
+        for signed_inp, expected in (
+            (-4096, 0),      # rounded=-256, +128 -> negative, clip low
+            (-2048, 0),      # rounded=-128, +128 -> exact low edge
+            (-1152, 56),     # rounded=-72, +128 -> in-range negative intermediate
+            (0, 128),        # JPEG-style neutral level shift
+            (2032, 255),     # rounded=127, +128 -> high edge
+            (4096, 255),     # rounded=256, +128 -> clip high
+        ):
+            raw_inp = signed_inp & ((1 << 24) - 1)
+            expected_outputs = {"out": expected}
+            assert py_sim.step({"inp": raw_inp}) == expected_outputs
+            assert compiled.step({"inp": raw_inp}) == expected_outputs
+    finally:
+        compiled.close()
+
+    emitted = VerilogEmitter().emit(FixedPointRoundClipLane())
+    assert ">>>" in emitted
+    assert "$signed" in emitted
 
 
 def test_jpeg_idct_signed_level_shift_matches_reference_and_compiled(tmp_path):
@@ -5180,6 +5272,32 @@ def test_dsl_lowering_supports_sync_read_storage_contract():
     )
 
 
+def test_dsl_lowering_rejects_multiport_storage_metadata_with_source_location():
+    class MultiPortLoweringMem(Module):
+        def __init__(self):
+            super().__init__("MultiPortLoweringMem")
+            self.addr = Input(2, "addr")
+            self.dout = Output(8, "dout")
+            self.mem = self.add_memory(Memory(8, 4, "mem", read_ports=2))
+
+            @self.comb
+            def _comb():
+                self.dout <<= self.mem[self.addr]
+
+    with pytest.raises(DslLoweringError) as exc_info:
+        lower_dsl_module_to_sim(MultiPortLoweringMem())
+    message = str(exc_info.value)
+    assert "UnsupportedStorageContract" in message
+    assert "severity=error" in message
+    assert "source=" in message
+    assert "object=memory.mem" in message
+    assert "suggested_fix=" in message
+    assert "memory 'mem'" in message
+    assert "read_ports=2" in message
+    assert "read_ports=1, write_ports=1" in message
+    assert ".py:" in message
+
+
 def test_dsl_lowering_supports_byte_enable_storage_contract():
     lowered = lower_dsl_module_to_sim(ByteEnableDeclaredMem())
     memory = lowered.module.memories[0]
@@ -5219,11 +5337,17 @@ def test_dsl_verilog_emitter_rejects_sync_read_memory_inference():
     with pytest.raises(DslLoweringError) as exc_info:
         VerilogEmitter().emit(SyncReadDeclaredMem())
     message = str(exc_info.value)
+    assert "UnsupportedStorageContract" in message
+    assert "severity=error" in message
+    assert "source=" in message
+    assert "object=memory.mem" in message
+    assert "suggested_fix=" in message
     assert "module 'SyncReadDeclaredMem'" in message
     assert "memory 'mem'" in message
     assert "read_style='sync'" in message
     assert "read_latency=1" in message
     assert "read_style='async', read_latency=0" in message
+    assert ".py:" in message
 
 
 def test_dsl_verilog_emitter_rejects_multiport_memory_metadata():
@@ -5241,10 +5365,16 @@ def test_dsl_verilog_emitter_rejects_multiport_memory_metadata():
     with pytest.raises(DslLoweringError) as exc_info:
         VerilogEmitter().emit(MultiPortDeclaredMem())
     message = str(exc_info.value)
+    assert "UnsupportedStorageContract" in message
+    assert "severity=error" in message
+    assert "source=" in message
+    assert "object=memory.mem" in message
+    assert "suggested_fix=" in message
     assert "module 'MultiPortDeclaredMem'" in message
     assert "memory 'mem'" in message
     assert "read_ports=2" in message
     assert "read_ports=1, write_ports=1" in message
+    assert ".py:" in message
 
 
 def test_dsl_emit_design_preflights_child_storage_contracts():
@@ -6090,9 +6220,14 @@ def test_validate_authoring_intent_rejects_unknown_submodule_port_binding():
         validate_authoring_intent(InvalidPortTop())
     message = str(exc_info.value)
     assert "UnknownSubmodulePort" in message
+    assert "severity=error" in message
+    assert "source=" in message
+    assert "object=InvalidPortTop.u_leaf.dout_typo" in message
+    assert "suggested_fix=" in message
     assert "InvalidPortTop.u_leaf" in message
     assert "dout_typo" in message
     assert "din, dout" in message
+    assert ".py:" in message
 
 
 def test_dsl_flatten_rejects_unknown_submodule_port_binding():
@@ -6122,7 +6257,12 @@ def test_validate_authoring_intent_rejects_untracked_local_wire():
         validate_authoring_intent(LocalWireScratch())
     message = str(exc_info.value)
     assert "UntrackedSignal" in message
+    assert "severity=error" in message
+    assert "source=" in message
+    assert "object=LocalWireScratch.scratch" in message
+    assert "suggested_fix=" in message
     assert "self.scratch" in message
+    assert ".py:" in message
 
 
 def test_validate_authoring_intent_rejects_untracked_local_memory():
@@ -6141,7 +6281,12 @@ def test_validate_authoring_intent_rejects_untracked_local_memory():
         validate_authoring_intent(LocalMemoryScratch())
     message = str(exc_info.value)
     assert "UntrackedMemory" in message
+    assert "severity=error" in message
+    assert "source=" in message
+    assert "object=LocalMemoryScratch.scratch" in message
+    assert "suggested_fix=" in message
     assert "self.scratch" in message
+    assert ".py:" in message
 
 
 def test_validate_authoring_intent_rejects_untracked_local_array():
@@ -6160,6 +6305,59 @@ def test_validate_authoring_intent_rejects_untracked_local_array():
         validate_authoring_intent(LocalArrayScratch())
     message = str(exc_info.value)
     assert "UntrackedArray" in message
+    assert "severity=error" in message
+    assert "source=" in message
+    assert "object=LocalArrayScratch.scratch" in message
+    assert "suggested_fix=" in message
+    assert "self.scratch" in message
+    assert ".py:" in message
+
+
+def test_validate_authoring_intent_source_maps_untracked_memory_write():
+    class LocalMemoryWriteScratch(Module):
+        def __init__(self):
+            super().__init__("LocalMemoryWriteScratch")
+            self.clk = Input(1, "clk")
+            self.addr = Input(2, "addr")
+            self.data = Input(8, "data")
+            scratch = Memory(8, 4, "scratch", init_zero=True)
+
+            @self.seq(self.clk)
+            def _seq():
+                scratch[self.addr] <<= self.data
+
+    with pytest.raises(DslLoweringError) as exc_info:
+        validate_authoring_intent(LocalMemoryWriteScratch())
+    message = str(exc_info.value)
+    assert "UntrackedMemory" in message
+    assert "object=LocalMemoryWriteScratch.scratch" in message
+    assert "source=" in message
+    assert "test_dsl_import.py:" in message
+    assert "adapter.py:" not in message
+    assert "self.scratch" in message
+
+
+def test_validate_authoring_intent_source_maps_untracked_array_write():
+    class LocalArrayWriteScratch(Module):
+        def __init__(self):
+            super().__init__("LocalArrayWriteScratch")
+            self.clk = Input(1, "clk")
+            self.addr = Input(2, "addr")
+            self.data = Input(8, "data")
+            scratch = Array(8, 4, "scratch")
+
+            @self.seq(self.clk)
+            def _seq():
+                scratch[self.addr] <<= self.data
+
+    with pytest.raises(DslLoweringError) as exc_info:
+        validate_authoring_intent(LocalArrayWriteScratch())
+    message = str(exc_info.value)
+    assert "UntrackedArray" in message
+    assert "object=LocalArrayWriteScratch.scratch" in message
+    assert "source=" in message
+    assert "test_dsl_import.py:" in message
+    assert "adapter.py:" not in message
     assert "self.scratch" in message
 
 

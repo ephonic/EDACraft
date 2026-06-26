@@ -467,6 +467,25 @@ def _sign_extend_expr(expr: str, width: int) -> str:
     return f"int64_t(({masked} ^ {sign_bit}) - {sign_bit})"
 
 
+def _masked_scalar_expr(expr: str, width: int) -> str:
+    return f"(uint64_t({expr}) & {_mask_expr(width)})"
+
+
+def _scalar_numeric_operand_expr(
+    expr: str,
+    width: int,
+    *,
+    signed: bool,
+    signed_context: bool,
+) -> str:
+    masked = _masked_scalar_expr(expr, width)
+    if signed_context:
+        if signed:
+            return f"static_cast<__int128>({_sign_extend_expr(masked, width)})"
+        return f"static_cast<__int128>({masked})"
+    return f"static_cast<unsigned __int128>({masked})"
+
+
 def _word_count(width: int) -> int:
     return max((width + 63) // 64, 1)
 
@@ -2013,6 +2032,11 @@ class CppBackendScaffold:
             "  return out;",
             "}",
             "",
+            "inline Value value_add_signed(const Value& lhs, const Value& rhs, std::size_t lhs_width, std::size_t rhs_width) {",
+            "  return value_add(value_sign_extend(value_mask(lhs, lhs_width), lhs_width),",
+            "                   value_sign_extend(value_mask(rhs, rhs_width), rhs_width));",
+            "}",
+            "",
             "inline Value value_sub(const Value& lhs, const Value& rhs) {",
             "  Value out{};",
             "  unsigned __int128 borrow = 0;",
@@ -2023,6 +2047,11 @@ class CppBackendScaffold:
             "    borrow = minuend < subtrahend ? 1u : 0u;",
             "  }",
             "  return out;",
+            "}",
+            "",
+            "inline Value value_sub_signed(const Value& lhs, const Value& rhs, std::size_t lhs_width, std::size_t rhs_width) {",
+            "  return value_sub(value_sign_extend(value_mask(lhs, lhs_width), lhs_width),",
+            "                   value_sign_extend(value_mask(rhs, rhs_width), rhs_width));",
             "}",
             "",
             "inline Value value_neg(const Value& value) {",
@@ -2044,6 +2073,20 @@ class CppBackendScaffold:
             "    }",
             "  }",
             "  return out;",
+            "}",
+            "",
+            "inline Value value_mul_signed(const Value& lhs, const Value& rhs, std::size_t lhs_width, std::size_t rhs_width) {",
+            "  const Value lhs_ext = value_sign_extend(value_mask(lhs, lhs_width), lhs_width);",
+            "  const Value rhs_ext = value_sign_extend(value_mask(rhs, rhs_width), rhs_width);",
+            "  const bool lhs_neg = value_sign_bit(lhs_ext);",
+            "  const bool rhs_neg = value_sign_bit(rhs_ext);",
+            "  const Value lhs_mag = lhs_neg ? value_neg(lhs_ext) : lhs_ext;",
+            "  const Value rhs_mag = rhs_neg ? value_neg(rhs_ext) : rhs_ext;",
+            "  Value product = value_mul(lhs_mag, rhs_mag);",
+            "  if (lhs_neg != rhs_neg) {",
+            "    product = value_neg(product);",
+            "  }",
+            "  return product;",
             "}",
             "",
             "inline std::size_t value_to_size(const Value& value) {",
@@ -2672,11 +2715,22 @@ class CppBackendScaffold:
         if isinstance(expr, BinaryExpr):
             lhs_expr = self._emit_wide_expr(expr.lhs, signal_map, memory_map, state_expr=state_expr)
             rhs_expr = self._emit_wide_expr(expr.rhs, signal_map, memory_map, state_expr=state_expr)
+            lhs_width = _infer_expr_width(expr.lhs, signal_map, memory_map)
+            rhs_width = _infer_expr_width(expr.rhs, signal_map, memory_map)
+            signed_arith = _expr_is_signed(expr.lhs, signal_map, memory_map) or _expr_is_signed(
+                expr.rhs, signal_map, memory_map
+            )
             if expr.op == "+":
+                if signed_arith:
+                    return f"value_add_signed({lhs_expr}, {rhs_expr}, {lhs_width}u, {rhs_width}u)"
                 return f"value_add({lhs_expr}, {rhs_expr})"
             if expr.op == "-":
+                if signed_arith:
+                    return f"value_sub_signed({lhs_expr}, {rhs_expr}, {lhs_width}u, {rhs_width}u)"
                 return f"value_sub({lhs_expr}, {rhs_expr})"
             if expr.op == "*":
+                if signed_arith:
+                    return f"value_mul_signed({lhs_expr}, {rhs_expr}, {lhs_width}u, {rhs_width}u)"
                 return f"value_mul({lhs_expr}, {rhs_expr})"
             if expr.op == "&":
                 return f"value_and({lhs_expr}, {rhs_expr})"
@@ -2911,10 +2965,39 @@ class CppBackendScaffold:
                 masked_lhs = f"(uint64_t({lhs_src}) & {_mask_expr(lhs_width)})"
                 signed_lhs = _sign_extend_expr(masked_lhs, lhs_width)
                 return f"(uint64_t(({signed_lhs}) >> ({rhs_src})))"
+            lhs_src = self._emit_expr(expr.lhs, signal_map, memory_map, state_expr=state_expr)
+            rhs_src = self._emit_expr(expr.rhs, signal_map, memory_map, state_expr=state_expr)
+            lhs_width = _infer_expr_width(expr.lhs, signal_map, memory_map)
+            rhs_width = _infer_expr_width(expr.rhs, signal_map, memory_map)
+            lhs_signed = _expr_is_signed(expr.lhs, signal_map, memory_map)
+            rhs_signed = _expr_is_signed(expr.rhs, signal_map, memory_map)
+            signed_context = lhs_signed or rhs_signed
+            lhs_num = _scalar_numeric_operand_expr(
+                lhs_src,
+                lhs_width,
+                signed=lhs_signed,
+                signed_context=signed_context,
+            )
+            rhs_num = _scalar_numeric_operand_expr(
+                rhs_src,
+                rhs_width,
+                signed=rhs_signed,
+                signed_context=signed_context,
+            )
+            if expr.op in {"+", "-", "*"}:
+                if signed_context:
+                    return f"(uint64_t(static_cast<__int128>({lhs_num} {expr.op} {rhs_num})))"
+                return f"(uint64_t(static_cast<unsigned __int128>({lhs_num} {expr.op} {rhs_num})))"
+            if expr.op in {"<", "<=", ">", ">="}:
+                return f"(({lhs_num}) {expr.op} ({rhs_num}))"
+            if expr.op in {"==", "!="}:
+                lhs_cmp = _masked_scalar_expr(lhs_src, lhs_width)
+                rhs_cmp = _masked_scalar_expr(rhs_src, rhs_width)
+                return f"(({lhs_cmp}) {expr.op} ({rhs_cmp}))"
             return (
-                f"(({self._emit_expr(expr.lhs, signal_map, memory_map, state_expr=state_expr)}) "
+                f"(({lhs_src}) "
                 f"{expr.op} "
-                f"({self._emit_expr(expr.rhs, signal_map, memory_map, state_expr=state_expr)}))"
+                f"({rhs_src}))"
             )
         if isinstance(expr, MuxExpr):
             return (

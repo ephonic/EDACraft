@@ -556,10 +556,16 @@ class PythonSimulator:
             lhs = self._eval_expr(expr.lhs, values, memory_overrides=memory_overrides)
             rhs = self._eval_expr(expr.rhs, values, memory_overrides=memory_overrides)
             if expr.op == "+":
+                lhs = self._coerce_arithmetic_operand(expr.lhs, lhs)
+                rhs = self._coerce_arithmetic_operand(expr.rhs, rhs)
                 return lhs + rhs
             if expr.op == "-":
+                lhs = self._coerce_arithmetic_operand(expr.lhs, lhs)
+                rhs = self._coerce_arithmetic_operand(expr.rhs, rhs)
                 return lhs - rhs
             if expr.op == "*":
+                lhs = self._coerce_arithmetic_operand(expr.lhs, lhs)
+                rhs = self._coerce_arithmetic_operand(expr.rhs, rhs)
                 return lhs * rhs
             if expr.op == "&":
                 return lhs & rhs
@@ -686,6 +692,14 @@ class PythonSimulator:
         if isinstance(expr, MuxExpr):
             return max(self._expr_width(expr.when_true), self._expr_width(expr.when_false))
         raise TypeError(f"unsupported expression type: {type(expr)!r}")
+
+    def _coerce_arithmetic_operand(self, expr: Expr, value: int) -> int:
+        width = self._expr_width(expr)
+        masked = value & ((1 << width) - 1)
+        if self._expr_is_signed(expr):
+            sign_bit = 1 << (width - 1)
+            return masked - (1 << width) if masked & sign_bit else masked
+        return masked
 
     def _expr_is_signed(self, expr: Expr) -> bool:
         if isinstance(expr, ConstExpr):

@@ -53,27 +53,33 @@ class Chain(Module):
         e = JpegEntropyDecoder(name="entropy")
         dq = JpegDequantZigzag(name="dequant")
 
-        coeff = Wire(12, "coeff", signed=True)
-        coeff_valid = Wire(1, "coeff_valid")
-        block_valid = Wire(1, "block_valid")
-        block_ready = Wire(1, "block_ready")
-        block_ready <<= 1
-        coeff_ready = Wire(1, "coeff_ready")
-        coeff_ready <<= 1
+        self.coeff = Wire(12, "coeff", signed=True)
+        self.coeff_valid = Wire(1, "coeff_valid")
+        self.block_valid = Wire(1, "block_valid")
+        self.block_ready = Wire(1, "block_ready")
+        self.block_ready <<= 1
+        self.coeff_ready = Wire(1, "coeff_ready")
+        self.coeff_ready <<= 1
+        self.tlast = Wire(1, "tlast")
+        self.dq_in_ready = Wire(1, "dq_in_ready")
 
         self.instantiate(e, "u_e", port_map={
             "clk": self.clk, "rst": self.rst,
             "s_axis_tdata": self.s_axis_tdata,
             "s_axis_tvalid": self.s_axis_tvalid,
             "s_axis_tready": self.s_axis_tready,
-            "s_axis_tlast": Wire(1, "tlast"),
-            "coeff_out": coeff, "coeff_valid": coeff_valid,
-            "coeff_ready": coeff_ready,
-            "block_valid": block_valid, "block_ready": block_ready,
+            "s_axis_tlast": self.tlast,
+            "coeff_out": self.coeff,
+            "coeff_valid": self.coeff_valid,
+            "coeff_ready": self.coeff_ready,
+            "block_valid": self.block_valid,
+            "block_ready": self.block_ready,
         })
         self.instantiate(dq, "u_dq", port_map={
             "clk": self.clk, "rst": self.rst,
-            "in_data": coeff, "in_valid": coeff_valid, "in_ready": Wire(1, "dq_in_ready"),
+            "in_data": self.coeff,
+            "in_valid": self.coeff_valid,
+            "in_ready": self.dq_in_ready,
             "out_data": self.out_data, "out_valid": self.out_valid, "out_ready": self.out_ready,
         })
 
@@ -101,7 +107,7 @@ def run(sim, bytes_stream):
     return outputs
 
 
-def main():
+def run_entropy_dequant_chain(build_dir="jpeg_decoder/build/cpp_ed", *, verbose=False):
     coeffs = np.zeros((8, 8), dtype=np.int16)
     coeffs[0, 0] = 128
     coeffs[0, 1] = 64
@@ -119,19 +125,37 @@ def main():
 
     expected = coeffs
 
-    print("Python:")
+    if verbose:
+        print("Python:")
     py_sim = PythonSimulator(lower_dsl_module_to_sim(Chain()).module)
     py_sim.reset()
     py_out = np.array(run(py_sim, bytes_stream)[:64], dtype=np.int16).reshape(8, 8)
-    print(py_out)
-    print("Match:", np.array_equal(py_out, expected))
+    if verbose:
+        print(py_out)
+        print("Match:", np.array_equal(py_out, expected))
 
-    print("C++:")
-    with build_compiled_simulator_from_dsl(Chain(), build_dir="jpeg_decoder/build/cpp_ed") as cpp_sim:
+    if verbose:
+        print("C++:")
+    with build_compiled_simulator_from_dsl(Chain(), build_dir=build_dir) as cpp_sim:
         cpp_sim.reset()
         cpp_out = np.array(run(cpp_sim, bytes_stream)[:64], dtype=np.int16).reshape(8, 8)
-        print(cpp_out)
-        print("Match:", np.array_equal(cpp_out, expected))
+        if verbose:
+            print(cpp_out)
+            print("Match:", np.array_equal(cpp_out, expected))
+    return py_out, cpp_out, expected
+
+
+def test_entropy_dequant_chain_matches_python_and_compiled(tmp_path):
+    py_out, cpp_out, expected = run_entropy_dequant_chain(tmp_path / "cpp_entropy_dequant")
+
+    assert np.array_equal(py_out, expected)
+    assert np.array_equal(cpp_out, expected)
+
+
+def main():
+    py_out, cpp_out, expected = run_entropy_dequant_chain(verbose=True)
+    if not np.array_equal(py_out, expected) or not np.array_equal(cpp_out, expected):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

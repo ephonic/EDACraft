@@ -33,6 +33,7 @@ from rtlgen_x.dsl.core import (
     WhenNode,
     _clone_signal_shape,
     flatten_module,
+    format_diagnostic,
 )
 
 try:
@@ -206,11 +207,19 @@ def _collect_untracked_authoring_object_violations(module) -> List[str]:
                 "signal",
                 path,
                 name,
-                f"[UntrackedSignal] {type(sig).__name__} '{name}' is used in module '{path}' "
-                f"but was never registered on self. {guidance}",
+                format_diagnostic(
+                    "UntrackedSignal",
+                    source_location=getattr(sig, "source_location", None),
+                    obj=f"{path}.{name}",
+                    message=(
+                        f"{type(sig).__name__} '{name}' is used in module '{path}' "
+                        "but was never registered on self."
+                    ),
+                    suggested_fix=guidance,
+                ),
             )
 
-        def maybe_flag_memory(mem_name: str) -> None:
+        def maybe_flag_memory(mem_name: str, source_location: object = None) -> None:
             if mem_name in known_memory_names:
                 return
             display = mem_name or "<anonymous>"
@@ -224,11 +233,19 @@ def _collect_untracked_authoring_object_violations(module) -> List[str]:
                 "memory",
                 path,
                 display,
-                f"[UntrackedMemory] Memory '{display}' is used in module '{path}' but was never "
-                f"registered on self. {guidance}",
+                format_diagnostic(
+                    "UntrackedMemory",
+                    source_location=source_location,
+                    obj=f"{path}.{display}",
+                    message=(
+                        f"Memory '{display}' is used in module '{path}' but was never "
+                        "registered on self."
+                    ),
+                    suggested_fix=guidance,
+                ),
             )
 
-        def maybe_flag_array(array_name: str) -> None:
+        def maybe_flag_array(array_name: str, source_location: object = None) -> None:
             if array_name in known_array_names:
                 return
             display = array_name or "<anonymous>"
@@ -240,8 +257,16 @@ def _collect_untracked_authoring_object_violations(module) -> List[str]:
                 "array",
                 path,
                 display,
-                f"[UntrackedArray] Array '{display}' is used in module '{path}' but was never "
-                f"registered on self. {guidance}",
+                format_diagnostic(
+                    "UntrackedArray",
+                    source_location=source_location,
+                    obj=f"{path}.{display}",
+                    message=(
+                        f"Array '{display}' is used in module '{path}' but was never "
+                        "registered on self."
+                    ),
+                    suggested_fix=guidance,
+                ),
             )
 
         def visit_expr(expr) -> None:
@@ -290,11 +315,11 @@ def _collect_untracked_authoring_object_violations(module) -> List[str]:
                 visit_expr(expr.false_expr)
                 return
             if isinstance(expr, MemRead):
-                maybe_flag_memory(expr.mem_name)
+                maybe_flag_memory(expr.mem_name, getattr(expr, "source_location", None))
                 visit_expr(expr.addr)
                 return
             if isinstance(expr, ArrayRead):
-                maybe_flag_array(expr.array_name)
+                maybe_flag_array(expr.array_name, getattr(expr, "source_location", None))
                 visit_expr(expr.index)
                 return
 
@@ -311,12 +336,12 @@ def _collect_untracked_authoring_object_violations(module) -> List[str]:
                 visit_expr(stmt.value)
                 return
             if isinstance(stmt, ArrayWrite):
-                maybe_flag_array(stmt.array_name)
+                maybe_flag_array(stmt.array_name, getattr(stmt, "source_location", None))
                 visit_expr(stmt.index)
                 visit_expr(stmt.value)
                 return
             if isinstance(stmt, MemWrite):
-                maybe_flag_memory(stmt.mem_name)
+                maybe_flag_memory(stmt.mem_name, getattr(stmt, "source_location", None))
                 visit_expr(stmt.addr)
                 visit_expr(stmt.value)
                 if stmt.byte_enable is not None:
@@ -398,16 +423,34 @@ def _collect_invalid_submodule_port_binding_violations(module) -> List[str]:
     def module_path(parent_path: str, child_name: str) -> str:
         return f"{parent_path}.{child_name}" if parent_path else child_name
 
-    def record(path: str, inst_name: str, port_name: str, module_name: str, valid_ports: Sequence[str]) -> None:
+    def record(
+        path: str,
+        inst_name: str,
+        port_name: str,
+        module_name: str,
+        valid_ports: Sequence[str],
+        *,
+        source_location: object = None,
+    ) -> None:
         key = (path, inst_name, port_name)
         if key in seen:
             return
         seen.add(key)
         valid_display = ", ".join(valid_ports) if valid_ports else "<no ports>"
         violations.append(
-            f"[UnknownSubmodulePort] Instance '{path}' maps unknown port '{port_name}' on "
-            f"submodule '{module_name}'. Valid ports: {valid_display}. "
-            "Fix the port_map key or rename the child port to match the authored connection."
+            format_diagnostic(
+                "UnknownSubmodulePort",
+                source_location=source_location,
+                obj=f"{path}.{port_name}",
+                message=(
+                    f"Instance '{path}' maps unknown port '{port_name}' on submodule "
+                    f"'{module_name}'. Valid ports: {valid_display}."
+                ),
+                suggested_fix=(
+                    "Fix the port_map key or rename the child port to match the "
+                    "authored connection."
+                ),
+            )
         )
 
     def visit_module(mod, path: str, stack: Set[int]) -> None:
@@ -431,6 +474,7 @@ def _collect_invalid_submodule_port_binding_violations(module) -> List[str]:
                             port_name,
                             getattr(stmt.module, "name", stmt.module.__class__.__name__),
                             valid_ports,
+                            source_location=getattr(stmt, "source_location", None),
                         )
             for body_name in ("then_body", "else_body", "default_body"):
                 body = getattr(stmt, body_name, None)
@@ -693,10 +737,21 @@ def _validate_supported_storage_contract(source_memory) -> None:
         return
     details = ", ".join(problems)
     raise DslLoweringError(
-        f"memory '{getattr(source_memory, 'name', '<memory>')}' uses unsupported storage "
-        f"contract for executable lowering ({details}); current executable subset requires "
-        "read_ports=1, write_ports=1, plus either read_style='async'/read_latency=0 "
-        "or read_style='sync'/read_latency=1"
+        format_diagnostic(
+            "UnsupportedStorageContract",
+            source_location=getattr(source_memory, "source_location", None),
+            obj=f"memory.{getattr(source_memory, 'name', '<memory>')}",
+            message=(
+                f"memory '{getattr(source_memory, 'name', '<memory>')}' uses unsupported "
+                f"storage contract for executable lowering ({details}); current executable "
+                "subset requires read_ports=1, write_ports=1, plus either "
+                "read_style='async'/read_latency=0 or read_style='sync'/read_latency=1."
+            ),
+            suggested_fix=(
+                "Use executable lowering/cosim for this subset, or narrow the authored "
+                "storage contract."
+            ),
+        )
     )
 
 

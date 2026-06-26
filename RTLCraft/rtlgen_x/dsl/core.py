@@ -113,6 +113,40 @@ class SourceLoc:
     line: int
 
 
+def format_source_location(source_location: object) -> str:
+    """Return a compact file:line string when a DSL object carries source info."""
+
+    source_file = getattr(source_location, "file", None)
+    source_line = getattr(source_location, "line", None)
+    if source_file and source_line is not None:
+        return f"{source_file}:{source_line}"
+    if source_file:
+        return str(source_file)
+    return "<unknown>"
+
+
+def format_diagnostic(
+    rule: str,
+    *,
+    severity: str = "error",
+    source_location: object = None,
+    obj: str = "",
+    message: str,
+    suggested_fix: str = "",
+) -> str:
+    """Format user-facing DSL findings with a stable, source-mapped schema."""
+
+    fields = [
+        f"severity={severity}",
+        f"source={format_source_location(source_location)}",
+    ]
+    if obj:
+        fields.append(f"object={obj}")
+    if suggested_fix:
+        fields.append(f"suggested_fix={suggested_fix}")
+    return f"[{rule}] " + " ".join(fields) + f". {message}"
+
+
 class Const(Expr):
     def __init__(self, value: int, width: int = 1):
         super().__init__(width)
@@ -432,6 +466,7 @@ class Ref(Expr):
     def __init__(self, signal: "Signal"):
         super().__init__(signal.width)
         self.signal = signal
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class BinOp(Expr):
@@ -440,6 +475,7 @@ class BinOp(Expr):
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class UnaryOp(Expr):
@@ -447,6 +483,7 @@ class UnaryOp(Expr):
         super().__init__(width)
         self.op = op
         self.operand = operand
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class Slice(Expr):
@@ -455,6 +492,7 @@ class Slice(Expr):
         self.operand = operand
         self.hi = hi
         self.lo = lo
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class PartSelect(Expr):
@@ -468,6 +506,7 @@ class PartSelect(Expr):
         super().__init__(width)
         self.operand = operand
         self.offset = offset
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class BitSelect(Expr):
@@ -477,12 +516,14 @@ class BitSelect(Expr):
         super().__init__(1)
         self.operand = operand
         self.index = index
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class Concat(Expr):
     def __init__(self, operands: List[Expr], width: int):
         super().__init__(width)
         self.operands = operands
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 def _width_of(val) -> int:
@@ -514,6 +555,7 @@ class Mux(Expr):
         self.cond = cond
         self.true_expr = true_expr
         self.false_expr = false_expr
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class Assign:
@@ -567,6 +609,7 @@ class SubmoduleInst:
         self.module = module
         self.params = params
         self.port_map = port_map
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 @dataclass(frozen=True)
@@ -825,6 +868,7 @@ class MemRead(Expr):
         super().__init__(width)
         self.mem_name = mem_name
         self.addr = addr
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class MemWrite:
@@ -850,6 +894,7 @@ class ArrayRead(Expr):
         super().__init__(width)
         self.array_name = array_name
         self.index = index
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
 
 class ArrayWrite:
@@ -1173,6 +1218,7 @@ class Memory:
             else None
         )
         self.addr_width = max(depth.bit_length(), 1)
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
     @property
     def byte_enable_width(self) -> Optional[int]:
@@ -1510,6 +1556,7 @@ class Signal(IREntity):
         self._expr = Ref(self)
         self._driven_by: Optional[str] = None  # "comb" | "seq"
         self._parent_module: Optional["Module"] = None  # owning module
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
     def __hash__(self):
         return id(self)
@@ -2087,6 +2134,7 @@ class Array:
         self.depth = depth
         self.name = name
         self._vtype = vtype or Wire
+        self.source_location: Optional[SourceLoc] = Context._capture_location()
 
     def __getitem__(self, idx):
         idx_expr = _to_expr(idx) if isinstance(idx, int) else _to_expr(idx)
@@ -2354,8 +2402,20 @@ class Module(IREntity, metaclass=ModuleMeta):
                 if not isinstance(target_sig, Input):
                     owner = _owner_name(target_sig._parent_module)
                     violations.append(
-                        f"[HierarchicalWrite] '{owner}.{target_sig.name}' ({type(target_sig).__name__}) "
-                        f"is driven from '{self.name}'. Only submodule INPUT ports may be driven from parent."
+                        format_diagnostic(
+                            "HierarchicalWrite",
+                            source_location=getattr(stmt, "source_location", None),
+                            obj=f"{owner}.{target_sig.name}",
+                            message=(
+                                f"'{owner}.{target_sig.name}' ({type(target_sig).__name__}) "
+                                f"is driven from '{self.name}'. Only submodule INPUT ports may "
+                                "be driven from parent."
+                            ),
+                            suggested_fix=(
+                                "Drive a child input port or route through a parent-owned "
+                                "interconnect signal."
+                            ),
+                        )
                     )
 
             refs = _find_refs(stmt.value)
@@ -2365,8 +2425,20 @@ class Module(IREntity, metaclass=ModuleMeta):
                     owner = _owner_name(sig._parent_module)
                     if not isinstance(sig, (Input, Output)):
                         violations.append(
-                            f"[HierarchicalRead] '{owner}.{sig.name}' ({type(sig).__name__}) is read from '{self.name}'. "
-                            f"Only submodule ports (Input/Output) may be accessed from parent."
+                            format_diagnostic(
+                                "HierarchicalRead",
+                                source_location=getattr(stmt, "source_location", None),
+                                obj=f"{owner}.{sig.name}",
+                                message=(
+                                    f"'{owner}.{sig.name}' ({type(sig).__name__}) is read from "
+                                    f"'{self.name}'. Only submodule ports (Input/Output) may be "
+                                    "accessed from parent."
+                                ),
+                                suggested_fix=(
+                                    "Expose the value through a child Output or mirror it into a "
+                                    "parent-owned wire."
+                                ),
+                            )
                         )
 
         # ================================================================
@@ -2383,10 +2455,20 @@ class Module(IREntity, metaclass=ModuleMeta):
                     next((s.name for s in self._regs.values() if id(s) == sig_id), None)
                 )
                 if reg_sig is not None:
+                    source_location = getattr(assigns[0], "source_location", None)
                     violations.append(
-                        f"[CombRegAssign] Reg signal '{reg_sig.name}' is assigned in @comb block. "
-                        f"It will synthesize as a latch or wire, not a flip-flop. "
-                        f"Move the assignment to @seq if a registered output is intended."
+                        format_diagnostic(
+                            "CombRegAssign",
+                            source_location=source_location,
+                            obj=reg_sig.name,
+                            message=(
+                                f"Reg signal '{reg_sig.name}' is assigned in @comb block. "
+                                "It will synthesize as a latch or wire, not a flip-flop."
+                            ),
+                            suggested_fix=(
+                                "Move the assignment to @seq if a registered output is intended."
+                            ),
+                        )
                     )
 
         # ================================================================
@@ -2402,11 +2484,22 @@ class Module(IREntity, metaclass=ModuleMeta):
                     (s for s in self._outputs.values() if id(s) == sig_id), None
                 )
                 if out_sig is not None:
+                    source_location = getattr(assigns[0], "source_location", None)
                     violations.append(
-                        f"[SeqOutputAssign] Output '{out_sig.name}' is assigned directly in @seq block. "
-                        f"The Python Simulator cannot track Output as sequential state; "
-                        f"it will always read 0. Use an internal Reg (e.g., '{out_sig.name}_reg') "
-                        f"in @seq and drive the Output via @comb instead."
+                        format_diagnostic(
+                            "SeqOutputAssign",
+                            source_location=source_location,
+                            obj=out_sig.name,
+                            message=(
+                                f"Output '{out_sig.name}' is assigned directly in @seq block. "
+                                "The Python Simulator cannot track Output as sequential state; "
+                                "it will always read 0."
+                            ),
+                            suggested_fix=(
+                                f"Use an internal Reg (e.g., '{out_sig.name}_reg') in @seq and "
+                                "drive the Output via @comb instead."
+                            ),
+                        )
                     )
 
         # ================================================================
@@ -2993,17 +3086,36 @@ class Module(IREntity, metaclass=ModuleMeta):
                         "signed_right_shift",
                         target_name,
                         expr,
-                        f"[SignedShift] Signed expression '{lhs_info[2]}' uses '>>' in assignment to "
-                        f"'{target_name}'. Prefer SRA(...), '>>>', or .as_uint() >> to make the "
-                        f"shift intent explicit across simulation and emitted RTL.",
+                        format_diagnostic(
+                            "SignedShift",
+                            severity="warning",
+                            source_location=getattr(expr, "source_location", None),
+                            obj=target_name,
+                            message=(
+                                f"Signed expression '{lhs_info[2]}' uses '>>' in assignment "
+                                f"to '{target_name}'."
+                            ),
+                            suggested_fix=(
+                                "Prefer SRA(...), '>>>', or .as_uint() >> to make the shift "
+                                "intent explicit across simulation and emitted RTL."
+                            ),
+                        ),
                     )
                 if expr.op == ">>>" and lhs_info is not None and not lhs_info[0]:
                     record(
                         "unsigned_arith_shift",
                         target_name,
                         expr,
-                        f"[SignedShift] Unsigned expression '{lhs_info[2]}' uses '>>>'. "
-                        f"If arithmetic shift is intended, cast with .as_sint() or use SRA(...).",
+                        format_diagnostic(
+                            "SignedShift",
+                            severity="warning",
+                            source_location=getattr(expr, "source_location", None),
+                            obj=target_name,
+                            message=f"Unsigned expression '{lhs_info[2]}' uses '>>>'.",
+                            suggested_fix=(
+                                "If arithmetic shift is intended, cast with .as_sint() or use SRA(...)."
+                            ),
+                        ),
                     )
                 scan_expr(expr.lhs, target_name)
                 scan_expr(expr.rhs, target_name)
@@ -3093,9 +3205,20 @@ class Module(IREntity, metaclass=ModuleMeta):
                 (lhs_info[2], rhs_info[2]) if lhs_info[0] else (rhs_info[2], lhs_info[2])
             )
             violations.append(
-                f"[{rule_tag}] Signed expression '{signed_desc}' and unsigned expression "
-                f"'{unsigned_desc}' are mixed with '{op}' in assignment to '{sig_name}'. "
-                f"{guidance}"
+                format_diagnostic(
+                    rule_tag,
+                    severity="warning",
+                    source_location=(
+                        getattr(lhs, "source_location", None)
+                        or getattr(rhs, "source_location", None)
+                    ),
+                    obj=sig_name,
+                    message=(
+                        f"Signed expression '{signed_desc}' and unsigned expression "
+                        f"'{unsigned_desc}' are mixed with '{op}' in assignment to '{sig_name}'."
+                    ),
+                    suggested_fix=guidance,
+                )
             )
 
         def _scan_stmt(stmt):

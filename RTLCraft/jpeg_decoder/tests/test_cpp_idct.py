@@ -41,7 +41,7 @@ def run(sim, block):
     return outputs
 
 
-def main():
+def run_cpp_idct_smoke(build_dir="jpeg_decoder/build/cpp_idct", *, verbose=False):
     coeffs = np.zeros((8, 8), dtype=np.int16)
     coeffs[0, 0] = 128
     coeffs[0, 1] = 64
@@ -49,19 +49,37 @@ def main():
     expected = reference_idct2(coeffs)
     block = coeffs.flatten().tolist()
 
-    print("Python:")
+    if verbose:
+        print("Python:")
     py_sim = PythonSimulator(lower_dsl_module_to_sim(JpegIdct8x8()).module)
     py_sim.reset()
     py_y = np.array(run(py_sim, block)[:64], dtype=np.uint8).reshape(8, 8)
-    print(py_y)
-    print("Match:", np.array_equal(py_y, expected))
+    if verbose:
+        print(py_y)
+        print("Match:", np.array_equal(py_y, expected))
 
-    print("C++:")
-    with build_compiled_simulator_from_dsl(JpegIdct8x8(), build_dir="jpeg_decoder/build/cpp_idct") as cpp_sim:
+    if verbose:
+        print("C++:")
+    with build_compiled_simulator_from_dsl(JpegIdct8x8(), build_dir=build_dir) as cpp_sim:
         cpp_sim.reset()
         cpp_y = np.array(run(cpp_sim, block)[:64], dtype=np.uint8).reshape(8, 8)
-        print(cpp_y)
-        print("Match:", np.array_equal(cpp_y, expected))
+        if verbose:
+            print(cpp_y)
+            print("Match:", np.array_equal(cpp_y, expected))
+    return py_y, cpp_y, expected
+
+
+def test_cpp_idct_matches_python_and_reference(tmp_path):
+    py_y, cpp_y, expected = run_cpp_idct_smoke(tmp_path / "cpp_idct")
+
+    assert np.array_equal(py_y, expected)
+    assert np.array_equal(cpp_y, expected)
+
+
+def main():
+    py_y, cpp_y, expected = run_cpp_idct_smoke(verbose=True)
+    if not np.array_equal(py_y, expected) or not np.array_equal(cpp_y, expected):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

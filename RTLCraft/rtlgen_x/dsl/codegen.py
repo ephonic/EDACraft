@@ -48,12 +48,262 @@ from rtlgen_x.dsl.core import (
     WhenNode,
     SwitchNode,
     UnaryOp,
+    format_diagnostic,
 )
 from rtlgen_x.dsl.adapter import (
     DslLoweringError,
     _normalize_cross_module_assignments,
     validate_authoring_intent,
 )
+
+
+_SV_RESERVED_WORDS = {
+    "accept_on",
+    "alias",
+    "always",
+    "always_comb",
+    "always_ff",
+    "always_latch",
+    "assert",
+    "assume",
+    "automatic",
+    "before",
+    "begin",
+    "bind",
+    "bins",
+    "binsof",
+    "bit",
+    "break",
+    "buf",
+    "bufif0",
+    "bufif1",
+    "byte",
+    "case",
+    "casex",
+    "casez",
+    "cell",
+    "chandle",
+    "checker",
+    "class",
+    "clocking",
+    "cmos",
+    "config",
+    "const",
+    "constraint",
+    "context",
+    "continue",
+    "cover",
+    "covergroup",
+    "coverpoint",
+    "cross",
+    "deassign",
+    "default",
+    "defparam",
+    "design",
+    "disable",
+    "dist",
+    "do",
+    "edge",
+    "else",
+    "end",
+    "endcase",
+    "endchecker",
+    "endclass",
+    "endclocking",
+    "endconfig",
+    "endfunction",
+    "endgenerate",
+    "endgroup",
+    "endinterface",
+    "endmodule",
+    "endpackage",
+    "endprimitive",
+    "endprogram",
+    "endproperty",
+    "endspecify",
+    "endsequence",
+    "endtable",
+    "endtask",
+    "enum",
+    "event",
+    "eventually",
+    "expect",
+    "export",
+    "extends",
+    "extern",
+    "final",
+    "first_match",
+    "for",
+    "force",
+    "foreach",
+    "forever",
+    "fork",
+    "forkjoin",
+    "function",
+    "generate",
+    "genvar",
+    "global",
+    "highz0",
+    "highz1",
+    "if",
+    "iff",
+    "ifnone",
+    "ignore_bins",
+    "illegal_bins",
+    "implements",
+    "implies",
+    "import",
+    "incdir",
+    "include",
+    "initial",
+    "inout",
+    "input",
+    "inside",
+    "instance",
+    "int",
+    "integer",
+    "interface",
+    "intersect",
+    "join",
+    "join_any",
+    "join_none",
+    "large",
+    "let",
+    "liblist",
+    "library",
+    "local",
+    "localparam",
+    "logic",
+    "longint",
+    "macromodule",
+    "matches",
+    "medium",
+    "modport",
+    "module",
+    "nand",
+    "negedge",
+    "nettype",
+    "new",
+    "nexttime",
+    "nmos",
+    "nor",
+    "noshowcancelled",
+    "not",
+    "notif0",
+    "notif1",
+    "null",
+    "or",
+    "output",
+    "package",
+    "packed",
+    "parameter",
+    "pmos",
+    "posedge",
+    "primitive",
+    "priority",
+    "program",
+    "property",
+    "protected",
+    "pull0",
+    "pull1",
+    "pulldown",
+    "pullup",
+    "pulsestyle_ondetect",
+    "pulsestyle_onevent",
+    "pure",
+    "rand",
+    "randc",
+    "randcase",
+    "randsequence",
+    "rcmos",
+    "real",
+    "realtime",
+    "ref",
+    "reg",
+    "reject_on",
+    "release",
+    "repeat",
+    "restrict",
+    "return",
+    "rnmos",
+    "rpmos",
+    "rtran",
+    "rtranif0",
+    "rtranif1",
+    "s_always",
+    "s_eventually",
+    "s_nexttime",
+    "s_until",
+    "s_until_with",
+    "scalared",
+    "sequence",
+    "shortint",
+    "shortreal",
+    "showcancelled",
+    "signed",
+    "small",
+    "soft",
+    "solve",
+    "specify",
+    "specparam",
+    "static",
+    "string",
+    "strong",
+    "strong0",
+    "strong1",
+    "struct",
+    "super",
+    "supply0",
+    "supply1",
+    "sync_accept_on",
+    "sync_reject_on",
+    "table",
+    "tagged",
+    "task",
+    "this",
+    "throughout",
+    "time",
+    "timeprecision",
+    "timeunit",
+    "tran",
+    "tranif0",
+    "tranif1",
+    "tri",
+    "tri0",
+    "tri1",
+    "triand",
+    "trior",
+    "trireg",
+    "type",
+    "typedef",
+    "union",
+    "unique",
+    "unique0",
+    "unsigned",
+    "until",
+    "until_with",
+    "untyped",
+    "use",
+    "uwire",
+    "var",
+    "vectored",
+    "virtual",
+    "void",
+    "wait",
+    "wait_order",
+    "wand",
+    "weak",
+    "weak0",
+    "weak1",
+    "while",
+    "wildcard",
+    "wire",
+    "with",
+    "within",
+    "wor",
+    "xnor",
+    "xor",
+}
 
 
 @dataclass
@@ -250,11 +500,21 @@ class VerilogEmitter:
                 continue
             details = ", ".join(problems)
             raise DslLoweringError(
-                f"module '{self._preferred_sv_module_name(module)}' memory '{memory.name}' uses "
-                f"unsupported storage contract for emitted RTL ({details}); current VerilogEmitter "
-                "storage subset requires read_ports=1, write_ports=1, "
-                "read_style='async', read_latency=0. Use the executable lowering/cosim path "
-                "for simulation, or author explicit sampled-output / multi-port RTL."
+                format_diagnostic(
+                    "UnsupportedStorageContract",
+                    source_location=getattr(memory, "source_location", None),
+                    obj=f"memory.{memory.name}",
+                    message=(
+                        f"module '{self._preferred_sv_module_name(module)}' memory '{memory.name}' "
+                        f"uses unsupported storage contract for emitted RTL ({details}); current "
+                        "VerilogEmitter storage subset requires read_ports=1, write_ports=1, "
+                        "read_style='async', read_latency=0."
+                    ),
+                    suggested_fix=(
+                        "Use the executable lowering/cosim path for simulation, or author explicit "
+                        "sampled-output / multi-port RTL."
+                    ),
+                )
             )
 
     def emit_with_lint(self, module: Module, auto_fix: bool = False, rules: Optional[List[str]] = None) -> Tuple[str, "LintResult"]:
@@ -455,6 +715,16 @@ class VerilogEmitter:
         preferred = self._preferred_sv_module_name(module)
         return getattr(self, "_module_name_remap", {}).get(id(module), preferred)
 
+    def _safe_hdl_identifier(self, name: str) -> str:
+        return f"{name}_sv" if name.lower() in _SV_RESERVED_WORDS else name
+
+    def _signal_hdl_name(self, sig: Signal, *, name_override: Optional[str] = None) -> str:
+        raw_name = name_override if name_override is not None else sig.name
+        return self._safe_hdl_identifier(raw_name)
+
+    def _module_hdl_name(self, name: str) -> str:
+        return self._safe_hdl_identifier(name)
+
     # -----------------------------------------------------------------
     # Module header emission (from ModuleDoc)
     # -----------------------------------------------------------------
@@ -474,12 +744,12 @@ class VerilogEmitter:
         if doc is None:
             # Fallback: emit minimal header with module name
             self.lines.append(f"// ==========================================================")
-            self.lines.append(f"// Module: {self._emitted_sv_module_name(module)}")
+            self.lines.append(f"// Module: {self._module_hdl_name(self._emitted_sv_module_name(module))}")
             self.lines.append(f"// ==========================================================")
             self._append_blank_line()
             return
 
-        mod_name = self._emitted_sv_module_name(module)
+        mod_name = self._module_hdl_name(self._emitted_sv_module_name(module))
         sep = "// " + "=" * 56
 
         self.lines.append(sep)
@@ -563,7 +833,7 @@ class VerilogEmitter:
         # 参数声明：区分可配置的 parameter 和局部的 localparam
         params = list(module._params.values())
         module_params = [p for p in params if not isinstance(p, LocalParam)]
-        mod_name = self._emitted_sv_module_name(module)
+        mod_name = self._module_hdl_name(self._emitted_sv_module_name(module))
         if module_params:
             def _fmt_param_val(v):
                 if isinstance(v, str):
@@ -1042,7 +1312,7 @@ class VerilogEmitter:
         init_part = ""
         if isinstance(sig, Reg) and getattr(sig, 'init_value', None) is not None:
             init_part = f" = {self._emit_signal_init(sig)}"
-        name = name_override if name_override is not None else sig.name
+        name = self._signal_hdl_name(sig, name_override=name_override)
         comment = ""
         if getattr(sig, "enum_type", None) is not None:
             comment = f" // enum {sig.enum_type.name}"
@@ -2444,12 +2714,14 @@ class VerilogEmitter:
     def _emit_lhs(self, target) -> str:
         if isinstance(target, Signal):
             inst_name = getattr(self, '_submod_port_inst_map', {}).get(id(target))
-            return f"{inst_name}_{target.name}" if inst_name is not None else target.name
+            base_name = f"{inst_name}_{target.name}" if inst_name is not None else target.name
+            return self._safe_hdl_identifier(base_name)
         return self._emit_expr(target, for_lhs=True)
 
     def _prefixed_name(self, sig: Signal) -> str:
         inst_name = getattr(self, '_submod_port_inst_map', {}).get(id(sig))
-        return f"{inst_name}_{sig.name}" if inst_name is not None else sig.name
+        base_name = f"{inst_name}_{sig.name}" if inst_name is not None else sig.name
+        return self._safe_hdl_identifier(base_name)
 
     def _emit_mux_chain_as_case(self, target_name: str, expr: Expr, indent_level: int, mode: str):
         """将级联 Mux 输出为 case 语句（可选 always @(*) 包装）。"""
@@ -2533,12 +2805,14 @@ class VerilogEmitter:
         if isinstance(expr, Signal):
             # Direct signal reference (including Input, Output, Wire, Reg)
             inst_name = getattr(self, '_submod_port_inst_map', {}).get(id(expr))
-            name = f"{inst_name}_{expr.name}" if inst_name is not None else expr.name
+            base_name = f"{inst_name}_{expr.name}" if inst_name is not None else expr.name
+            name = self._safe_hdl_identifier(base_name)
             return name
         if isinstance(expr, Ref):
             sig = expr.signal
             inst_name = getattr(self, '_submod_port_inst_map', {}).get(id(sig))
-            name = f"{inst_name}_{sig.name}" if inst_name is not None else sig.name
+            base_name = f"{inst_name}_{sig.name}" if inst_name is not None else sig.name
+            name = self._safe_hdl_identifier(base_name)
             if getattr(sig, "signed", False) and not for_lhs:
                 return f"$signed({name})"
             return name
