@@ -26,6 +26,10 @@ a fully pipelined FP16 SFU that uses LUT-backed second-order interpolation and
 is regression-locked across the DSL simulator, lowered executable model,
 and emitted RTL path.
 
+For JPEG-style signed datapaths, transpose/reorder buffers, and ROM/init-file
+closure, use [JPEG_DATAPATH_COOKBOOK.md](./JPEG_DATAPATH_COOKBOOK.md) together
+with the concrete implementation in [../jpeg_decoder/dsl_modules.py](../jpeg_decoder/dsl_modules.py).
+
 ## What `rtlgen_x` is
 
 `rtlgen_x` is designed around a capability-first thesis:
@@ -164,6 +168,9 @@ For multi-clock designs:
 15. for explicit submodule instantiation, keep `port_map` keys identical to
     the child module's declared port names; unknown keys now fail fast at
     lowering / emit boundaries instead of being silently ignored
+16. for ROM/LUT-backed emitted RTL, treat `init_data` / `init_file` as module
+    semantics; if a mixed DSL/external design depends on those files, package
+    them with external sources instead of assuming emitted RTL is self-contained
 
 Current static CDC scope is intentionally modest: it can recognize several
 safe structural patterns, but it does not try to prove arbitrary pulse/toggle

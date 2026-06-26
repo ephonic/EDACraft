@@ -8,6 +8,7 @@ from __future__ import annotations
 import inspect
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from rtlgen_x.dsl.entity import IREntity
@@ -4088,12 +4089,19 @@ class BlackBoxModule(Module):
 
 
 def collect_external_verilog_artifacts(module: Module) -> Dict[str, Tuple[Any, ...] | Dict[str, Optional[str]]]:
-    """Collect external Verilog packaging metadata from one module hierarchy."""
+    """Collect emitted-RTL packaging metadata from one module hierarchy.
+
+    The returned bundle covers both:
+
+    1. external Verilog implementation dependencies for blackbox/external leafs
+    2. authored storage init-file dependencies used by emitted `$readmemh(...)`
+    """
 
     seen: Set[int] = set()
     sources: List[str] = []
     include_dirs: List[str] = []
     defines: Dict[str, Optional[str]] = {}
+    init_files: List[str] = []
 
     def visit(mod: Module) -> None:
         if id(mod) in seen:
@@ -4103,6 +4111,11 @@ def collect_external_verilog_artifacts(module: Module) -> Dict[str, Tuple[Any, .
             sources.extend(str(path) for path in getattr(mod, "_verilog_sources", ()))
             include_dirs.extend(str(path) for path in getattr(mod, "_verilog_include_dirs", ()))
             defines.update(getattr(mod, "_verilog_defines", {}))
+        for mem in getattr(mod, "_memories", {}).values():
+            init_file = getattr(mem, "init_file", None)
+            if not init_file:
+                continue
+            init_files.append(str(Path(init_file)))
         for _, sub in getattr(mod, "_submodules", ()):
             visit(sub)
         for stmt in getattr(mod, "_top_level", ()):
@@ -4114,6 +4127,7 @@ def collect_external_verilog_artifacts(module: Module) -> Dict[str, Tuple[Any, .
         "sources": tuple(dict.fromkeys(sources)),
         "include_dirs": tuple(dict.fromkeys(include_dirs)),
         "defines": dict(defines),
+        "init_files": tuple(dict.fromkeys(init_files)),
     }
 
 

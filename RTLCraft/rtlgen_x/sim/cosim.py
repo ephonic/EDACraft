@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import io
 from pathlib import Path
+import re
 import os
 import subprocess
 import shutil
@@ -61,6 +62,15 @@ class _ExternalSimRunResult:
     cache_hit: bool
     cache_key: Optional[str]
     cache_dir: Optional[str]
+
+
+@dataclass(frozen=True)
+class _ExternalArtifactBundle:
+    sources: Tuple[Tuple[str, str], ...]
+    support_files: Tuple[Tuple[str, str], ...]
+    include_dirs: Tuple[str, ...]
+    defines: Dict[str, Optional[str]]
+    init_files: Tuple[str, ...]
 
 
 def run_dsl_rtl_cosim(
@@ -390,6 +400,7 @@ def _run_iverilog_trace(
 
     emitter = VerilogEmitter()
     dut_src = emitter.emit_design(module)
+    artifacts = _collect_external_artifact_bundle(module, dut_src)
     module_name = _infer_top_sv_module_name(dut_src, module)
     tb_sv = _generate_sv_tb(
         module,
@@ -399,12 +410,11 @@ def _run_iverilog_trace(
         clock_period_ns,
         clock_domain=clock_domain,
     )
-    from tempfile import TemporaryDirectory
-
-    with TemporaryDirectory(prefix="rtlgen_x_cosim_dut_") as tmpdir:
-        dut_path = Path(tmpdir) / f"{module.name}.sv"
-        dut_path.write_text(dut_src, encoding="utf-8")
-        stdout = rtl_cosim._compile_and_run(tb_sv, [str(dut_path)])
+    stdout = _compile_and_run_with_iverilog(
+        tb_sv=tb_sv,
+        dut_src=artifacts.sources[0][1],
+        artifacts=artifacts,
+    )
     if "COSIM_DONE" not in stdout:
         raise rtl_cosim.CosimError(f"iverilog simulation did not reach COSIM_DONE. stdout:\n{stdout}")
     return (
@@ -475,6 +485,7 @@ def _run_verilator_trace(
 
     emitter = VerilogEmitter()
     dut_src = emitter.emit_design(module)
+    artifacts = _collect_external_artifact_bundle(module, dut_src)
     module_name = _infer_top_sv_module_name(dut_src, module)
     tb_sv = _generate_sv_tb_runtime_vectors(
         module,
@@ -492,7 +503,8 @@ def _run_verilator_trace(
     run_result = _compile_and_run_with_verilator(
         verilator,
         tb_sv=tb_sv,
-        dut_src=dut_src,
+        dut_src=artifacts.sources[0][1],
+        artifacts=artifacts,
         top_module="tb_top",
         vectors_text=vector_text,
         build_dir=_derive_rtl_build_dir(build_dir, backend="verilator", mode=mode),
@@ -523,6 +535,7 @@ def _run_vcs_trace(
 
     emitter = VerilogEmitter()
     dut_src = emitter.emit_design(module)
+    artifacts = _collect_external_artifact_bundle(module, dut_src)
     module_name = _infer_top_sv_module_name(dut_src, module)
     tb_sv = _generate_sv_tb_runtime_vectors(
         module,
@@ -540,7 +553,8 @@ def _run_vcs_trace(
     run_result = _compile_and_run_with_vcs(
         vcs,
         tb_sv=tb_sv,
-        dut_src=dut_src,
+        dut_src=artifacts.sources[0][1],
+        artifacts=artifacts,
         top_module="tb_top",
         vectors_text=vector_text,
         build_dir=_derive_rtl_build_dir(build_dir, backend="vcs", mode=mode),
@@ -860,6 +874,7 @@ def _run_multiclock_iverilog_trace(
     clock_domains = _dsl_clock_domains(module)
     emitter = VerilogEmitter()
     dut_src = emitter.emit_design(module)
+    artifacts = _collect_external_artifact_bundle(module, dut_src)
     module_name = _infer_top_sv_module_name(dut_src, module)
     tb_sv = _generate_multiclock_sv_tb(
         module,
@@ -867,12 +882,11 @@ def _run_multiclock_iverilog_trace(
         vectors,
         clock_domains=clock_domains,
     )
-    from tempfile import TemporaryDirectory
-
-    with TemporaryDirectory(prefix="rtlgen_x_cosim_multiclk_") as tmpdir:
-        dut_path = Path(tmpdir) / f"{module.name}.sv"
-        dut_path.write_text(dut_src, encoding="utf-8")
-        stdout = rtl_cosim._compile_and_run(tb_sv, [str(dut_path)])
+    stdout = _compile_and_run_with_iverilog(
+        tb_sv=tb_sv,
+        dut_src=artifacts.sources[0][1],
+        artifacts=artifacts,
+    )
     if "COSIM_DONE" not in stdout:
         raise rtl_cosim.CosimError(f"iverilog simulation did not reach COSIM_DONE. stdout:\n{stdout}")
     return (
@@ -918,6 +932,7 @@ def _run_multiclock_verilator_trace(
     clock_domains = _dsl_clock_domains(module)
     emitter = VerilogEmitter()
     dut_src = emitter.emit_design(module)
+    artifacts = _collect_external_artifact_bundle(module, dut_src)
     module_name = _infer_top_sv_module_name(dut_src, module)
     tb_sv = _generate_multiclock_sv_tb_runtime_vectors(
         module,
@@ -928,7 +943,8 @@ def _run_multiclock_verilator_trace(
     run_result = _compile_and_run_with_verilator(
         verilator,
         tb_sv=tb_sv,
-        dut_src=dut_src,
+        dut_src=artifacts.sources[0][1],
+        artifacts=artifacts,
         top_module="tb_top",
         vectors_text=vector_text,
         build_dir=_derive_rtl_build_dir(build_dir, backend="verilator", mode="multi_clock"),
@@ -957,6 +973,7 @@ def _run_multiclock_vcs_trace(
     clock_domains = _dsl_clock_domains(module)
     emitter = VerilogEmitter()
     dut_src = emitter.emit_design(module)
+    artifacts = _collect_external_artifact_bundle(module, dut_src)
     module_name = _infer_top_sv_module_name(dut_src, module)
     tb_sv = _generate_multiclock_sv_tb_runtime_vectors(
         module,
@@ -967,7 +984,8 @@ def _run_multiclock_vcs_trace(
     run_result = _compile_and_run_with_vcs(
         vcs,
         tb_sv=tb_sv,
-        dut_src=dut_src,
+        dut_src=artifacts.sources[0][1],
+        artifacts=artifacts,
         top_module="tb_top",
         vectors_text=vector_text,
         build_dir=_derive_rtl_build_dir(build_dir, backend="vcs", mode="multi_clock"),
@@ -1027,6 +1045,7 @@ def _compile_and_run_with_verilator(
     *,
     tb_sv: str,
     dut_src: str,
+    artifacts: _ExternalArtifactBundle,
     top_module: str,
     vectors_text: str,
     build_dir: Optional[Path | str] = None,
@@ -1050,18 +1069,32 @@ def _compile_and_run_with_verilator(
     sysroot = _macos_sdk_path()
     cxxflags = _verilator_cxxflags(sysroot)
     ldflags = _verilator_ldflags(sysroot)
-    material = "\n".join((wrapper_cmd, top_module, cxxflags, ldflags, tb_sv, dut_src))
+    material = "\n".join(
+        (
+            wrapper_cmd,
+            top_module,
+            cxxflags,
+            ldflags,
+            tb_sv,
+            dut_src,
+            repr(artifacts.sources),
+            repr(artifacts.include_dirs),
+            repr(sorted(artifacts.defines.items())),
+            repr(artifacts.init_files),
+        )
+    )
     return _compile_and_run_cached_external_sim(
         backend="verilator",
         compile_key=_hash_text(material),
         build_dir=build_dir,
-        source_files={"dut.sv": dut_src, "tb_top.sv": tb_sv},
+        source_files=_artifact_source_file_map(tb_sv, dut_src, artifacts),
         vector_filename="vectors.txt",
         vectors_text=vectors_text,
         compile_runner=lambda root_path: _run_verilator_compile(
             root_path,
             wrapper_cmd=wrapper_cmd,
             top_module=top_module,
+            artifacts=artifacts,
             cxxflags=cxxflags,
             ldflags=ldflags,
             env=env,
@@ -1077,6 +1110,7 @@ def _compile_and_run_with_vcs(
     *,
     tb_sv: str,
     dut_src: str,
+    artifacts: _ExternalArtifactBundle,
     top_module: str,
     vectors_text: str,
     build_dir: Optional[Path | str] = None,
@@ -1089,23 +1123,36 @@ def _compile_and_run_with_vcs(
             remote_root=os.environ.get("RTLGEN_X_REMOTE_VCS_ROOT"),
             tb_sv=tb_sv,
             dut_src=dut_src,
+            artifacts=artifacts,
             top_module=top_module,
             vectors_text=vectors_text,
             build_dir=build_dir,
         )
     env = dict(os.environ)
-    material = "\n".join((vcs, top_module, tb_sv, dut_src))
+    material = "\n".join(
+        (
+            vcs,
+            top_module,
+            tb_sv,
+            dut_src,
+            repr(artifacts.sources),
+            repr(artifacts.include_dirs),
+            repr(sorted(artifacts.defines.items())),
+            repr(artifacts.init_files),
+        )
+    )
     return _compile_and_run_cached_external_sim(
         backend="vcs",
         compile_key=_hash_text(material),
         build_dir=build_dir,
-        source_files={"dut.sv": dut_src, "tb_top.sv": tb_sv},
+        source_files=_artifact_source_file_map(tb_sv, dut_src, artifacts),
         vector_filename="vectors.txt",
         vectors_text=vectors_text,
         compile_runner=lambda root_path: _run_vcs_compile(
             root_path,
             vcs=vcs,
             top_module=top_module,
+            artifacts=artifacts,
             env=env,
         ),
         executable_locator=lambda root_path: root_path / "simv",
@@ -1121,28 +1168,41 @@ def _compile_and_run_with_remote_vcs(
     remote_root: Optional[str],
     tb_sv: str,
     dut_src: str,
+    artifacts: _ExternalArtifactBundle,
     top_module: str,
     vectors_text: str,
     build_dir: Optional[Path | str] = None,
 ) -> _ExternalSimRunResult:
-    material = "\n".join((host, source_script, remote_root or "", top_module, tb_sv, dut_src))
+    material = "\n".join(
+        (
+            host,
+            source_script,
+            remote_root or "",
+            top_module,
+            tb_sv,
+            dut_src,
+            repr(artifacts.sources),
+            repr(artifacts.include_dirs),
+            repr(sorted(artifacts.defines.items())),
+            repr(artifacts.init_files),
+        )
+    )
     compile_key = _hash_text(material)
     root_path, tempdir = _prepare_external_sim_root("vcs", compile_key, build_dir)
     remote_base = remote_root or "$HOME/rtlgen_x/cosim_vcs"
     remote_dir = f"{remote_base.rstrip('/')}/{compile_key}"
     try:
-        source_files = {"dut.sv": dut_src, "tb_top.sv": tb_sv, "vectors.txt": vectors_text}
+        source_files = dict(_artifact_source_file_map(tb_sv, dut_src, artifacts))
+        source_files["vectors.txt"] = vectors_text
         for filename, contents in source_files.items():
-            (root_path / filename).write_text(contents, encoding="utf-8")
+            dest = root_path / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(contents, encoding="utf-8")
         stamp_path = root_path / ".compile_stamp"
         cache_hit = stamp_path.exists()
         if not cache_hit:
             archive = _tar_paths(
-                (
-                    (root_path / "dut.sv", "dut.sv"),
-                    (root_path / "tb_top.sv", "tb_top.sv"),
-                    (root_path / "vectors.txt", "vectors.txt"),
-                )
+                tuple((root_path / name, name) for name in source_files)
             )
             _run_remote_ssh(
                 host,
@@ -1155,7 +1215,8 @@ def _compile_and_run_with_remote_vcs(
                 f"source {source_script} >/dev/null 2>&1 && "
                 f"cd {remote_dir} && "
                 "vcs -full64 -sverilog -timescale=1ns/1ps -q "
-                f"-top {top_module} tb_top.sv dut.sv -o simv"
+                f"{_format_external_compile_flags(artifacts)} "
+                f"-top {top_module} tb_top.sv {' '.join(path for path, _ in artifacts.sources)} -o simv"
             )
             compile_result = _run_remote_ssh(
                 host,
@@ -1238,6 +1299,111 @@ def _prepare_external_sim_root(
     return Path(tempdir.name), tempdir
 
 
+def _collect_external_artifact_bundle(module, dut_src: str) -> _ExternalArtifactBundle:
+    if not _use_dsl_module(module):
+        return _ExternalArtifactBundle(
+            sources=(("dut.sv", dut_src),),
+            support_files=(),
+            include_dirs=(),
+            defines={},
+            init_files=(),
+        )
+
+    from rtlgen_x.dsl import collect_external_verilog_artifacts
+
+    metadata = collect_external_verilog_artifacts(module)
+    rewritten_src, init_aliases = _rewrite_readmemh_paths(dut_src)
+    source_files: List[Tuple[str, str]] = [("dut.sv", rewritten_src)]
+    support_files: List[Tuple[str, str]] = []
+
+    for idx, source_path in enumerate(metadata.get("sources", ())):
+        path = Path(str(source_path))
+        if not path.is_file():
+            raise FileNotFoundError(str(path))
+        alias = f"external_sources/{idx}_{path.name}"
+        source_files.append((alias, path.read_text(encoding="utf-8")))
+
+    include_dir_aliases: List[str] = []
+    for idx, include_dir in enumerate(metadata.get("include_dirs", ())):
+        root = Path(str(include_dir))
+        if not root.is_dir():
+            raise FileNotFoundError(str(root))
+        alias_root = f"include_dirs/{idx}_{root.name}"
+        include_dir_aliases.append(alias_root)
+        for child in sorted(root.rglob("*")):
+            if child.is_dir():
+                continue
+            rel = child.relative_to(root).as_posix()
+            support_files.append((f"{alias_root}/{rel}", child.read_text(encoding="utf-8")))
+
+    init_file_aliases: List[str] = []
+    raw_init_files = tuple(str(path) for path in metadata.get("init_files", ()))
+    if len(init_aliases) != len(raw_init_files):
+        raise rtl_cosim.CosimError(
+            "init_file packaging mismatch: emitted RTL readmemh sites do not match collected init files"
+        )
+    for alias_name, init_file in zip(init_aliases, raw_init_files):
+        path = Path(init_file)
+        if not path.is_file():
+            raise FileNotFoundError(str(path))
+        staged_alias = f"init_files/{alias_name}"
+        init_file_aliases.append(staged_alias)
+        support_files.append((staged_alias, path.read_text(encoding="utf-8")))
+
+    return _ExternalArtifactBundle(
+        sources=tuple(source_files),
+        support_files=tuple(support_files),
+        include_dirs=tuple(include_dir_aliases),
+        defines=dict(metadata.get("defines", {})),
+        init_files=tuple(init_file_aliases),
+    )
+
+
+def _rewrite_readmemh_paths(source: str) -> tuple[str, Tuple[str, ...]]:
+    aliases: List[str] = []
+
+    def repl(match: re.Match[str]) -> str:
+        original = match.group("path")
+        suffix = Path(original).name
+        alias = f"rom_{len(aliases)}_{suffix}"
+        aliases.append(alias)
+        return f'$readmemh("init_files/{alias}",'
+
+    rewritten = re.sub(
+        r'\$readmemh\(\s*"(?P<path>[^"]+)"\s*,',
+        repl,
+        source,
+    )
+    return rewritten, tuple(aliases)
+
+
+def _artifact_source_file_map(
+    tb_sv: str,
+    dut_src: str,
+    artifacts: _ExternalArtifactBundle,
+) -> Dict[str, str]:
+    mapping: Dict[str, str] = {"tb_top.sv": tb_sv}
+    for path, contents in artifacts.sources:
+        mapping[path] = contents
+    if "dut.sv" not in mapping:
+        mapping["dut.sv"] = dut_src
+    for path, contents in artifacts.support_files:
+        mapping[path] = contents
+    return mapping
+
+
+def _format_external_compile_flags(artifacts: _ExternalArtifactBundle) -> str:
+    parts: List[str] = []
+    for include_dir in artifacts.include_dirs:
+        parts.append(f"+incdir+{include_dir}")
+    for name, value in sorted(artifacts.defines.items()):
+        if value is None:
+            parts.append(f"+define+{name}")
+        else:
+            parts.append(f"+define+{name}={value}")
+    return " ".join(parts).strip()
+
+
 def _compile_and_run_cached_external_sim(
     *,
     backend: str,
@@ -1254,8 +1420,11 @@ def _compile_and_run_cached_external_sim(
     root_path, tempdir = _prepare_external_sim_root(backend, compile_key, build_dir)
     try:
         for filename, contents in source_files.items():
-            (root_path / filename).write_text(contents, encoding="utf-8")
+            dest = root_path / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(contents, encoding="utf-8")
         vector_path = root_path / vector_filename
+        vector_path.parent.mkdir(parents=True, exist_ok=True)
         vector_path.write_text(vectors_text, encoding="utf-8")
         stamp_path = root_path / ".compile_stamp"
         cache_hit = stamp_path.exists()
@@ -1288,11 +1457,50 @@ def _compile_and_run_cached_external_sim(
             tempdir.cleanup()
 
 
+def _compile_and_run_with_iverilog(
+    *,
+    tb_sv: str,
+    dut_src: str,
+    artifacts: _ExternalArtifactBundle,
+) -> str:
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory(prefix="rtlgen_x_cosim_iverilog_") as tmpdir:
+        root = Path(tmpdir)
+        source_files = _artifact_source_file_map(tb_sv, dut_src, artifacts)
+        for filename, contents in source_files.items():
+            dest = root / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(contents, encoding="utf-8")
+
+        vvp_path = root / "tb_top.vvp"
+        cmd_compile = ["iverilog", "-g2012", "-o", str(vvp_path)]
+        compile_flags = _format_external_compile_flags(artifacts)
+        if compile_flags:
+            cmd_compile.extend(compile_flags.split())
+        cmd_compile.append(str(root / "tb_top.sv"))
+        cmd_compile.extend(str(root / path) for path, _ in artifacts.sources)
+        result = subprocess.run(cmd_compile, cwd=root, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise rtl_cosim.CosimError(
+                f"iverilog compilation failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+            )
+
+        cmd_run = ["vvp", str(vvp_path)]
+        result = subprocess.run(cmd_run, cwd=root, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise rtl_cosim.CosimError(
+                f"vvp execution failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+            )
+        return result.stdout
+
+
 def _run_verilator_compile(
     root_path: Path,
     *,
     wrapper_cmd: str,
     top_module: str,
+    artifacts: _ExternalArtifactBundle,
     cxxflags: str,
     ldflags: str,
     env: Mapping[str, str],
@@ -1308,9 +1516,12 @@ def _run_verilator_compile(
         cxxflags,
         "-LDFLAGS",
         ldflags,
-        str(root_path / "tb_top.sv"),
-        str(root_path / "dut.sv"),
     ]
+    compile_flags = _format_external_compile_flags(artifacts)
+    if compile_flags:
+        cmd.extend(compile_flags.split())
+    cmd.extend(str(root_path / path) for path, _ in artifacts.sources)
+    cmd.append(str(root_path / "tb_top.sv"))
     compile_result = subprocess.run(
         cmd,
         cwd=root_path,
@@ -1331,6 +1542,7 @@ def _run_vcs_compile(
     *,
     vcs: str,
     top_module: str,
+    artifacts: _ExternalArtifactBundle,
     env: Mapping[str, str],
 ) -> None:
     cmd = [
@@ -1341,11 +1553,18 @@ def _run_vcs_compile(
         "-q",
         "-top",
         top_module,
-        str(root_path / "tb_top.sv"),
-        str(root_path / "dut.sv"),
-        "-o",
-        str(root_path / "simv"),
     ]
+    compile_flags = _format_external_compile_flags(artifacts)
+    if compile_flags:
+        cmd.extend(compile_flags.split())
+    cmd.append(str(root_path / "tb_top.sv"))
+    cmd.extend(str(root_path / path) for path, _ in artifacts.sources)
+    cmd.extend(
+        [
+            "-o",
+            str(root_path / "simv"),
+        ]
+    )
     compile_result = subprocess.run(
         cmd,
         cwd=root_path,

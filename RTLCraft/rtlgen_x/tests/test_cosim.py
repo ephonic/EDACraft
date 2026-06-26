@@ -1,8 +1,9 @@
 from pathlib import Path
+import subprocess
 
 import pytest
 
-from rtlgen_x.dsl import Else, If, Input, Memory, Module, Output, Reg
+from rtlgen_x.dsl import BlackBoxModule, Else, If, Input, Memory, Module, Output, Reg
 from rtlgen_x.sim.cosim import (
     CosimUnknownValueError,
     run_dsl_multiclock_rtl_cosim,
@@ -182,6 +183,72 @@ class DslCosimDualClockArrayMailbox(Module):
                     self.rptr <<= self.rptr + 1
 
 
+class DslCosimExternalLeaf(BlackBoxModule):
+    def __init__(
+        self,
+        *,
+        verilog_source: str = "rtl/cosim_ext_leaf.sv",
+        include_dir: str = "rtl/include",
+    ):
+        super().__init__(
+            name="DslCosimExternalLeaf",
+            verilog_module_name="cosim_ext_leaf",
+            inputs=[("din", 8)],
+            outputs=[("dout", 8)],
+            external_verilog=True,
+            verilog_sources=[verilog_source],
+            include_dirs=[include_dir],
+            defines={"COSIM_EXT": "1"},
+        )
+
+
+class DslCosimMixedExternalRomTop(Module):
+    def __init__(
+        self,
+        *,
+        verilog_source: str = "rtl/cosim_ext_leaf.sv",
+        include_dir: str = "rtl/include",
+        init_file: str = "roms/cosim.hex",
+    ):
+        super().__init__("DslCosimMixedExternalRomTop")
+        self.addr = Input(2, "addr")
+        self.din = Input(8, "din")
+        self.out = Output(8, "out")
+        self.ext = DslCosimExternalLeaf(verilog_source=verilog_source, include_dir=include_dir)
+        self.mem = self.add_memory(Memory(8, 4, "mem", init_file=init_file))
+
+        @self.comb
+        def _comb():
+            self.ext.din <<= self.din
+            self.out <<= self.ext.dout + self.mem[self.addr]
+
+
+def _materialize_mixed_cosim_artifacts(tmp_path: Path) -> DslCosimMixedExternalRomTop:
+    include_dir = tmp_path / "rtl" / "include"
+    include_dir.mkdir(parents=True, exist_ok=True)
+    (include_dir / "cosim_defs.svh").write_text("`define COSIM_INC 1\n", encoding="utf-8")
+
+    verilog_source = tmp_path / "rtl" / "cosim_ext_leaf.sv"
+    verilog_source.parent.mkdir(parents=True, exist_ok=True)
+    verilog_source.write_text(
+        '`include "cosim_defs.svh"\n'
+        "module cosim_ext_leaf(input logic [7:0] din, output logic [7:0] dout);\n"
+        "  assign dout = din;\n"
+        "endmodule\n",
+        encoding="utf-8",
+    )
+
+    init_file = tmp_path / "roms" / "cosim.hex"
+    init_file.parent.mkdir(parents=True, exist_ok=True)
+    init_file.write_text("", encoding="utf-8")
+
+    return DslCosimMixedExternalRomTop(
+        verilog_source=str(verilog_source),
+        include_dir=str(include_dir),
+        init_file=str(init_file),
+    )
+
+
 def test_dsl_rtl_cosim_matches_compiled_simulator(tmp_path):
     report = run_dsl_rtl_cosim(
         DslCosimAccum(),
@@ -204,10 +271,7 @@ def test_dsl_rtl_cosim_matches_compiled_simulator(tmp_path):
 def test_dsl_rtl_cosim_returns_skip_when_tool_missing(monkeypatch):
     import rtlgen_x.sim.cosim as cosim_mod
 
-    def missing_compile(*args, **kwargs):
-        raise FileNotFoundError("iverilog")
-
-    monkeypatch.setattr(cosim_mod.rtl_cosim, "_compile_and_run", missing_compile)
+    monkeypatch.setattr(cosim_mod, "_compile_and_run_with_iverilog", lambda **kwargs: (_ for _ in ()).throw(FileNotFoundError("iverilog")))
 
     report = run_dsl_rtl_cosim(
         DslCosimAccum(),
@@ -218,6 +282,63 @@ def test_dsl_rtl_cosim_returns_skip_when_tool_missing(monkeypatch):
     assert report.skipped_reason == "iverilog"
     assert report.dsl_matches_rtl is False
     assert report.compiled_matches_rtl is False
+
+
+def test_collect_external_artifact_bundle_stages_external_and_init_files(tmp_path):
+    import rtlgen_x.sim.cosim as cosim_mod
+    from rtlgen_x.dsl import VerilogEmitter
+
+    module = _materialize_mixed_cosim_artifacts(tmp_path)
+    dut_src = VerilogEmitter().emit_design(module)
+    bundle = cosim_mod._collect_external_artifact_bundle(module, dut_src)
+
+    source_names = tuple(path for path, _ in bundle.sources)
+    support_names = tuple(path for path, _ in bundle.support_files)
+
+    assert source_names[0] == "dut.sv"
+    assert "external_sources/0_cosim_ext_leaf.sv" in source_names
+    assert bundle.include_dirs == ("include_dirs/0_include",)
+    assert bundle.defines == {"COSIM_EXT": "1"}
+    assert bundle.init_files == ("init_files/rom_0_cosim.hex",)
+    assert "init_files/rom_0_cosim.hex" in support_names
+    assert "include_dirs/0_include/cosim_defs.svh" in support_names
+    assert '$readmemh("init_files/rom_0_cosim.hex",' in bundle.sources[0][1]
+
+
+def test_compile_and_run_with_iverilog_stages_compile_flags_and_support_files(tmp_path, monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+    from rtlgen_x.dsl import VerilogEmitter
+
+    module = _materialize_mixed_cosim_artifacts(tmp_path)
+    bundle = cosim_mod._collect_external_artifact_bundle(module, VerilogEmitter().emit_design(module))
+    calls = []
+
+    class _Completed:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(cmd, cwd=None, capture_output=True, text=True, env=None):
+        calls.append((tuple(cmd), Path(cwd)))
+        if cmd[0] == "iverilog":
+            assert "+incdir+include_dirs/0_include" in cmd
+            assert "+define+COSIM_EXT=1" in cmd
+            assert str(Path(cwd) / "external_sources/0_cosim_ext_leaf.sv") in cmd
+            assert (Path(cwd) / "init_files/rom_0_cosim.hex").read_text(encoding="utf-8") == ""
+            return _Completed(stdout="")
+        return _Completed(stdout="CYCLE 0 out=3\nCOSIM_DONE\n")
+
+    monkeypatch.setattr(cosim_mod.subprocess, "run", fake_run)
+
+    stdout = cosim_mod._compile_and_run_with_iverilog(
+        tb_sv="module tb_top; initial begin $display(\"COSIM_DONE\"); $finish; end endmodule\n",
+        dut_src=bundle.sources[0][1],
+        artifacts=bundle,
+    )
+
+    assert "COSIM_DONE" in stdout
+    assert len(calls) == 2
 
 
 def test_dsl_rtl_cosim_explicit_vcs_skips_when_missing(monkeypatch):
@@ -350,6 +471,13 @@ def test_compile_and_run_with_remote_vcs_uses_ssh_pipeline(tmp_path, monkeypatch
     import rtlgen_x.sim.cosim as cosim_mod
 
     calls = []
+    artifacts = cosim_mod._ExternalArtifactBundle(
+        sources=(("dut.sv", "module dut; endmodule\n"),),
+        support_files=(),
+        include_dirs=(),
+        defines={},
+        init_files=(),
+    )
 
     class _Completed:
         def __init__(self, returncode=0, stdout="", stderr=""):
@@ -371,6 +499,7 @@ def test_compile_and_run_with_remote_vcs_uses_ssh_pipeline(tmp_path, monkeypatch
         remote_root="$HOME/rtlgen_x/cosim_vcs",
         tb_sv="module tb_top; endmodule\n",
         dut_src="module dut; endmodule\n",
+        artifacts=artifacts,
         top_module="tb_top",
         vectors_text="0 1\n",
         build_dir=tmp_path / "remote_vcs_cache",
@@ -392,6 +521,13 @@ def test_compile_and_run_with_remote_vcs_warm_cache_only_uploads_vectors(tmp_pat
     import rtlgen_x.sim.cosim as cosim_mod
 
     calls = []
+    artifacts = cosim_mod._ExternalArtifactBundle(
+        sources=(("dut.sv", "module dut; endmodule\n"),),
+        support_files=(),
+        include_dirs=(),
+        defines={},
+        init_files=(),
+    )
 
     class _Completed:
         def __init__(self, returncode=0, stdout="", stderr=""):
@@ -414,6 +550,7 @@ def test_compile_and_run_with_remote_vcs_warm_cache_only_uploads_vectors(tmp_pat
         remote_root="$HOME/rtlgen_x/cosim_vcs",
         tb_sv="module tb_top; endmodule\n",
         dut_src="module dut; endmodule\n",
+        artifacts=artifacts,
         top_module="tb_top",
         vectors_text="0 1\n",
         build_dir=cache_root,
@@ -426,6 +563,7 @@ def test_compile_and_run_with_remote_vcs_warm_cache_only_uploads_vectors(tmp_pat
         remote_root="$HOME/rtlgen_x/cosim_vcs",
         tb_sv="module tb_top; endmodule\n",
         dut_src="module dut; endmodule\n",
+        artifacts=artifacts,
         top_module="tb_top",
         vectors_text="0 1\n",
         build_dir=cache_root,
@@ -442,6 +580,13 @@ def test_compile_and_run_with_remote_vcs_warm_cache_only_uploads_vectors(tmp_pat
 
 def test_compile_and_run_with_remote_vcs_surfaces_ssh_failure(tmp_path, monkeypatch):
     import rtlgen_x.sim.cosim as cosim_mod
+    artifacts = cosim_mod._ExternalArtifactBundle(
+        sources=(("dut.sv", "module dut; endmodule\n"),),
+        support_files=(),
+        include_dirs=(),
+        defines={},
+        init_files=(),
+    )
 
     def failing_ssh(host, command, *, step, input_data=None, text=True, check=True):
         raise cosim_mod.rtl_cosim.CosimError(
@@ -462,6 +607,7 @@ def test_compile_and_run_with_remote_vcs_surfaces_ssh_failure(tmp_path, monkeypa
             remote_root="$HOME/rtlgen_x/cosim_vcs",
             tb_sv="module tb_top; endmodule\n",
             dut_src="module dut; endmodule\n",
+            artifacts=artifacts,
             top_module="tb_top",
             vectors_text="0 1\n",
             build_dir=tmp_path / "remote_vcs_cache",
@@ -473,6 +619,13 @@ def test_dsl_rtl_cosim_cached_external_sim_reuses_compiled_artifact(tmp_path, mo
 
     compile_calls = []
     run_calls = []
+    artifacts = cosim_mod._ExternalArtifactBundle(
+        sources=(("dut.sv", "module dut; endmodule\n"),),
+        support_files=(),
+        include_dirs=(),
+        defines={},
+        init_files=(),
+    )
 
     def fake_compile(root_path, **kwargs):
         compile_calls.append(root_path)
@@ -511,6 +664,7 @@ def test_dsl_rtl_cosim_cached_external_sim_reuses_compiled_artifact(tmp_path, mo
         verilator="/tools/bin/verilator",
         tb_sv="module tb_top; endmodule\n",
         dut_src="module dut; endmodule\n",
+        artifacts=artifacts,
         top_module="tb_top",
         vectors_text="0 1\n",
         build_dir=tmp_path / "cache_root",
@@ -732,10 +886,7 @@ def test_dsl_multiclock_rtl_cosim_rejects_bad_structured_inputs():
 def test_dsl_multiclock_rtl_cosim_returns_skip_when_tool_missing(monkeypatch):
     import rtlgen_x.sim.cosim as cosim_mod
 
-    def missing_compile(*args, **kwargs):
-        raise FileNotFoundError("iverilog")
-
-    monkeypatch.setattr(cosim_mod.rtl_cosim, "_compile_and_run", missing_compile)
+    monkeypatch.setattr(cosim_mod, "_compile_and_run_with_iverilog", lambda **kwargs: (_ for _ in ()).throw(FileNotFoundError("iverilog")))
 
     report = run_dsl_multiclock_rtl_cosim(
         DslCosimDualClockMailbox(),
@@ -794,7 +945,26 @@ def test_dsl_multiclock_rtl_cosim_rejects_direct_clock_drives():
         )
 
 
-def test_dsl_multiclock_rtl_cosim_reports_unknown_array_state_clearly(tmp_path):
+def test_dsl_multiclock_rtl_cosim_reports_unknown_array_state_clearly(monkeypatch):
+    import rtlgen_x.sim.cosim as cosim_mod
+
+    monkeypatch.setattr(cosim_mod, "_run_multiclock_reference_trace", lambda *args, **kwargs: ({"_cycle": 0, "dout": 0},))
+    monkeypatch.setattr(cosim_mod, "_run_multiclock_compiled_trace", lambda *args, **kwargs: ({"_cycle": 0, "dout": 0},))
+    monkeypatch.setattr(
+        cosim_mod,
+        "_run_multiclock_rtl_trace",
+        lambda *args, **kwargs: (
+            ({"_cycle": 0, "dout__raw": "x"},),
+            cosim_mod._ExternalSimRunResult(
+                stdout="CYCLE 0 dout=x\nCOSIM_DONE\n",
+                cache_enabled=False,
+                cache_hit=False,
+                cache_key=None,
+                cache_dir=None,
+            ),
+        ),
+    )
+
     with pytest.raises(CosimUnknownValueError, match="emitted RTL trace observed unknown value"):
         run_dsl_multiclock_rtl_cosim(
             DslCosimDualClockArrayMailbox(),
@@ -802,5 +972,4 @@ def test_dsl_multiclock_rtl_cosim_reports_unknown_array_state_clearly(tmp_path):
                 ({"wr_rst": 1, "rd_rst": 1}, ("wr_clk", "rd_clk")),
                 ({"wr_rst": 0, "rd_rst": 0, "wr_en": 1, "din": 11}, ("wr_clk",)),
             ),
-            build_dir=tmp_path / "multiclk_array_unknown",
         )

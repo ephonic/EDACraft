@@ -154,6 +154,36 @@ class UsesExternalParameterizedLeaf(Module):
             self.dout <<= self.leaf.dout
 
 
+class MixedExternalRomLeaf(Module):
+    def __init__(self, init_file: str = "roms/mixed_rom.hex"):
+        super().__init__("MixedExternalRomLeaf")
+        self.addr = Input(2, "addr")
+        self.dout = Output(8, "dout")
+        self.mem = self.add_memory(Memory(8, 4, "mem", init_file=init_file))
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.mem[self.addr]
+
+
+class MixedExternalRomTop(Module):
+    def __init__(self):
+        super().__init__("MixedExternalRomTop")
+        self.addr = Input(2, "addr")
+        self.din = Input(8, "din")
+        self.out = Output(8, "out")
+        self.ext = ExternalParameterizedLeaf()
+        self.rom = MixedExternalRomLeaf()
+        self.mid = Wire(8, "mid")
+
+        @self.comb
+        def _comb():
+            self.ext.din <<= self.din
+            self.rom.addr <<= self.addr
+            self.mid <<= self.ext.dout
+            self.out <<= self.mid + self.rom.dout
+
+
 class NamedByString(Module):
     def __init__(self):
         super().__init__("named_by_string")
@@ -794,6 +824,38 @@ class SignedExprTop(Module):
             self.out <<= SRA(self.u.y, 2).as_uint()[7:0]
 
 
+class ThreeStageLeaf(Module):
+    def __init__(self, stage_add: int, name: str):
+        super().__init__(name)
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self.din + stage_add
+
+
+class ThreeStageChainTop(Module):
+    def __init__(self):
+        super().__init__("ThreeStageChainTop")
+        self.a = Input(8, "a")
+        self.out = Output(8, "out")
+        self.s0_mid = Wire(8, "s0_mid")
+        self.s1_mid = Wire(8, "s1_mid")
+        self.u0 = ThreeStageLeaf(1, name="StageAdd")
+        self.u1 = ThreeStageLeaf(2, name="StageAdd")
+        self.u2 = ThreeStageLeaf(3, name="StageAdd")
+
+        @self.comb
+        def _comb():
+            self.u0.din <<= self.a
+            self.s0_mid <<= self.u0.dout
+            self.u1.din <<= self.s0_mid
+            self.s1_mid <<= self.u1.dout
+            self.u2.din <<= self.s1_mid
+            self.out <<= self.u2.dout
+
+
 class DualLutInitTop(Module):
     def __init__(self):
         super().__init__("DualLutInitTop")
@@ -1321,6 +1383,16 @@ def test_collect_external_verilog_artifacts_from_mixed_design():
     assert artifacts["sources"] == ("rtl/ext_param_leaf.sv",)
     assert artifacts["include_dirs"] == ("rtl/include",)
     assert artifacts["defines"] == {"EXT_PARAM_LEAF": "1"}
+    assert artifacts["init_files"] == ()
+
+
+def test_collect_external_verilog_artifacts_include_rom_init_files_from_mixed_design():
+    artifacts = collect_external_verilog_artifacts(MixedExternalRomTop())
+
+    assert artifacts["sources"] == ("rtl/ext_param_leaf.sv",)
+    assert artifacts["include_dirs"] == ("rtl/include",)
+    assert artifacts["defines"] == {"EXT_PARAM_LEAF": "1"}
+    assert artifacts["init_files"] == ("roms/mixed_rom.hex",)
 
 
 def test_dsl_emits_extracted_concat_without_constructor_collision():
@@ -4730,6 +4802,29 @@ def test_dsl_verilog_emitter_supports_child_output_in_parent_expression():
     assert ".y(u_y)" in text
     assert "$signed(u_y)" in text
     assert ">>>" in text
+
+
+def test_dsl_lowering_supports_three_stage_hierarchical_chain():
+    lowered = lower_dsl_module_to_sim(ThreeStageChainTop())
+    assignment_targets = {assignment.target for assignment in lowered.module.assignments}
+    sim = PythonSimulator(lowered.module)
+
+    assert "u0_dout" in assignment_targets
+    assert "u1_dout" in assignment_targets
+    assert "u2_dout" in assignment_targets
+    assert sim.step({"a": 9}) == {"out": 15}
+
+
+def test_dsl_verilog_emitter_preserves_three_stage_hierarchical_chain():
+    text = VerilogEmitter().emit_design(ThreeStageChainTop())
+
+    assert text.count("module StageAdd") == 1
+    assert "StageAdd u0 (" in text
+    assert "StageAdd u1 (" in text
+    assert "StageAdd u2 (" in text
+    assert "assign s0_mid = u0_dout;" in text
+    assert "assign s1_mid = u1_dout;" in text
+    assert "assign out = u2_dout;" in text
 
 
 def test_dsl_flatten_preserves_nested_memory_source_location():
