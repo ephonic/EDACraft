@@ -1,3 +1,4 @@
+import copy
 import importlib.util
 from pathlib import Path
 import shutil
@@ -856,6 +857,151 @@ class ThreeStageChainTop(Module):
             self.out <<= self.u2.dout
 
 
+class ThreeStageReadyValidChainTop(Module):
+    def __init__(self):
+        super().__init__("ThreeStageReadyValidChainTop")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.in_data = Input(8, "in_data")
+        self.in_valid = Input(1, "in_valid")
+        self.in_ready = Output(1, "in_ready")
+        self.out_data = Output(8, "out_data")
+        self.out_valid = Output(1, "out_valid")
+        self.out_ready = Input(1, "out_ready")
+        self.link0_data = Wire(8, "link0_data")
+        self.link0_valid = Wire(1, "link0_valid")
+        self.link0_ready = Wire(1, "link0_ready")
+        self.link1_data = Wire(8, "link1_data")
+        self.link1_valid = Wire(1, "link1_valid")
+        self.link1_ready = Wire(1, "link1_ready")
+        self.u0 = ReadyValidRegister(width=8)
+        self.u1 = ReadyValidRegister(width=8)
+        self.u2 = ReadyValidRegister(width=8)
+
+        @self.comb
+        def _comb():
+            self.u0.clk <<= self.clk
+            self.u0.rst <<= self.rst
+            self.u1.clk <<= self.clk
+            self.u1.rst <<= self.rst
+            self.u2.clk <<= self.clk
+            self.u2.rst <<= self.rst
+
+            self.u0.in_data <<= self.in_data
+            self.u0.in_valid <<= self.in_valid
+            self.in_ready <<= self.u0.in_ready
+            self.link0_data <<= self.u0.out_data
+            self.link0_valid <<= self.u0.out_valid
+            self.u0.out_ready <<= self.link0_ready
+
+            self.u1.in_data <<= self.link0_data
+            self.u1.in_valid <<= self.link0_valid
+            self.link0_ready <<= self.u1.in_ready
+            self.link1_data <<= self.u1.out_data
+            self.link1_valid <<= self.u1.out_valid
+            self.u1.out_ready <<= self.link1_ready
+
+            self.u2.in_data <<= self.link1_data
+            self.u2.in_valid <<= self.link1_valid
+            self.link1_ready <<= self.u2.in_ready
+            self.out_data <<= self.u2.out_data
+            self.out_valid <<= self.u2.out_valid
+            self.u2.out_ready <<= self.out_ready
+
+
+class FsmControlledDatapathLeaf(Module):
+    def __init__(self):
+        super().__init__("FsmControlledDatapathLeaf")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.load = Input(1, "load")
+        self.din = Input(8, "din")
+        self.dout = Output(8, "dout")
+        self.done = Output(1, "done")
+        self.busy = Output(1, "busy")
+        self._data_reg = Reg(8, "data_reg")
+        self._stage_reg = Reg(1, "stage_reg")
+        self._done_reg = Reg(1, "done_reg")
+
+        @self.comb
+        def _comb():
+            self.dout <<= self._data_reg
+            self.done <<= self._done_reg
+            self.busy <<= self._stage_reg
+
+        @self.seq(self.clk, self.rst)
+        def _seq():
+            with If(self.rst == 1):
+                self._data_reg <<= 0
+                self._stage_reg <<= 0
+                self._done_reg <<= 0
+            with Else():
+                self._done_reg <<= 0
+                with If(self.load):
+                    self._data_reg <<= (self.din << 1) + 1
+                    self._stage_reg <<= 1
+                with Else():
+                    with If(self._stage_reg == 1):
+                        self._data_reg <<= self._data_reg + 3
+                        self._stage_reg <<= 0
+                        self._done_reg <<= 1
+
+
+class ParentFsmChildDatapathTop(Module):
+    def __init__(self):
+        super().__init__("ParentFsmChildDatapathTop")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.start = Input(1, "start")
+        self.din = Input(8, "din")
+        self.busy = Output(1, "busy")
+        self.valid = Output(1, "valid")
+        self.out = Output(8, "out")
+        self.launch = Wire(1, "launch")
+        self.child_done = Wire(1, "child_done")
+        self.child_result = Wire(8, "child_result")
+        self.u = FsmControlledDatapathLeaf()
+
+        fsm = FSM("IDLE", name="ctrl")
+        fsm.add_output("issue", default=0)
+        fsm.add_output("waiting", default=0)
+        fsm.add_output("capture", default=0)
+
+        @fsm.state("IDLE")
+        def idle(ctx):
+            ctx.goto("ISSUE", when=self.start)
+
+        @fsm.state("ISSUE")
+        def issue(ctx):
+            ctx.issue = 1
+            ctx.goto("WAIT")
+
+        @fsm.state("WAIT")
+        def wait_state(ctx):
+            ctx.waiting = 1
+            ctx.goto("CAPTURE", when=self.child_done)
+
+        @fsm.state("CAPTURE")
+        def capture(ctx):
+            ctx.capture = 1
+            ctx.goto("IDLE")
+
+        fsm.build(self.clk, self.rst, parent=self)
+
+        @self.comb
+        def _comb():
+            self.launch <<= self.issue
+            self.u.clk <<= self.clk
+            self.u.rst <<= self.rst
+            self.u.load <<= self.launch
+            self.u.din <<= self.din + 1
+            self.child_done <<= self.u.done
+            self.child_result <<= self.u.dout
+            self.busy <<= self.issue | self.waiting
+            self.valid <<= self.capture
+            self.out <<= self.child_result
+
+
 class DualLutInitTop(Module):
     def __init__(self):
         super().__init__("DualLutInitTop")
@@ -1293,6 +1439,30 @@ def _step_multiclock_python_and_compiled(
     )
     assert actual == expected
     return expected
+
+
+def _three_stage_ready_valid_vectors():
+    return (
+        {"clk": 0, "rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0},
+        {"clk": 0, "rst": 0, "in_data": 0x11, "in_valid": 1, "out_ready": 0},
+        {"clk": 0, "rst": 0, "in_data": 0x22, "in_valid": 1, "out_ready": 0},
+        {"clk": 0, "rst": 0, "in_data": 0x33, "in_valid": 1, "out_ready": 0},
+        {"clk": 0, "rst": 0, "in_data": 0x44, "in_valid": 1, "out_ready": 1},
+        {"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1},
+        {"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1},
+        {"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1},
+    )
+
+
+def _parent_fsm_child_datapath_vectors():
+    return (
+        {"clk": 0, "rst": 1, "start": 0, "din": 0},
+        {"clk": 0, "rst": 0, "start": 1, "din": 5},
+        {"clk": 0, "rst": 0, "start": 0, "din": 5},
+        {"clk": 0, "rst": 0, "start": 0, "din": 0},
+        {"clk": 0, "rst": 0, "start": 0, "din": 0},
+        {"clk": 0, "rst": 0, "start": 0, "din": 0},
+    )
 
 
 def test_dsl_emits_verilog():
@@ -3057,6 +3227,15 @@ def test_fsm_emits_enum_state_markers_and_runs_on_lowered_runtime():
     assert sim.step({"clk": 0, "rst": 1, "start": 0, "stop": 0}) == {"traffic_red": 1, "traffic_green": 0}
     assert sim.step({"clk": 0, "rst": 0, "start": 1, "stop": 0}) == {"traffic_red": 0, "traffic_green": 1}
     assert sim.step({"clk": 0, "rst": 0, "start": 0, "stop": 1}) == {"traffic_red": 1, "traffic_green": 0}
+
+
+def test_enum_and_struct_metadata_are_deepcopy_safe():
+    enum_type = EnumType.define("state_t", ("IDLE", "RUN"))
+    struct_type = PackedStructType.define("packet_t", (("opcode", 4), ("tag", 4)))
+
+    assert copy.deepcopy(enum_type) is enum_type
+    assert copy.deepcopy(struct_type) is struct_type
+    assert copy.deepcopy(ParentFsmChildDatapathTop()).name == "ParentFsmChildDatapathTop"
 
 
 def test_ready_valid_fifo_lowers_and_handles_backpressure_and_bypass():
@@ -4825,6 +5004,155 @@ def test_dsl_verilog_emitter_preserves_three_stage_hierarchical_chain():
     assert "assign s0_mid = u0_dout;" in text
     assert "assign s1_mid = u1_dout;" in text
     assert "assign out = u2_dout;" in text
+
+
+def test_dsl_lowering_supports_three_stage_ready_valid_chain():
+    lowered = lower_dsl_module_to_sim(ThreeStageReadyValidChainTop())
+    sim = PythonSimulator(lowered.module)
+
+    assert sim.step({"clk": 0, "rst": 1, "in_data": 0, "in_valid": 0, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x11, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x22, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 1,
+        "out_data": 0,
+        "out_valid": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x33, "in_valid": 1, "out_ready": 0}) == {
+        "in_ready": 0,
+        "out_data": 0x11,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0x44, "in_valid": 1, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0x22,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0x33,
+        "out_valid": 1,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "in_data": 0, "in_valid": 0, "out_ready": 1}) == {
+        "in_ready": 1,
+        "out_data": 0x44,
+        "out_valid": 1,
+    }
+
+
+def test_dsl_verilog_emitter_preserves_three_stage_ready_valid_chain():
+    text = VerilogEmitter(profile=EmitProfile.review()).emit(ThreeStageReadyValidChainTop())
+
+    assert text.count("ReadyValidRegister") == 3
+    assert "logic [7:0] link0_data;" in text
+    assert "logic link0_valid;" in text
+    assert "logic link0_ready;" in text
+    assert "logic [7:0] link1_data;" in text
+    assert "logic link1_valid;" in text
+    assert "logic link1_ready;" in text
+    assert "assign in_ready = u0_in_ready;" in text
+    assert ".out_ready(out_ready)" in text
+
+
+def test_three_stage_ready_valid_chain_matches_compiled_simulator(tmp_path):
+    python_sim = PythonSimulator(lower_dsl_module_to_sim(ThreeStageReadyValidChainTop()).module)
+    compiled = build_compiled_simulator_from_dsl(
+        ThreeStageReadyValidChainTop(),
+        build_dir=tmp_path / "three_stage_ready_valid_chain",
+    )
+    try:
+        python_sim.reset()
+        compiled.reset()
+        for vector in _three_stage_ready_valid_vectors():
+            _step_python_and_compiled(python_sim, compiled, vector)
+    finally:
+        compiled.close()
+
+
+def test_dsl_lowering_supports_parent_fsm_child_datapath():
+    lowered = lower_dsl_module_to_sim(ParentFsmChildDatapathTop())
+    assignments = {assignment.target for assignment in lowered.module.assignments}
+    sim = PythonSimulator(lowered.module)
+
+    assert "ctrl_next_state" in assignments
+    assert "ctrl_issue" in assignments
+    assert "ctrl_waiting" in assignments
+    assert "ctrl_capture" in assignments
+    assert sim.step({"clk": 0, "rst": 1, "start": 0, "din": 0}) == {
+        "busy": 0,
+        "valid": 0,
+        "out": 0,
+        "ctrl_issue": 0,
+        "ctrl_waiting": 0,
+        "ctrl_capture": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "start": 1, "din": 5}) == {
+        "busy": 1,
+        "valid": 0,
+        "out": 0,
+        "ctrl_issue": 1,
+        "ctrl_waiting": 0,
+        "ctrl_capture": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "start": 0, "din": 5}) == {
+        "busy": 1,
+        "valid": 0,
+        "out": 13,
+        "ctrl_issue": 0,
+        "ctrl_waiting": 1,
+        "ctrl_capture": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "start": 0, "din": 0}) == {
+        "busy": 1,
+        "valid": 0,
+        "out": 16,
+        "ctrl_issue": 0,
+        "ctrl_waiting": 1,
+        "ctrl_capture": 0,
+    }
+    assert sim.step({"clk": 0, "rst": 0, "start": 0, "din": 0}) == {
+        "busy": 0,
+        "valid": 1,
+        "out": 16,
+        "ctrl_issue": 0,
+        "ctrl_waiting": 0,
+        "ctrl_capture": 1,
+    }
+
+
+def test_dsl_verilog_emitter_preserves_parent_fsm_child_datapath():
+    text = VerilogEmitter().emit(ParentFsmChildDatapathTop())
+
+    assert "localparam [1:0] CTRL_STATE_T_IDLE = 2'd0;" in text
+    assert "localparam [1:0] CTRL_STATE_T_ISSUE = 2'd1;" in text
+    assert "localparam [1:0] CTRL_STATE_T_WAIT = 2'd2;" in text
+    assert "localparam [1:0] CTRL_STATE_T_CAPTURE = 2'd3;" in text
+    assert "FsmControlledDatapathLeaf u (" in text
+    assert "assign launch = ctrl_issue;" in text
+    assert "assign busy = ctrl_issue | ctrl_waiting;" in text
+    assert "assign out = child_result;" in text
+
+
+def test_parent_fsm_child_datapath_matches_compiled_simulator(tmp_path):
+    python_sim = PythonSimulator(lower_dsl_module_to_sim(ParentFsmChildDatapathTop()).module)
+    compiled = build_compiled_simulator_from_dsl(
+        ParentFsmChildDatapathTop(),
+        build_dir=tmp_path / "parent_fsm_child_datapath",
+    )
+    try:
+        python_sim.reset()
+        compiled.reset()
+        for vector in _parent_fsm_child_datapath_vectors():
+            _step_python_and_compiled(python_sim, compiled, vector)
+    finally:
+        compiled.close()
 
 
 def test_dsl_flatten_preserves_nested_memory_source_location():

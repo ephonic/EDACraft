@@ -233,10 +233,19 @@ class EnumType:
         raise KeyError(f"unknown enum member '{name}' for enum '{self.name}'")
 
     def __getattr__(self, name: str) -> EnumValue:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {name!r}")
         try:
             return self.member(name)
         except KeyError as exc:
             raise AttributeError(str(exc)) from exc
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        memo[id(self)] = self
+        return self
 
     def values(self) -> Tuple[EnumValue, ...]:
         return self.members
@@ -361,10 +370,19 @@ class PackedStructType:
         raise KeyError(f"unknown struct field '{name}' for struct '{self.name}'")
 
     def __getattr__(self, name: str) -> PackedStructField:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(f"{self.__class__.__name__!r} object has no attribute {name!r}")
         try:
             return self.field(name)
         except KeyError as exc:
             raise AttributeError(str(exc)) from exc
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        memo[id(self)] = self
+        return self
 
     def field_names(self) -> Tuple[str, ...]:
         return tuple(field.name for field in self.fields)
