@@ -1,0 +1,20 @@
+{
+  "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/fft256/layer_L3_architecture/tests -q --tb=short",
+  "doc_id": "FFT256-L3_ARCHITECTURE-TR-001",
+  "feedback_target_layer": "L2_cycle",
+  "layer": "L3_architecture",
+  "module_name": "fft256",
+  "report_json_ref": "layer_L3_architecture/specs/03_architecture_test_report.json",
+  "report_ref": "layer_L3_architecture/specs/03_architecture_test_report.md",
+  "schema_version": "2026-06-18.layer_test_report.v1",
+  "scope": "layer",
+  "summary": {
+    "duration": 0.16254210472106934,
+    "failed": 0,
+    "overall_result": "PASS",
+    "passed": 2,
+    "skipped": 0,
+    "total": 2
+  },
+  "test_plan_ref": "FFT256-L3_ARCHITECTURE-TP-001"
+}

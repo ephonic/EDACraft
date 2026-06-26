@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "rtlgen"
+version = "0.1.0"
+description = "Clean-core Python RTL DSL, simulation, verification, PPA, and SystemVerilog emission toolkit"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [
+    {name = "Fudan University", email = "efouth@gmail.com"},
+]
+keywords = ["RTL", "Verilog", "SystemVerilog", "HLS", "ASIC", "FPGA", "EDA"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+dependencies = [
+    # Core dependencies
+    "numpy",
+]
+
+[project.optional-dependencies]
+full = [
+    "pyverilog",          # Verilog import
+    "anthropic",          # LLM-driven generation
+    "z3-solver",          # SMT equivalence checking
+    "iverilog",           # Co-simulation
+    "pytest>=7.0",        # Testing
+    "pytest-cov",         # Coverage
+]
+ai = [
+    "anthropic",
+]
+smt = [
+    "z3-solver",
+]
+verilog_import = [
+    "pyverilog",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.urls]
+Homepage = "https://github.com/ephonic/EDACraft/tree/main/RTLCraft"
+Documentation = "https://github.com/ephonic/EDACraft/blob/main/RTLCraft/README.md"
+Tutorial = "https://github.com/ephonic/EDACraft/blob/main/RTLCraft/Tutorial.md"
+
+[tool.setuptools.packages.find]
+include = ["rtlgen*"]
+exclude = ["tests*", "jpeg_decoder*", "skills*", "tools*", "design_scripts*", "generated*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+exclude = [
+    "generated*",
+    "skills/",
+    "tools/",
+    "design_scripts/",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",   # line too long (handled by custom rule)
+    "E741",   # ambiguous variable name
+]

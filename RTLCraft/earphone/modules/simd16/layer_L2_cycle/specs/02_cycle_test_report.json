@@ -1,0 +1,20 @@
+{
+  "command": "/opt/anaconda3/bin/python -m pytest /Users/yangfan/release/EDACraft-main/RTLCraft/earphone/modules/simd16/layer_L2_cycle/tests -q --tb=short",
+  "doc_id": "SIMD16-L2_CYCLE-TR-001",
+  "feedback_target_layer": "L1_behavior",
+  "layer": "L2_cycle",
+  "module_name": "simd16",
+  "report_json_ref": "layer_L2_cycle/specs/02_cycle_test_report.json",
+  "report_ref": "layer_L2_cycle/specs/02_cycle_test_report.md",
+  "schema_version": "2026-06-18.layer_test_report.v1",
+  "scope": "layer",
+  "summary": {
+    "duration": 0.24342799186706543,
+    "failed": 0,
+    "overall_result": "PASS",
+    "passed": 3,
+    "skipped": 0,
+    "total": 3
+  },
+  "test_plan_ref": "SIMD16-L2_CYCLE-TP-001"
+}

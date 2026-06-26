@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.dylib
+*.so
+*.dll
+*.cc
+.bench_*/
+.debug_*/
+.quick_*/
+.smoke_*/

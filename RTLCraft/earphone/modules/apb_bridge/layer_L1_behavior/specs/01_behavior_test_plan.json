@@ -1,0 +1,48 @@
+{
+  "doc_id": "APB_BRIDGE-L1_BEHAVIOR-TP-001",
+  "feedback_target_layer": "module_spec",
+  "input_contract": "Consumes the module contract `APB_BRIDGE-MOD-001` and top-level SoC requirements as the seed SpecIR.",
+  "layer": "L1_behavior",
+  "module_name": "apb_bridge",
+  "output_contract": "Emits `APB_BRIDGE-L1_BEHAVIOR-001` (`layer_L1_behavior/specs/01_behavior_spec.md`), `APB_BRIDGE-L1_BEHAVIOR-TP-001` (`layer_L1_behavior/specs/01_behavior_test_plan.md`), and `APB_BRIDGE-L1_BEHAVIOR-TR-001` (`layer_L1_behavior/specs/01_behavior_test_report.md`) as inputs to `APB_BRIDGE-L2_CYCLE-001` (`layer_L2_cycle/specs/02_cycle_spec.md`).",
+  "plan_json_ref": "layer_L1_behavior/specs/01_behavior_test_plan.json",
+  "plan_ref": "layer_L1_behavior/specs/01_behavior_test_plan.md",
+  "report_ref": "layer_L1_behavior/specs/01_behavior_test_report.md",
+  "schema_version": "2026-06-18.layer_test_plan.v1",
+  "scope": "layer",
+  "spec_ref": "layer_L1_behavior/specs/01_behavior_spec.md",
+  "test_cases": [
+    {
+      "id": "APB_BRIDGE-L1_BEHAVIOR-TC-001",
+      "name": "test_decode_each_slot_base",
+      "objective": "Validate decode each slot base.",
+      "priority": "P1",
+      "status": "Planned",
+      "type": "Directed"
+    },
+    {
+      "id": "APB_BRIDGE-L1_BEHAVIOR-TC-002",
+      "name": "test_decode_out_of_range_fallback",
+      "objective": "Validate decode out of range fallback.",
+      "priority": "P1",
+      "status": "Planned",
+      "type": "Directed"
+    },
+    {
+      "id": "APB_BRIDGE-L1_BEHAVIOR-TC-003",
+      "name": "test_decode_slot_internal_offset",
+      "objective": "Validate decode slot internal offset.",
+      "priority": "P1",
+      "status": "Planned",
+      "type": "Directed"
+    },
+    {
+      "id": "APB_BRIDGE-L1_BEHAVIOR-TC-004",
+      "name": "test_describe",
+      "objective": "Validate describe.",
+      "priority": "P1",
+      "status": "Planned",
+      "type": "Directed"
+    }
+  ]
+}
