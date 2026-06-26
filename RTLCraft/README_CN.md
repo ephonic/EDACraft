@@ -1,164 +1,278 @@
-# RTLCraft (rtlgen) — 基于 Python 的 Verilog RTL 生成框架
+# rtlgen
 
-> 面向对象、装饰器驱动的 Python API，用于描述可综合的 Verilog/SystemVerilog 数字逻辑。
-> 这不是黑盒生成器，而是**白盒框架**——让 AI Agent 和开发者可以直接理解、操作和演进 RTL 抽象语法树 (AST)。
+[English](README.md) | 中文
 
----
+`rtlgen` 是一个基于 Python 的 RTL 设计、仿真、验证与 SystemVerilog 生成工具箱。
+它是本仓库中 RTLCraft 的 clean-core 发布包。
 
-## 设计理念
+本发布版使用 `rtlgen` 作为公开包名。此前的 `rtlgen_x` 名称不再出现在面向用户
+的发布文档中。历史 `skills/`、`tools/`、远程登录式仿真辅助脚本、临时生成
+probe，以及项目特定实验内容都不属于本发布面。
 
-### 白盒工具：让代码做推理
+## 设计哲学
 
-传统 HLS（高层次综合）工具是**黑盒**：你写 C++/Python，它吐 Verilog，中间发生了什么你完全不知道。出问题时无法调试。
+### 白盒 RTL，而不是黑盒 HLS
 
-RTLCraft 走相反的路线——它是**白盒框架**：
+`rtlgen` 不是 C 到门级的编译器，也不是不透明的 HLS 系统。设计被写成显式的
+Python 对象图：
 
-- **完全透明的 AST**：每个 `Input`、`Output`、`Reg`、`Wire`、`Assign`、`IfNode`、`SwitchNode` 都是显式的 Python AST 节点，可在任意时刻遍历、检查、修改、打印。
-- **代码可读、代码可写**：LLM 和开发者都可以读取现有设计结构，执行增量修改、重构和优化。
-- **工具-设计协同进化**：仿真器（JIT + AST 解释器）、PPA 分析器、UVM 生成器、Verilog 发射器都在同一 AST 上操作。任何一端的改动都立即传播到所有其他端。
+1. 端口是显式的 `Input` 与 `Output`
+2. 状态是显式的 `Reg`、`Array` 或 `Memory`
+3. 控制流是显式的 `If`、`Else`、`Switch` 和时序块
+4. 层次结构是显式的子模块实例化和端口映射
+5. 生成 RTL、仿真、诊断、验证、PPA 分析都来自同一份结构
 
-```python
-# 白盒：直接访问模块的 AST
-dut._inputs       # 所有输入端口 → {name: Input}
-dut._comb_blocks  # 组合逻辑块列表 → [[Assign, IfNode, ...]]
-dut._seq_blocks   # 时序逻辑块列表 → [(clk, rst, async, active_low, [stmt...])]
+核心目标是让硬件尽早可执行，并且每一步都可检查。设计出问题时，用户应该能
+看到原始 DSL、lowering 后的可执行模型、生成 RTL，以及带源位置的诊断，而不
+需要猜隐藏编译器做了什么。
+
+### 语义优先
+
+推荐闭环如下：
+
+```text
+DSL module
+  -> authoring-intent 检查
+  -> lowering 与检查
+  -> Python 仿真
+  -> compiled C++ 仿真
+  -> SystemVerilog 生成
+  -> 本地 RTL simulator smoke
+  -> 验证与 PPA 报告
+  -> DSL 迭代
 ```
 
-### 三层正向设计方法
+Python 仿真用于快速源级调试。compiled C++ backend 用于更高吞吐的 parity 与
+regression。生成 RTL 后，再用本地 `iverilog`、`verilator` 或本地安装的
+`vcs` 做 smoke / closure。
 
-RTLCraft 使用三层元模型来桥接从高层次规格到可综合 RTL 的鸿沟：
+### Agent 友好，但工程师可控
 
-```
-规格说明 (Python/注释)
-    ↓
-第一层 — 功能模型 (functional.py)
-    纯 Python 函数，无时序，无时钟。
-    类型：Callable[**kwargs, Dict[str, int]]
-    仿真：直接函数调用 (纳秒级)
-    验证目标：算法正确性
-    ↓
-第二层 — 周期级模型 (cycle_level.py)
-    基于 CycleContext 的闭包，寄存器精确，有时序。
-    类型：Callable[[CycleContext], None]
-    仿真：ArchSimulator (微秒级)
-    验证目标：流水线时序、握手协议、状态机
-    ↓
-第三层 — RTL DSL 模型 (layer3_dsl/*.py)
-    Module 子类，使用 Input/Output/Reg/Wire，可综合。
-    仿真：Simulator with JIT (毫秒级，~45μs/步)
-    验证目标：比特精确、周期精确
-    ↓
-Verilog (通过 VerilogEmitter)
-```
+`rtlgen` 适合与 coding agent 配合，但核心契约仍然是工程优先：
 
-**跨层一致性**：同一测试程序必须在三个层上产生完全相同的结果（L1 == L2 == L3）。由 `test_consistency.py` 强制保证。
+1. 设计可见对象需要挂在 module 上
+2. signedness 重要时必须显式表达
+3. 不支持的 storage/backend contract 会 fail fast
+4. diagnostics 尽可能包含稳定规则名与源位置
+5. 生成的 collateral 是可审阅文本
 
-### PPA 驱动优化闭环
+Agent 可以编写、检查和修改 DSL，但用户始终拿到 RTL 工程师熟悉的代码、测试、
+生成 RTL、验证 collateral 和报告。
 
-```
-DSL 模块 → VerilogEmitter → Verilog
-    ↓
-静态 AST 分析：
-  - logic_depth（关键路径长度）
-  - gate_count（等效 NAND2 门数）
-  - reg_bits（时序面积）
-  - fanout（线负载）
-  - dead_signals（浪费面积）
-    ↓
-优化建议 → AI Agent 修改 DSL 代码
-    ↓
-重新发射、重新验证 → 收敛
+## 仓库布局
+
+RTLCraft 发布目录被刻意保持很小：
+
+```text
+RTLCraft/
+  README.md
+  README_CN.md
+  rtlgen/
+    archsim/   早期架构模型、workload、sweep、瓶颈报告
+    dsl/       硬件 DSL、lowering、Verilog emitter、lint/readability helper
+    sim/       Python runtime、compiled C++ backend、trace、parity、cosim
+    verify/    directed checks、streaming checks、Python-UVM、SV/UVM collateral
+    ppa/       结构/运行时 PPA 分析、校准、优化建议
+    tests/     clean-core 回归覆盖
 ```
 
-PPA 分析器可以直接读取 Simulator 的波形 trace 做**动态功耗分析**（toggle rate → 动态功耗热点）。
+`RTLCraft/rtlgen/README.md` 不再使用。GitHub 目录入口 README 放在
+`RTLCraft/README.md`，代码包本体放在 `RTLCraft/rtlgen/`。
 
-### 验证技术栈
+## 快速开始
 
-```
-┌──────────────────────────────────────────────────┐
-│  sim.py JIT (45μs/步) — 快速原型验证              │
-│  Simulator(use_xz=True) — X/Z 传播               │
-│  Golden trace → UVM scoreboard 自动对接           │
-│  PPAAnalyzer — 静态/动态 PPA 分析                 │
-│  VerilogLinter — 设计规则检查                     │
-│  test_consistency.py — 三层一致性强制保证          │
-└──────────────────────────────────────────────────┘
-```
-
-### 微架构模板库
-
-RTLCraft 内置 22 个参数化、工业级硬件模板，位于 `rtlgen/lib.py`：
-
-| 类别 | 模板 |
-|----------|-----------|
-| **流水线** | `PipelineShift`（可配深度 + valid/ready） |
-| **FIFO** | `SyncFIFO`, `AsyncFIFO`（Gray 码 CDC） |
-| **仲裁器** | `RoundRobinArbiter`, `FixedPriorityArbiter` |
-| **存储器** | `DualPortRAM`, `CAM`, `DirectMappedCache`, `SetAssocCache` |
-| **运算** | `MAC`（流水线化）, `SignedMultiplier`, `MultiCyclePath` |
-| **控制** | `MultiCycleFSM`, `PipelineInterlock`, `StateTransition` |
-| **跨时钟域** | `SyncCell`, `PulseSynchronizer`, `AsyncResetRel`, `GrayCounter` |
-| **杂项** | `EdgeDetector`, `ClockGate`, `OneHotMux`, `BypassNetwork`, `LUT` |
-
-### AI Agent 能力
-
-本框架专为 LLM 驱动的硬件设计而设计：
-
-| 能力 | 方式 | 用途 |
-|-----------|------|------|
-| **读取设计结构** | `module._comb_blocks`, `module._seq_blocks` | 理解现有电路 |
-| **增量修改** | 插入/删除流水线级、修改位宽 | ECO、优化 |
-| **迭代验证** | `sim.step()` → `sim.get_int()` → agent 检查 | 自主修复 bug |
-| **PPA 反馈** | `PPAAnalyzer.report()` → agent 读取 → 编辑 DSL | 时序收敛 |
-
-### 开始使用
+从仓库根目录运行：
 
 ```bash
-# 安装
-pip install -e .
-
-# 运行 Thor GPU 三层一致性测试
-python3 skills/thor/test_consistency.py
-
-# PPA 分析
-python3 -c "
-from rtlgen.ppa import PPAAnalyzer
-from rtlgen.lib import MAC
-pa = PPAAnalyzer(MAC(width=16))
-print(pa.report())
-"
+PYTHONPATH=RTLCraft python - <<'PY'
+import rtlgen
+print("rtlgen import ok")
+PY
 ```
 
-### 项目结构
+从 `RTLCraft/` 目录运行：
 
+```bash
+PYTHONPATH=. python - <<'PY'
+import rtlgen
+print("rtlgen import ok")
+PY
 ```
-rtlgen/                    # 核心框架
-├── core.py                # AST 节点定义（Expr, Stmt, Signal, Module）
-├── sim.py                 # Simulator (JIT + AST interpreter)
-├── sim_jit.py             # JIT 编译后端 (~45μs/step)
-├── codegen.py             # Verilog/SV 发射器
-├── lib.py                 # 22 个微架构模板
-├── ppa.py                 # PPA 分析器
-├── uvmgen.py              # UVM testbench 生成器
-├── uvm_scoreboard.py      # golden trace → UVM 桥接
-├── arch_def.py            # ArchDefinition + CycleContext
-├── arch_sim.py            # 架构仿真器
-├── logic.py               # 控制流 (If/Switch/ForGen)
-├── pipeline.py            # 流水线引擎
-└── protocols.py           # AXI/APB/Wishbone 协议
 
-skills/                    # 设计技能库 (18 个设计域)
-├── thor/                  # Thor GPU (三层参考实现)
-├── cpu/                   # RISC-V C910 OoO CPU
-├── dsp/                   # 数字信号处理器
-├── fft/                   # FFT 加速器
-├── noc/                   # 网络片上系统
-├── gpgpu/                 # GPGPU
-└── ...
+发布版适合直接从源码 checkout 使用。很多流程不依赖外部 RTL simulator：
+Python 仿真、compiled C++ 仿真、DSL lint、验证 helper、PPA 报告都可以先跑
+起来，再进入外部 RTL 工具。
 
-ref_rtl/                   # 开源 Verilog 参考实现
-├── cpu/                   # T-Head C910
-├── dsp/                   # Alex Forencich verilog-dsp
-├── gpgpu/                 # Ventus GPGPU
-└── ...
+## DSL 概览
+
+### 最小模块
+
+```python
+from rtlgen.dsl import Else, If, Input, Module, Output, Reg
+
+
+class Accumulator(Module):
+    def __init__(self, width=16):
+        super().__init__("Accumulator")
+        self.clk = Input(1, "clk")
+        self.rst = Input(1, "rst")
+        self.en = Input(1, "en")
+        self.x = Input(width, "x")
+        self.y = Output(width, "y")
+
+        self.acc = Reg(width, "acc")
+
+        with self.seq(self.clk, self.rst):
+            with If(self.rst == 1):
+                self.acc <<= 0
+            with Else():
+                with If(self.en == 1):
+                    self.acc <<= self.acc + self.x
+
+        with self.comb:
+            self.y <<= self.acc
 ```
+
+### 稳定 DSL 能力
+
+当前 DSL 覆盖：
+
+1. module、port、wire、reg、array、memory
+2. 组合逻辑、时序逻辑、latch、初始化块
+3. `If` / `Else` / `Elif`、`Switch`、`Mux`、拼接、slice、part-select
+4. 通过 `.as_sint()` 和 `.as_uint()` 显式表达 signed / unsigned intent
+5. `SRA(...)` 算术右移和 `RoundShiftRight(...)` 定点 round-then-shift
+6. 通过 `init_data` 与 `init_file` 描述 ROM/LUT 初始化
+7. 显式子模块实例化和 parent-owned stage handoff wire
+8. clock/reset domain 声明和多时钟可执行 stepping
+9. CDC primitive 与 report-oriented CDC 检查
+10. 支持子集内的 SystemVerilog 生成
+
+### 重要写法规则
+
+这些规则用来避免 Python、C++、生成 RTL 和外部工具之间出现静默不一致：
+
+1. 不要对 DSL 值写 Python `if signal:`，要用 `with If(signal):`
+2. 不要对 DSL 值使用 Python `and`、`or`、`not`，要用 `&`、`|`、`~` 或
+   `Mux`
+3. 设计可见对象要挂在 `self` 上，例如 `self.tmp = Wire(...)`、
+   `self.buf = Array(...)`、`self.mem = Memory(...)`
+4. 子模块 `port_map` 的 key 必须和 child module 的端口名一致
+5. signed 乘法、比较、clip 或定点运算前使用 `.as_sint()`
+6. ROM 的 `init_data` / `init_file` 是设计语义的一部分
+
+## 工具能力
+
+### 仿真
+
+`rtlgen` 提供两条可执行路径：
+
+1. `PythonSimulator`：用于快速 debug 和源级可观察性
+2. compiled C++ simulation：用于更高吞吐的 parity 与 regression
+
+常见写法：
+
+```python
+from rtlgen.dsl import build_compiled_simulator_from_dsl, lower_dsl_module_to_sim
+from rtlgen.sim import PythonSimulator
+
+module = Accumulator()
+py_sim = PythonSimulator(lower_dsl_module_to_sim(module).module)
+cpp_sim = build_compiled_simulator_from_dsl(module)
+```
+
+### SystemVerilog 生成
+
+```python
+from rtlgen.dsl import EmitProfile, VerilogEmitter
+
+rtl = VerilogEmitter(profile=EmitProfile.review()).emit_design(Accumulator())
+```
+
+生成 RTL 后建议使用本地工具：
+
+1. `iverilog -g2012` 做轻量 compile smoke
+2. `verilator` 做更强的本地 RTL closure
+3. 环境提供本地 `vcs` 时，可用于项目级仿真
+
+远程登录式 VCS flow 被刻意排除在本发布文档之外。
+
+### 验证
+
+验证包面向 DSL，包含：
+
+1. directed step-vector tests
+2. streaming checks
+3. Python-UVM 风格 sequence 执行
+4. SV/UVM collateral 生成
+5. 生成 reference model 的 smoke check
+6. CDC 与 reset-release 报告
+
+目标是让本地测试、reference model、导出验证 collateral 都复用同一份 DSL 可
+执行语义。
+
+### PPA 与架构探索
+
+`rtlgen.archsim` 用于在详细 RTL 定稿前探索 bandwidth、latency、capacity、
+queue depth 和 workload bottleneck。
+
+`rtlgen.ppa` 分析详细 module 的结构压力，例如寄存器位数、组合表达式压力、
+storage 使用和可重写热点。它是早期工程辅助，不替代最终综合 signoff。
+
+## 推荐 RTL 设计方法
+
+建议把 `rtlgen` 当成短闭环、可执行的 RTL 设计方法：
+
+1. 先写小的 behavior/reference model，定义期望 transaction
+2. 编写 DSL module，显式定义端口、状态、storage 和层次结构
+3. 用 focused tests 跑 Python 仿真
+4. 用 compiled simulation 做 parity 和速度提升
+5. 生成 SystemVerilog 并跑本地 compile smoke
+6. executable path 稳定后再生成验证 collateral
+7. 跑 PPA 分析，定位结构热点
+8. 修改 DSL，复用同一批测试
+
+更完整的流程可从这些文档开始：
+
+1. [Architecture exploration to PPA tutorial](rtlgen/TUTORIAL_ARCH_PPA.md)
+2. [DSL to local UVM tutorial](rtlgen/TUTORIAL_UVM.md)
+3. [JPEG datapath cookbook](rtlgen/JPEG_DATAPATH_COOKBOOK.md)
+4. [Mixed design cosimulation guide](rtlgen/MIXED_DESIGN_COSIM_GUIDE.md)
+
+## 当前能力边界
+
+当前稳定且推荐使用：
+
+1. 单时钟同步控制和 datapath module
+2. 显式声明 domain 的多时钟执行
+3. 支持 storage 子集内的 module-owned array/memory
+4. ROM/LUT `init_data` 与 `init_file` 语义
+5. 显式 signed intent 的 signed fixed-point arithmetic
+6. 通过 parent-owned interconnect 做层次化组合
+7. 本地 Python/C++ 仿真和本地 RTL backend smoke/closure
+8. report-oriented CDC、验证与 PPA flow
+
+仍然属于有限支持或 deliberate fail-fast：
+
+1. 广义任意多端口 memory contract
+2. emitted RTL 中任意非零 read-latency storage
+3. 不受约束的 macro mapping
+4. 从普通逻辑中证明任意 CDC protocol
+5. 把 `iverilog` 当成所有 SystemVerilog 的最终 correctness signoff
+
+## 文档
+
+核心文档：
+
+1. [English README](README.md)
+2. [DSL semantic contract](rtlgen/DSL_SEMANTICS.md)
+3. [DSL support matrix](rtlgen/DSL_SUPPORT_MATRIX.md)
+4. [Standard-library support matrix](rtlgen/STDLIB_SUPPORT_MATRIX.md)
+5. [Architecture exploration to PPA tutorial](rtlgen/TUTORIAL_ARCH_PPA.md)
+6. [DSL to local UVM tutorial](rtlgen/TUTORIAL_UVM.md)
+7. [JPEG datapath cookbook](rtlgen/JPEG_DATAPATH_COOKBOOK.md)
+8. [Mixed design cosimulation guide](rtlgen/MIXED_DESIGN_COSIM_GUIDE.md)
+
+## License
+
+框架代码遵循仓库 license。本发布包不包含历史 `skills/` 参考设计库。

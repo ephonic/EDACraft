@@ -8,24 +8,72 @@ EDACraft is a monorepo hosting multiple EDA sub-projects, each focusing on diffe
 
 ## Sub-projects
 
-### RTLCraft (`RTLCraft/`)
+### [RTLCraft / rtlgen](RTLCraft/README.md) (`RTLCraft/`)
 
-A Python-to-Verilog RTL generation and verification framework. RTLCraft provides:
+RTLCraft now publishes its clean-core RTL toolkit as `rtlgen`. The release
+replaces the historical `rtlgen_x` naming in the public package and removes the
+old `skills/` and `tools/` trees from the release surface.
 
-- **Python API for RTL Generation**: Object-oriented, decorator-driven Python DSL for describing synthesizable Verilog / SystemVerilog digital logic.
-- **AST-based Design**: Transparent Abstract Syntax Tree (AST) representation where every `Signal`, `Module`, and `Assign` is an explicit node that can be traversed, modified, and printed.
-- **Built-in Simulation**: Cycle-accurate Python AST interpreter with hierarchical design support, X/Z 4-state logic, multi-clock, and JIT acceleration.
-- **UVM Verification**: Native Python UVM DSL with support for directed/random sequences, coverage collection, and scoreboard-based checking.
-- **Verilog Generation**: Single-module or full-design Verilog / SystemVerilog emission with optional assertions.
-- **Lint & Analysis**: AST-level lint rules (e.g., `seq_output_assign`, `comb_reg_assign`, `unregistered_output`) and Verilog text-level linting.
-- **Synthesis & PPA**: Integration with ABC for synthesis and PPA (Power, Performance, Area) analysis.
+`rtlgen` is a Python toolkit for designing, simulating, verifying, and emitting
+RTL from a white-box hardware DSL. It is not an opaque HLS compiler: ports,
+wires, registers, memories, control flow, hierarchy, reset behavior, and
+signedness are all explicit in user code. The same design structure is reused
+for semantic checks, Python simulation, compiled C++ simulation,
+SystemVerilog generation, verification collateral, and PPA analysis.
+
+Recommended RTL design loop:
+
+```text
+DSL module
+  -> authoring-intent checks
+  -> Python simulation
+  -> compiled C++ simulation
+  -> SystemVerilog emission
+  -> local RTL simulator smoke checks
+  -> verification and PPA reports
+```
+
+RTLCraft provides:
+
+- **White-box Python DSL**: Explicit modules, ports, wires, registers,
+  arrays, memories, combinational blocks, sequential blocks, hierarchy,
+  signed/unsigned intent, fixed-point helpers, ROM/LUT initialization, CDC
+  primitives, and SystemVerilog emission for the supported subset.
+- **Executable semantics**: Fast Python simulation for debug and compiled C++
+  simulation for higher-throughput parity and regression.
+- **Local RTL closure**: Generated RTL can be checked with local tools such as
+  `iverilog`, `verilator`, or a locally installed `vcs`; remote-login VCS
+  helper scripts are not part of the release documentation.
+- **Verification support**: Directed tests, streaming checks, Python-UVM style
+  execution, SV/UVM collateral generation, reference-model smoke checks, and
+  CDC/reset-release reports.
+- **PPA and architecture exploration**: Early architecture sweeps plus
+  structural/runtime PPA reports to guide rewrite opportunities before final
+  signoff.
+
+Key RTLCraft documentation:
+
+- [RTLCraft README](RTLCraft/README.md)
+- [中文 README](RTLCraft/README_CN.md)
+- [DSL semantics](RTLCraft/rtlgen/DSL_SEMANTICS.md)
+- [DSL support matrix](RTLCraft/rtlgen/DSL_SUPPORT_MATRIX.md)
+- [Standard-library support matrix](RTLCraft/rtlgen/STDLIB_SUPPORT_MATRIX.md)
+- [Architecture and PPA tutorial](RTLCraft/rtlgen/TUTORIAL_ARCH_PPA.md)
+- [UVM tutorial](RTLCraft/rtlgen/TUTORIAL_UVM.md)
 
 Key directories under `RTLCraft/`:
 
-- `rtlgen/` — Core framework (AST, codegen, simulation, UVM)
-- `examples/` — Design examples (counter, decoder_8b10b, FP8 ALU, etc.)
-- `tests/` — Pytest-based functional and pyUVM test suites
-- `skills/` — Reusable design skills (arithmetic, cryptography, memory, etc.)
+- `rtlgen/` — DSL, code generation, simulation, verification, PPA, and
+  architecture exploration.
+
+Quick start:
+
+```bash
+PYTHONPATH=RTLCraft python - <<'PY'
+import rtlgen
+print("rtlgen import ok")
+PY
+```
 
 
 ### EDACode (`EDACode/`)
