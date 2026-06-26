@@ -1,0 +1,189 @@
+"""
+skills.npu.behaviors — Four-Layer Behavioral Models
+
+FPGA-NPU AI Accelerator
+
+Layer 1 — Functional (no timing):
+  Pure combinatorial functions. inputs → outputs.
+
+Layer 2 — Cycle-Level (register-accurate):
+  CycleContext models with pipeline registers, FSM states.
+  Match RTL timing exactly.
+
+Layer 3 — Module Skeleton Decomposition:
+  Sub-module breakdown with port interfaces.
+
+Layer 4 — RTL-to-DSL Reference:
+  DSL module classes converted from ref_rtl Verilog.
+"""
+from __future__ import annotations
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from rtlgen.arch_def import CycleContext
+from rtlgen.behaviors import TemplateRegistry
+
+#===========================================================================
+# Layer 1: Functional Models (combinatorial, no timing)
+#===========================================================================
+
+
+def mvu_functional(**kwargs) -> Callable:
+    """Functional MVU. Golden reference for mvu."""
+    def func(**inputs) -> Dict:
+        """
+        MVU functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def mfu_functional(**kwargs) -> Callable:
+    """Functional MFU. Golden reference for mfu."""
+    def func(**inputs) -> Dict:
+        """
+        MFU functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def evrf_functional(**kwargs) -> Callable:
+    """Functional eVRF. Golden reference for evrf."""
+    def func(**inputs) -> Dict:
+        """
+        eVRF functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def ld_functional(**kwargs) -> Callable:
+    """Functional LD. Golden reference for ld."""
+    def func(**inputs) -> Dict:
+        """
+        LD functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def nputop_functional(**kwargs) -> Callable:
+    """Functional NPUTop. Golden reference for nputop."""
+    def func(**inputs) -> Dict:
+        """
+        NPUTop functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+#===========================================================================
+# Layer 2: Cycle-Level Models (register-accurate)
+#===========================================================================
+
+
+def mvu_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate MVU.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def mfu_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate MFU.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def evrf_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate eVRF.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def ld_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate LD.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def nputop_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate NPUTop.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+#===========================================================================
+# Layer 3: Module Skeleton Decomposition
+#===========================================================================
+
+NPU_SUBMODULES: Dict[str, Dict] = {}
+# TODO: add sub-module decomposition
+
+#===========================================================================
+# Layer 4: RTL-to-DSL Reference
+#===========================================================================
+
+# Reference Verilog → DSL module mapping:
+#   ref_rtl/fpga-npu/  →  skills/npu/dsl_modules.py  (Intel FPGA-NPU)
+
+#===========================================================================
+# Template Registry
+#===========================================================================
+
+_template_map = {
+    "mvu": mvu_cycle,
+    "mfu": mfu_cycle,
+    "evrf": evrf_cycle,
+    "ld": ld_cycle,
+    "nputop": nputop_cycle,
+}
+
+for _name, _tmpl in _template_map.items():
+    TemplateRegistry.register(_name, _tmpl)

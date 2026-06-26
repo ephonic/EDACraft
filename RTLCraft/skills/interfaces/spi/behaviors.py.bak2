@@ -1,0 +1,135 @@
+"""
+skills.interfaces/spi.behaviors — Four-Layer Behavioral Models
+
+SPI Controller
+
+Layer 1 — Functional (no timing):
+  Pure combinatorial functions. inputs → outputs.
+
+Layer 2 — Cycle-Level (register-accurate):
+  CycleContext models with pipeline registers, FSM states.
+  Match RTL timing exactly.
+
+Layer 3 — Module Skeleton Decomposition:
+  Sub-module breakdown with port interfaces.
+
+Layer 4 — RTL-to-DSL Reference:
+  DSL module classes converted from ref_rtl Verilog.
+"""
+from __future__ import annotations
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from rtlgen.arch_def import CycleContext
+from rtlgen.behaviors import TemplateRegistry
+
+#===========================================================================
+# Layer 1: Functional Models (combinatorial, no timing)
+#===========================================================================
+
+
+def spi_master_functional(**kwargs) -> Callable:
+    """Functional SPI_Master. Golden reference for spi_master."""
+    def func(**inputs) -> Dict:
+        """
+        SPI_Master functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def spi_slave_functional(**kwargs) -> Callable:
+    """Functional SPI_Slave. Golden reference for spi_slave."""
+    def func(**inputs) -> Dict:
+        """
+        SPI_Slave functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def spi_controller_functional(**kwargs) -> Callable:
+    """Functional SPI_Controller. Golden reference for spi_controller."""
+    def func(**inputs) -> Dict:
+        """
+        SPI_Controller functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+#===========================================================================
+# Layer 2: Cycle-Level Models (register-accurate)
+#===========================================================================
+
+
+def spi_master_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate SPI_Master.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def spi_slave_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate SPI_Slave.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def spi_controller_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate SPI_Controller.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+#===========================================================================
+# Layer 3: Module Skeleton Decomposition
+#===========================================================================
+
+INTERFACES_SPI_SUBMODULES: Dict[str, Dict] = {}
+# TODO: add sub-module decomposition
+
+#===========================================================================
+# Layer 4: RTL-to-DSL Reference
+#===========================================================================
+
+# Reference Verilog → DSL module mapping:
+#   ref_rtl/interfaces/spi/  →  skills/interfaces/spi/dsl_modules.py  (Cadence SPI)
+
+#===========================================================================
+# Template Registry
+#===========================================================================
+
+_template_map = {
+    "spi_master": spi_master_cycle,
+    "spi_slave": spi_slave_cycle,
+    "spi_controller": spi_controller_cycle,
+}
+
+for _name, _tmpl in _template_map.items():
+    TemplateRegistry.register(_name, _tmpl)

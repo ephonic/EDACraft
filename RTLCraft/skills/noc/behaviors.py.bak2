@@ -1,0 +1,162 @@
+"""
+skills.noc.behaviors — Four-Layer Behavioral Models
+
+8x8 Mesh NoC
+
+Layer 1 — Functional (no timing):
+  Pure combinatorial functions. inputs → outputs.
+
+Layer 2 — Cycle-Level (register-accurate):
+  CycleContext models with pipeline registers, FSM states.
+  Match RTL timing exactly.
+
+Layer 3 — Module Skeleton Decomposition:
+  Sub-module breakdown with port interfaces.
+
+Layer 4 — RTL-to-DSL Reference:
+  DSL module classes converted from ref_rtl Verilog.
+"""
+from __future__ import annotations
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from rtlgen.arch_def import CycleContext
+from rtlgen.behaviors import TemplateRegistry
+
+#===========================================================================
+# Layer 1: Functional Models (combinatorial, no timing)
+#===========================================================================
+
+
+def router_functional(**kwargs) -> Callable:
+    """Functional Router. Golden reference for router."""
+    def func(**inputs) -> Dict:
+        """
+        Router functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def buffer_functional(**kwargs) -> Callable:
+    """Functional Buffer. Golden reference for buffer."""
+    def func(**inputs) -> Dict:
+        """
+        Buffer functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def crossbar_functional(**kwargs) -> Callable:
+    """Functional CrossBar. Golden reference for crossbar."""
+    def func(**inputs) -> Dict:
+        """
+        CrossBar functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def network_functional(**kwargs) -> Callable:
+    """Functional Network. Golden reference for network."""
+    def func(**inputs) -> Dict:
+        """
+        Network functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+#===========================================================================
+# Layer 2: Cycle-Level Models (register-accurate)
+#===========================================================================
+
+
+def router_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate Router.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def buffer_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate Buffer.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def crossbar_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate CrossBar.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def network_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate Network.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+#===========================================================================
+# Layer 3: Module Skeleton Decomposition
+#===========================================================================
+
+NOC_SUBMODULES: Dict[str, Dict] = {}
+# TODO: add sub-module decomposition
+
+#===========================================================================
+# Layer 4: RTL-to-DSL Reference
+#===========================================================================
+
+# Reference Verilog → DSL module mapping:
+#   ref_rtl/NoC/  →  skills/noc/dsl_modules.py  (2D mesh NoC)
+
+#===========================================================================
+# Template Registry
+#===========================================================================
+
+_template_map = {
+    "router": router_cycle,
+    "buffer": buffer_cycle,
+    "crossbar": crossbar_cycle,
+    "network": network_cycle,
+}
+
+for _name, _tmpl in _template_map.items():
+    TemplateRegistry.register(_name, _tmpl)

@@ -1,0 +1,33 @@
+# ct_ciu_ebiuif
+
+## Parameters
+- `DEPTH = `SAB_DEPTH`
+- `ADDRW = `PA_WIDTH`
+- `ARWIDTH = 69`
+- `ADDR_0 = 0`
+- `ADDR_6 = 6`
+- `ADDR_13 = 13`
+- `ADDR_H = 39`
+- `SIZE_0 = 40`
+- `SIZE_2 = 42`
+- `PROT_0 = 43`
+- `PROT_2 = 45`
+- `LOCK = 46`
+- `LEN_0 = 47`
+- `LEN_1 = 48`
+- `CACHE_0 = 49`
+- `CACHE_3 = 52`
+- `BURST_0 = 53`
+- `BURST_1 = 54`
+- `DOMAIN_0 = 55`
+- `DOMAIN_1 = 56`
+- `BAR_0 = 57`
+- `BAR_1 = 58`
+- `SID_0 = 59`
+- `SID_4 = 63`
+- `SID_5 = 64`
+- `SNOOP_0 = 65`
+- `SNOOP_3 = 68`
+- `ACWIDTH = 71`
+- `DVM_COMP = 4'b1110`
+- `DVM_OP_SYNC = 4'b1111`

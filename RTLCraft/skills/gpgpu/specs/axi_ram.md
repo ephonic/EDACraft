@@ -1,0 +1,15 @@
+# axi_ram
+
+## Parameters
+- `DATA_WIDTH = 64`
+- `ADDR_WIDTH = 32`
+- `STRB_WIDTH = (DATA_WIDTH/8)`
+- `ID_WIDTH = 4`
+- `PIPELINE_OUTPUT = 0`
+- `RESULT_REG_WIDTH = 127`
+- `VALID_ADDR_WIDTH = ADDR_WIDTH - $clog2(STRB_WIDTH)`
+- `WORD_WIDTH = STRB_WIDTH`
+- `WORD_SIZE = DATA_WIDTH/WORD_WIDTH`
+
+## Logic Block Types
+- seq

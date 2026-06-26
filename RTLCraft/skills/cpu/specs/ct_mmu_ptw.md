@@ -1,0 +1,18 @@
+# ct_mmu_ptw
+
+## Parameters
+- `VADDR_WIDTH = 39`
+- `PADDR_WIDTH = 40`
+- `VPN_WIDTH = VADDR_WIDTH-12`
+- `PPN_WIDTH = PADDR_WIDTH-12`
+- `FLG_WIDTH = 14`
+- `ASID_WIDTH = 16`
+- `PGS_WIDTH = 3`
+- `PTE_LEVEL = 3`
+- `VPN_PERLEL = VPN_WIDTH/PTE_LEVEL`
+- `TAG_WIDTH = 1+VPN_WIDTH+ASID_WIDTH+PGS_WIDTH+1`
+- `DATA_WIDTH = PPN_WIDTH+FLG_WIDTH`
+- `PTW_IDLE = 5'b00000`
+
+## Logic Block Types
+- seq_async_reset

@@ -1,0 +1,10 @@
+[
+  {
+    "module": "self_tester_tb",
+    "file": "self_tester_tb.v",
+    "lines": 32,
+    "ports": 0,
+    "fsm": 0,
+    "submodules": 0
+  }
+]

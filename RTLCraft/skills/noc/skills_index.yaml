@@ -1,0 +1,391 @@
+skills:
+- id: module:noc:Buffer
+  source:
+    file: skills/noc/dsl_modules.py
+    class: Buffer
+  kind: module
+  domain: noc
+  behavior_tags: &id001
+  - fifo_buffer
+  - packet_buffer
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - head_tail_pointer
+  - full_empty_flag
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: Buffer module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:Counter
+  source:
+    file: skills/noc/dsl_modules.py
+    class: Counter
+  kind: module
+  domain: noc
+  behavior_tags: &id002
+  - credit_counter
+  - flow_control
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - increment_decrement
+  - threshold_check
+  datapath_patterns:
+  - mux_select
+  useful_for: *id002
+  summary: Counter module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:RouteFunc
+  source:
+    file: skills/noc/dsl_modules.py
+    class: RouteFunc
+  kind: module
+  domain: noc
+  behavior_tags: &id003
+  - routing_function
+  - xy_routing
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - coordinate_compare
+  - output_port_select
+  datapath_patterns:
+  - mux_select
+  useful_for: *id003
+  summary: RouteFunc module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:CrossBar
+  source:
+    file: skills/noc/dsl_modules.py
+    class: CrossBar
+  kind: module
+  domain: noc
+  behavior_tags: &id004
+  - crossbar_switch
+  - mux_network
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - mux_select
+  - one_hot_grant
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: CrossBar module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:ST
+  source:
+    file: skills/noc/dsl_modules.py
+    class: ST
+  kind: module
+  domain: noc
+  behavior_tags: &id005
+  - switch_allocator
+  - arbiter
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - matrix_arbiter
+  - request_grant
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: ST module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:OutEnGen
+  source:
+    file: skills/noc/dsl_modules.py
+    class: OutEnGen
+  kind: module
+  domain: noc
+  behavior_tags: &id006
+  - output_enable
+  - port_control
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - valid_gate
+  - credit_check
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: OutEnGen module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:SelectGen
+  source:
+    file: skills/noc/dsl_modules.py
+    class: SelectGen
+  kind: module
+  domain: noc
+  behavior_tags: &id007
+  - selection_logic
+  - priority_encoder
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - fixed_priority
+  - round_robin_select
+  datapath_patterns:
+  - mux_select
+  useful_for: *id007
+  summary: SelectGen module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:SetAlloc
+  source:
+    file: skills/noc/dsl_modules.py
+    class: SetAlloc
+  kind: module
+  domain: noc
+  behavior_tags: &id008
+  - set_allocation
+  - resource_tracker
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - bitmap_tracker
+  - first_free_search
+  datapath_patterns:
+  - mux_select
+  useful_for: *id008
+  summary: SetAlloc module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:STControler
+  source:
+    file: skills/noc/dsl_modules.py
+    class: STControler
+  kind: module
+  domain: noc
+  behavior_tags: &id009
+  - switch_controller
+  - state_machine
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - fsm_control
+  - grant_ack_handshake
+  datapath_patterns:
+  - mux_select
+  useful_for: *id009
+  summary: STControler module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:VCAlloc
+  source:
+    file: skills/noc/dsl_modules.py
+    class: VCAlloc
+  kind: module
+  domain: noc
+  behavior_tags: &id010
+  - vc_allocator
+  - virtual_channel
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - separable_allocator
+  - request_grant_matrix
+  datapath_patterns:
+  - mux_select
+  useful_for: *id010
+  summary: VCAlloc module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:InputUnit
+  source:
+    file: skills/noc/dsl_modules.py
+    class: InputUnit
+  kind: module
+  domain: noc
+  behavior_tags: &id011
+  - input_port
+  - flit_receiver
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - valid_ready_handshake
+  - vc_assignment
+  datapath_patterns:
+  - mux_select
+  useful_for: *id011
+  summary: InputUnit module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:OutputUnit
+  source:
+    file: skills/noc/dsl_modules.py
+    class: OutputUnit
+  kind: module
+  domain: noc
+  behavior_tags: &id012
+  - output_port
+  - flit_sender
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - valid_ready_handshake
+  - credit_feedback
+  datapath_patterns:
+  - mux_select
+  useful_for: *id012
+  summary: OutputUnit module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:Router
+  source:
+    file: skills/noc/dsl_modules.py
+    class: Router
+  kind: module
+  domain: noc
+  behavior_tags: &id013
+  - router
+  - noc_node
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - 5_port_switch
+  - routing_plus_vc_alloc
+  datapath_patterns:
+  - mux_select
+  useful_for: *id013
+  summary: Router module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:ProcessNode
+  source:
+    file: skills/noc/dsl_modules.py
+    class: ProcessNode
+  kind: module
+  domain: noc
+  behavior_tags: &id014
+  - processing_element
+  - tile
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - local_processing
+  - noc_interface
+  datapath_patterns:
+  - mux_select
+  useful_for: *id014
+  summary: ProcessNode module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:noc:Network
+  source:
+    file: skills/noc/dsl_modules.py
+    class: Network
+  kind: module
+  domain: noc
+  behavior_tags: &id015
+  - network_top
+  - mesh_network
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - generate_loop_inst
+  - dimension_order_routing
+  datapath_patterns:
+  - mux_select
+  useful_for: *id015
+  summary: Network module in noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: pattern:noc:virtual_channel
+  kind: pattern
+  domain: noc
+  behavior_tags: &id016
+  - virtual_channel
+  control_patterns:
+  - virtual_channel
+  datapath_patterns:
+  - mux_select
+  useful_for: *id016
+  summary: Reusable virtual_channel pattern for noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:noc:round_robin_arbiter
+  kind: pattern
+  domain: noc
+  behavior_tags: &id017
+  - round_robin_arbiter
+  control_patterns:
+  - round_robin_arbiter
+  datapath_patterns:
+  - mux_select
+  useful_for: *id017
+  summary: Reusable round_robin_arbiter pattern for noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:noc:xy_routing
+  kind: pattern
+  domain: noc
+  behavior_tags: &id018
+  - xy_routing
+  control_patterns:
+  - xy_routing
+  datapath_patterns:
+  - mux_select
+  useful_for: *id018
+  summary: Reusable xy_routing pattern for noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:noc:wormhole_switching
+  kind: pattern
+  domain: noc
+  behavior_tags: &id019
+  - wormhole_switching
+  control_patterns:
+  - wormhole_switching
+  datapath_patterns:
+  - mux_select
+  useful_for: *id019
+  summary: Reusable wormhole_switching pattern for noc domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true

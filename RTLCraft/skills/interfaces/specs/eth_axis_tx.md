@@ -1,0 +1,14 @@
+# eth_axis_tx
+
+## Parameters
+- `DATA_WIDTH = 8`
+- `KEEP_ENABLE = (DATA_WIDTH>8)`
+- `KEEP_WIDTH = (DATA_WIDTH/8)`
+- `BYTE_LANES = KEEP_ENABLE ? KEEP_WIDTH : 1`
+- `HDR_SIZE = 14`
+- `CYCLE_COUNT = (HDR_SIZE+BYTE_LANES-1)/BYTE_LANES`
+- `PTR_WIDTH = $clog2(CYCLE_COUNT)`
+- `OFFSET = HDR_SIZE % BYTE_LANES`
+
+## Logic Block Types
+- seq

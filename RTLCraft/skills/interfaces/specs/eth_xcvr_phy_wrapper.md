@@ -1,0 +1,13 @@
+# eth_xcvr_phy_wrapper
+
+## Parameters
+- `HAS_COMMON = 1`
+- `DATA_WIDTH = 64`
+- `CTRL_WIDTH = (DATA_WIDTH/8)`
+- `HDR_WIDTH = 2`
+- `PRBS31_ENABLE = 0`
+- `TX_SERDES_PIPELINE = 0`
+- `RX_SERDES_PIPELINE = 0`
+- `BITSLIP_HIGH_CYCLES = 1`
+- `BITSLIP_LOW_CYCLES = 8`
+- `COUNT_125US = 125000/6.4`

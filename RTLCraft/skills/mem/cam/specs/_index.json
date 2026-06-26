@@ -1,0 +1,74 @@
+[
+  {
+    "module": "cam",
+    "file": "ref_rtl/cam/rtl/cam.v",
+    "lines": 79,
+    "ports": 12,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "cam_bram",
+    "file": "ref_rtl/cam/rtl/cam_bram.v",
+    "lines": 233,
+    "ports": 12,
+    "params": 3,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "cam_srl",
+    "file": "ref_rtl/cam/rtl/cam_srl.v",
+    "lines": 199,
+    "ports": 12,
+    "params": 3,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "priority_encoder",
+    "file": "ref_rtl/cam/rtl/priority_encoder.v",
+    "lines": 74,
+    "ports": 3,
+    "params": 4,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "ram_dp",
+    "file": "ref_rtl/cam/rtl/ram_dp.v",
+    "lines": 70,
+    "ports": 10,
+    "params": 2,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "test_cam_bram",
+    "file": "ref_rtl/cam/tb/test_cam_bram.v",
+    "lines": 78,
+    "ports": 0,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "test_cam_srl",
+    "file": "ref_rtl/cam/tb/test_cam_srl.v",
+    "lines": 78,
+    "ports": 0,
+    "params": 3,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "test_priority_encoder",
+    "file": "ref_rtl/cam/tb/test_priority_encoder.v",
+    "lines": 54,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 1
+  }
+]

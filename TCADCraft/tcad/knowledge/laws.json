@@ -1,0 +1,53 @@
+{
+  "_comment": "D3+D4 law library (plan0619.md §D3). Each law maps a structural trigger (applies_when) to a hard physical constraint that a candidate must satisfy before the expensive solver is invoked. The law engine derives all geometry from the DeviceTree region boxes (Candidate.params is unreliable after structural/mechanism mutations — see law_engine.extract_geometry).",
+  "laws": [
+    {
+      "id": "nc_stability",
+      "name": "Negative-capacitance stability window",
+      "effect": "FE layer across the gate dielectric yields NC voltage gain only inside the stability window",
+      "applies_when": {"has_kind": "ferroelectric"},
+      "constraints": [
+        {"type": "ratio", "numerator": "t_fe", "denominator": "tox", "min": 1.0, "max": 5.0,
+         "msg": "t_fe/tox outside [1, 5]: NC unstable (too thin FE loses polarization, too thick decouples)"},
+        {"type": "range", "field": "kappa_fe", "min": 20.0, "max": 50.0,
+         "msg": "kappa_fe outside [20, 50]: outside the stable NC gain window"}
+      ],
+      "rationale": "A ferroelectric inserted between the oxide and gate metal acts as a negative capacitor only when its thickness is commensurate with the EOT (t_fe/tox in [1,5]) and its permittivity sits in the HfZrO-family NC window (kappa in [20,50]). Outside this window the FE either loses spontaneous polarization (too thin) or decouples from the channel (too thick / too low kappa)."
+    },
+    {
+      "id": "dirac_source_bandpass",
+      "name": "Dirac-source band-pass filter",
+      "effect": "Graphene (Dirac) source + bandgap channel yields steep-slope band-pass filtering",
+      "applies_when": {"source_material": "Graphene"},
+      "constraints": [
+        {"type": "range", "field": "channel_Eg", "min": 0.8, "max": 99.0,
+         "msg": "channel Eg < 0.8 eV with Dirac source: no band-pass window"}
+      ],
+      "rationale": "A Dirac (graphene) source achieves sub-60mV/dec switching by filtering the Fermi tail through a channel bandgap. The filter only works when the channel Eg is large enough (>0.8 eV) to carve a transmission window; a narrow-gap channel lets the tail through and destroys steepness."
+    },
+    {
+      "id": "highk_interface",
+      "name": "High-k dielectric interface sanity",
+      "effect": "High-k gate dielectric is only beneficial at thin EOT",
+      "applies_when": {"has_kind": "highk"},
+      "constraints": [
+        {"type": "range", "field": "kappa_highk", "min": 5.0, "max": 40.0,
+         "msg": "high-k kappa outside [5, 40]: excessive interface states / phonon scattering"},
+        {"type": "range", "field": "tox", "min": 0.0, "max": 1.5e-9,
+         "msg": "tox > 1.5nm with high-k: EOT too thick, high-k brings no benefit"}
+      ],
+      "rationale": "High-k dielectrics above kappa~40 suffer from soft optical phonons and interface traps that degrade mobility; below kappa~5 they are no better than SiO2. The capacitance benefit only materializes at thin EOT (tox <= 1.5nm); a thick high-k layer is dominated by remote phonon scattering with no gate-control gain."
+    },
+    {
+      "id": "gate_length_floor",
+      "name": "Gate length physical floor",
+      "effect": "Below ~5nm the drift-diffusion / DG model loses validity (source-drain tunneling dominates)",
+      "applies_when": {"always": true},
+      "constraints": [
+        {"type": "range", "field": "Lg", "min": 5e-9, "max": 99e-6,
+         "msg": "Lg < 5nm: below the classical DD validity floor (source-drain tunneling dominates)"}
+      ],
+      "rationale": "The _PARAM_SPECS table floors Lg at 5nm for parameter mutation, but structural mutations (gate_wrap) and open-space mechanism mutations can bypass it. This law is the physical backstop: below 5nm the drift-diffusion + density-gradient model the solver uses is no longer predictive (direct source-drain tunneling dominates), so evaluating such a candidate wastes solver budget on non-credible physics."
+    }
+  ]
+}

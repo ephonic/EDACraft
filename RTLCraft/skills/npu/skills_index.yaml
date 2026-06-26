@@ -1,0 +1,214 @@
+skills:
+- id: module:npu:TopScheduler
+  source:
+    file: skills/npu/dsl_modules.py
+    class: TopScheduler
+  kind: module
+  domain: npu
+  behavior_tags: &id001
+  - top_scheduler
+  - instruction_dispatch
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - fifo_queue
+  - dependency_check
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: TopScheduler module in npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:npu:GenericScheduler
+  source:
+    file: skills/npu/dsl_modules.py
+    class: GenericScheduler
+  kind: module
+  domain: npu
+  behavior_tags: &id002
+  - generic_scheduler
+  - warp_scheduler
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - round_robin
+  - scoreboard_check
+  datapath_patterns:
+  - mux_select
+  useful_for: *id002
+  summary: GenericScheduler module in npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:npu:MVU
+  source:
+    file: skills/npu/dsl_modules.py
+    class: MVU
+  kind: module
+  domain: npu
+  behavior_tags: &id003
+  - matrix_vector_unit
+  - systolic_array
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - mac_array
+  - weight_stationary
+  datapath_patterns:
+  - mux_select
+  useful_for: *id003
+  summary: MVU module in npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:npu:MFU
+  source:
+    file: skills/npu/dsl_modules.py
+    class: MFU
+  kind: module
+  domain: npu
+  behavior_tags: &id004
+  - matrix_function_unit
+  - elementwise
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - vector_alu
+  - activation_function
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: MFU module in npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:npu:EVRF
+  source:
+    file: skills/npu/dsl_modules.py
+    class: EVRF
+  kind: module
+  domain: npu
+  behavior_tags: &id005
+  - embedded_vector_register_file
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - multi_bank_sram
+  - vector_read_write
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: EVRF module in npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:npu:LD
+  source:
+    file: skills/npu/dsl_modules.py
+    class: LD
+  kind: module
+  domain: npu
+  behavior_tags: &id006
+  - load_store_unit
+  - dma_engine
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - address_generation
+  - burst_transfer
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: LD module in npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:npu:NPUTop
+  source:
+    file: skills/npu/dsl_modules.py
+    class: NPUTop
+  kind: module
+  domain: npu
+  behavior_tags: &id007
+  - npu_top
+  - integration
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - scheduler_plus_compute
+  - memory_hierarchy
+  datapath_patterns:
+  - mux_select
+  useful_for: *id007
+  summary: NPUTop module in npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: pattern:npu:matrix_vector_unit
+  kind: pattern
+  domain: npu
+  behavior_tags: &id008
+  - matrix_vector_unit
+  control_patterns:
+  - matrix_vector_unit
+  datapath_patterns:
+  - mux_select
+  useful_for: *id008
+  summary: Reusable matrix_vector_unit pattern for npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:npu:elementwise_vector
+  kind: pattern
+  domain: npu
+  behavior_tags: &id009
+  - elementwise_vector
+  control_patterns:
+  - elementwise_vector
+  datapath_patterns:
+  - mux_select
+  useful_for: *id009
+  summary: Reusable elementwise_vector pattern for npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:npu:vector_register_file
+  kind: pattern
+  domain: npu
+  behavior_tags: &id010
+  - vector_register_file
+  control_patterns:
+  - vector_register_file
+  datapath_patterns:
+  - mux_select
+  useful_for: *id010
+  summary: Reusable vector_register_file pattern for npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:npu:load_store
+  kind: pattern
+  domain: npu
+  behavior_tags: &id011
+  - load_store
+  control_patterns:
+  - load_store
+  datapath_patterns:
+  - mux_select
+  useful_for: *id011
+  summary: Reusable load_store pattern for npu domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true

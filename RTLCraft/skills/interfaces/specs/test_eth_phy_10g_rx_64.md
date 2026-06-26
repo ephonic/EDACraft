@@ -1,0 +1,16 @@
+# test_eth_phy_10g_rx_64
+
+## Parameters
+- `DATA_WIDTH = 64`
+- `CTRL_WIDTH = (DATA_WIDTH/8)`
+- `HDR_WIDTH = 2`
+- `BIT_REVERSE = 0`
+- `SCRAMBLER_DISABLE = 0`
+- `PRBS31_ENABLE = 1`
+- `SERDES_PIPELINE = 2`
+- `BITSLIP_HIGH_CYCLES = 1`
+- `BITSLIP_LOW_CYCLES = 8`
+- `COUNT_125US = 1250/6.4`
+
+## Submodule Instances
+- `UUT`

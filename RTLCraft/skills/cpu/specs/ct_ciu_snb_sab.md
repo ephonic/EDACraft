@@ -1,0 +1,31 @@
+# ct_ciu_snb_sab
+
+## Parameters
+- `DEPTH = `SAB_DEPTH`
+- `RDEPTH = `SAB_RDEPTH`
+- `WDEPTH = `SAB_WDEPTH`
+- `PTR_EXTENT = {{(DEPTH-1){1'b0}}`
+- `AR_WIDTH = 71`
+- `AW_WIDTH = 71`
+- `AW_BAR_0 = 29`
+- `AR_BAR_1 = 30`
+- `AW_DOMAIN_1 = 28`
+- `AW_DOMAIN_0 = 27`
+- `AW_SNOOP_2 = 25`
+- `AW_SNOOP_0 = 23`
+- `WNS = 3'b000`
+- `WC = 3'b010`
+- `WB = 3'b011`
+- `EVICT = 3'b100`
+- `S_WIDTH = 75`
+- `AC_WIDTH = 55`
+- `L2C_ADDR_WIDTH = 64`
+- `L2C_DATA_WIDTH = 512`
+- `EBIU_AR_WIDTH = 69`
+- `EBIU_AW_WIDTH = 68`
+- `EBIU_D_WIDTH = 535`
+- `R_WIDTH = 536`
+- `R_RESP_WIDTH = 24`
+- `R_DATA_0 = 24`
+- `R_DATA_511 = 535`
+- `B_WIDTH = 15`

@@ -1,0 +1,25 @@
+# test_axi_adapter_16_32
+
+## Parameters
+- `ADDR_WIDTH = 32`
+- `S_DATA_WIDTH = 16`
+- `S_STRB_WIDTH = (S_DATA_WIDTH/8)`
+- `M_DATA_WIDTH = 32`
+- `M_STRB_WIDTH = (M_DATA_WIDTH/8)`
+- `ID_WIDTH = 8`
+- `AWUSER_ENABLE = 0`
+- `AWUSER_WIDTH = 1`
+- `WUSER_ENABLE = 0`
+- `WUSER_WIDTH = 1`
+- `BUSER_ENABLE = 0`
+- `BUSER_WIDTH = 1`
+- `ARUSER_ENABLE = 0`
+- `ARUSER_WIDTH = 1`
+- `RUSER_ENABLE = 0`
+- `RUSER_WIDTH = 1`
+- `CONVERT_BURST = 1`
+- `CONVERT_NARROW_BURST = 1`
+- `FORWARD_ID = 1`
+
+## Submodule Instances
+- `UUT`

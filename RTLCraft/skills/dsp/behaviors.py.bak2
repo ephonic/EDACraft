@@ -1,0 +1,162 @@
+"""
+skills.dsp.behaviors — Four-Layer Behavioral Models
+
+DSP Library
+
+Layer 1 — Functional (no timing):
+  Pure combinatorial functions. inputs → outputs.
+
+Layer 2 — Cycle-Level (register-accurate):
+  CycleContext models with pipeline registers, FSM states.
+  Match RTL timing exactly.
+
+Layer 3 — Module Skeleton Decomposition:
+  Sub-module breakdown with port interfaces.
+
+Layer 4 — RTL-to-DSL Reference:
+  DSL module classes converted from ref_rtl Verilog.
+"""
+from __future__ import annotations
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from rtlgen.arch_def import CycleContext
+from rtlgen.behaviors import TemplateRegistry
+
+#===========================================================================
+# Layer 1: Functional Models (combinatorial, no timing)
+#===========================================================================
+
+
+def mult_functional(**kwargs) -> Callable:
+    """Functional Mult. Golden reference for mult."""
+    def func(**inputs) -> Dict:
+        """
+        Mult functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def dds_functional(**kwargs) -> Callable:
+    """Functional DDS. Golden reference for dds."""
+    def func(**inputs) -> Dict:
+        """
+        DDS functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def cic_functional(**kwargs) -> Callable:
+    """Functional CIC. Golden reference for cic."""
+    def func(**inputs) -> Dict:
+        """
+        CIC functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+
+def i2s_functional(**kwargs) -> Callable:
+    """Functional I2S. Golden reference for i2s."""
+    def func(**inputs) -> Dict:
+        """
+        I2S functional behavior.
+        Override with actual module logic.
+        """
+        return {"valid": True}
+    return func
+
+#===========================================================================
+# Layer 2: Cycle-Level Models (register-accurate)
+#===========================================================================
+
+
+def mult_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate Mult.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def dds_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate DDS.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def cic_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate CIC.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+
+def i2s_cycle(**kwargs) -> Callable[[CycleContext], None]:
+    """Cycle-accurate I2S.
+    
+    Override with actual pipeline/FSM logic.
+    """
+    def behavior(ctx: CycleContext) -> None:
+        rst_n = ctx.get_input("rst_n", 1)
+        if rst_n == 0:
+            # Reset state
+            ctx.state["init"] = True
+            return
+        # TODO: implement cycle-accurate behavior
+    return behavior
+
+#===========================================================================
+# Layer 3: Module Skeleton Decomposition
+#===========================================================================
+
+DSP_SUBMODULES: Dict[str, Dict] = {}
+# TODO: add sub-module decomposition
+
+#===========================================================================
+# Layer 4: RTL-to-DSL Reference
+#===========================================================================
+
+# Reference Verilog → DSL module mapping:
+#   ref_rtl/dsp/  →  skills/dsp/dsl_modules.py  (Alex Forencich DSP)
+
+#===========================================================================
+# Template Registry
+#===========================================================================
+
+_template_map = {
+    "mult": mult_cycle,
+    "dds": dds_cycle,
+    "cic": cic_cycle,
+    "i2s": i2s_cycle,
+}
+
+for _name, _tmpl in _template_map.items():
+    TemplateRegistry.register(_name, _tmpl)

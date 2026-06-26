@@ -1,0 +1,15 @@
+# test_pcie_us_axi_master_rd_64
+
+## Parameters
+- `AXIS_PCIE_DATA_WIDTH = 64`
+- `AXIS_PCIE_KEEP_WIDTH = (AXIS_PCIE_DATA_WIDTH/32)`
+- `AXIS_PCIE_CQ_USER_WIDTH = 85`
+- `AXIS_PCIE_CC_USER_WIDTH = 33`
+- `AXI_DATA_WIDTH = AXIS_PCIE_DATA_WIDTH`
+- `AXI_ADDR_WIDTH = 64`
+- `AXI_STRB_WIDTH = (AXI_DATA_WIDTH/8)`
+- `AXI_ID_WIDTH = 8`
+- `AXI_MAX_BURST_LEN = 256`
+
+## Submodule Instances
+- `UUT`

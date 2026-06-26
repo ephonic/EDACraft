@@ -1,0 +1,13 @@
+# test_arp_64
+
+## Parameters
+- `DATA_WIDTH = 64`
+- `KEEP_ENABLE = (DATA_WIDTH>8)`
+- `KEEP_WIDTH = (DATA_WIDTH/8)`
+- `CACHE_ADDR_WIDTH = 2`
+- `REQUEST_RETRY_COUNT = 4`
+- `REQUEST_RETRY_INTERVAL = 150`
+- `REQUEST_TIMEOUT = 400`
+
+## Submodule Instances
+- `UUT`

@@ -1,0 +1,137 @@
+[
+  {
+    "module": "artix7_pll",
+    "file": "ref_rtl/core_ddr3_controller/examples/arty_a7/artix7_pll.v",
+    "lines": 125,
+    "ports": 5,
+    "params": 0,
+    "fsm": 0,
+    "children": 2
+  },
+  {
+    "module": "ddr3",
+    "file": "ref_rtl/core_ddr3_controller/tb/ddr3_core_xc7/ddr3.v",
+    "lines": 2914,
+    "ports": 0,
+    "params": 14,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "ddr3_axi",
+    "file": "ref_rtl/core_ddr3_controller/src_v/ddr3_axi.v",
+    "lines": 303,
+    "ports": 45,
+    "params": 3,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "ddr3_axi_pmem_fifo",
+    "file": "ref_rtl/core_ddr3_controller/src_v/ddr3_axi_pmem.v",
+    "lines": 587,
+    "ports": 8,
+    "params": 3,
+    "fsm": 3,
+    "children": 0
+  },
+  {
+    "module": "ddr3_axi_retime",
+    "file": "ref_rtl/core_ddr3_controller/src_v/ddr3_axi_retime.v",
+    "lines": 369,
+    "ports": 56,
+    "params": 7,
+    "fsm": 1,
+    "children": 0
+  },
+  {
+    "module": "ddr3_core",
+    "file": "ref_rtl/core_ddr3_controller/src_v/ddr3_core.v",
+    "lines": 721,
+    "ports": 32,
+    "params": 10,
+    "fsm": 26,
+    "children": 0
+  },
+  {
+    "module": "ddr3_dfi_phy",
+    "file": "ref_rtl/core_ddr3_controller/src_v/phy/ecp5/ddr3_dfi_phy.v",
+    "lines": 1032,
+    "ports": 34,
+    "params": 4,
+    "fsm": 1,
+    "children": 16
+  },
+  {
+    "module": "ddr3_dfi_phy",
+    "file": "ref_rtl/core_ddr3_controller/src_v/phy/xc7/ddr3_dfi_phy.v",
+    "lines": 2790,
+    "ports": 38,
+    "params": 6,
+    "fsm": 1,
+    "children": 74
+  },
+  {
+    "module": "ddr3_dfi_seq",
+    "file": "ref_rtl/core_ddr3_controller/src_v/ddr3_dfi_seq.v",
+    "lines": 510,
+    "ports": 27,
+    "params": 12,
+    "fsm": 12,
+    "children": 0
+  },
+  {
+    "module": "ecp5pll",
+    "file": "ref_rtl/core_ddr3_controller/examples/ecpix_ecp5/ecp5pll.sv",
+    "lines": 270,
+    "ports": 7,
+    "params": 16,
+    "fsm": 0,
+    "children": 1
+  },
+  {
+    "module": "reset_gen",
+    "file": "ref_rtl/core_ddr3_controller/examples/arty_a7/reset_gen.v",
+    "lines": 18,
+    "ports": 2,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "reset_gen",
+    "file": "ref_rtl/core_ddr3_controller/examples/ecpix_ecp5/reset_gen.v",
+    "lines": 18,
+    "ports": 2,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "testbench",
+    "file": "ref_rtl/core_ddr3_controller/tb/ddr3_core_xc7/testbench.v",
+    "lines": 309,
+    "ports": 0,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "top",
+    "file": "ref_rtl/core_ddr3_controller/examples/arty_a7/top.v",
+    "lines": 216,
+    "ports": 16,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  },
+  {
+    "module": "top",
+    "file": "ref_rtl/core_ddr3_controller/examples/ecpix_ecp5/top.v",
+    "lines": 212,
+    "ports": 12,
+    "params": 0,
+    "fsm": 0,
+    "children": 0
+  }
+]

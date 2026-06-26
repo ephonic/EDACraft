@@ -1,0 +1,564 @@
+skills:
+- id: module:image/isp:ISPAXIStreamIn
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPAXIStreamIn
+  kind: module
+  domain: image/isp
+  behavior_tags: &id001
+  - axi_stream_in
+  - pixel_receiver
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - valid_ready_handshake
+  - line_buffer
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: ISPAXIStreamIn module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPCrop
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPCrop
+  kind: module
+  domain: image/isp
+  behavior_tags: &id002
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id002
+  summary: ISPCrop module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPDPC
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPDPC
+  kind: module
+  domain: image/isp
+  behavior_tags: &id003
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id003
+  summary: ISPDPC module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPBLC
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPBLC
+  kind: module
+  domain: image/isp
+  behavior_tags: &id004
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: ISPBLC module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPOECF
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPOECF
+  kind: module
+  domain: image/isp
+  behavior_tags: &id005
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: ISPOECF module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPDG
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPDG
+  kind: module
+  domain: image/isp
+  behavior_tags: &id006
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: ISPDG module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPLSC
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPLSC
+  kind: module
+  domain: image/isp
+  behavior_tags: &id007
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id007
+  summary: ISPLSC module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPBNR
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPBNR
+  kind: module
+  domain: image/isp
+  behavior_tags: &id008
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id008
+  summary: ISPBNR module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPWB
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPWB
+  kind: module
+  domain: image/isp
+  behavior_tags: &id009
+  - white_balance
+  - color_gain
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - per_channel_gain
+  - multiplier
+  datapath_patterns:
+  - mux_select
+  useful_for: *id009
+  summary: ISPWB module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPAWBStats
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPAWBStats
+  kind: module
+  domain: image/isp
+  behavior_tags: &id010
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id010
+  summary: ISPAWBStats module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPDemosaic
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPDemosaic
+  kind: module
+  domain: image/isp
+  behavior_tags: &id011
+  - demosaic
+  - bayer_interpolation
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - bilinear_interpolation
+  - edge_aware
+  datapath_patterns:
+  - mux_select
+  useful_for: *id011
+  summary: ISPDemosaic module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPCCM
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPCCM
+  kind: module
+  domain: image/isp
+  behavior_tags: &id012
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id012
+  summary: ISPCCM module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPGamma
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPGamma
+  kind: module
+  domain: image/isp
+  behavior_tags: &id013
+  - gamma_correction
+  - tone_mapping
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - lut_lookup
+  - piecewise_linear
+  datapath_patterns:
+  - mux_select
+  useful_for: *id013
+  summary: ISPGamma module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPAEStats
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPAEStats
+  kind: module
+  domain: image/isp
+  behavior_tags: &id014
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id014
+  summary: ISPAEStats module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPCSC
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPCSC
+  kind: module
+  domain: image/isp
+  behavior_tags: &id015
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id015
+  summary: ISPCSC module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPLDCI
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPLDCI
+  kind: module
+  domain: image/isp
+  behavior_tags: &id016
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id016
+  summary: ISPLDCI module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPSharpen
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPSharpen
+  kind: module
+  domain: image/isp
+  behavior_tags: &id017
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id017
+  summary: ISPSharpen module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPNR2D
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPNR2D
+  kind: module
+  domain: image/isp
+  behavior_tags: &id018
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id018
+  summary: ISPNR2D module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPScale
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPScale
+  kind: module
+  domain: image/isp
+  behavior_tags: &id019
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id019
+  summary: ISPScale module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPYUV
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPYUV
+  kind: module
+  domain: image/isp
+  behavior_tags: &id020
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id020
+  summary: ISPYUV module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPAXIStreamOut
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPAXIStreamOut
+  kind: module
+  domain: image/isp
+  behavior_tags: &id021
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id021
+  summary: ISPAXIStreamOut module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPAPBRegs
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPAPBRegs
+  kind: module
+  domain: image/isp
+  behavior_tags: &id022
+  - digital_logic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - combinational_logic
+  - sequential_logic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id022
+  summary: ISPAPBRegs module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:image/isp:ISPController
+  source:
+    file: skills/image/isp/dsl_modules.py
+    class: ISPController
+  kind: module
+  domain: image/isp
+  behavior_tags: &id023
+  - isp_controller
+  - pipeline_control
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - frame_sync
+  - register_config
+  datapath_patterns:
+  - mux_select
+  useful_for: *id023
+  summary: ISPController module in image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: pattern:image/isp:bayer_demosaic
+  kind: pattern
+  domain: image/isp
+  behavior_tags: &id024
+  - bayer_demosaic
+  control_patterns:
+  - bayer_demosaic
+  datapath_patterns:
+  - mux_select
+  useful_for: *id024
+  summary: Reusable bayer_demosaic pattern for image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:image/isp:gamma_correction
+  kind: pattern
+  domain: image/isp
+  behavior_tags: &id025
+  - gamma_correction
+  control_patterns:
+  - gamma_correction
+  datapath_patterns:
+  - mux_select
+  useful_for: *id025
+  summary: Reusable gamma_correction pattern for image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:image/isp:awb_stats
+  kind: pattern
+  domain: image/isp
+  behavior_tags: &id026
+  - awb_stats
+  control_patterns:
+  - awb_stats
+  datapath_patterns:
+  - mux_select
+  useful_for: *id026
+  summary: Reusable awb_stats pattern for image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:image/isp:ae_stats
+  kind: pattern
+  domain: image/isp
+  behavior_tags: &id027
+  - ae_stats
+  control_patterns:
+  - ae_stats
+  datapath_patterns:
+  - mux_select
+  useful_for: *id027
+  summary: Reusable ae_stats pattern for image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:image/isp:color_space_conversion
+  kind: pattern
+  domain: image/isp
+  behavior_tags: &id028
+  - color_space_conversion
+  control_patterns:
+  - color_space_conversion
+  datapath_patterns:
+  - mux_select
+  useful_for: *id028
+  summary: Reusable color_space_conversion pattern for image/isp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true

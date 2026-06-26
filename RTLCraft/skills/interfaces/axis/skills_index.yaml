@@ -1,0 +1,112 @@
+skills:
+- id: module:interfaces/axis:AXIS_REGISTER
+  source:
+    file: skills/interfaces/axis/dsl_modules.py
+    class: AXIS_REGISTER
+  kind: module
+  domain: interfaces/axis
+  behavior_tags: &id001
+  - axis_register_slice
+  - pipeline_stage
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - valid_ready_reg
+  - skid_buffer
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: AXIS_REGISTER module in interfaces/axis domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:interfaces/axis:AXIS_ADAPTER
+  source:
+    file: skills/interfaces/axis/dsl_modules.py
+    class: AXIS_ADAPTER
+  kind: module
+  domain: interfaces/axis
+  behavior_tags: &id002
+  - axis_adapter
+  - width_conversion
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - upsizing
+  - downsizing
+  datapath_patterns:
+  - mux_select
+  useful_for: *id002
+  summary: AXIS_ADAPTER module in interfaces/axis domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:interfaces/axis:AXIS_BROADCAST
+  source:
+    file: skills/interfaces/axis/dsl_modules.py
+    class: AXIS_BROADCAST
+  kind: module
+  domain: interfaces/axis
+  behavior_tags: &id003
+  - axis_broadcast
+  - one_to_many
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - valid_fanout
+  - ready_and
+  datapath_patterns:
+  - mux_select
+  useful_for: *id003
+  summary: AXIS_BROADCAST module in interfaces/axis domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: pattern:interfaces/axis:axis_stream
+  kind: pattern
+  domain: interfaces/axis
+  behavior_tags: &id004
+  - axis_stream
+  control_patterns:
+  - axis_stream
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: Reusable axis_stream pattern for interfaces/axis domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:interfaces/axis:register_slice
+  kind: pattern
+  domain: interfaces/axis
+  behavior_tags: &id005
+  - register_slice
+  control_patterns:
+  - register_slice
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: Reusable register_slice pattern for interfaces/axis domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:interfaces/axis:broadcast_mux
+  kind: pattern
+  domain: interfaces/axis
+  behavior_tags: &id006
+  - broadcast_mux
+  control_patterns:
+  - broadcast_mux
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: Reusable broadcast_mux pattern for interfaces/axis domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true

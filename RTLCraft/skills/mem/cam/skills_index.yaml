@@ -1,0 +1,156 @@
+skills:
+- id: module:mem/cam:PriorityEncoder
+  source:
+    file: skills/mem/cam/dsl_modules.py
+    class: PriorityEncoder
+  kind: module
+  domain: mem/cam
+  behavior_tags: &id001
+  - priority_encoder
+  - one_hot_to_binary
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - tree_encoder
+  - leading_one_detect
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: PriorityEncoder module in mem/cam domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:mem/cam:RamDP
+  source:
+    file: skills/mem/cam/dsl_modules.py
+    class: RamDP
+  kind: module
+  domain: mem/cam
+  behavior_tags: &id002
+  - dual_port_ram
+  - simple_memory
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - read_write_ports
+  - clocked_sram
+  datapath_patterns:
+  - mux_select
+  useful_for: *id002
+  summary: RamDP module in mem/cam domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:mem/cam:CamSRL
+  source:
+    file: skills/mem/cam/dsl_modules.py
+    class: CamSRL
+  kind: module
+  domain: mem/cam
+  behavior_tags: &id003
+  - cam_srl
+  - shift_register_lut
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - srl16_cascade
+  - serial_compare
+  datapath_patterns:
+  - mux_select
+  useful_for: *id003
+  summary: CamSRL module in mem/cam domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:mem/cam:CamBRAM
+  source:
+    file: skills/mem/cam/dsl_modules.py
+    class: CamBRAM
+  kind: module
+  domain: mem/cam
+  behavior_tags: &id004
+  - cam_bram
+  - block_ram_cam
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - bram_based
+  - parallel_compare
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: CamBRAM module in mem/cam domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:mem/cam:CAM
+  source:
+    file: skills/mem/cam/dsl_modules.py
+    class: CAM
+  kind: module
+  domain: mem/cam
+  behavior_tags: &id005
+  - cam_top
+  - content_addressable
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - match_line
+  - priority_encode
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: CAM module in mem/cam domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: pattern:mem/cam:content_addressable
+  kind: pattern
+  domain: mem/cam
+  behavior_tags: &id006
+  - content_addressable
+  control_patterns:
+  - content_addressable
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: Reusable content_addressable pattern for mem/cam domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:mem/cam:priority_encode
+  kind: pattern
+  domain: mem/cam
+  behavior_tags: &id007
+  - priority_encode
+  control_patterns:
+  - priority_encode
+  datapath_patterns:
+  - mux_select
+  useful_for: *id007
+  summary: Reusable priority_encode pattern for mem/cam domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:mem/cam:dual_port_ram
+  kind: pattern
+  domain: mem/cam
+  behavior_tags: &id008
+  - dual_port_ram
+  control_patterns:
+  - dual_port_ram
+  datapath_patterns:
+  - mux_select
+  useful_for: *id008
+  summary: Reusable dual_port_ram pattern for mem/cam domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true

@@ -1,0 +1,14 @@
+# cpu_btb_mem_test_tb
+
+## Parameters
+- `LOCAL_DATA_ADDR_WIDTH = 10`
+- `LOCAL_TAG_ADDR_WIDTH = 10`
+- `LOCAL_DATA_ADDR_WIDTH = 10`
+- `LOCAL_TAG_ADDR_WIDTH = 10`
+- `LOCAL_DATA_DATA_WIDTH = 44`
+- `LOCAL_DATA_WE_WIDTH = 4`
+- `LOCAL_TAG_DATA_WIDTH = 22`
+- `LOCAL_TAG_WE_WIDTH = 4`
+
+## Logic Block Types
+- seq

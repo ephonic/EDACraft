@@ -1,0 +1,327 @@
+skills:
+- id: module:dsp:DSP_MULT
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: DSP_MULT
+  kind: module
+  domain: dsp
+  behavior_tags: &id001
+  - complex_multiply
+  - dsp
+  - iq_multiply
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - booth_multiplier
+  - signed_multiply
+  datapath_patterns:
+  - mux_select
+  useful_for: *id001
+  summary: DSP_MULT module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:IQ_JOIN
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: IQ_JOIN
+  kind: module
+  domain: dsp
+  behavior_tags: &id002
+  - iq_combine
+  - stream_merge
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - valid_ready_join
+  - data_bundle
+  datapath_patterns:
+  - mux_select
+  useful_for: *id002
+  summary: IQ_JOIN module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:IQ_SPLIT
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: IQ_SPLIT
+  kind: module
+  domain: dsp
+  behavior_tags: &id003
+  - iq_separate
+  - stream_split
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - valid_ready_split
+  - demux
+  datapath_patterns:
+  - mux_select
+  useful_for: *id003
+  summary: IQ_SPLIT module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:I2S_CTRL
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: I2S_CTRL
+  kind: module
+  domain: dsp
+  behavior_tags: &id004
+  - i2s_controller
+  - audio_interface
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - lrclk_sync
+  - serial_to_parallel
+  datapath_patterns:
+  - mux_select
+  useful_for: *id004
+  summary: I2S_CTRL module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:PHASE_ACCUMULATOR
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: PHASE_ACCUMULATOR
+  kind: module
+  domain: dsp
+  behavior_tags: &id005
+  - phase_accumulator
+  - dds
+  - frequency_synthesis
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - accumulator_wrap
+  - phase_increment
+  datapath_patterns:
+  - mux_select
+  useful_for: *id005
+  summary: PHASE_ACCUMULATOR module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:DSP_IQ_MULT
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: DSP_IQ_MULT
+  kind: module
+  domain: dsp
+  behavior_tags: &id006
+  - iq_multiply
+  - complex_arithmetic
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - complex_multiplier
+  - iq_data_path
+  datapath_patterns:
+  - mux_select
+  useful_for: *id006
+  summary: DSP_IQ_MULT module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:I2S_RX
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: I2S_RX
+  kind: module
+  domain: dsp
+  behavior_tags: &id007
+  - i2s_receiver
+  - serial_in
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - shift_register_in
+  - lrclk_sample
+  datapath_patterns:
+  - mux_select
+  useful_for: *id007
+  summary: I2S_RX module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:I2S_TX
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: I2S_TX
+  kind: module
+  domain: dsp
+  behavior_tags: &id008
+  - i2s_transmitter
+  - serial_out
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - shift_register_out
+  - lrclk_drive
+  datapath_patterns:
+  - mux_select
+  useful_for: *id008
+  summary: I2S_TX module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:SINE_DDS_LUT
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: SINE_DDS_LUT
+  kind: module
+  domain: dsp
+  behavior_tags: &id009
+  - dds_lut
+  - sine_lookup
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - rom_table
+  - phase_to_amplitude
+  datapath_patterns:
+  - mux_select
+  useful_for: *id009
+  summary: SINE_DDS_LUT module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:SINE_DDS
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: SINE_DDS
+  kind: module
+  domain: dsp
+  behavior_tags: &id010
+  - direct_digital_synthesis
+  - sine_wave
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - phase_accumulator
+  - lut_lookup
+  datapath_patterns:
+  - mux_select
+  useful_for: *id010
+  summary: SINE_DDS module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:CIC_DECIMATOR
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: CIC_DECIMATOR
+  kind: module
+  domain: dsp
+  behavior_tags: &id011
+  - cic_filter
+  - decimation
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - integrator_comb
+  - downsampling
+  datapath_patterns:
+  - mux_select
+  useful_for: *id011
+  summary: CIC_DECIMATOR module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: module:dsp:CIC_INTERPOLATOR
+  source:
+    file: skills/dsp/dsl_modules.py
+    class: CIC_INTERPOLATOR
+  kind: module
+  domain: dsp
+  behavior_tags: &id012
+  - cic_filter
+  - interpolation
+  interface_patterns:
+  - valid_ready
+  control_patterns:
+  - comb_integrator
+  - upsampling
+  datapath_patterns:
+  - mux_select
+  useful_for: *id012
+  summary: CIC_INTERPOLATOR module in dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: false
+    synthesizable_likely: true
+- id: pattern:dsp:iq_processing
+  kind: pattern
+  domain: dsp
+  behavior_tags: &id013
+  - iq_processing
+  control_patterns:
+  - iq_processing
+  datapath_patterns:
+  - mux_select
+  useful_for: *id013
+  summary: Reusable iq_processing pattern for dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:dsp:dds_sine
+  kind: pattern
+  domain: dsp
+  behavior_tags: &id014
+  - dds_sine
+  control_patterns:
+  - dds_sine
+  datapath_patterns:
+  - mux_select
+  useful_for: *id014
+  summary: Reusable dds_sine pattern for dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:dsp:cic_filter
+  kind: pattern
+  domain: dsp
+  behavior_tags: &id015
+  - cic_filter
+  control_patterns:
+  - cic_filter
+  datapath_patterns:
+  - mux_select
+  useful_for: *id015
+  summary: Reusable cic_filter pattern for dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
+- id: pattern:dsp:i2s_interface
+  kind: pattern
+  domain: dsp
+  behavior_tags: &id016
+  - i2s_interface
+  control_patterns:
+  - i2s_interface
+  datapath_patterns:
+  - mux_select
+  useful_for: *id016
+  summary: Reusable i2s_interface pattern for dsp domain.
+  maturity:
+    syntax_checked: true
+    sim_tested: true
+    synthesizable_likely: true
