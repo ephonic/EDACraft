@@ -746,6 +746,7 @@ class VerilogEmitter:
             self.lines.append(f"// ==========================================================")
             self.lines.append(f"// Module: {self._module_hdl_name(self._emitted_sv_module_name(module))}")
             self.lines.append(f"// ==========================================================")
+            self._emit_port_table_comment(module)
             self._append_blank_line()
             return
 
@@ -764,7 +765,7 @@ class VerilogEmitter:
         self.lines.append(sep)
 
         # Port information table
-        self._emit_port_table(module)
+        self._emit_port_table_comment(module)
 
         # Timing/protocol notes
         if doc.timing:
@@ -782,7 +783,7 @@ class VerilogEmitter:
 
         self._append_blank_line()
 
-    def _emit_port_table(self, module: Module):
+    def _emit_port_table_comment(self, module: Module):
         """Emit a formatted table of input and output ports."""
         if not self._emit_port_table:
             return

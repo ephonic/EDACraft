@@ -4256,7 +4256,7 @@ def collect_external_verilog_artifacts(module: Module) -> Dict[str, Tuple[Any, .
             init_file = getattr(mem, "init_file", None)
             if not init_file:
                 continue
-            init_files.append(str(Path(init_file)))
+            init_files.append(Path(init_file).as_posix())
         for _, sub in getattr(mod, "_submodules", ()):
             visit(sub)
         for stmt in getattr(mod, "_top_level", ()):

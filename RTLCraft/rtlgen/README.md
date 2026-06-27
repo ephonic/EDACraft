@@ -41,6 +41,23 @@ The recommended usage pattern:
 6. add verification collateral after the executable path is stable
 7. use PPA reports to guide structural rewrites
 
+## Foundation Contract Gate
+
+Before promoting a DSL module into stdlib, a worked example, or release-facing
+documentation, run the foundation contract gate:
+
+```python
+from rtlgen.verify import analyze_foundation_contract, emit_foundation_contract_markdown
+
+report = analyze_foundation_contract(module)
+print(emit_foundation_contract_markdown(report))
+```
+
+The gate combines review-profile readability, unified diagnostics, CDC/reset
+preflight, and storage/lowering/emitted-RTL fail-fast checks. A clean foundation
+report means the module passes this engineering preflight; it does not replace
+simulation, protocol verification, or external RTL simulator closure.
+
 ## Current Package Layout
 
 ```text
@@ -80,7 +97,9 @@ Important rules:
    possible
 
 See [DSL_SEMANTICS.md](./DSL_SEMANTICS.md) for the full semantic contract and
-[DSL_SUPPORT_MATRIX.md](./DSL_SUPPORT_MATRIX.md) for support boundaries.
+[DSL_SUPPORT_MATRIX.md](./DSL_SUPPORT_MATRIX.md) for support boundaries. The
+review RTL rules are described in
+[RTL_READABILITY_CONTRACT.md](./RTL_READABILITY_CONTRACT.md).
 
 ## Simulation
 
