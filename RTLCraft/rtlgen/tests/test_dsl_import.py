@@ -1742,6 +1742,8 @@ def test_analyze_verilog_readability_flags_machineish_helpers_and_long_mux_lines
         "anonymous_helper",
         "deep_mux_assign",
         "long_line",
+        "missing_module_header",
+        "missing_port_table",
     }
 
 
@@ -1979,9 +1981,9 @@ def test_emit_profile_review_async_fifo_matches_readability_snapshot():
         "// Storage declarations",
         "reg [7:0] af_mem [0:3];",
         "// Internal declarations",
-        "logic [2:0] rd_nxt;",
         "logic [2:0] wr_nxt;",
         "logic [2:0] wr_nxt_gray;",
+        "logic [2:0] rd_nxt;",
         "reg [2:0] wr_ptr;",
         "reg [2:0] rd_ptr;",
         "// Combinational logic",
@@ -2587,8 +2589,8 @@ def test_emit_profile_review_lfsr_matches_readability_snapshot():
 
     expected_markers = (
         "// Internal declarations",
-        "logic fb;",
         "logic [7:0] next_val;",
+        "logic fb;",
         "reg [7:0] lfsr_reg;",
         "// Comb: out",
         "assign out = lfsr_reg;",
