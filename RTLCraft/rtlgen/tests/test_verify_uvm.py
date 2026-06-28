@@ -711,6 +711,10 @@ def test_generate_uvm_runtime_bundle_accepts_real_sram256k_module(tmp_path):
 
 
 def test_generate_uvm_runtime_bundle_accepts_real_fft256_module(tmp_path):
+    pytest.importorskip(
+        "design_scripts.design_fft",
+        reason="missing external FFT generator dependency: design_scripts.design_fft",
+    )
     module = _load_external_module(
         "earphone/modules/fft256/layer_L5_dsl/src/dsl.py",
         "EarphoneFFT256",

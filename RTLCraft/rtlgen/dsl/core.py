@@ -3899,7 +3899,13 @@ class Module(IREntity, metaclass=ModuleMeta):
                 f"{tuple(sorted(known_bundle_names))}"
             )
 
-        port_map: Dict[str, Union[Signal, Expr]] = dict(extra_ports)
+        child_ports = set(getattr(submodule, "_inputs", {})) | set(getattr(submodule, "_outputs", {}))
+        optional_clock_reset_ports = {"clk", "clock", "rst", "reset", "rst_n", "reset_n", "aresetn", "areset_n"}
+        port_map: Dict[str, Union[Signal, Expr]] = {
+            port_name: expr
+            for port_name, expr in extra_ports.items()
+            if port_name in child_ports or port_name not in optional_clock_reset_ports
+        }
         for bundle_name, parent_bundle in resolved_parent_bundles.items():
             sub_bundle = sub_bundles.get(bundle_name)
             if sub_bundle is None:
@@ -4256,7 +4262,7 @@ def collect_external_verilog_artifacts(module: Module) -> Dict[str, Tuple[Any, .
             init_file = getattr(mem, "init_file", None)
             if not init_file:
                 continue
-            init_files.append(str(Path(init_file)))
+            init_files.append(Path(init_file).as_posix())
         for _, sub in getattr(mod, "_submodules", ()):
             visit(sub)
         for stmt in getattr(mod, "_top_level", ()):

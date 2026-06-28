@@ -199,7 +199,9 @@ There is now a single helper that runs the current minimal flagship slice:
 4. emit an architecture report
 5. run module+architecture PPA analysis on `gpu_sm`
 6. emit a PPA report
-7. project a software-visible perf-counter sample
+7. run the `GpuSm()` foundation contract gate
+8. emit a foundation report
+9. project a software-visible perf-counter sample
 
 ```python
 from gpgpu_stack import GpuSmProfileHint, run_gpu_sm_seed_flow
@@ -211,6 +213,7 @@ result = run_gpu_sm_seed_flow(
 
 print(result.architecture_markdown)
 print(result.ppa_markdown)
+print(result.foundation_markdown)
 print(result.perf_counter_sample.values)
 ```
 
@@ -225,7 +228,8 @@ meets the hardware-side seed design at two useful places:
 
 1. architecture bottleneck exploration
 2. PPA hotspot analysis
-3. shared contract export for address map and perf counters
+3. foundation preflight for readability, CDC/reset, and storage/lowering
+4. shared contract export for address map and perf counters
 
 ## Named workload profiles and perf projection
 

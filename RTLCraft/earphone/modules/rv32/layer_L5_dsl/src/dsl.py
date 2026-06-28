@@ -149,18 +149,25 @@ class EarphoneRV32(Module):
         self.div_restart_block = Reg(1, "div_restart_block", init_value=0)
 
         # Combinational decode wires (declared first so seq can reference)
-        exec_alu_result = Wire(XLEN, "exec_alu_result")
-        exec_wb_en = Wire(1, "exec_wb_en")
-        exec_rd = Wire(5, "exec_rd")
-        exec_mem_read = Wire(1, "exec_mem_read")
-        exec_mem_write = Wire(1, "exec_mem_write")
-        exec_mem_addr = Wire(XLEN, "exec_mem_addr")
-        exec_mem_wdata = Wire(XLEN, "exec_mem_wdata")
-        branch_taken = Wire(1, "branch_taken")
-        branch_target = Wire(XLEN, "branch_target")
-        core_stall = Wire(1, "core_stall")
-        is_divrem = Wire(1, "is_divrem")
-        is_mul_only = Wire(1, "is_mul_only")
+        self.exec_alu_result = Wire(XLEN, "exec_alu_result")
+        self.exec_wb_en = Wire(1, "exec_wb_en")
+        self.exec_rd = Wire(5, "exec_rd")
+        self.exec_mem_read = Wire(1, "exec_mem_read")
+        self.exec_mem_write = Wire(1, "exec_mem_write")
+        self.exec_mem_addr = Wire(XLEN, "exec_mem_addr")
+        self.exec_mem_wdata = Wire(XLEN, "exec_mem_wdata")
+        self.branch_taken = Wire(1, "branch_taken")
+        self.branch_target = Wire(XLEN, "branch_target")
+        self.core_stall = Wire(1, "core_stall")
+        self.is_divrem = Wire(1, "is_divrem")
+        self.is_mul_only = Wire(1, "is_mul_only")
+        self.diff = Wire(XLEN, "diff")
+        self.div_overflow = Wire(1, "div_overflow")
+        self.div_by_zero = Wire(1, "div_by_zero")
+        self.shifted_rem = Wire(XLEN + 1, "shifted_rem")
+        self.mul_full = Wire(XLEN * 2, "mul_full")
+        self.mul_hsu_full = Wire(XLEN * 2, "mul_hsu_full")
+        self.mul_hu_full = Wire(XLEN * 2, "mul_hu_full")
 
         # Decode current execute instruction
         instr = self.exec_instr
@@ -190,8 +197,8 @@ class EarphoneRV32(Module):
             is_op_imm = (opcode == Const(OPCODE_IMM, 7))
             is_op = (opcode == Const(OPCODE_REG, 7))
             is_muldiv = is_op & (funct7 == Const(FUNCT7_MULDIV, 7))
-            is_divrem <<= is_muldiv & (funct3[2] == 1)
-            is_mul_only <<= is_muldiv & (funct3[2] == 0)
+            self.is_divrem <<= is_muldiv & (funct3[2] == 1)
+            self.is_mul_only <<= is_muldiv & (funct3[2] == 0)
             is_load = (opcode == Const(OPCODE_LOAD, 7))
             is_store = (opcode == Const(OPCODE_STORE, 7))
             is_lui = (opcode == Const(OPCODE_LUI, 7))
@@ -230,25 +237,24 @@ class EarphoneRV32(Module):
                      Mux(sltu_sel, Mux((ra < alu_in2), Const(1, XLEN), Const(0, XLEN)),
                      Const(0, XLEN))))))))))
 
-            exec_alu_result <<= Mux(is_lui, imm_u,
+            self.exec_alu_result <<= Mux(is_lui, imm_u,
                             Mux(is_auipc, self.exec_pc + imm_u,
                             Mux(is_jal, self.exec_pc + Const(4, XLEN),
                             Mux(is_jalr, ra + imm_i,
                             Mux(is_branch, self.exec_pc + imm_b,
-                            Mux(is_load | is_store, exec_mem_addr,
+                            Mux(is_load | is_store, self.exec_mem_addr,
                             Mux(is_muldiv, self.muldiv_result,
                             alu_result)))))))
 
             # Memory address / data
-            exec_mem_addr <<= Mux(is_store, ra + imm_s, ra + imm_i)
-            exec_mem_wdata <<= rb
-            exec_mem_read <<= is_load
-            exec_mem_write <<= is_store
+            self.exec_mem_addr <<= Mux(is_store, ra + imm_s, ra + imm_i)
+            self.exec_mem_wdata <<= rb
+            self.exec_mem_read <<= is_load
+            self.exec_mem_write <<= is_store
 
             # Branch resolution (use wire for diff to avoid slice-on-binop)
-            diff = Wire(XLEN, "diff")
-            diff <<= ra - rb
-            sign_diff = diff[XLEN - 1]
+            self.diff <<= ra - rb
+            sign_diff = self.diff[XLEN - 1]
             beq_taken = is_branch & (funct3 == Const(FUNCT3_BEQ, 3)) & (ra == rb)
             bne_taken = is_branch & (funct3 == Const(FUNCT3_BNE, 3)) & (ra != rb)
             blt_taken = is_branch & (funct3 == Const(FUNCT3_BLT, 3)) & sign_diff
@@ -256,29 +262,29 @@ class EarphoneRV32(Module):
             bltu_taken = is_branch & (funct3 == Const(FUNCT3_BLTU, 3)) & (ra < rb)
             bgeu_taken = is_branch & (funct3 == Const(FUNCT3_BGEU, 3)) & (ra >= rb)
 
-            branch_taken <<= is_jal | is_jalr | beq_taken | bne_taken | blt_taken | bge_taken | bltu_taken | bgeu_taken
-            branch_target <<= Mux(is_jalr, (ra + imm_i) & ~Const(1, XLEN),
+            self.branch_taken <<= is_jal | is_jalr | beq_taken | bne_taken | blt_taken | bge_taken | bltu_taken | bgeu_taken
+            self.branch_target <<= Mux(is_jalr, (ra + imm_i) & ~Const(1, XLEN),
                            Mux(is_branch, self.exec_pc + imm_b,
                            self.exec_pc + imm_j))
 
             # Writeback enable / destination
-            exec_wb_en <<= (is_op_imm | (is_op & ~is_divrem) | is_load | is_lui | is_auipc | is_jal | is_jalr) & self.exec_valid
-            exec_rd <<= rd_d
+            self.exec_wb_en <<= (is_op_imm | (is_op & ~self.is_divrem) | is_load | is_lui | is_auipc | is_jal | is_jalr) & self.exec_valid
+            self.exec_rd <<= rd_d
 
             # Stall on memory not ready, on muldiv, and while DIV/REM is in EX.
             # div_done temporarily releases the stall so the pipeline can advance.
             imem_stall = self.fetch_valid & ~self.imem_gnt
-            dmem_stall = self.exec_valid & (exec_mem_read | exec_mem_write) & ~self.dmem_valid
-            div_stall = self.exec_valid & is_divrem & ~self.div_done
-            core_stall <<= imem_stall | dmem_stall | self.muldiv_busy | div_stall
+            dmem_stall = self.exec_valid & (self.exec_mem_read | self.exec_mem_write) & ~self.dmem_valid
+            div_stall = self.exec_valid & self.is_divrem & ~self.div_done
+            self.core_stall <<= imem_stall | dmem_stall | self.muldiv_busy | div_stall
 
             # Outputs
             self.imem_req <<= ~self.fetch_valid
             self.imem_addr <<= self.pc_reg
-            self.dmem_req <<= self.exec_valid & (exec_mem_read | exec_mem_write) & ~dmem_stall
-            self.dmem_addr <<= exec_mem_addr
-            self.dmem_wdata <<= exec_mem_wdata
-            self.dmem_we <<= Mux(exec_mem_write,
+            self.dmem_req <<= self.exec_valid & (self.exec_mem_read | self.exec_mem_write) & ~dmem_stall
+            self.dmem_addr <<= self.exec_mem_addr
+            self.dmem_wdata <<= self.exec_mem_wdata
+            self.dmem_we <<= Mux(self.exec_mem_write,
                                  Mux(funct3 == Const(FUNCT3_SB, 3), Const(0b0001, 4),
                                  Mux(funct3 == Const(FUNCT3_SH, 3), Const(0b0011, 4),
                                  Const(0b1111, 4))),
@@ -291,19 +297,16 @@ class EarphoneRV32(Module):
         # Declared here so the divider FSM can reference it for restart blocking.
         self.core_clk_en = Wire(1, "core_clk_en")
         with self.comb:
-            self.core_clk_en <<= ~core_stall & ~self.muldiv_busy
+            self.core_clk_en <<= ~self.core_stall & ~self.muldiv_busy
 
         # Iterative divider FSM (area-optimized DIV/DIVU/REM/REMU)
-        div_overflow = Wire(1, "div_overflow")
-        div_by_zero = Wire(1, "div_by_zero")
-        shifted_rem = Wire(XLEN + 1, "shifted_rem")
         with self.comb:
-            div_by_zero <<= (self.div_divisor == 0)
+            self.div_by_zero <<= (self.div_divisor == 0)
             # Signed overflow: MIN / -1
-            div_overflow <<= self.div_dividend_sign & self.div_divisor_sign & \
+            self.div_overflow <<= self.div_dividend_sign & self.div_divisor_sign & \
                              (self.div_dividend == Const(0x80000000, XLEN)) & \
                              (self.div_divisor == Const(0xFFFFFFFF, XLEN))
-            shifted_rem <<= (self.div_remainder << 1) | self.div_dividend[XLEN - 1]
+            self.shifted_rem <<= (self.div_remainder << 1) | self.div_dividend[XLEN - 1]
 
         with self.seq(self.clk, ~self.rst_n):
             with If(~self.rst_n):
@@ -327,7 +330,7 @@ class EarphoneRV32(Module):
                     with If(self.div_restart_block):
                         # Hold block until pipeline can advance (avoids re-starting same DIV)
                         self.div_restart_block <<= ~self.core_clk_en
-                    with Elif(self.exec_valid & is_divrem):
+                    with Elif(self.exec_valid & self.is_divrem):
                         # Capture operands and start iterative division
                         self.muldiv_busy <<= 1
                         self.muldiv_count <<= Const(31, 6)
@@ -352,11 +355,11 @@ class EarphoneRV32(Module):
                         self.div_remainder <<= 0
                 with Else():
                     # Restoring division step (shifted_rem computed combinationally)
-                    with If(shifted_rem >= self.div_divisor):
-                        self.div_remainder <<= (shifted_rem - self.div_divisor)[XLEN - 1:0]
+                    with If(self.shifted_rem >= self.div_divisor):
+                        self.div_remainder <<= (self.shifted_rem - self.div_divisor)[XLEN - 1:0]
                         self.div_quotient <<= Cat(self.div_quotient[XLEN - 2:0], Const(1, 1))
                     with Else():
-                        self.div_remainder <<= shifted_rem[XLEN - 1:0]
+                        self.div_remainder <<= self.shifted_rem[XLEN - 1:0]
                         self.div_quotient <<= Cat(self.div_quotient[XLEN - 2:0], Const(0, 1))
                     self.div_dividend <<= self.div_dividend << 1
                     self.muldiv_count <<= self.muldiv_count - Const(1, 6)
@@ -372,22 +375,19 @@ class EarphoneRV32(Module):
         # MUL* is combinational single-cycle; DIV/REM is iterative for area.
         # Operand isolation on multiplier when not executing M-extension.
         with self.comb:
-            mul_full = Wire(XLEN * 2, "mul_full")
-            mul_hsu_full = Wire(XLEN * 2, "mul_hsu_full")
-            mul_hu_full = Wire(XLEN * 2, "mul_hu_full")
             with If(is_muldiv):
-                mul_full <<= ra * rb
-                mul_hsu_full <<= ra.as_sint() * rb.as_uint()
-                mul_hu_full <<= ra.as_uint() * rb.as_uint()
+                self.mul_full <<= ra * rb
+                self.mul_hsu_full <<= ra.as_sint() * rb.as_uint()
+                self.mul_hu_full <<= ra.as_uint() * rb.as_uint()
             with Else():
-                mul_full <<= Const(0, XLEN * 2)
-                mul_hsu_full <<= Const(0, XLEN * 2)
-                mul_hu_full <<= Const(0, XLEN * 2)
+                self.mul_full <<= Const(0, XLEN * 2)
+                self.mul_hsu_full <<= Const(0, XLEN * 2)
+                self.mul_hu_full <<= Const(0, XLEN * 2)
 
-            mul_lo = mul_full[XLEN - 1:0]
-            mul_hi = mul_full[XLEN * 2 - 1:XLEN]
-            mul_hsu = mul_hsu_full[XLEN * 2 - 1:XLEN]
-            mul_hu = mul_hu_full[XLEN * 2 - 1:XLEN]
+            mul_lo = self.mul_full[XLEN - 1:0]
+            mul_hi = self.mul_full[XLEN * 2 - 1:XLEN]
+            mul_hsu = self.mul_hsu_full[XLEN * 2 - 1:XLEN]
+            mul_hu = self.mul_hu_full[XLEN * 2 - 1:XLEN]
 
             div_res_signed = Mux(self.div_dividend_sign ^ self.div_divisor_sign,
                                  (~self.div_quotient + 1).as_uint()[XLEN - 1:0],
@@ -396,9 +396,9 @@ class EarphoneRV32(Module):
                                  (~self.div_remainder + 1).as_uint()[XLEN - 1:0],
                                  self.div_remainder)
 
-            self.div_result <<= Mux(div_by_zero,
+            self.div_result <<= Mux(self.div_by_zero,
                                     Mux(self.div_is_rem, self.div_dividend_orig, Const(0xFFFFFFFF, XLEN)),
-                              Mux(div_overflow & ~self.div_is_rem,
+                              Mux(self.div_overflow & ~self.div_is_rem,
                                     Const(0x80000000, XLEN),
                                     Mux(self.div_is_rem, rem_res_signed, div_res_signed)))
 
@@ -424,8 +424,8 @@ class EarphoneRV32(Module):
                 self.wb_result <<= 0
             with Else():
                 with If(self.core_clk_en):
-                    with If(branch_taken & self.exec_valid):
-                        self.pc_reg <<= branch_target
+                    with If(self.branch_taken & self.exec_valid):
+                        self.pc_reg <<= self.branch_target
                         self.fetch_valid <<= 0
                         self.exec_valid <<= 0
                         self.wb_valid <<= 0
@@ -441,9 +441,9 @@ class EarphoneRV32(Module):
                         self.wb_valid <<= self.exec_valid
                         with If(self.exec_valid):
                             # DIV/REM write back later from divider FSM
-                            self.wb_wb_en <<= exec_wb_en & ~is_divrem
-                            self.wb_rd <<= exec_rd
-                            self.wb_result <<= exec_alu_result
+                            self.wb_wb_en <<= self.exec_wb_en & ~self.is_divrem
+                            self.wb_rd <<= self.exec_rd
+                            self.wb_result <<= self.exec_alu_result
                 with Else():
                     # During stalls, clear wb_valid so retire_valid remains a one-cycle pulse
                     self.wb_valid <<= 0

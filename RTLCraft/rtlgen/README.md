@@ -17,6 +17,11 @@ The package is intentionally capability-first. It does not require a heavy
 document workflow or a skills library. The user or coding agent orchestrates the
 loop, while `rtlgen` provides the engines.
 
+The repository also carries a narrow `rtlgen_x` compatibility package for older
+seed code. It forwards legacy `rtlgen_x.dsl`, `rtlgen_x.sim`,
+`rtlgen_x.archsim`, `rtlgen_x.ppa`, and `rtlgen_x.verify` imports to `rtlgen`.
+Prefer `rtlgen` for all new code.
+
 ## Design Loop
 
 The detailed-design flow is:
@@ -40,6 +45,23 @@ The recommended usage pattern:
 5. run local compile smoke or local RTL closure
 6. add verification collateral after the executable path is stable
 7. use PPA reports to guide structural rewrites
+
+## Foundation Contract Gate
+
+Before promoting a DSL module into stdlib, a worked example, or release-facing
+documentation, run the foundation contract gate:
+
+```python
+from rtlgen.verify import analyze_foundation_contract, emit_foundation_contract_markdown
+
+report = analyze_foundation_contract(module)
+print(emit_foundation_contract_markdown(report))
+```
+
+The gate combines review-profile readability, unified diagnostics, CDC/reset
+preflight, and storage/lowering/emitted-RTL fail-fast checks. A clean foundation
+report means the module passes this engineering preflight; it does not replace
+simulation, protocol verification, or external RTL simulator closure.
 
 ## Current Package Layout
 
@@ -80,7 +102,9 @@ Important rules:
    possible
 
 See [DSL_SEMANTICS.md](./DSL_SEMANTICS.md) for the full semantic contract and
-[DSL_SUPPORT_MATRIX.md](./DSL_SUPPORT_MATRIX.md) for support boundaries.
+[DSL_SUPPORT_MATRIX.md](./DSL_SUPPORT_MATRIX.md) for support boundaries. The
+review RTL rules are described in
+[RTL_READABILITY_CONTRACT.md](./RTL_READABILITY_CONTRACT.md).
 
 ## Simulation
 
@@ -103,6 +127,12 @@ sim = build_compiled_simulator_from_dsl(module)
 ```
 
 Use the same vectors on both paths whenever possible.
+
+For old seed code that imports `rtlgen.Simulator`, the top-level package keeps
+a narrow `reset/poke/peek/step` compatibility wrapper. New code should prefer
+`lower_dsl_module_to_sim(...)` plus `PythonSimulator` or the compiled simulator
+path above; the removed AST/JIT simulator and DSL validator surfaces are not
+restored.
 
 ## RTL Emission And Local Backends
 
