@@ -1,31 +1,76 @@
-.DS_Store
+# =============================================================================
+# EDA Tool Artifacts
+# =============================================================================
+
+# Work directories (all build output)
+work_*/
+work/
+
+# Tool command logs
+command.log
+icc2_command.log
+pt_shell_command.log
+v2lvs.log
+*_command.log
+
+# Innovus logs
+innovus.cmd*
+innovus.log*
+innovus.logv*
+
+# Synopsys ICC2 output
+icc2_output.txt
+
+# PDK / runtime data (large binary files)
+bp_work/
+bp_run/
+
+# Formal verification SVF files
+*.svf
+
+# Calibre DRC/LVS density and report files
+*.density
+*.rep
+*.NO_TCDDMY*
+gds_cell_map.txt
+
+# Synthesis logs
+*_synthesis.log
+
+# =============================================================================
+# Build / Runtime Artifacts
+# =============================================================================
+
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.vsix
-*.vscode
-node_modules/
-build/
-out/
+*.py[cod]
+*$py.class
 *.egg-info/
 dist/
-.eggs/
-.env
+build/
+
+# SQLite database
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Temp scripts
+convert_db_to_lib.tcl
+
+# =============================================================================
+# Personal / Status Notes
+# =============================================================================
+audit*.md
+status*.md
+env.md
+
+# =============================================================================
+# OS / Editor
+# =============================================================================
+.DS_Store
 *.swp
 *.swo
-work/
-syn/libs/
-*.db
-*.pyc
-__pycache__/
-*.log
-*.out
-*.org
-*_org
-.run.cmd
-.synopsys_dc.setup
-*.tcl_ccs
-*.tcl_1.2
-clog*
-syn/
-!web/backend/
+*~
+.vscode/
+.idea/

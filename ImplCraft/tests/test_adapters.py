@@ -6,6 +6,7 @@ from src.db.design_state import DesignState, DesignConfig, PDKConfig, LibraryCon
 from src.tools.dc_adapter import DCAdapter
 from src.tools.icc2_adapter import ICC2Adapter
 from src.tools.calibre_adapter import CalibreAdapter
+from src.tools.innovus_adapter import InnovusAdapter
 
 
 def _make_test_state() -> DesignState:
@@ -25,10 +26,11 @@ def _make_test_state() -> DesignState:
             tech_file="/path/to/tech.tf",
             min_routing_layer="M2",
             max_routing_layer="M9",
+            lef_files=["/path/to/tech.lef", "/path/to/stdcell.lef"],
         ),
         libraries=LibraryConfig(
             tap_cell="TAPCELL_BWP30P140",
-            std_cell_libs=["/path/to/stdcell.db"],
+            std_cell_libs=["/path/to/stdcell.db", "/path/to/stdcell.lib"],
             ndm_libs=["/path/to/stdcell.ndm", "/path/to/ram.ndm"],
         ),
         rtl_files=["/path/to/top.v", "/path/to/sub.v"],
@@ -101,18 +103,40 @@ def test_icc2_floorplan_script():
 
 
 def test_icc2_placement_script():
-    """Test ICC2 placement script."""
+    """Test ICC2 placement script without TLUPlus falls back to create_placement."""
     state = _make_test_state()
     adapter = ICC2Adapter(state, sub_stage="placement")
     adapter.setup_work_dir()
 
     script = adapter.generate_script()
 
-    assert "place_opt" in script
+    assert "create_placement" in script
     assert "group_path" in script
     assert "M2" in script
     assert "M9" in script
     assert "report_timing" in script
+
+
+def test_icc2_placement_with_tluplus(tmp_path):
+    """Test ICC2 placement script uses place_opt when TLUPlus files exist."""
+    state = _make_test_state()
+    tlu_max = tmp_path / "max.tluplus"
+    tlu_min = tmp_path / "min.tluplus"
+    t2i = tmp_path / "tech2itf.map"
+    tlu_max.write_text("tluplus")
+    tlu_min.write_text("tluplus")
+    t2i.write_text("map")
+    state.config.pdk.tlu_plus_max = str(tlu_max)
+    state.config.pdk.tlu_plus_min = str(tlu_min)
+    state.config.pdk.tech2itf_map = str(t2i)
+
+    adapter = ICC2Adapter(state, sub_stage="placement")
+    adapter.setup_work_dir()
+
+    script = adapter.generate_script()
+
+    assert "place_opt" in script
+    assert "read_parasitic_tech" in script
 
 
 def test_icc2_cts_script():
@@ -181,3 +205,85 @@ def test_calibre_lvs_script():
     assert "LVS" in script or "LAYOUT" in script
     assert "SOURCE" in script
     assert "test_chip" in script
+
+
+def test_innovus_create_lib_script():
+    """Test Innovus create_lib script generation."""
+    state = _make_test_state()
+    adapter = InnovusAdapter(state, sub_stage="create_lib")
+    adapter.setup_work_dir()
+
+    script = adapter.generate_script()
+
+    assert "init_verilog" in script
+    assert "init_design" in script
+    assert "test_chip" in script
+    assert "innovus -batch" in adapter._get_shell_cmd()
+    assert adapter.tcl_flag == "-files"
+    assert "set init_lef_file" in script
+    assert "set library" in script
+
+
+def test_innovus_floorplan_script():
+    """Test Innovus floorplan script generation."""
+    state = _make_test_state()
+    adapter = InnovusAdapter(state, sub_stage="floorplan")
+    adapter.setup_work_dir()
+
+    script = adapter.generate_script()
+
+    assert "floorPlan" in script
+    assert "init_design" in script
+    assert "addRing" in script
+    assert "addStripe" in script
+
+
+def test_innovus_placement_script():
+    """Test Innovus placement script generation."""
+    state = _make_test_state()
+    adapter = InnovusAdapter(state, sub_stage="placement")
+    adapter.setup_work_dir()
+
+    script = adapter.generate_script()
+
+    assert "place_opt_design" in script
+    assert "restoreDesign" in script
+    assert "timeDesign -prePlace" in script
+    assert "setPlaceMode" in script
+
+
+def test_innovus_cts_script():
+    """Test Innovus CTS script generation."""
+    state = _make_test_state()
+    adapter = InnovusAdapter(state, sub_stage="cts")
+    adapter.setup_work_dir()
+
+    script = adapter.generate_script()
+
+    assert "clockOptDesign" in script
+    assert "restoreDesign" in script
+
+
+def test_innovus_routing_script():
+    """Test Innovus routing script generation."""
+    state = _make_test_state()
+    adapter = InnovusAdapter(state, sub_stage="routing")
+    adapter.setup_work_dir()
+
+    script = adapter.generate_script()
+
+    assert "routeDesign" in script
+    assert "restoreDesign" in script
+
+
+def test_innovus_route_opt_script():
+    """Test Innovus route_opt script generation."""
+    state = _make_test_state()
+    adapter = InnovusAdapter(state, sub_stage="route_opt")
+    adapter.setup_work_dir()
+
+    script = adapter.generate_script()
+
+    assert "optDesign -postRoute" in script
+    assert "defOut" in script
+    assert "rcOut -spef" in script

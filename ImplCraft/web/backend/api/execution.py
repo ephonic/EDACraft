@@ -20,6 +20,9 @@ import asyncio
 import threading
 import time
 
+from ..db.models import DesignRecord
+from ..db.engine import get_session
+
 router = APIRouter()
 
 # Execution state
@@ -310,3 +313,123 @@ def get_all_stages():
         "definitions": STAGE_DEFINITIONS,
         "statuses": _execution_state["stages"]
     }
+
+
+# ---------- Module-level execution integration ----------
+
+class ModuleExecutionStart(BaseModel):
+    design_id: int
+    modules: list[str] = []  # empty = all modules
+    stages: list[str] = []   # empty = all stages
+
+
+def _get_or_create_modules(session, design_id):
+    """Ensure top-level module exists if no modules defined."""
+    from ..db.models import ModuleRecord
+    modules = session.query(ModuleRecord).filter_by(design_id=design_id).all()
+    if not modules:
+        design = session.query(DesignRecord).filter_by(id=design_id).first()
+        if design:
+            top = ModuleRecord(
+                design_id=design_id,
+                name=design.top_module or "top",
+                hierarchy=design.top_module or "top",
+                level=0,
+            )
+            session.add(top)
+            session.flush()
+            modules = [top]
+    return modules
+
+
+@router.post("/execution/start-design")
+def start_design_execution(request: ModuleExecutionStart):
+    """Start execution for a specific design with module-level tracking."""
+    from ..db.models import ModuleRecord, DesignRecord
+
+    with get_session() as session:
+        design = session.query(DesignRecord).filter_by(id=request.design_id).first()
+        if not design:
+            raise HTTPException(404, f"Design {request.design_id} not found")
+
+        modules = _get_or_create_modules(session, request.design_id)
+        stage_names = request.stages if request.stages else ModuleRecord.STAGE_NAMES
+
+        target_modules = modules
+        if request.modules:
+            target_modules = [m for m in modules if m.name in request.modules]
+
+        for m in target_modules:
+            for sn in stage_names:
+                m.set_stage_status(sn, "pending")
+
+        design.status = "running"
+        design.updated_at = datetime.now()
+
+        return {
+            "design_id": request.design_id,
+            "design_name": design.name,
+            "modules_started": [m.name for m in target_modules],
+            "stages": stage_names,
+            "status": "started",
+        }
+
+
+@router.get("/execution/design-status/{design_id}")
+def get_design_execution_status(design_id: int):
+    """Get module-level execution status for a specific design."""
+    from ..db.models import ModuleRecord, DesignRecord
+
+    with get_session() as session:
+        design = session.query(DesignRecord).filter_by(id=design_id).first()
+        if not design:
+            raise HTTPException(404, f"Design {design_id} not found")
+
+        modules = session.query(ModuleRecord).filter_by(design_id=design_id).order_by(ModuleRecord.level, ModuleRecord.name).all()
+
+        stage_names = ModuleRecord.STAGE_NAMES
+        module_status = []
+        overall_running = 0
+        overall_completed = 0
+        overall_failed = 0
+
+        for m in modules:
+            stages = {}
+            for sn in stage_names:
+                st = m.get_stage_status(sn)
+                stages[sn] = {"status": st, "elapsed": m.get_stage_elapsed(sn)}
+                if st == "running":
+                    overall_running += 1
+                elif st == "completed":
+                    overall_completed += 1
+                elif st == "failed":
+                    overall_failed += 1
+
+            module_status.append({
+                "id": m.id,
+                "name": m.name,
+                "hierarchy": m.hierarchy,
+                "level": m.level,
+                "parent_name": m.parent_name,
+                "stages": stages,
+                "area_um": m.area_um,
+                "cell_count": m.cell_count,
+            })
+
+        total_stages = len(modules) * len(stage_names)
+        return {
+            "design_id": design_id,
+            "design_name": design.name,
+            "design_status": design.status,
+            "stage_names": stage_names,
+            "modules": module_status,
+            "summary": {
+                "total_modules": len(modules),
+                "total_stages": total_stages,
+                "running": overall_running,
+                "completed": overall_completed,
+                "failed": overall_failed,
+                "pending": total_stages - overall_running - overall_completed - overall_failed,
+                "progress_pct": int(overall_completed / total_stages * 100) if total_stages else 0,
+            },
+        }

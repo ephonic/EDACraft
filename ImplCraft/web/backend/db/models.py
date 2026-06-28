@@ -49,6 +49,7 @@ class DesignRecord(Base):
     metrics = relationship("MetricRecord", back_populates="design", cascade="all, delete-orphan")
     scripts = relationship("ScriptRecord", back_populates="design", cascade="all, delete-orphan")
     git_commits = relationship("GitCommitRecord", back_populates="design", cascade="all, delete-orphan")
+    modules = relationship("ModuleRecord", back_populates="design", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_designs_status", "status"),
@@ -69,6 +70,7 @@ class DesignRecord(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "stage_count": len(self.stages) if self.stages else 0,
+            "module_count": len(self.modules) if self.modules else 0,
         }
 
 
@@ -243,6 +245,87 @@ class ScriptRecord(Base):
             "execution_log": self.execution_log,
             "generated_at": self.generated_at.isoformat() if self.generated_at else None,
             "executed_at": self.executed_at.isoformat() if self.executed_at else None,
+        }
+
+
+
+class ModuleRecord(Base):
+    """A partitioned module within a design — tracks per-module execution progress."""
+    __tablename__ = "modules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    design_id = Column(Integer, ForeignKey("designs.id"), nullable=False)
+    name = Column(String(256), nullable=False)
+    hierarchy = Column(String(1024), default="")
+    parent_name = Column(String(256), nullable=True)
+    level = Column(Integer, default=0)  # 0=top-level, 1=submodule, etc.
+
+    synthesis_status = Column(String(32), default="pending")
+    floorplan_status = Column(String(32), default="pending")
+    placement_status = Column(String(32), default="pending")
+    cts_status = Column(String(32), default="pending")
+    routing_status = Column(String(32), default="pending")
+    drc_status = Column(String(32), default="pending")
+    lvs_status = Column(String(32), default="pending")
+
+    synthesis_elapsed = Column(Float, default=0.0)
+    floorplan_elapsed = Column(Float, default=0.0)
+    placement_elapsed = Column(Float, default=0.0)
+    cts_elapsed = Column(Float, default=0.0)
+    routing_elapsed = Column(Float, default=0.0)
+    drc_elapsed = Column(Float, default=0.0)
+    lvs_elapsed = Column(Float, default=0.0)
+
+    area_um = Column(Float, nullable=True)
+    cell_count = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    design = relationship("DesignRecord", back_populates="modules")
+
+    __table_args__ = (
+        Index("ix_modules_design", "design_id"),
+        Index("ix_modules_name", "design_id", "name"),
+    )
+
+    STAGE_NAMES = ["synthesis", "floorplan", "placement", "cts", "routing", "drc", "lvs"]
+
+    def get_stage_status(self, stage_name):
+        return getattr(self, f"{stage_name}_status", "pending")
+
+    def set_stage_status(self, stage_name, status):
+        attr = f"{stage_name}_status"
+        if hasattr(self, attr):
+            setattr(self, attr, status)
+
+    def get_stage_elapsed(self, stage_name):
+        return getattr(self, f"{stage_name}_elapsed", 0.0)
+
+    def set_stage_elapsed(self, stage_name, elapsed):
+        attr = f"{stage_name}_elapsed"
+        if hasattr(self, attr):
+            setattr(self, attr, elapsed)
+
+    def to_dict(self) -> dict:
+        stages = {}
+        for sn in self.STAGE_NAMES:
+            stages[sn] = {
+                "status": self.get_stage_status(sn),
+                "elapsed": self.get_stage_elapsed(sn),
+            }
+        return {
+            "id": self.id,
+            "design_id": self.design_id,
+            "name": self.name,
+            "hierarchy": self.hierarchy,
+            "parent_name": self.parent_name,
+            "level": self.level,
+            "stages": stages,
+            "area_um": self.area_um,
+            "cell_count": self.cell_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

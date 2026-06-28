@@ -20,7 +20,7 @@ from pathlib import Path
 from src.config.loader import load_config, save_config
 from src.db.design_state import DesignConfig, DesignState
 from src.flow.orchestrator import FlowOrchestrator
-from src.flow.stages import DEFAULT_FLOW_STAGES, FlowStageDefinition
+from src.flow.stages import DEFAULT_FLOW_STAGES, FlowStageDefinition, get_flow_stages
 from src.analysis.qor_analyzer import QoRAnalyzer
 
 logger = logging.getLogger("ic_backend")
@@ -78,10 +78,11 @@ def main():
 
     # Build stage list
     stage_names = flow_options.get("stages")
+    tool_chain = flow_options.get("tool_chain", "synopsys")
     if stage_names:
-        stages = [s for s in DEFAULT_FLOW_STAGES if s.name in stage_names]
+        stages = [s for s in get_flow_stages(tool_chain) if s.name in stage_names]
     else:
-        stages = list(DEFAULT_FLOW_STAGES)
+        stages = list(get_flow_stages(tool_chain))
 
     # Create orchestrator
     orchestrator = FlowOrchestrator(
@@ -96,7 +97,7 @@ def main():
         result = orchestrator.run_single(args.stage)
         print(f"Stage '{args.stage}': {result.status.value}")
     elif args.resume_from:
-        state = orchestrator.run_from(args.resume_from)
+        state = orchestrator.run(resume_from=args.resume_from)
     elif args.stop_at:
         state = orchestrator.run(stop_at=args.stop_at)
     else:

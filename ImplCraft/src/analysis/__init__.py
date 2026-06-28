@@ -9,6 +9,8 @@ from .sub_partition_advisor import SubPartitionAdvisor
 from .partition_orchestrator import PartitionOrchestrator
 from .module_graph import ModuleGraph, ModuleNode, PartitionDecision
 from .pg_network_advisor import PGNetworkAdvisor, PGNetworkPlan, PowerConfig, PadSpec
+from .design_risk_analyzer import DesignRiskAnalyzer, RiskLevel, RiskCategory, DesignRiskReport
+from .preflight_validator import PreflightValidator, FlowPreflightIntegration
 
 __all__ = [
     "QoRAnalyzer",
@@ -27,4 +29,10 @@ __all__ = [
     "PGNetworkPlan",
     "PowerConfig",
     "PadSpec",
+    "DesignRiskAnalyzer",
+    "RiskLevel",
+    "RiskCategory",
+    "DesignRiskReport",
+    "PreflightValidator",
+    "FlowPreflightIntegration",
 ]

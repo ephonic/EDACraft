@@ -176,7 +176,9 @@ class PTAdapter(ToolAdapter):
         # Netlist
         netlist = pt.netlist_file
         if not netlist:
-            netlist = self.state.get_artifact("syn_v") or f"work/synthesis/DC/out/{cfg.design_name}.v"
+            netlist = self.state.get_artifact("syn_v")
+        if not netlist:
+            netlist = str(Path(self.state.work_root).resolve() / "synthesis" / "DC" / "out" / f"{cfg.design_name}.v")
         lines.append(f'read_verilog "{netlist}"')
         lines.append(f'link_design "{cfg.top_module}"')
 
@@ -235,7 +237,9 @@ class PTAdapter(ToolAdapter):
         pt = cfg.pt
         sdc = pt.sdc_file
         if not sdc:
-            sdc = self.state.get_artifact("syn_sdc") or f"work/synthesis/DC/out/{cfg.design_name}.sdc"
+            sdc = self.state.get_artifact("syn_sdc")
+        if not sdc:
+            sdc = str(Path(self.state.work_root).resolve() / "synthesis" / "DC" / "out" / f"{cfg.design_name}.sdc")
         lines = [
             "# ---- Read SDC ----",
             f'read_sdc "{sdc}"',

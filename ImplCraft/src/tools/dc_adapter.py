@@ -252,6 +252,8 @@ class DCAdapter(ToolAdapter):
         if cfg.sdc_file and Path(cfg.sdc_file).exists():
             lines.append(f'source "{cfg.sdc_file}"')
         elif cfg.sdc_file:
+            # File missing; warn but still emit source so the user sees the error.
+            lines.append(f'# WARNING: SDC file not found: {cfg.sdc_file}')
             lines.append(f'source "{cfg.sdc_file}"')
         else:
             # Generate from clock definitions
@@ -264,23 +266,41 @@ class DCAdapter(ToolAdapter):
                 lines.append(f"set_clock_transition {clk.transition_ns} [get_clocks {clk.name}]")
                 lines.append("")
 
-            # I/O delays
+            # I/O delays (match reference flow: 2.0 ns / 0.5 ns)
             lines.extend([
                 "# ---- I/O Delays ----",
-                f"set_input_delay -clock $CLOCK_NAME -max 3.0 [remove_from_collection [all_inputs] [get_ports $CLOCK_NAME]]",
-                f"set_input_delay -clock $CLOCK_NAME -min 1.0 [remove_from_collection [all_inputs] [get_ports $CLOCK_NAME]]",
-                f"set_output_delay -clock $CLOCK_NAME -max 3.0 [all_outputs]",
-                f"set_output_delay -clock $CLOCK_NAME -min 1.0 [all_outputs]",
+                "set all_inputs_no_clk [remove_from_collection [all_inputs] [get_ports $CLOCK_NAME]]",
+                "set_input_delay -clock $CLOCK_NAME -max 2.0 $all_inputs_no_clk",
+                "set_input_delay -clock $CLOCK_NAME -min 0.5 $all_inputs_no_clk",
+                "set_output_delay -clock $CLOCK_NAME -max 2.0 [all_outputs]",
+                "set_output_delay -clock $CLOCK_NAME -min 0.5 [all_outputs]",
+            ])
+
+            # Asynchronous reset
+            lines.extend([
+                "",
+                "# ---- Asynchronous Reset ----",
+                "if {[sizeof_collection [get_ports -quiet pad_sys_rst]] > 0} {",
+                "    set_false_path -from [get_ports pad_sys_rst]",
+                "}",
             ])
 
             # Driving cell
             if cfg.libraries.driver_cell:
-                lines.append(
-                    f'set_driving_cell -lib_cell "{cfg.libraries.driver_cell}" -pin Z '
-                    f'[remove_from_collection [all_inputs] [get_ports $CLOCK_NAME]]'
-                )
-
-            lines.append("set_load 0.05 [all_outputs]")
+                # Inverting cells typically use output pin ZN; non-inverting use Z.
+                driver_pin = "ZN" if "INV" in cfg.libraries.driver_cell.upper() else "Z"
+                lines.extend([
+                    "",
+                    "# ---- Driving Cell / Loads ----",
+                    f'set_driving_cell -lib_cell "{cfg.libraries.driver_cell}" -pin {driver_pin} $all_inputs_no_clk',
+                    "set_load 0.05 [all_outputs]",
+                ])
+            else:
+                lines.extend([
+                    "",
+                    "# ---- Output Loads ----",
+                    "set_load 0.05 [all_outputs]",
+                ])
 
         return lines
 
@@ -587,7 +607,7 @@ class DCAdapter(ToolAdapter):
         if not out_dir.exists():
             out_dir = self.work_dir / "out"
         for suffix in ["v", "ddc", "sdc"]:
-            fpath = out_dir / f"{self.state.config.design_name}.{suffix}"
+            fpath = (out_dir / f"{self.state.config.design_name}.{suffix}").resolve()
             if fpath.exists():
                 self.state.record_artifact(f"syn_{suffix}", str(fpath))
                 result.output_files[suffix] = str(fpath)
@@ -613,8 +633,8 @@ class DCAdapter(ToolAdapter):
         violations = len(re.findall(r'slack\s+\(\w+\)\s+([-.\d]+)', text))
         if violations > 0:
             neg_paths = sum(1 for m2 in re.finditer(
-                r'slack\s+\(\w+)\)\s+([-.\d]+)', text
-            ) if float(m2.group(1)) < 0)
+                r'slack\s+\((\w+)\)\s+([-.\d]+)', text
+            ) if float(m2.group(2)) < 0)
             result.timing.num_violating_paths = neg_paths
 
     def _parse_area(self, text: str, result: StageResult):

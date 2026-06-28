@@ -27,6 +27,7 @@ from ..tools.innovus_adapter import InnovusAdapter
 from ..tools.tempus_adapter import TempusAdapter
 from ..tools.pegasus_adapter import PegasusAdapter
 from ..analysis.error_checker import ErrorChecker, ToolName
+from ..analysis.preflight_validator import PreflightValidator, FlowPreflightIntegration
 from ..analysis.rtl_advisor import RTLAdvisor
 from .stages import FlowStageDefinition, DEFAULT_FLOW_STAGES
 
@@ -60,6 +61,9 @@ class FlowOrchestrator:
         self._skipped: set[str] = set()
         self._stage_times: dict[str, float] = {}
         self.error_checker = ErrorChecker()
+        self.preflight = FlowPreflightIntegration(self)
+        if not dry_run:
+            self.preflight.enable_preflight()
 
     def run(
         self,
@@ -139,6 +143,21 @@ class FlowOrchestrator:
         logger.info("")
         logger.info("=" * 60)
         logger.info(f"  Stage: {stage_def.name} ({stage_def.tool})")
+
+        # Pre-flight validation
+        if self.preflight.enabled:
+            pf_report = self.preflight.check_before_stage(stage_def.name)
+            if not pf_report.passed:
+                logger.warning(f"  Pre-flight check FAILED for {stage_def.name}:")
+                for risk in pf_report.effective_blocking:
+                    logger.warning(f"    [{risk.level.value.upper()}] {risk.title}: {risk.description}")
+                logger.warning(f"  Recommendation: {pf_report.recommendation}")
+                logger.warning(f"  Use FlowPreflightIntegration.record_decision() to override.")
+                if not self.dry_run:
+                    self._skipped.add(stage_def.name)
+                    return False
+            elif pf_report.recommendation != "All checks passed — safe to proceed":
+                logger.info(f"  Pre-flight: {pf_report.recommendation}")
         logger.info(f"  Description: {stage_def.description}")
         logger.info("=" * 60)
 
@@ -183,7 +202,7 @@ class FlowOrchestrator:
             logger.info(f"  [DRY-RUN] Skipped tool execution")
         else:
             # Execute
-            exit_code = adapter.execute()
+            adapter.execute()
             result = self.state.get_stage_result(stage_def.flow_stage)
 
             # Parse results
@@ -192,12 +211,10 @@ class FlowOrchestrator:
             # Check for errors/warnings
             self._check_stage_errors(stage_def, adapter)
 
-            if exit_code == 0:
-                result.status = StageStatus.PASSED
+            if result.status == StageStatus.PASSED:
                 logger.info(f"  Stage PASSED")
             else:
-                result.status = StageStatus.FAILED
-                logger.error(f"  Stage FAILED (exit code {exit_code})")
+                logger.error(f"  Stage FAILED (status: {result.status.value})")
 
         elapsed = time.time() - start_time
         self._stage_times[stage_def.name] = elapsed
@@ -257,6 +274,9 @@ class FlowOrchestrator:
             "ICC2": ToolName.ICC2,
             "PrimeTime": ToolName.PT,
             "Calibre": ToolName.CALIBRE,
+            "Innovus": ToolName.ICC2,   # Same log format patterns
+            "Tempus": ToolName.PT,       # Similar timing report format
+            "Pegasus": ToolName.CALIBRE, # Similar DRC report format
         }
         tool = tool_map.get(stage_def.tool)
         if tool is None:

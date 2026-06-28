@@ -28,6 +28,7 @@ class ToolAdapter(ABC):
     stage: FlowStage = FlowStage.INIT
     env_script: str = ""
     tool_family: str = ""  # bash script to source for tool environment
+    tcl_flag: str = "-f"  # command-line flag used to pass the Tcl script
 
     def __init__(self, state: DesignState):
         self.state = state
@@ -81,9 +82,11 @@ class ToolAdapter(ABC):
         log_path = self.work_dir / "log" / log_file
 
         env = self.resolved_env_script
-        full_cmd = f"source {env} 2>/dev/null; {shell_cmd} -f {tcl_file}"
+        # Use absolute path for the Tcl file because cwd is set to work_dir.
+        tcl_abs = str(Path(tcl_file).resolve())
+        full_cmd = f"source {env} 2>/dev/null; {shell_cmd} {self.tcl_flag} {tcl_abs}"
         if not env:
-            full_cmd = f"{shell_cmd} -f {tcl_file}"
+            full_cmd = f"{shell_cmd} {self.tcl_flag} {tcl_abs}"
 
         logger.info(f"[{self.tool_name}] Running: {full_cmd}")
         logger.info(f"[{self.tool_name}] Work dir: {self.work_dir}")

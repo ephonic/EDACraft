@@ -26,6 +26,9 @@ pdk:
   antenna_rule_file: /path/to/antenna.rule
   icv_drc_runset: /path/to/drc.runset
   icv_fill_runset: /path/to/fill.runset
+  tlu_plus_max: /path/to/max.tluplus
+  tlu_plus_min: /path/to/min.tluplus
+  tech2itf_map: /path/to/tech2itf.map
 
 libraries:
   std_cell_libs:
@@ -116,6 +119,8 @@ flow:
 """
 from __future__ import annotations
 
+import copy
+
 import yaml
 from pathlib import Path
 from typing import Any
@@ -124,6 +129,7 @@ from ..db.design_state import (
     DesignConfig, PDKConfig, LibraryConfig,
     ClockDefinition, TimingDerateConfig, CTSConfig,
     PlacementConfig, RoutingConfig, SynthesisConfig,
+    EDAEnvironment,
 )
 
 
@@ -162,6 +168,26 @@ def _parse_pdk(pdk_data: dict) -> PDKConfig:
         antenna_rule_file=pdk_data.get("antenna_rule_file", ""),
         icv_drc_runset=pdk_data.get("icv_drc_runset", ""),
         icv_fill_runset=pdk_data.get("icv_fill_runset", ""),
+        calibre_drc_runset=pdk_data.get("calibre_drc_runset", ""),
+        calibre_lvs_runset=pdk_data.get("calibre_lvs_runset", ""),
+        std_cell_gds=pdk_data.get("std_cell_gds", ""),
+        std_cell_spice=pdk_data.get("std_cell_spice", ""),
+        power_nets=pdk_data.get("power_nets", ["VDD"]),
+        ground_nets=pdk_data.get("ground_nets", ["VSS"]),
+        tlu_plus_max=pdk_data.get("tlu_plus_max", ""),
+        tlu_plus_min=pdk_data.get("tlu_plus_min", ""),
+        tech2itf_map=pdk_data.get("tech2itf_map", ""),
+        setup_voltage_v=float(pdk_data.get("setup_voltage_v", 0.9)),
+        hold_voltage_v=float(pdk_data.get("hold_voltage_v", 0.88)),
+        temperature_c=float(pdk_data.get("temperature_c", 25.0)),
+        innovus_site_name=pdk_data.get("innovus_site_name", "core"),
+        pegasus_drc_runset=pdk_data.get("pegasus_drc_runset", ""),
+        pegasus_lvs_runset=pdk_data.get("pegasus_lvs_runset", ""),
+        nxtgrd_max=pdk_data.get("nxtgrd_max", ""),
+        nxtgrd_min=pdk_data.get("nxtgrd_min", ""),
+        starrc_layer_map=pdk_data.get("starrc_layer_map", ""),
+        cell_name_suffix_strip=pdk_data.get("cell_name_suffix_strip", ""),
+        liberty_suffix_strip=pdk_data.get("liberty_suffix_strip", ""),
     )
 
 
@@ -177,6 +203,7 @@ def _parse_libraries(lib_data: dict) -> LibraryConfig:
         macro_libs=lib_data.get("macro_libs", []),
         io_libs=lib_data.get("io_libs", []),
         ndm_libs=lib_data.get("ndm_libs", []),
+        liberty_libs=lib_data.get("liberty_libs", []),
         dont_use_cells=lib_data.get("dont_use_cells", []),
         vt_libs=lib_data.get("vt_libs", {}),
         main_lib_name=lib_data.get("main_lib_name", ""),
@@ -193,9 +220,153 @@ def _parse_libraries(lib_data: dict) -> LibraryConfig:
     )
 
 
+def _is_legacy_schema(data: dict) -> bool:
+    """Detect legacy flat schema used by early ImplCraft configs."""
+    return "design_name" in data or isinstance(data.get("libraries", {}).get("std_cell"), list)
+
+
+def _convert_legacy_schema(data: dict) -> dict:
+    """Convert legacy flat schema to the current nested schema."""
+    converted: dict[str, Any] = copy.deepcopy(data)
+
+    # ---- design ----
+    design: dict[str, Any] = {"name": converted.pop("design_name", "top")}
+    if "top_module" in converted:
+        design["top_module"] = converted.pop("top_module")
+    if "scenario" in converted:
+        design["scenario"] = converted.pop("scenario")
+    if "target_utilization" in converted:
+        design["target_utilization"] = converted.pop("target_utilization")
+
+    old_die = converted.pop("die", {})
+    if old_die:
+        design["die"] = {
+            "width_um": old_die.get("width_um", 2900.0),
+            "height_um": old_die.get("height_um", 1900.0),
+            "core_offset_um": old_die.get("core_offset_um", [180, 180, 180, 180]),
+            "target_utilization": old_die.get("target_utilization", 0.7),
+        }
+        # Flatten die metrics so DesignConfig picks them up directly too.
+        design["die_width_um"] = design["die"]["width_um"]
+        design["die_height_um"] = design["die"]["height_um"]
+        design["core_offset_um"] = design["die"]["core_offset_um"]
+        if "target_utilization" not in design and "target_utilization" in old_die:
+            design["target_utilization"] = old_die["target_utilization"]
+
+    # ---- clocks -> top-level clock shorthand ----
+    clocks = converted.get("clocks", [])
+    if clocks and isinstance(clocks, list):
+        first_clk = clocks[0]
+        if isinstance(first_clk, dict):
+            design["clock_period_ns"] = first_clk.get("period_ns", 10.0)
+            design["clock_name"] = first_clk.get("name", "clk")
+
+    converted["design"] = design
+
+    # ---- rtl ----
+    rtl: dict[str, Any] = converted.get("rtl", {})
+    if "sdc_file" in converted:
+        rtl["sdc_file"] = converted.pop("sdc_file")
+    converted["rtl"] = rtl
+
+    # ---- libraries ----
+    libs: dict[str, Any] = converted.get("libraries", {})
+    if "std_cell" in libs:
+        libs["std_cell_libs"] = libs.pop("std_cell")
+    if "io" in libs:
+        libs["io_libs"] = libs.pop("io")
+    if "macro" in libs:
+        libs["macro_libs"] = libs.pop("macro")
+    converted["libraries"] = libs
+
+    # ---- eda ----
+    eda: dict[str, Any] = converted.get("eda", {})
+    if "synopsys" in eda and "synopsys_script" not in eda:
+        eda["synopsys_script"] = eda.pop("synopsys")
+    if "primetime" in eda and "primetime_script" not in eda:
+        eda["primetime_script"] = eda.pop("primetime")
+    if "mentor" in eda and "mentor_script" not in eda:
+        eda["mentor_script"] = eda.pop("mentor")
+    if "cadence" in eda and "cadence_script" not in eda:
+        eda["cadence_script"] = eda.pop("cadence")
+    converted["eda"] = eda
+
+    # ---- synthesis nested options ----
+    syn = converted.get("synthesis", {}) or {}
+    if "power" in syn and isinstance(syn["power"], dict):
+        pw = syn.pop("power")
+        syn["power_optimization"] = pw.get("enabled", True)
+        syn["power_effort"] = pw.get("effort", "high")
+        syn["leakage_optimization"] = pw.get("leakage", True)
+        syn["dynamic_optimization"] = pw.get("dynamic", True)
+        syn["power_prediction"] = pw.get("prediction", False)
+    if "clock_gating" in syn and isinstance(syn["clock_gating"], dict):
+        cg = syn.pop("clock_gating")
+        syn["clock_gating"] = cg.get("enabled", True)
+        syn["self_gating"] = cg.get("self_gating", False)
+        syn["clock_gating_style"] = cg.get("style", "integrated")
+        syn["clock_gating_positive_edge"] = cg.get("positive_edge", True)
+        syn["clock_gating_control_point"] = cg.get("control_point", "before")
+        syn["physically_aware_cg"] = cg.get("physically_aware", True)
+        syn["flatten_cg"] = cg.get("flatten", True)
+    if "timing" in syn and isinstance(syn["timing"], dict):
+        tm = syn.pop("timing")
+        syn["critical_range_ns"] = tm.get("critical_range_ns", 0.0)
+        syn["max_transition_dc"] = tm.get("max_transition", 0.5)
+        syn["max_fanout_dc"] = tm.get("max_fanout", 20)
+        syn["max_capacitance_dc"] = tm.get("max_capacitance", 0.5)
+        syn["enable_register_merging"] = tm.get("register_merging", False)
+    if "mcmm" in syn and isinstance(syn["mcmm"], dict):
+        mm = syn.pop("mcmm")
+        syn["mcmm_enabled"] = mm.get("enabled", False)
+        # scenario objects are left as-is; loader will ignore unknown keys
+    if "physical" in syn and isinstance(syn["physical"], dict):
+        ph = syn.pop("physical")
+        syn["topographical_mode"] = ph.get("enabled", False)
+        for k in ["tlu_plus_file", "tech2itf_map", "floorplan_file", "def_file",
+                  "physical_constraints_file"]:
+            if k in ph:
+                syn[k] = ph[k]
+    if "dft" in syn and isinstance(syn["dft"], dict):
+        dft = syn.pop("dft")
+        syn["scan_insertion"] = dft.get("scan_insertion", False)
+        syn["scan_style"] = dft.get("scan_style", "multiplexed")
+        syn["scan_coverage"] = dft.get("scan_coverage", False)
+    if "vt_control" in syn and isinstance(syn["vt_control"], dict):
+        vt = syn.pop("vt_control")
+        syn["vt_dont_use_patterns"] = vt.get("dont_use", {})
+        syn["vt_release_patterns"] = vt.get("release", {})
+    if "hierarchy" in syn and isinstance(syn["hierarchy"], dict):
+        hier = syn.pop("hierarchy")
+        syn["keep_hierarchies"] = hier.get("keep", [])
+        syn["flatten_all"] = hier.get("flatten_all", False)
+        syn["flatten_start_level"] = hier.get("flatten_start_level", 2)
+        syn["size_only_patterns"] = hier.get("size_only_patterns", [])
+    converted["synthesis"] = syn
+
+    # Preserve other top-level sections that do not need conversion.
+    for key in ["timing_derate", "cts", "placement", "routing", "pt", "flow",
+                "innovus", "tempus", "pegasus", "icc2", "calibre"]:
+        if key in data and key not in converted:
+            converted[key] = data[key]
+
+    # Normalize legacy timing_derate keys (late/early -> late_factor/early_factor).
+    if "timing_derate" in converted:
+        td = converted["timing_derate"]
+        if isinstance(td, dict):
+            if "late" in td and "late_factor" not in td:
+                td["late_factor"] = td.pop("late")
+            if "early" in td and "early_factor" not in td:
+                td["early_factor"] = td.pop("early")
+
+    return converted
+
+
 def load_config(config_path: str | Path) -> tuple[DesignConfig, dict[str, Any]]:
     """
     Load project configuration from a YAML file.
+
+    Supports both the current nested schema and the legacy flat schema.
 
     Returns:
         (DesignConfig, flow_options) tuple.
@@ -210,16 +381,20 @@ def load_config(config_path: str | Path) -> tuple[DesignConfig, dict[str, Any]]:
     if data is None:
         data = {}
 
+    # Backward compatibility with old flat schema
+    if _is_legacy_schema(data):
+        data = _convert_legacy_schema(data)
+
     design_data = data.get("design", {})
     pdk_data = data.get("pdk", {})
     lib_data = data.get("libraries", {})
     rtl_data = data.get("rtl", {})
     clocks_data = data.get("clocks", [])
     derate_data = data.get("timing_derate", {})
-    cts_data = data.get("cts", {})
-    place_data = data.get("placement", {})
-    route_data = data.get("routing", {})
-    syn_data = data.get("synthesis", {})
+    cts_data = data.get("cts", {}) or {}
+    place_data = data.get("placement", {}) or {}
+    route_data = data.get("routing", {}) or {}
+    syn_data = data.get("synthesis", {}) or {}
 
     # Parse sub-configs
     pdk = _parse_pdk(pdk_data)
@@ -316,6 +491,18 @@ def load_config(config_path: str | Path) -> tuple[DesignConfig, dict[str, Any]]:
         num_cores=int(syn_data.get("num_cores", 64)),
     )
 
+    # Parse EDA environment
+    eda_data = data.get("eda", {})
+    if isinstance(eda_data, dict):
+        eda = EDAEnvironment(
+            synopsys_script=eda_data.get("synopsys_script", ""),
+            primetime_script=eda_data.get("primetime_script", ""),
+            mentor_script=eda_data.get("mentor_script", ""),
+            cadence_script=eda_data.get("cadence_script", ""),
+        )
+    else:
+        eda = EDAEnvironment()
+
     config = DesignConfig(
         design_name=design_data.get("name", "top"),
         top_module=design_data.get("top_module", design_data.get("name", "top")),
@@ -328,6 +515,8 @@ def load_config(config_path: str | Path) -> tuple[DesignConfig, dict[str, Any]]:
         pdk=pdk,
         libraries=libraries,
         rtl_files=rtl_data.get("files", []),
+        rtl_dir=rtl_data.get("dir", ""),
+        rtl_filelist=rtl_data.get("filelist", ""),
         sdc_file=rtl_data.get("sdc_file", ""),
         clocks=clocks,
         timing_derate=derate,
@@ -335,8 +524,14 @@ def load_config(config_path: str | Path) -> tuple[DesignConfig, dict[str, Any]]:
         placement=placement,
         routing=routing,
         synthesis=synthesis,
+        eda=eda,
         target_utilization=float(design_data.get("target_utilization", 0.7)),
     )
+
+    # Preserve tool-specific sections that adapters may query at runtime.
+    for tool_key in ["innovus", "tempus", "pegasus", "icc2", "calibre"]:
+        if tool_key in data:
+            setattr(config, tool_key, data[tool_key])
 
     # Extract flow options
     flow_data = data.get("flow", {})
@@ -344,6 +539,7 @@ def load_config(config_path: str | Path) -> tuple[DesignConfig, dict[str, Any]]:
         "work_root": flow_data.get("work_root", "./work"),
         "dry_run": flow_data.get("dry_run", False),
         "stages": flow_data.get("stages", None),
+        "tool_chain": flow_data.get("tool_chain", "synopsys"),
     }
 
     return config, flow_options
@@ -383,6 +579,14 @@ def save_config(config: DesignConfig, path: str | Path, flow_options: dict[str, 
             "max_routing_layer": config.pdk.max_routing_layer,
             "min_layer_mode": config.pdk.min_layer_mode,
             "max_layer_mode": config.pdk.max_layer_mode,
+            "calibre_drc_runset": config.pdk.calibre_drc_runset,
+            "calibre_lvs_runset": config.pdk.calibre_lvs_runset,
+            "tlu_plus_max": config.pdk.tlu_plus_max,
+            "tlu_plus_min": config.pdk.tlu_plus_min,
+            "tech2itf_map": config.pdk.tech2itf_map,
+            "setup_voltage_v": config.pdk.setup_voltage_v,
+            "hold_voltage_v": config.pdk.hold_voltage_v,
+            "temperature_c": config.pdk.temperature_c,
         },
         "libraries": {
             "std_cell_libs": config.libraries.std_cell_libs,

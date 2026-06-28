@@ -355,6 +355,12 @@ class ICC2Adapter(ToolAdapter):
             "create_placement -congestion",
             "place_opt",
             "",
+        ])
+
+        # Standard-cell PG rails (required for LVS connectivity)
+        lines.extend(self._gen_pg_rails())
+
+        lines.extend([
             "# Save",
             'save_block -as place',
             "save_lib",
@@ -372,6 +378,39 @@ class ICC2Adapter(ToolAdapter):
             "exit",
         ])
         return "\n".join(lines)
+
+    def _gen_pg_rails(self) -> list[str]:
+        """Generate ICC2 standard-cell power/ground rail commands."""
+        cfg = self.state.config
+        vdd = cfg.placement.power_net
+        vss = cfg.placement.ground_net
+        rail_layer = getattr(cfg.pdk, "std_cell_rail_layer", "M1")
+        rail_width = getattr(cfg.pdk, "std_cell_rail_width", "0.15")
+        return [
+            "# ---- Standard-cell PG rail generation ----",
+            "# Clean up any stale PG strategies/patterns from previous runs.",
+            "catch {remove_pg_strategies -all}",
+            "catch {remove_pg_patterns -all}",
+            "catch {remove_pg_via_master_rules -all}",
+            "catch {remove_pg_strategy_via_rules -all}",
+            "catch {remove_routes -net_types {power ground} -ring -stripe -macro_pin_connect -lib_cell_pin_connect}",
+            "",
+            f"# Create the std-cell rail pattern on {rail_layer} so every row",
+            f"# gets a {vdd}/{vss} follow-pin that overlaps the std-cell pins.",
+            f'create_pg_std_cell_conn_pattern std_cell_rail_pattern -layer {rail_layer} -rail_width {rail_width}',
+            "",
+            f"# Apply the rail pattern to {vdd} and {vss}, extending to the",
+            f"# design boundary and creating top-level pins for LVS.",
+            f'set_pg_strategy std_cell_rails -core \\',
+            f'    -pattern {{{{name: std_cell_rail_pattern}}{{nets: {{{vdd} {vss}}}}}}} \\',
+            '    -extension {{stop: design_boundary_and_generate_pin}}',
+            "",
+            "compile_pg -strategies std_cell_rails",
+            "",
+            "check_pg_connectivity > ./rpt/pg_connectivity.rpt",
+            "report_pg_strategies > ./rpt/pg_strategies.rpt",
+            "",
+        ]
 
     def _gen_cts(self) -> str:
         cfg = self.state.config
@@ -437,10 +476,20 @@ class ICC2Adapter(ToolAdapter):
             "clock_opt -from build_clock -to build_clock",
             "clock_opt -from route_clock -to route_clock",
             "",
-            "# Final optimization",
-            "clock_opt -from final_opto -to final_opto",
-            "",
         ])
+
+        # Guard final_opto: in GRE mode, running it twice errors out.
+        # Use catch to make it non-fatal and only run once.
+        if not getattr(cfg.cts, 'skip_redundant_final_opto', False):
+            lines.extend([
+                "# Final optimization (guarded — GRE mode disallows repeated iterations)",
+                "if {[catch {clock_opt -from final_opto -to final_opto} err_msg]} {",
+                '    puts "WARNING: final_opto skipped: $err_msg",',
+                "}",
+                "",
+            ])
+
+        lines.append("")
 
         # Inter-clock balance
         if cfg.cts.inter_clock_balance:

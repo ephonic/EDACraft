@@ -175,19 +175,18 @@ def test_icc2_routing_si_analysis():
 
     script = adapter.generate_script()
 
-    # SI options
-    assert "set_si_options" in script
-    assert "delta_delay" in script
-    assert "static_noise" in script
-    assert "timing_window" in script
+    # SI options use ICC2 app options
+    assert "time.si_enable_analysis" in script
 
-    # Route options
-    assert "set_route_zrt_common_options" in script
-    assert "set_route_zrt_global_options" in script
-    assert "set_route_zrt_detail_options" in script
+    # Route options use ICC2 app options
+    assert "route.global.timing_driven" in script
+    assert "route.track.timing_driven" in script
+    assert "route.detail.timing_driven" in script
 
-    # Antenna
-    assert "antenna" in script
+    # Route commands
+    assert "route_global" in script
+    assert "route_track" in script
+    assert "route_detail" in script
 
 
 def test_icc2_cts_industrial():
@@ -201,7 +200,6 @@ def test_icc2_cts_industrial():
 
     assert "set_clock_tree_options" in script
     assert "target_skew" in script
-    assert "ocv_clustering" in script
     assert "clock_opt" in script
     assert "report_clock_timing" in script
 

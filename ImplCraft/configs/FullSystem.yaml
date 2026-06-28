@@ -1,8 +1,8 @@
 # =============================================================================
-# FullSystem Design Configuration
+# FullSystem Design Configuration — TSMC 28nm HPC+, 150MHz
 # =============================================================================
-# This file defines all synthesis and implementation options for this design.
-# Modify values as needed for your specific project.
+# Backward-compatible flat schema (legacy).  The framework loader converts this
+# automatically to the nested schema used by the adapters.
 # =============================================================================
 
 design_name: "FullSystem"
@@ -11,60 +11,91 @@ scenario: "func.tt0p9v.wc.cmax_25c.setup"
 
 # ---- Die size ----
 die:
-  width_um: 2900.0
-  height_um: 1900.0
-  core_offset_um: [180, 180, 180, 180]
+  width_um: 3200.0
+  height_um: 2200.0
+  core_offset_um: [200, 200, 200, 200]
   target_utilization: 0.7
 
+target_utilization: 0.7
+
 # ---- RTL sources ----
-# Priority: filelist > dir > files
 rtl:
-  dir: "syn/rtl"                    # RTL directory
-  # filelist: "syn/rtl/filelist.f"  # Alternative: use filelist.f
-  # files:                          # Alternative: explicit file list
-  #   - "syn/rtl/top.v"
-  #   - "syn/rtl/sub.v"
+  dir: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/rtl"
 
 # ---- SDC constraints ----
-sdc_file: "syn/CMD/FullSystem.sdc"
+# Generated inline by the DC adapter; written out after synthesis for ICC2.
+sdc_file: ""
 
 # ---- Libraries ----
 libraries:
   std_cell:
-    - "tcbn28hpcplusbwp30p140tt0p9v25c.db"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/syn_libs/tcbn28hpcplusbwp30p140uhvttt0p9v25c.db"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/syn_libs/tcbn28hpcplusbwp30p140ffg0p88v0c.db"
   io:
-    - "tphn28hpcpgv18tt0p9v1p8v25c.db"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/syn_libs/tphn28hpcpgv18tt0p9v1p8v25c.db"
   macro:
-    - "ts1n28hpcphvtb128x96m4swbaso_180a_tt0p9v25c.db"
-    - "ts1n28hpcphvtb128x32m4swbaso_180a_tt0p9v25c.db"
+    # Only PLL is needed for DC link; SRAMs are instantiated structurally.
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/syn_libs/PLLTS28HPMFRAC_BC.db"
+  ndm_libs:
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/STDCELL.ndm"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/PORT.ndm"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/PORT_merge_db_physical_only.ndm"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/PLL.ndm"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/RAMNEW.ndm"
   main_lib_name: "tcbn28hpcplusbwp30p140"
-  driver_cell: "BUFFX4"
-  # dont_use_cells: []
-  # vt_libs:
-  #   HVT: ["lib_hvt.db"]
-  #   LVT: ["lib_lvt.db"]
+  driver_cell: "INVD1BWP30P140UHVT"
+  tap_cell: "TAPCELLBWP30P140"
+  endcap_cell: "ENDCAPBWP30P140"
+  decap_cells:
+    - "DCAP4BWP30P140"
+    - "DCAP8BWP30P140"
+    - "DCAP16BWP30P140"
+  filler_cells:
+    - "FILL1BWP30P140"
+    - "FILL2BWP30P140"
+    - "FILL4BWP30P140"
+    - "FILL8BWP30P140"
 
 # ---- PDK ----
 pdk:
   name: "tsmc28hpcp"
+  tech_file: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/tf/tsmcn28_10lm7X2ZUTRDL_HVH.tf"
   metal_stack: ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "AP"]
   min_routing_layer: "M2"
   max_routing_layer: "M9"
+  calibre_drc_runset: "/share/home/yangfan/bp_to/CLN28HP_10M_7X2Z_002.23a.encrypt"
+  calibre_lvs_runset: "/share/home/yangfan/bp_to/CLN28HP_10M_7X2Z_002.23a.encrypt"
+  tlu_plus_max: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/tf/cmax.cln28hpm_1p10m+ut-alrdl_7x2z_rcworst.tluplus"
+  tlu_plus_min: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/tf/cmin.cln28hpm_1p10m+ut-alrdl_7x2z_cworst.tluplus"
+  tech2itf_map: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/tf/tech2itf.map"
+  setup_voltage_v: 0.9
+  hold_voltage_v: 0.88
+  temperature_c: 85.0
+  gds_map_file: "/share/home/yangfan/backend_scripts/ImplCraft/bp_run/gdsout.map"
+  # Innovus requires LEF + Liberty (not Synopsys .db / ICC2 NDM).
+  lef_files:
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tsmcn28_10lm5X2Y2ZUTRDL.tlef"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tcbn28hpcplusbwp30p140hvt.lef"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tcbn28hpcplusbwp30p140.lef"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tcbn28hpcplusbwp30p140lvt.lef"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tcbn28hpcplusbwp30p140ulvt.lef"
 
 # ---- EDA tool environment paths ----
 eda:
   synopsys: "/share/apps/EDAs/syn22.bash"
   primetime: "/share/apps/EDAs/syn22.bash"
   mentor: "/share/apps/EDAs/mg.bash"
+  cadence: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/cadence_env.bash"
 
 # ---- Clocks ----
+# Target: 150 MHz => period = 6.667 ns
 clocks:
   - name: "sys_clk"
-    period_ns: 10.0
-    pin_or_port: "sys_clk"
-    setup_uncertainty_ns: 0.5
-    hold_uncertainty_ns: 0.3
-    transition_ns: 0.15
+    period_ns: 6.667
+    pin_or_port: "pad_sys_clk"
+    setup_uncertainty_ns: 0.1
+    hold_uncertainty_ns: 0.05
+    transition_ns: 0.08
     clock_type: "CTS"
 
 # ---- Timing derate (OCV) ----
@@ -81,35 +112,15 @@ synthesis:
   no_autoungroup: true
   timing_high_effort: true
   incremental_compile: false
-  num_cores: 8
+  num_cores: 16
 
   # ---- Physical awareness (DC-T) ----
   physical:
     enabled: false
-    # tlu_plus_file: "tlu/tt.tluplus"
-    # tech2itf_map: "tlu/tech2itf.map"
-    # floorplan_file: "syn/floorplan.fp"
-    # def_file: "syn/floorplan.def"
-    # constraints_file: "syn/phy_cons.tcl"
-    # floorplan_exploration: false
 
   # ---- Multi-Corner Multi-Mode ----
   mcmm:
     enabled: false
-    # default_scenario: "func_tt"
-    # scenarios:
-    #   - name: "func_tt"
-    #     corner: "tt"
-    #     analysis_type: "on_chip_variation"
-    #     setup: true
-    #     hold: true
-    #     sdc_file: "syn/CMD/func_tt.sdc"
-    #   - name: "func_ss"
-    #     corner: "ss"
-    #     analysis_type: "on_chip_variation"
-    #     setup: true
-    #     hold: true
-    #     sdc_file: "syn/CMD/func_ss.sdc"
 
   # ---- Power optimization ----
   power:
@@ -132,8 +143,8 @@ synthesis:
   # ---- Timing constraints ----
   timing:
     critical_range_ns: 0.0
-    max_transition: 0.5
-    max_fanout: 20
+    max_transition: 0.15
+    max_fanout: 30
     max_capacitance: 0.5
     register_merging: false
 
@@ -149,122 +160,56 @@ synthesis:
   # ---- SVF / ECO support ----
   svf_enabled: true
 
-  # ---- VT control ----
-  # vt_control:
-  #   dont_use:
-  #     HVT: [".*HVT.*"]
-  #     LVT: [".*LVT.*"]
-  #   release:
-  #     HVT: ["CLK.*"]
-
-  # ---- Hierarchy management ----
-  hierarchy:
-    keep: []                        # Modules to preserve hierarchy
-    flatten_all: false
-    flatten_start_level: 2
-    size_only_patterns: []          # Patterns for set_size_only
-
-  # ---- Non-Default Routing Rules ----
-  # ndr_constraints_file: "syn/CMD/netNDR.tcl"
-  # compile_constraints_file: "syn/CMD/compile_cons.tcl"
-  # place_constraints_file: "syn/CMD/place_cons.tcl"
-
-  # ---- Auto-weight adjustment ----
-  auto_weight_adjustment: false
-
-  # ---- Port buffers ----
-  # insert_port_buffers: ["port_a", "port_b"]
-
 # =============================================================================
 # CLOCK TREE SYNTHESIS
 # =============================================================================
 cts:
-  target_skew_ns: 0.1
+  target_skew_ns: 0.15
   target_early_delay_ns: 0.0
 
 # =============================================================================
 # PLACEMENT
 # =============================================================================
 placement:
-  # target_utilization inherited from die section
+  target_utilization: 0.7
+  congestion_effort: "high"
+  insert_endcap: true
+  insert_welltap: true
+  tap_distance_um: 40.0
 
 # =============================================================================
 # ROUTING
 # =============================================================================
 routing:
-  # Use defaults or customize as needed
+  timing_driven: true
+  si_driven: true
+  antenna_fixing: true
+  redundant_via: true
+  effort: "high"
 
 # =============================================================================
 # PRIMETIME STA SIGN-OFF
 # =============================================================================
 pt:
-  num_cores: 8
+  num_cores: 16
   significant_digits: 3
-  
-  # ---- Inputs (auto-detected from previous stages if empty) ----
-  netlist_file: ""                      # Gate-level netlist
-  sdc_file: ""                          # SDC constraints
-  spef_file: ""                         # SPEF parasitics
-  spef_format: "auto"                   # auto, SPEF, DSPF, SPEF_GZ
-  
-  # ---- Multi-VT and dont_use ----
-  vt_groups: {}                         # lib_pattern -> vt_group_name
-  dont_use_patterns: []
-  custom_dont_use: []
-  custom_remove_dontuse: []
-  
-  # ---- Timing ----
-  timing_derate_late: 1.0               # Use timing_derate section if 1.0
-  timing_derate_early: 1.0
   enable_cppr: true
-  cppr_threshold_ps: 1.0
   enable_si_analysis: true
-  
-  # ---- Power Analysis ----
   enable_power_analysis: true
-  power_mode: "averaged"                # averaged, time_based
-  vcd_file: ""
-  vcd_strip_path: ""
-  vcd_time_range: []
-  saif_file: ""
-  saif_strip_path: ""
-  
-  # ---- Path Group Analysis ----
   max_paths: 200
   nworst: 1
-  report_transition: true
-  report_net: true
-  report_capacitance: true
-  slack_lesser_than: 0.0
-  
-  # ---- ECO Fixing (disabled by default) ----
-  enable_eco: false
-  # eco_physical_mode: "placement"
-  # lef_library: ""
-  # final_def: ""
-  # fix_setup: false
-  # fix_hold: false
-  # fix_drc: false
-  # fix_power: false
-  # fix_leakage: false
-  # setup_opt_margin: 0.0
-  # hold_opt_margin: 0.0
-  # setup_opt_slack: 0.0
-  # hold_opt_slack: 0.0
-  # fix_setup_groups: []
-  # fix_hold_groups: []
-  # fix_drc_buffer_list: []
-  # fix_hold_buffer_list: []
-  # eco_power_priority: []
-  # power_opt_margin: 0.0
-  
-  # ---- Model Extraction ----
-  enable_model_extraction: false
-  input_transition: 0.3
-  
-  # ---- Reports and Session ----
   save_session: true
-  session_name: ""                      # Auto from design_name
-  report_path: "./PT/report"
-  output_path: "./PT/out"
   enable_analysis_coverage: true
+
+# =============================================================================
+# INNOVUS PHYSICAL IMPLEMENTATION
+# =============================================================================
+innovus:
+  num_cores: 8
+
+# =============================================================================
+# FLOW OPTIONS
+# =============================================================================
+flow:
+  work_root: "./work_150mhz"
+  dry_run: false

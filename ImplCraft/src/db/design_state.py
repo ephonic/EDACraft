@@ -125,6 +125,26 @@ class PDKConfig:
     antenna_rule_file: str = ""
     icv_drc_runset: str = ""
     icv_fill_runset: str = ""
+    calibre_drc_runset: str = ""
+    calibre_lvs_runset: str = ""
+    std_cell_gds: str = ""               # Standard-cell GDS library for Calibre DRC/LVS
+    std_cell_spice: str = ""             # Standard-cell SPICE/CDL library for Calibre LVS
+    power_nets: list[str] = field(default_factory=lambda: ["VDD"])
+    ground_nets: list[str] = field(default_factory=lambda: ["VSS"])
+    tlu_plus_max: str = ""              # Worst-case (max) TLU+ parasitic file
+    tlu_plus_min: str = ""              # Best-case (min) TLU+ parasitic file
+    tech2itf_map: str = ""              # Technology-to-ITF layer mapping file
+    setup_voltage_v: float = 0.9          # Voltage for setup corner
+    hold_voltage_v: float = 0.88          # Voltage for hold corner
+    temperature_c: float = 25.0           # Temperature for both corners
+    innovus_site_name: str = "core"       # Innovus floorplan site name (must match tech LEF)
+    pegasus_drc_runset: str = ""          # Pegasus DRC rule deck
+    pegasus_lvs_runset: str = ""          # Pegasus LVS rule deck
+    nxtgrd_max: str = ""                 # StarRC nxtgrd file (max corner)
+    nxtgrd_min: str = ""                 # StarRC nxtgrd file (min corner)
+    starrc_layer_map: str = ""           # StarRC layer map file
+    cell_name_suffix_strip: str = ""     # VT suffix to strip from netlist (e.g. "UHVT")
+    liberty_suffix_strip: str = ""       # VT suffix to strip from Liberty (e.g. "HVT")
 
 
 @dataclass
@@ -177,6 +197,7 @@ class LibraryConfig:
     macro_libs: list[str] = field(default_factory=list)
     io_libs: list[str] = field(default_factory=list)
     ndm_libs: list[str] = field(default_factory=list)
+    liberty_libs: list[str] = field(default_factory=list)  # .lib files for Innovus
     dont_use_cells: list[str] = field(default_factory=list)
     vt_libs: dict[str, list[str]] = field(default_factory=dict)
     main_lib_name: str = ""
@@ -217,6 +238,7 @@ class CTSConfig:
     logic_level_balance: bool = False
     routing_layers: list[str] = field(default_factory=list)
     stop_pin_on_macro: bool = True
+    skip_redundant_final_opto: bool = False
 
 
 @dataclass

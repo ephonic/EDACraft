@@ -1,7 +1,6 @@
 # =============================================================================
 # Design Compiler Synthesis Configuration
-# =============================================================================
-# DC synthesis specific options.
+# DC synthesis specific options for FullSystem @ 150MHz.
 # =============================================================================
 
 synthesis:
@@ -10,35 +9,15 @@ synthesis:
   no_autoungroup: true
   timing_high_effort: true
   incremental_compile: false
-  num_cores: 8
+  num_cores: 16
 
   # ---- Physical awareness (DC-T) ----
   physical:
     enabled: false
-    # tlu_plus_file: "tlu/tt.tluplus"
-    # tech2itf_map: "tlu/tech2itf.map"
-    # floorplan_file: "syn/floorplan.fp"
-    # def_file: "syn/floorplan.def"
-    # constraints_file: "syn/phy_cons.tcl"
-    # floorplan_exploration: false
 
   # ---- Multi-Corner Multi-Mode ----
   mcmm:
     enabled: false
-    # default_scenario: "func_tt"
-    # scenarios:
-    #   - name: "func_tt"
-    #     corner: "tt"
-    #     analysis_type: "on_chip_variation"
-    #     setup: true
-    #     hold: true
-    #     sdc_file: "syn/CMD/func_tt.sdc"
-    #   - name: "func_ss"
-    #     corner: "ss"
-    #     analysis_type: "on_chip_variation"
-    #     setup: true
-    #     hold: true
-    #     sdc_file: "syn/CMD/func_ss.sdc"
 
   # ---- Power optimization ----
   power:
@@ -61,8 +40,8 @@ synthesis:
   # ---- Timing constraints ----
   timing:
     critical_range_ns: 0.0
-    max_transition: 0.5
-    max_fanout: 20
+    max_transition: 0.15
+    max_fanout: 30
     max_capacitance: 0.5
     register_merging: false
 
@@ -77,29 +56,3 @@ synthesis:
 
   # ---- SVF / ECO support ----
   svf_enabled: true
-
-  # ---- VT control ----
-  # vt_control:
-  #   dont_use:
-  #     HVT: [".*HVT.*"]
-  #     LVT: [".*LVT.*"]
-  #   release:
-  #     HVT: ["CLK.*"]
-
-  # ---- Hierarchy management ----
-  hierarchy:
-    keep: []                        # Modules to preserve hierarchy
-    flatten_all: false
-    flatten_start_level: 2
-    size_only_patterns: []          # Patterns for set_size_only
-
-  # ---- Non-Default Routing Rules ----
-  # ndr_constraints_file: "syn/CMD/netNDR.tcl"
-  # compile_constraints_file: "syn/CMD/compile_cons.tcl"
-  # place_constraints_file: "syn/CMD/place_cons.tcl"
-
-  # ---- Auto-weight adjustment ----
-  auto_weight_adjustment: false
-
-  # ---- Port buffers ----
-  # insert_port_buffers: ["port_a", "port_b"]
