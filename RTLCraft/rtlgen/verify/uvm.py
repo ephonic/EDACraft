@@ -1839,7 +1839,22 @@ def _emit_dsl_dut_sv(module: Any) -> str:
             always_ff=True,
         ),
     )
-    return emitter.emit_design(module)
+    preferred_name = _preferred_runtime_dut_source_name(module)
+    sentinel = object()
+    old_name = getattr(module, "_verilog_module_name", sentinel)
+    if preferred_name is not None:
+        setattr(module, "_verilog_module_name", preferred_name)
+    try:
+        return emitter.emit_design(module)
+    finally:
+        if preferred_name is not None:
+            if old_name is sentinel:
+                try:
+                    delattr(module, "_verilog_module_name")
+                except AttributeError:
+                    pass
+            else:
+                setattr(module, "_verilog_module_name", old_name)
 
 
 def _write_generated_artifacts(
@@ -2164,16 +2179,28 @@ def _infer_preferred_sv_module_name(source: str, module: Any, executable: SimMod
         if line.strip().startswith("module ")
     ]
     for candidate in (
-        getattr(module, "name", None),
-        executable.name,
         module.__class__.__name__,
         getattr(module, "_type_name", None),
+        getattr(module, "name", None),
+        executable.name,
     ):
         if candidate and candidate in module_names:
             return candidate
     if module_names:
         return module_names[-1]
     return getattr(module, "name", None) or getattr(module, "_type_name", executable.name)
+
+
+def _preferred_runtime_dut_source_name(module: Any) -> Optional[str]:
+    existing = getattr(module, "_verilog_module_name", None)
+    if existing:
+        return None
+    type_name = getattr(module, "_type_name", None)
+    if not type_name:
+        return None
+    if getattr(module, "_module_doc", None) is None:
+        return None
+    return str(type_name)
 
 
 def _snake_name(name: str) -> str:

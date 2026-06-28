@@ -8,6 +8,11 @@ This release is published under the package name `rtlgen`. The historical
 focuses on a small, inspectable, engineer-controlled flow rather than a large
 prompt or workflow framework.
 
+Some older examples still import `rtlgen_x`. The repository keeps a narrow
+`rtlgen_x` compatibility package that forwards the legacy `dsl`, `sim`,
+`archsim`, `ppa`, and `verify` paths to `rtlgen`. New code should import
+`rtlgen` directly; `rtlgen_x` is a compatibility surface, not a new API.
+
 ## Design Philosophy
 
 ### White-Box RTL, Not Black-Box HLS

@@ -563,8 +563,10 @@ def lower_dsl_module_to_sim(
     state_inits, memory_inits = _collect_initial_values(module)
     if lowered_source is not module:
         lowered_state_inits, lowered_memory_inits = _collect_initial_values(lowered_source)
-        state_inits.update(lowered_state_inits)
-        memory_inits.update(lowered_memory_inits)
+        for name, value in lowered_state_inits.items():
+            state_inits.setdefault(name, value)
+        for name, values in lowered_memory_inits.items():
+            memory_inits.setdefault(name, values)
 
     signals: List[SimSignal] = []
     signal_map: Dict[str, SimSignal] = {}
@@ -2204,9 +2206,10 @@ def _lower_slice_assign(
         raise DslLoweringError("slice assignment must target a signal")
     base_signal = target.operand.signal
     replacement_value = _lower_expr(value, env)
+    base_value = env._assigned.get(base_signal.name, env.read(base_signal.name))
     if isinstance(target.hi, int) and isinstance(target.lo, int):
         replacement = _replace_bit_range_expr(
-            env.read(base_signal.name),
+            base_value,
             target.lo,
             target.width,
             replacement_value,
@@ -2214,7 +2217,7 @@ def _lower_slice_assign(
         )
     else:
         replacement = _replace_dynamic_range_expr(
-            env.read(base_signal.name),
+            base_value,
             _lower_expr(target.lo, env),
             target.width,
             replacement_value,
@@ -2241,17 +2244,18 @@ def _lower_bitselect_assign(
     if not isinstance(target.operand, _REF_TYPES):
         raise DslLoweringError("bit-select assignment must target a signal")
     base_signal = target.operand.signal
+    base_value = env._assigned.get(base_signal.name, env.read(base_signal.name))
     index = _const_int(target.index)
     if index is None:
         replacement = _replace_dynamic_bit_expr(
-            env.read(base_signal.name),
+            base_value,
             _lower_expr(target.index, env),
             _lower_expr(value, env),
             base_signal.width,
         )
     else:
         replacement = _replace_bit_range_expr(
-            env.read(base_signal.name),
+            base_value,
             index,
             1,
             _lower_expr(value, env),
@@ -2278,10 +2282,11 @@ def _lower_partselect_assign(
     if not isinstance(target.operand, _REF_TYPES):
         raise DslLoweringError("part-select assignment must target a signal")
     base_signal = target.operand.signal
+    base_value = env._assigned.get(base_signal.name, env.read(base_signal.name))
     offset = _const_int(target.offset)
     if offset is None:
         replacement = _replace_dynamic_range_expr(
-            env.read(base_signal.name),
+            base_value,
             _lower_expr(target.offset, env),
             target.width,
             _lower_expr(value, env),
@@ -2289,7 +2294,7 @@ def _lower_partselect_assign(
         )
     else:
         replacement = _replace_bit_range_expr(
-            env.read(base_signal.name),
+            base_value,
             offset,
             target.width,
             _lower_expr(value, env),
@@ -2538,6 +2543,29 @@ def _normalize_cross_module_assignments(module):
                 )
             return expr
 
+        def direct_external_output_passthrough(stmt: DslAssign, owner_module: Module) -> bool:
+            target_signal = direct_signal(getattr(stmt, "target", None))
+            value_signal = direct_signal(getattr(stmt, "value", None))
+            if target_signal is None or value_signal is None:
+                return False
+            if getattr(target_signal, "_parent_module", None) is not owner_module:
+                return False
+            if not any(target_signal is output for output in owner_module._outputs.values()):
+                return False
+            signal_owner = getattr(value_signal, "_parent_module", None)
+            if not isinstance(signal_owner, Module) or signal_owner is owner_module:
+                return False
+            if not getattr(signal_owner, "_external_verilog", False):
+                return False
+            port_name = find_port_name(signal_owner, value_signal)
+            if port_name is None or port_name not in signal_owner._outputs:
+                return False
+            if getattr(target_signal, "width", None) != getattr(value_signal, "width", None):
+                return False
+            info = ensure_submodule_info(signal_owner)
+            info["outputs"][port_name] = target_signal
+            return True
+
         def normalize_body(body: List[object]) -> None:
             to_remove: List[int] = []
             for i, stmt in enumerate(body):
@@ -2564,6 +2592,10 @@ def _normalize_cross_module_assignments(module):
                         info["inputs"][port_name] = value_expr
                         to_remove.append(i)
                         continue
+
+                if direct_external_output_passthrough(stmt, mod):
+                    to_remove.append(i)
+                    continue
 
                 # Parent consumes child output port.
                 rewritten_value = rewrite_child_output_expr(value_expr, mod)

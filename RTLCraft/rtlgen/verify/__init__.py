@@ -18,6 +18,12 @@ from rtlgen.verify.cdc import (
     analyze_cdc,
     emit_cdc_report_markdown,
 )
+from rtlgen.verify.foundation import (
+    FoundationContractReport,
+    analyze_foundation_contract,
+    emit_foundation_contract_markdown,
+    foundation_contract_report_to_json,
+)
 from rtlgen.verify.directed import (
     DirectedTestReport,
     StreamingVerificationReport,
@@ -135,6 +141,7 @@ __all__ = [
     "WishboneTransfer",
     "InterruptEvent",
     "DirectedTestReport",
+    "FoundationContractReport",
     "GeneratedArtifact",
     "IverilogCollateralProbeReport",
     "PythonUvmCoverage",
@@ -172,6 +179,7 @@ __all__ = [
     "axi_memory_reference_model",
     "axistream_sequence",
     "analyze_cdc",
+    "analyze_foundation_contract",
     "csr_reference_model",
     "csr_sequence",
     "interrupt_reference_model",
@@ -183,6 +191,8 @@ __all__ = [
     "describe_verification_interface",
     "emit_python_reference_model",
     "emit_cdc_report_markdown",
+    "emit_foundation_contract_markdown",
+    "foundation_contract_report_to_json",
     "dump_python_uvm_triage",
     "generate_uvm_collateral",
     "generate_uvm_runtime_bundle",

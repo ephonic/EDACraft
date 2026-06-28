@@ -282,7 +282,7 @@ _STDLIB_ENTRIES: Tuple[StdlibEntry, ...] = (
         ),
         public_api=("rtlgen.dsl.SkidBuffer",),
         related=("ReadyValid",),
-        notes="Lowering, simulation, emitted RTL, Python-UVM, and generated directed UVM collateral/runtime bundle are regression-covered locally; broader external-simulator UVM closure remains intentionally partial.",
+        notes="Lowering, simulation, emitted RTL, Python-UVM, and generated directed UVM collateral/runtime bundle are regression-covered locally; foundation preflight passes cleanly, while broader external-simulator UVM closure remains intentionally partial.",
     ),
     StdlibEntry(
         name="ReadyValidRegister",
@@ -324,7 +324,7 @@ _STDLIB_ENTRIES: Tuple[StdlibEntry, ...] = (
         ),
         public_api=("rtlgen.dsl.ReadyValidFIFO",),
         related=("ReadyValid", "ReadyValidVIP"),
-        notes="Useful as the current protocol-aware queue primitive for ready/valid datapaths, with lowering, simulation, Python-UVM, and generated directed UVM collateral/runtime bundle now regression-covered locally.",
+        notes="Useful as the current protocol-aware queue primitive for ready/valid datapaths, with lowering, simulation, Python-UVM, generated directed UVM collateral/runtime bundle, and foundation storage/readability preflight now regression-covered locally.",
     ),
     StdlibEntry(
         name="ReadyValidAsyncBridge",
@@ -387,7 +387,7 @@ _STDLIB_ENTRIES: Tuple[StdlibEntry, ...] = (
         ),
         public_api=("rtlgen.dsl.APBRegisterBank", "rtlgen.verify.generate_uvm_runtime_bundle"),
         related=("APB", "APBVIP"),
-        notes="This is the strongest current control-plane stdlib closure for lowering, simulation, and generated-UVM smoke usage; raw async reset release still appears as a CDC warning until a per-domain reset-release wrapper is authored.",
+        notes="This is the strongest current control-plane stdlib closure for lowering, simulation, and generated-UVM smoke usage; foundation preflight passes with a raw async reset-release CDC warning until a per-domain reset-release wrapper is authored.",
     ),
     StdlibEntry(
         name="AXI4LiteRegisterBank",
@@ -408,7 +408,7 @@ _STDLIB_ENTRIES: Tuple[StdlibEntry, ...] = (
         ),
         public_api=("rtlgen.dsl.AXI4LiteRegisterBank", "rtlgen.verify.generate_uvm_runtime_bundle"),
         related=("AXI4Lite", "AXI4LiteVIP"),
-        notes="Generated-UVM directed-sequence closure is available via protocol transfer bridging, and the current synchronous-reset implementation does not introduce a reset-release CDC warning.",
+        notes="Generated-UVM directed-sequence closure is available via protocol transfer bridging, and foundation preflight currently passes without a reset-release CDC warning for the synchronous-reset implementation.",
     ),
     StdlibEntry(
         name="WishboneRegisterBank",
@@ -429,7 +429,7 @@ _STDLIB_ENTRIES: Tuple[StdlibEntry, ...] = (
         ),
         public_api=("rtlgen.dsl.WishboneRegisterBank", "rtlgen.verify.generate_uvm_runtime_bundle"),
         related=("Wishbone", "WishboneClockedVIP"),
-        notes="Closes on the registered-ack Wishbone helper path rather than the simpler same-step mode, and the current synchronous-reset implementation does not introduce a reset-release CDC warning.",
+        notes="Closes on the registered-ack Wishbone helper path rather than the simpler same-step mode, and foundation preflight currently passes without a reset-release CDC warning for the synchronous-reset implementation.",
     ),
     StdlibEntry(
         name="SyncFIFO",
@@ -471,7 +471,7 @@ _STDLIB_ENTRIES: Tuple[StdlibEntry, ...] = (
         ),
         public_api=("rtlgen.dsl.AsyncFIFO",),
         related=("ReadyValidAsyncBridge",),
-        notes="Lowering, Python/C++ multi-clock simulation, Python-UVM, and generated directed multi-clock UVM collateral are regression-covered; broader protocol-aware or randomized UVM closure remains intentionally conservative.",
+        notes="Lowering, Python/C++ multi-clock simulation, Python-UVM, generated directed multi-clock UVM collateral, and foundation CDC primitive preflight are regression-covered; broader protocol-aware or randomized UVM closure remains intentionally conservative.",
     ),
     StdlibEntry(
         name="MAC",
@@ -534,7 +534,7 @@ _STDLIB_ENTRIES: Tuple[StdlibEntry, ...] = (
         ),
         public_api=("rtlgen.dsl.RegisterFile",),
         related=("DualPortRAM",),
-        notes="Review-profile readability regression covers explicit decoded reads and writes; memory semantic standardization beyond this helper remains future work.",
+        notes="Review-profile readability and foundation preflight regression cover explicit decoded reads and writes; memory semantic standardization beyond this helper remains future work.",
     ),
     StdlibEntry(
         name="DualPortRAM",

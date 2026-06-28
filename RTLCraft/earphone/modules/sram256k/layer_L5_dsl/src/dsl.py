@@ -36,21 +36,21 @@ class EarphoneSRAM256K(Module):
         self.rdata_reg = Reg(32, "rdata_reg", init_value=0)
 
         addr_word = self.paddr[17:2]
-        mem_rdata = Wire(32, "mem_rdata")
-        mem_wdata = Wire(32, "mem_wdata")
-        sram_ce = Wire(1, "sram_ce")
+        self.mem_rdata = Wire(32, "mem_rdata")
+        self.mem_wdata = Wire(32, "mem_wdata")
+        self.sram_ce = Wire(1, "sram_ce")
 
         with self.comb:
             self.prdata <<= self.rdata_reg
             self.pready <<= self.psel & self.penable
             self.pslverr <<= 0
-            sram_ce <<= self.psel & self.penable
-            mem_rdata <<= self.mem[addr_word]
-            mem_wdata <<= Cat(
-                Mux(self.pstrb[3], self.pwdata[31:24], mem_rdata[31:24]),
-                Mux(self.pstrb[2], self.pwdata[23:16], mem_rdata[23:16]),
-                Mux(self.pstrb[1], self.pwdata[15:8], mem_rdata[15:8]),
-                Mux(self.pstrb[0], self.pwdata[7:0], mem_rdata[7:0]),
+            self.sram_ce <<= self.psel & self.penable
+            self.mem_rdata <<= self.mem[addr_word]
+            self.mem_wdata <<= Cat(
+                Mux(self.pstrb[3], self.pwdata[31:24], self.mem_rdata[31:24]),
+                Mux(self.pstrb[2], self.pwdata[23:16], self.mem_rdata[23:16]),
+                Mux(self.pstrb[1], self.pwdata[15:8], self.mem_rdata[15:8]),
+                Mux(self.pstrb[0], self.pwdata[7:0], self.mem_rdata[7:0]),
             )
 
         with self.seq(self.clk, ~self.rst_n):
@@ -58,11 +58,11 @@ class EarphoneSRAM256K(Module):
                 self.rdata_reg <<= 0
             with Else():
                 # Clock-gated SRAM access: only update on active APB transfers
-                with If(sram_ce):
+                with If(self.sram_ce):
                     with If(self.pwrite):
-                        self.mem[addr_word] <<= mem_wdata
+                        self.mem[addr_word] <<= self.mem_wdata
                     with Else():
-                        self.rdata_reg <<= mem_rdata
+                        self.rdata_reg <<= self.mem_rdata
 
         tpl = ModuleDocTemplate(
             source="earphone/modules/sram256k/layer_L5_dsl/src/dsl.py",
