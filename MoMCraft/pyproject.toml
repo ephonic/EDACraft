@@ -1,0 +1,64 @@
+[build-system]
+# pybind11 3.0.x 与部分 Anaconda Python（旧 CRT 构建）在静态初始化处崩溃，
+# 锁定 2.13.x 直到上游修复。
+requires = ["scikit-build-core>=0.10", "pybind11>=2.13,<3"]
+build-backend = "scikit-build-core.build"
+
+[project]
+name = "mom"
+version = "0.1.0"
+description = "MoMCraft — 互连线 S 参数提取（MoM + 多层介质格林函数）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "MoMCraft contributors" }]
+keywords = ["MoM", "method-of-moments", "S-parameters", "interconnect", "UCIe", "EDA"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+gmsh = ["gmsh>=4.11"]
+plot = ["matplotlib>=3.7"]
+dev = ["pytest>=7", "scikit-rf>=0.30"]
+
+[project.urls]
+Homepage = "https://github.com/ephonic/EDACraft"
+Repository = "https://github.com/ephonic/EDACraft/tree/main/MoMCraft"
+
+[tool.scikit-build]
+minimum-version = "0.10"
+build-dir = "build"
+# 默认 Release；开发可用 CMAKE_BUILD_TYPE=Debug
+cmake.build-type = "Release"
+# 让 scikit-build-core 用系统 CMake / Ninja，而不是下载
+cmake.args = []
+
+[tool.scikit-build.cmake.define]
+MOM_BUILD_PYTHON = "ON"
+MOM_BUILD_TESTS = "OFF"
+
+# Python 源码包在 py/ 下；C++ 扩展由 scikit-build-core 装入 mom 包目录
+[tool.scikit-build.wheel]
+packages = ["py/mom"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# 可被环境变量覆盖：MOM_USE_MINGW=ON 切换 MinGW 工具链
