@@ -1,0 +1,7 @@
+# 构建期依赖（C++ 扩展编译）
+# 注意：pybind11 3.0.x 与部分 Anaconda Python（旧 CRT 构建）在静态初始化处
+# 存在兼容性问题，锁定 2.13.x 以保证 import 稳定。
+pybind11>=2.13,<3
+scikit-build-core>=0.10
+# 运行期依赖
+numpy>=1.24

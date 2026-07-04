@@ -116,6 +116,48 @@ Key directories under `TCADCraft/`:
 See [TCADCraft/README.md](TCADCraft/README.md) for installation and usage details.
 
 
+### MoMCraft (`MoMCraft/`)
+
+A Method of Moments (MoM) electromagnetic solver for extracting S-parameters of
+3D interconnect structures — microstrip lines, multilayer substrates, through-
+silicon vias (TSVs), microbumps, and **UCIe (Universal Chiplet Interconnect
+Express)** packages — across the 0–60 GHz band. MoMCraft provides:
+
+- **Layered-medium dyadic Green's function**: spectral TM/TE reflection with
+  S-matrix recursion, QWE Sommerfeld integration, two-level Aksun tail
+  extraction, and surface-wave pole extraction (Chew search + Hankel domain).
+- **RWG basis functions** on triangular meshes for arbitrary planar and 3D
+  conductor surfaces, including **vertical-current support** for vias/TSVs.
+- **Two solver backends**: dense direct LU for small problems and
+  preconditioned FFT (pFFT) + GMRES for O(N log N) on large meshes.
+- **Schur N-port reduction** and Z→S conversion for multi-port extraction.
+- **High-level Python API**: `Microstrip`, `Structure`, `FreqSweep`, and
+  Touchstone 2.0 `.sNp` read/write.
+- **gmsh-based meshing**: rectangles, cylinder surfaces (TSV), vias with pads,
+  traces, and a built-in 32-bit UCIe structure builder.
+- **OpenMP parallelization** for matrix assembly and frequency sweeps.
+
+Key directories under `MoMCraft/`:
+
+- `core/` — C++17 solver core (Green's function, RWG assembly, solvers, sweep)
+- `bindings/` — pybind11 Python bindings (`_mom` extension)
+- `py/mom/` — Python package (high-level API + gmsh meshing + Touchstone I/O)
+- `examples/` — Runnable end-user examples
+- `tests/` — pytest smoke tests
+- `docs/` — Design notes (UCIe, vertical current, multi-port plan)
+
+Quick start:
+
+```bash
+cd MoMCraft
+pip install -e .          # builds the C++ _mom extension (needs CMake + C++17)
+python examples/run_touchstone_demo.py
+```
+
+See [MoMCraft/README.md](MoMCraft/README.md) for the full API and
+[MoMCraft/使用说明.md](MoMCraft/使用说明.md) for the Chinese tutorial.
+
+
 ### CktCraft (`CktCraft/`)
 
 A compact SPICE-style RF / analog circuit simulator with large-signal MOSFET periodic steady-state (Shooting-Newton + FFT harmonic extraction) and OSDI compact-model integration. CktCraft provides:

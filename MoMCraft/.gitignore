@@ -1,0 +1,33 @@
+# Build artifacts
+build/
+*.pyc
+__pycache__/
+*.obj
+*.lib
+*.dll
+*.so
+*.dylib
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+*.egg-info/
+dist/
+*.egg
+
+# Example outputs (regenerable) — but keep curated demo data in data/
+*.s2p
+*.s4p
+*.npz
+!data/*.s2p
+!data/*.s4p
