@@ -205,7 +205,10 @@ class AdaptiveRefiner:
             markers["z"] |= gz_c > thresholds["z"]
 
         if "epsilon" in grid.fields:
-            eps = grid.fields["epsilon"].reshape(nx, ny, nz)
+            # B档修复: must use to_3d (node order i+nx*(j+ny*k), i fastest), NOT
+            # plain .reshape(nx,ny,nz) (C-order, k fastest) — the latter scrambles
+            # i,j,k and flags material interfaces on the wrong axis in 3D.
+            eps = grid.to_3d(grid.fields["epsilon"])
             de_x = (eps[:-1, :-1, :-1] != eps[1:, :-1, :-1])
             de_y = (eps[:-1, :-1, :-1] != eps[:-1, 1:, :-1])
             de_z = (eps[:-1, :-1, :-1] != eps[:-1, :-1, 1:])
@@ -287,7 +290,9 @@ class AdaptiveRefiner:
         for fname in fields:
             if fname not in results:
                 continue
-            data = results[fname].reshape(nx, ny, nz)
+            # B档修复: to_3d (node order i fastest), not plain reshape (scrambles
+            # i,j,k in 3D — corrupts gradient/error markers and convergence metric).
+            data = grid.to_3d(results[fname])
             # Normalize to [0, 1] for scale-invariant thresholds
             dmin, dmax = data.min(), data.max()
             span = max(dmax - dmin, 1e-30)
@@ -709,7 +714,9 @@ class AdaptiveRefiner:
         for fname in fields:
             if fname not in results:
                 continue
-            data = results[fname].reshape(nx, ny, nz)
+            # B档修复: to_3d (node order i fastest), not plain reshape (scrambles
+            # i,j,k in 3D — corrupts gradient/error markers and convergence metric).
+            data = grid.to_3d(results[fname])
             dmin, dmax = data.min(), data.max()
             span = max(dmax - dmin, 1e-30)
             normed = (data - dmin) / span

@@ -58,6 +58,9 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_poisson_solver_type(int type)
         void set_continuity_solver_type(int type)
         void set_use_newton(cbool enable)
+        void set_newton_freeze_phi(cbool enable)
+        void set_newton_freeze_n(cbool enable)
+        void set_newton_freeze_p(cbool enable)
         void set_newton_damping(double damping)
         void set_newton_min_damping(double min_damping)
         void set_newton_use_line_search(cbool enable)
@@ -72,8 +75,25 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_btbt_enabled(cbool enable)
         void set_btbt_params(double A, double B, int D)
         void set_btbt_use_nonlocal(cbool enable)
+        void set_ii_enabled(cbool enable)
+        void set_ii_params(double A_n, double B_n, double A_p, double B_p)
+        void set_breakdown_enabled(cbool enable)
+        void set_breakdown_params(const vector[signed char]& bd_mask,
+                                  const vector[double]& E_bd, double sigma_bd)
+        vector[signed char] breakdown_state()
         void set_ferroelectric_enabled(cbool enable)
         void set_ferroelectric_params(const vector[signed char]& fe_mask, double alpha, double beta)
+        void set_ferroelectric_model(int model)
+        void set_ferroelectric_preisach(double ps, double ec, double escale)
+        void set_ferroelectric_builtin_field(double E_bi)
+        void set_ferroelectric_nls(double tau0, double E0, double dt)
+        void set_leakage(const vector[signed char]& mask,
+                         double C_pf, double B_pf, double phi_t,
+                         double C_fn, double B_fn, double phi_b,
+                         double E_floor, double sigma_cap)
+        void set_leakage_enabled(cbool enable)
+        void set_interface_traps(const vector[signed char]& mask, double D_it, double E_t)
+        void set_oxide_traps(const vector[double]& Q_ot)
         vector[double] fe_polarization()
 
         void set_initial_guess(const vector[double]& phi,
@@ -210,6 +230,15 @@ cdef class PyDeviceSimulator:
     def set_use_newton(self, bint enable):
         self._sim.set_use_newton(enable)
 
+    def set_newton_freeze_phi(self, bint enable):
+        self._sim.set_newton_freeze_phi(enable)
+
+    def set_newton_freeze_n(self, bint enable):
+        self._sim.set_newton_freeze_n(enable)
+
+    def set_newton_freeze_p(self, bint enable):
+        self._sim.set_newton_freeze_p(enable)
+
     def set_newton_damping(self, double damping):
         self._sim.set_newton_damping(damping)
 
@@ -255,12 +284,65 @@ cdef class PyDeviceSimulator:
     def set_btbt_use_nonlocal(self, bint enable):
         self._sim.set_btbt_use_nonlocal(enable)
 
+    def set_ii_enabled(self, bint enable):
+        self._sim.set_ii_enabled(enable)
+
+    def set_ii_params(self, double A_n, double B_n, double A_p, double B_p):
+        self._sim.set_ii_params(A_n, B_n, A_p, B_p)
+
+    def set_breakdown_enabled(self, bint enable):
+        self._sim.set_breakdown_enabled(enable)
+
+    def set_breakdown_params(self,
+                             np.ndarray[np.int8_t, ndim=1, mode="c"] bd_mask not None,
+                             np.ndarray[np.float64_t, ndim=1, mode="c"] E_bd not None,
+                             double sigma_bd):
+        self._sim.set_breakdown_params(np_to_vec_char(bd_mask), np_to_vec(E_bd), sigma_bd)
+
+    def breakdown_state(self):
+        cdef vector[signed char] s = self._sim.breakdown_state()
+        return np.array(s, dtype=np.int8)
+
     def set_ferroelectric_enabled(self, bint enable):
         self._sim.set_ferroelectric_enabled(enable)
 
     def set_ferroelectric_params(self, np.ndarray[np.int8_t, ndim=1, mode="c"] fe_mask not None,
                                  double alpha, double beta):
         self._sim.set_ferroelectric_params(np_to_vec_char(fe_mask), alpha, beta)
+
+    def set_ferroelectric_model(self, int model):
+        self._sim.set_ferroelectric_model(model)
+
+    def set_ferroelectric_preisach(self, double ps, double ec, double escale):
+        self._sim.set_ferroelectric_preisach(ps, ec, escale)
+
+    def set_ferroelectric_builtin_field(self, double E_bi):
+        # P2.1: internal/imprint field offset [V/m]; 0 => symmetric loop.
+        self._sim.set_ferroelectric_builtin_field(E_bi)
+
+    def set_ferroelectric_nls(self, double tau0, double E0, double dt):
+        # P3: NLS Merz-law tau(E)=tau0*exp(E0/|E|); dt = dwell time per step.
+        self._sim.set_ferroelectric_nls(tau0, E0, dt)
+
+    def set_leakage(self, np.ndarray[np.int8_t, ndim=1, mode="c"] mask not None,
+                    double C_pf, double B_pf, double phi_t,
+                    double C_fn, double B_fn, double phi_b,
+                    double E_floor, double sigma_cap):
+        # P2.2: Poole-Frenkel / Fowler-Nordheim leakage current.
+        self._sim.set_leakage(np_to_vec_char(mask),
+                              C_pf, B_pf, phi_t, C_fn, B_fn, phi_b, E_floor, sigma_cap)
+
+    def set_leakage_enabled(self, bint enable):
+        self._sim.set_leakage_enabled(enable)
+
+    def set_interface_traps(self, np.ndarray[np.int8_t, ndim=1, mode="c"] mask not None,
+                            double D_it, double E_t):
+        # P6: interface trap charge injection into Poisson RHS.
+        self._sim.set_interface_traps(np_to_vec_char(mask), D_it, E_t)
+
+    def set_oxide_traps(self, np.ndarray[np.float64_t, ndim=1, mode="c"] Q_ot not None):
+        # P6: persistent bulk oxide trap charge [C/m^3].
+        self._sim.set_oxide_traps(np_to_vec(Q_ot))
 
     def set_initial_guess(self, np.ndarray[np.float64_t, ndim=1, mode="c"] phi not None,
                           np.ndarray[np.float64_t, ndim=1, mode="c"] n not None,

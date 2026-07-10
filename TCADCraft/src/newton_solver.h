@@ -50,6 +50,16 @@ struct NewtonOptions {
     real_t btbt_A = 3.1e21Q;
     real_t btbt_B = 2.0e7Q;
     int btbt_D = 2;
+    // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
+    // G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q.  Defaults are silicon (SI units,
+    // pre-converted from the 1/cm and V/cm literature values — see
+    // ImpactIonizationParams in gummel_solver.h for the provenance).
+    bool enable_ii = false;
+    real_t ii_A_n = 7.03e7Q;     // [1/m]
+    real_t ii_B_n = 1.231e8Q;    // [V/m]
+    real_t ii_A_p = 1.58e8Q;     // [1/m]
+    real_t ii_B_p = 2.036e8Q;    // [V/m]
+    real_t ii_E_floor = 1.0e5Q;  // [V/m]
     // Temperature and statistics
     real_t temperature = 300.0Q;
     StatisticsType statistics_type = StatisticsType::BOLTZMANN;
@@ -104,6 +114,24 @@ public:
     void set_electron_bc(const std::map<size_t, real_t>& bc);
     void set_hole_bc(const std::map<size_t, real_t>& bc);
 
+    // Ferroelectric polarization feedback into the Newton Poisson residual.
+    // The Newton path previously OMITTED the -div(P) bound-charge term that the
+    // Gummel path applies in PoissonSolver::assemble, so any solve routed
+    // through Newton (use_newton=True, or solve_transient) silently dropped
+    // ferroelectric coupling entirely.  DeviceSimulator injects the current P
+    // (already refreshed by the Gummel warm-up) and the FE mask here; the
+    // Poisson residual then adds -div(P) exactly as PoissonSolver does.
+    void set_ferroelectric_polarization(const std::vector<char>& fe_mask,
+                                        const std::vector<real_t>& fe_polarization);
+
+    // Interface/bulk trap state (P6). Mirrors PoissonSolver's trap charge
+    // injection so the Newton Poisson residual also carries Q_it + Q_ot
+    // (audit §21 lesson: a charge term missing from Newton silently vanishes
+    // whenever use_newton=True / solve_transient).
+    void set_trap_charge(const std::vector<char>& trap_mask,
+                         real_t D_it, real_t E_t,
+                         const std::vector<real_t>& Q_ot);
+
     bool solve(std::vector<real_t>& phi,
                std::vector<real_t>& n,
                std::vector<real_t>& p);
@@ -126,6 +154,18 @@ private:
     std::map<size_t, real_t> n_bc_;
     std::map<size_t, real_t> p_bc_;
 
+    // Ferroelectric feedback state (optional; no-op when fe_mask_ is empty).
+    // Set by DeviceSimulator before solve() so the Newton Poisson residual
+    // includes the -div(P) bound-charge term (audit §21 / FE-coupling fix).
+    std::vector<char> fe_mask_;                  // length npts (0/1)
+    std::vector<real_t> fe_polarization_;        // [Px,Py,Pz] interleaved, len 3*npts
+
+    // Interface/bulk trap charge (P6). Mirrors PoissonSolver.
+    std::vector<char> trap_mask_;
+    real_t trap_D_it_ = 0.0Q;
+    real_t trap_E_t_ = 0.0Q;
+    std::vector<real_t> Q_ot_;
+
     std::vector<real_t> residuals_;
 
     size_t phi_idx(size_t i) const { return i; }
@@ -143,6 +183,12 @@ private:
 
     // Compute BTBT generation rate (Kane's model) at a given node
     real_t compute_btbt_at(const real_t* phi, size_t idx) const;
+
+    // Compute avalanche impact-ionization generation rate [m^-3 s^-1] at node
+    // idx, summed over the up-to-6 SG edges meeting at idx (edge form, same
+    // convention as GummelSolver::compute_impact_ionization).
+    real_t compute_ii_at(const real_t* phi, const real_t* n,
+                         const real_t* p, size_t idx) const;
 };
 
 } // namespace tcad

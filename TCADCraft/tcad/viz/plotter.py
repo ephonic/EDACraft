@@ -240,3 +240,214 @@ def plot_1d_cutline(
     ax.grid(True)
     plt.tight_layout()
     plt.show()
+
+
+# ---------------------------------------------------------------------------
+# Device-characteristic plotters (P4.2): P-V, P-E loops, Id-Vg transfer, PUND.
+#
+# These produce paper-ready figures. They apply the academic style (serif fonts,
+# inward ticks, thin axes) from tcad.viz.style so the 3rd-generation plots
+# match the academic look of the 2nd-generation figures (comments.docx).
+# ---------------------------------------------------------------------------
+
+def plot_pv_loop(
+    voltages,
+    P,
+    ax=None,
+    Ps: Optional[float] = None,
+    Vc: Optional[float] = None,
+    unit_uc_cm2: bool = True,
+    label: Optional[str] = None,
+    show_legend: bool = True,
+):
+    """Plot a polarization-voltage (P-V) hysteresis loop.
+
+    Parameters
+    ----------
+    voltages : array-like
+        Applied voltage sequence [V] (a bipolar sweep, e.g. from
+        :func:`tcad.postprocess.fe_loops.run_pv_sweep`).
+    P : array-like
+        Polarization [C/m^2], same length as ``voltages``.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on; created if None.
+    Ps : float, optional
+        Saturation polarization [C/m^2]. Drawn as a dashed reference line.
+    Vc : float, optional
+        Coercive voltage [V]. Drawn as vertical dashed reference lines.
+    unit_uc_cm2 : bool
+        If True (default), convert P to uC/cm^2 for the y-axis (x100).
+    label : str, optional
+        Legend label for the loop.
+    show_legend : bool
+        Whether to show the legend.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes with the plot.
+    """
+    from tcad.viz.style import set_academic_style
+    import matplotlib.pyplot as plt
+    set_academic_style()
+    if ax is None:
+        fig, ax = plt.subplots()
+    P_arr = np.asarray(P, dtype=float)
+    y = P_arr * 100.0 if unit_uc_cm2 else P_arr
+    ax.plot(voltages, y, "-", lw=1.5, label=label)
+    ylab = r"Polarization [$\mu$C/cm$^2$]" if unit_uc_cm2 else r"Polarization [C/m$^2$]"
+    ax.set_xlabel("Voltage [V]")
+    ax.set_ylabel(ylab)
+    ax.axhline(0, color="0.5", lw=0.5)
+    ax.axvline(0, color="0.5", lw=0.5)
+    if Ps is not None:
+        ys = Ps * 100.0 if unit_uc_cm2 else Ps
+        ax.axhline(ys, ls="--", color="0.6", lw=0.7)
+        ax.axhline(-ys, ls="--", color="0.6", lw=0.7)
+    if Vc is not None:
+        ax.axvline(Vc, ls="--", color="0.6", lw=0.7)
+        ax.axvline(-Vc, ls="--", color="0.6", lw=0.7)
+    if show_legend and label is not None:
+        ax.legend()
+    return ax
+
+
+def plot_pe_loop(
+    E,
+    P,
+    ax=None,
+    Ps: Optional[float] = None,
+    Ec: Optional[float] = None,
+    unit_uc_cm2: bool = True,
+    label: Optional[str] = None,
+    show_legend: bool = True,
+):
+    """Plot a polarization-electric-field (P-E) hysteresis loop.
+
+    Parameters
+    ----------
+    E : array-like
+        Electric field [V/m] (or [MV/cm] if ``unit_MV_cm`` handled by caller).
+    P : array-like
+        Polarization [C/m^2].
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on.
+    Ps : float, optional
+        Saturation polarization [C/m^2] (reference line).
+    Ec : float, optional
+        Coercive field [V/m] (reference line).
+    unit_uc_cm2 : bool
+        Convert P to uC/cm^2 for the y-axis.
+    label, show_legend : see :func:`plot_pv_loop`.
+    """
+    from tcad.viz.style import set_academic_style
+    import matplotlib.pyplot as plt
+    set_academic_style()
+    if ax is None:
+        fig, ax = plt.subplots()
+    P_arr = np.asarray(P, dtype=float)
+    y = P_arr * 100.0 if unit_uc_cm2 else P_arr
+    E_arr = np.asarray(E, dtype=float)
+    ax.plot(E_arr * 1e-8, y, "-", lw=1.5, label=label)   # V/m -> MV/cm
+    ax.set_xlabel(r"Electric field [MV/cm]")
+    ylab = r"Polarization [$\mu$C/cm$^2$]" if unit_uc_cm2 else r"Polarization [C/m$^2$]"
+    ax.set_ylabel(ylab)
+    ax.axhline(0, color="0.5", lw=0.5)
+    ax.axvline(0, color="0.5", lw=0.5)
+    if Ps is not None:
+        ys = Ps * 100.0 if unit_uc_cm2 else Ps
+        ax.axhline(ys, ls="--", color="0.6", lw=0.7)
+        ax.axhline(-ys, ls="--", color="0.6", lw=0.7)
+    if Ec is not None:
+        ax.axvline(Ec * 1e-8, ls="--", color="0.6", lw=0.7)
+        ax.axvline(-Ec * 1e-8, ls="--", color="0.6", lw=0.7)
+    if show_legend and label is not None:
+        ax.legend()
+    return ax
+
+
+def plot_transfer(
+    vgs,
+    ids,
+    ax=None,
+    Vth: Optional[float] = None,
+    log_scale: bool = True,
+    label: Optional[str] = None,
+    show_legend: bool = True,
+):
+    """Plot a transfer characteristic (Id-Vg).
+
+    Parameters
+    ----------
+    vgs : array-like
+        Gate voltage [V].
+    ids : array-like
+        Drain current [A].
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on.
+    Vth : float, optional
+        Threshold voltage [V] (vertical reference line).
+    log_scale : bool
+        Use a logarithmic y-axis (default True — standard for transfer curves).
+    label, show_legend : see :func:`plot_pv_loop`.
+    """
+    from tcad.viz.style import set_academic_style
+    import matplotlib.pyplot as plt
+    set_academic_style()
+    if ax is None:
+        fig, ax = plt.subplots()
+    ids_arr = np.abs(np.asarray(ids, dtype=float))   # |Id| for log scale
+    if log_scale:
+        ax.semilogy(vgs, ids_arr, "-o", ms=3, lw=1.5, label=label)
+    else:
+        ax.plot(vgs, ids_arr, "-o", ms=3, lw=1.5, label=label)
+    ax.set_xlabel(r"Gate voltage $V_G$ [V]")
+    ax.set_ylabel(r"Drain current $|I_D|$ [A]")
+    if Vth is not None:
+        ax.axvline(Vth, ls="--", color="0.6", lw=0.7)
+    if show_legend and label is not None:
+        ax.legend()
+    return ax
+
+
+def plot_pund(
+    times,
+    voltages,
+    P,
+    ax=None,
+):
+    """Plot a PUND (Positive-Up-Negative-Down) pulse sequence and response.
+
+    Parameters
+    ----------
+    times : array-like
+        Time points [s].
+    voltages : array-like
+        Applied voltage pulse sequence [V].
+    P : array-like
+        Polarization response [C/m^2].
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on (a twin y-axis is used for voltage).
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The polarization axis.
+    """
+    from tcad.viz.style import set_academic_style
+    import matplotlib.pyplot as plt
+    set_academic_style()
+    if ax is None:
+        fig, ax = plt.subplots()
+    t = np.asarray(times)
+    P_arr = np.asarray(P, dtype=float) * 100.0   # C/m^2 -> uC/cm^2
+    ax.plot(t * 1e6, P_arr, "b-", lw=1.5, label=r"$P$")
+    ax.set_xlabel(r"Time [$\mu$s]")
+    ax.set_ylabel(r"Polarization [$\mu$C/cm$^2$]", color="b")
+    ax.tick_params(axis="y", labelcolor="b")
+    ax2 = ax.twinx()
+    ax2.plot(t * 1e6, np.asarray(voltages), "r--", lw=1.0, alpha=0.6, label=r"$V$")
+    ax2.set_ylabel("Voltage [V]", color="r")
+    ax2.tick_params(axis="y", labelcolor="r")
+    ax2.grid(False)
+    return ax

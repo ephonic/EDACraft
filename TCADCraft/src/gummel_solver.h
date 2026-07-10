@@ -32,11 +32,81 @@ struct BTBTParams {
     size_t wkb_npts = 64;            // Number of points for WKB numerical integration
 };
 
+// Ferroelectric model selector (M7c). LANDAU_KHALATNIKOV is the legacy cubic
+// alpha*P + beta*P^3 = E path; PREISACH is the classical scalar Preisach
+// (play-operator) model parameterised directly by Ps and Ec. Mirrors the
+// MobilityModelType string->int mapping pattern (simulator.py:333).
+enum class FerroelectricModel {
+    LANDAU_KHALATNIKOV = 0,
+    PREISACH = 1,
+};
+
 struct FerroelectricParams {
     bool enabled = false;
     std::vector<char> fe_mask;
-    real_t alpha = -1.0e8Q;   // Landau alpha [m/F]
-    real_t beta = 1.0e18Q;    // Landau beta [m^5/(F*C^2)]
+    real_t alpha = -5.0e8Q;   // Landau alpha [m/F] (P1.2)
+    real_t beta = 1.5e10Q;    // Landau beta [m^5/(F*C^2)] (P1.2)
+    // Preisach (play-operator) parameters. Used only when model == PREISACH.
+    // Ps = saturation polarization [C/m^2], Ec = coercive field [V/m],
+    // Escale = tanh output width [V/m] (0 => Escale=Ec for correct loop shape;
+    // <Ec lets |P| approach Ps on a monotonic ramp but steepens the loop).
+    // Defaults are typical HfZrO.
+    FerroelectricModel model = FerroelectricModel::LANDAU_KHALATNIKOV;
+    real_t ps = 0.2Q;         // saturation polarization [C/m^2]
+    real_t ec = 1.0e9Q;       // coercive field [V/m]
+    real_t escale = 0.0Q;     // tanh width [V/m]; 0 => Ec (loop-shape default)
+    real_t E_bi = 0.0Q;       // internal/imprint field offset [V/m] (P2.1); 0 => symmetric
+    // NLS (P3, model==2): Merz tau(E) = tau0*exp(E0/|E|).
+    real_t nls_tau0 = 1.0e-6Q;   // characteristic switching time [s]
+    real_t nls_E0 = 2.0e9Q;      // Merz activation field [V/m]
+    real_t nls_dt = 1.0e-6Q;     // effective dwell time per bias step [s]
+};
+
+// Leakage current through the ferroelectric/insulator stack (P2.2).
+// Poole-Frenkel (PF) and Fowler-Nordheim (FN) emission provide a field-dependent
+// conductive path across the dielectric. This manifests as a small effective
+// conductance on the Poisson diagonal of masked nodes, proportional to the
+// leakage current density J_leak(E). In steady state this relaxes phi slightly
+// (a residual voltage drop across the leaky layer) so the P-V loop does NOT
+// close at V=0 — reproducing the experimentally observed "0V non-closure" and
+// the off-state gate leakage in FeFETs.
+//
+//   PF:  J = C_pf * |E| * exp( -B_pf * sqrt(phi_t / |E|) )     trap-assisted
+//   FN:  J = C_fn * |E|^2 * exp( -B_fn * phi_b^(3/2) / |E| )   direct tunneling
+// The total field-dependent conductance is added to the Poisson diagonal of
+// each masked node during assemble(), NORMALISED to the local Laplacian
+// diagonal eps/dx^2 — so C_pf/C_fn are dimensionless fractions of the
+// dielectric conductance (e.g. 0.01 = 1% leak). This sidesteps the need to
+// match absolute current units and makes the model grid-independent.
+// E_mag is computed from phi (central differences) at assemble time.
+struct LeakageParams {
+    bool enabled = false;
+    std::vector<char> mask;       // nodes that carry leakage [npts] (1 = leaky)
+    real_t C_pf = 0.0Q;           // PF prefactor [fraction of eps/dx^2 per V/m]
+    real_t B_pf = 0.0Q;           // PF barrier coefficient [(V/m)^(1/2)]
+    real_t phi_t = 0.0Q;          // PF trap ionization energy [eV]
+    real_t C_fn = 0.0Q;           // FN prefactor [fraction of eps/dx^2 per (V/m)^2]
+    real_t B_fn = 0.0Q;           // FN exponent coefficient [V/m·eV^(-3/2)]
+    real_t phi_b = 0.0Q;          // FN barrier height [eV]
+    real_t E_floor = 1.0e6Q;      // below this |E| [V/m] leakage is negligible
+    real_t sigma_cap = 0.05Q;     // cap: fraction of eps/dx^2 (P2.2)
+};
+
+// Avalanche impact ionization (Chynoweth ionization coefficient).
+// alpha(E) = A * exp(-B / |E|)  [1/m], with |E| in [V/m] (SI — phi in V, dx in m).
+// Generation rate (electron-hole pairs):  G_ii = (alpha_n*|Jn| + alpha_p*|Jp|) / q
+// where Jn, Jp are the per-node Scharfetter-Gummel current densities [A/m^2].
+// Defaults are silicon (Chynoweth 1959 / Overstraeten-De Man 1970):
+//   electrons: A_n = 7.03e5 /cm -> 7.03e7 /m,  B_n = 1.231e6 V/cm -> 1.231e8 V/m
+//   holes:     A_p = 1.58e6 /cm -> 1.58e8 /m,  B_p = 2.036e6 V/cm -> 2.036e8 V/m
+// (All four defaults are pre-converted to SI so no runtime scaling is needed.)
+struct ImpactIonizationParams {
+    bool enabled = false;
+    real_t A_n = 7.03e7Q;     // electron ionization coefficient A [1/m]
+    real_t B_n = 1.231e8Q;    // electron ionization coefficient B [V/m]
+    real_t A_p = 1.58e8Q;     // hole ionization coefficient A [1/m]
+    real_t B_p = 2.036e8Q;    // hole ionization coefficient B [V/m]
+    real_t E_floor = 1.0e5Q;  // below this |E| [V/m] alpha is negligible -> 0
 };
 
 struct GummelOptions {
@@ -63,8 +133,12 @@ struct GummelOptions {
     bool enable_phi_freezing = true;
     // Band-to-band tunneling
     BTBTParams btbt;
+    // Avalanche impact ionization
+    ImpactIonizationParams ii;
     // Ferroelectric polarization
     FerroelectricParams ferro;
+    // Leakage current (Poole-Frenkel / Fowler-Nordheim) (P2.2)
+    LeakageParams leakage;
     // Cryo-CMOS models
     StatisticsType statistics_type = StatisticsType::BOLTZMANN;
     MobilityModelType mobility_model_type = MobilityModelType::CONSTANT;
@@ -94,6 +168,23 @@ public:
     void set_poisson_dirichlet(const std::map<size_t, real_t>& bc) { poisson_.set_dirichlet(bc); }
     void set_permittivity(const std::vector<real_t>& eps) { poisson_.set_permittivity(eps); }
     void set_ferroelectric_gamma(real_t gamma) { poisson_.set_ferroelectric_gamma(gamma); }
+    // Ferroelectric model + Preisach params (M7c): forward to PoissonSolver.
+    void set_ferroelectric_model(int model) { poisson_.set_ferroelectric_model(model); }
+    void set_ferroelectric_preisach(real_t ps, real_t ec, real_t escale) { poisson_.set_ferroelectric_preisach(ps, ec, escale); }
+    const std::vector<real_t>& fe_play_state() const { return poisson_.fe_play_state(); }
+    void set_fe_play_state(const std::vector<real_t>& s) { poisson_.set_fe_play_state(s); }
+    // Dielectric breakdown (M7b): forward to internal PoissonSolver so the
+    // assemble() leakage term applies in the Gummel path too.
+    void set_breakdown_state(const std::vector<char>& bd_state, real_t sigma_bd) {
+        poisson_.set_breakdown_state(bd_state, sigma_bd);
+    }
+    // Interface/bulk trap passthrough (P6): forward to internal PoissonSolver.
+    void set_interface_traps(const std::vector<char>& mask, real_t D_it, real_t E_t) {
+        poisson_.set_interface_traps(mask, D_it, E_t);
+    }
+    void set_oxide_traps(const std::vector<real_t>& Q_ot) {
+        poisson_.set_oxide_traps(Q_ot);
+    }
     // Persistent vector P passthrough (3 components per node, interleaved):
     // DeviceSimulator injects the previous sweep point's P before solve(),
     // reads it back after, giving cross-bias memory for hysteresis.
@@ -148,6 +239,15 @@ private:
     // Compute BTBT generation rate from electric field (Kane's model)
     void compute_btbt(const std::vector<real_t>& phi,
                       std::vector<real_t>& G_btbt) const;
+
+    // Compute avalanche impact-ionization generation rate per node [m^-3 s^-1]
+    // from the Scharfetter-Gummel edge currents.  alpha(E)=A*exp(-B/|E|),
+    // G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q, accumulated to both endpoints of
+    // each interior edge (volume-weighted by 1/dx).
+    void compute_impact_ionization(const std::vector<real_t>& phi,
+                                   const std::vector<real_t>& n,
+                                   const std::vector<real_t>& p,
+                                   std::vector<real_t>& G_ii) const;
 
     // Non-local BTBT: path-integral WKB tunneling probability
     void compute_nonlocal_btbt(const std::vector<real_t>& phi,

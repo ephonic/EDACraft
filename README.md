@@ -98,19 +98,29 @@ Key directories under `EDACode/`:
 
 A Python-driven 3D quantum-corrected semiconductor device simulator for nanoscale TCAD analysis. TCADCraft provides:
 
-- **Device Templates**: MOSFET, FinFET, GAA nanosheet, TFET, heterojunction TFET, FeFET/NC-FET, tunnel diode (NDR), Dirac-source FET, PN junction, and BSPDN GAA.
-- **Multi-Physics Solver**: 3D finite-difference Poisson, drift–diffusion with Scharfetter–Gummel, adaptive Gummel and Newton–Raphson solvers, density-gradient quantum correction, band-to-band tunneling (local Kane + non-local WKB), ferroelectric Landau–Khalatnikov model, and self-heating.
+- **Device Templates**: MOSFET, FinFET, GAA nanosheet, TFET, heterojunction TFET, FeFET/NC-FET, tunnel diode (NDR), Dirac-source FET, PN junction, BSPDN GAA, and **AlScN+MoS₂ FeFET**.
+- **Multi-Physics Solver**: 3D finite-difference Poisson, drift–diffusion with Scharfetter–Gummel, adaptive Gummel and Newton–Raphson solvers, density-gradient quantum correction, band-to-band tunneling (local Kane + non-local WKB), and self-heating.
+- **Ferroelectric Models**: Three models for NC-FET/FeFET simulation:
+  - **Landau-Khalatnikov** (vector 3-component P, per-component branch continuation + spinodal switching)
+  - **Preisach** (classical scalar play-operator, parameterised directly by Ps/Ec)
+  - **NLS** (Nucleation-Limited Switching, Merz-law τ(E)=τ₀·exp(E₀/|E|), finite-slope S-shaped loop for wurtzite ferroelectrics like AlScN)
+  - **Material-driven FE detection** (fe_alpha≠0, not dielectric-constant window) - correctly identifies AlScN (ε_r≈15)
+  - **Internal/imprint field** (E_bi offset for ±loop asymmetry)
+- **Leakage & Trap Models**: Poole-Frenkel + Fowler-Nordheim leakage current, interface traps (Dit) and bulk oxide traps (Q_ot) with charge injection into Poisson equation.
+- **Reliability Simulation**: Retention characteristics (polarization decay monitoring) and endurance (cycling degradation with fatigue model).
 - **Cryo & Heterogeneous Models**: Temperature-dependent mobility, Fermi–Dirac statistics, freeze-out, and spatially varying effective DOS / bandgap.
-- **Mesh & Visualization**: Structured Cartesian grids, Gmsh unstructured tetrahedral meshes, adaptive refinement, and matplotlib / PyVista visualization.
-- **Post-Processing**: Terminal-current extraction, band-diagram cutlines, TFET / NDR metrics, mechanism attribution, trust gates, and discovery metrics (`Ion`, `Ioff`, `SS`, `Vth`, `DIBL`).
+- **Mesh & Visualization**: Structured Cartesian grids, Gmsh unstructured tetrahedral meshes, adaptive refinement, and academic-style matplotlib / PyVista visualization with P-V/P-E loop, Id-Vg transfer, and PUND pulse plotters.
+- **Post-Processing**: Terminal-current extraction, band-diagram cutlines, TFET / NDR metrics, mechanism attribution, trust gates, discovery metrics (`Ion`, `Ioff`, `SS`, `Vth`, `DIBL`), and P-V/P-E loop drivers.
 - **Device Discovery**: Evolvable device grammar, mutation operators, and NSGA-II-style search loop.
+- **Validation Framework**: Systematic verification strategy set for new physics development including grid convergence, conservation laws, symmetry, limiting cases, boundedness, cross-validation, and sensitivity analysis.
 - **Solver Backends**: Dense direct LU for small grids and optional PETSc direct LU for larger grids.
 
 Key directories under `TCADCraft/`:
 
 - `src/` — Extended-precision C++ solver core
-- `tcad/` — Python package (geometry, materials, mesh, solver bindings, post-processing, search, knowledge, visualization)
-- `examples/` — Runnable device examples
+- `tcad/` — Python package (geometry, materials, mesh, solver bindings, post-processing, search, knowledge, visualization, validation)
+- `examples/` — Runnable device examples (including AlScN PUND and AlScN+MoS₂ FeFET)
+- `tests/` — Comprehensive test suite (58 tests including 16 new validation tests)
 - `setup.py` / `pyproject.toml` / `CMakeLists.txt` — Build configuration
 
 See [TCADCraft/README.md](TCADCraft/README.md) for installation and usage details.

@@ -105,6 +105,10 @@ void DeviceSimulator::set_phi_freezing_enabled(bool enable) {
     // (Need to add member variable)
 }
 
+void DeviceSimulator::set_newton_freeze_phi(bool enable) { newton_freeze_phi_ = enable; }
+void DeviceSimulator::set_newton_freeze_n(bool enable) { newton_freeze_n_ = enable; }
+void DeviceSimulator::set_newton_freeze_p(bool enable) { newton_freeze_p_ = enable; }
+
 void DeviceSimulator::set_gummel_max_iter(size_t max_iter) {
     max_iter_ = max_iter;
 }
@@ -186,6 +190,33 @@ void DeviceSimulator::set_btbt_use_nonlocal(bool enable) {
     btbt_use_nonlocal_ = enable;
 }
 
+void DeviceSimulator::set_ii_enabled(bool enable) {
+    ii_enabled_ = enable;
+}
+
+void DeviceSimulator::set_ii_params(real_t A_n, real_t B_n, real_t A_p, real_t B_p) {
+    ii_A_n_ = A_n;
+    ii_B_n_ = B_n;
+    ii_A_p_ = A_p;
+    ii_B_p_ = B_p;
+}
+
+void DeviceSimulator::set_breakdown_enabled(bool enable) {
+    bd_enabled_ = enable;
+}
+
+void DeviceSimulator::set_breakdown_params(const std::vector<char>& bd_mask,
+                                           const std::vector<real_t>& E_bd,
+                                           real_t sigma_bd) {
+    if (bd_mask.size() != g_.npts())
+        throw std::invalid_argument("bd_mask size mismatch");
+    if (E_bd.size() != g_.npts())
+        throw std::invalid_argument("E_bd size mismatch");
+    bd_mask_ = bd_mask;
+    E_bd_ = E_bd;
+    sigma_bd_ = sigma_bd;
+}
+
 void DeviceSimulator::set_ferroelectric_enabled(bool enable) {
     fe_enabled_ = enable;
 }
@@ -197,6 +228,58 @@ void DeviceSimulator::set_ferroelectric_params(const std::vector<char>& fe_mask,
     fe_mask_ = fe_mask;
     fe_alpha_ = alpha;
     fe_beta_ = beta;
+}
+
+void DeviceSimulator::set_ferroelectric_model(int model) {
+    // 0 = Landau-Khalatnikov, 1 = Preisach (play operator). M7c.
+    fe_model_ = model;
+}
+
+void DeviceSimulator::set_ferroelectric_preisach(real_t ps, real_t ec, real_t escale) {
+    fe_ps_ = ps;
+    fe_ec_ = ec;
+    fe_escale_ = escale;
+}
+
+void DeviceSimulator::set_ferroelectric_builtin_field(real_t E_bi) {
+    fe_E_bi_ = E_bi;   // P2.1: internal/imprint offset; 0 => symmetric
+}
+
+void DeviceSimulator::set_ferroelectric_nls(real_t tau0, real_t E0, real_t dt) {
+    fe_nls_tau0_ = tau0;   // P3: Merz tau(E) = tau0*exp(E0/|E|)
+    fe_nls_E0_ = E0;
+    fe_nls_dt_ = dt;
+}
+
+void DeviceSimulator::set_leakage(const std::vector<char>& mask,
+                                  real_t C_pf, real_t B_pf, real_t phi_t,
+                                  real_t C_fn, real_t B_fn, real_t phi_b,
+                                  real_t E_floor, real_t sigma_cap) {
+    if (mask.size() != g_.npts())
+        throw std::invalid_argument("leakage mask size mismatch");
+    leak_mask_ = mask;
+    leak_C_pf_ = C_pf; leak_B_pf_ = B_pf; leak_phi_t_ = phi_t;
+    leak_C_fn_ = C_fn; leak_B_fn_ = B_fn; leak_phi_b_ = phi_b;
+    leak_E_floor_ = E_floor;
+    leak_sigma_cap_ = sigma_cap;
+    leak_enabled_ = true;
+}
+
+void DeviceSimulator::set_leakage_enabled(bool enable) {
+    leak_enabled_ = enable;
+}
+
+void DeviceSimulator::set_interface_traps(const std::vector<char>& mask,
+                                          real_t D_it, real_t E_t) {
+    if (mask.size() != g_.npts())
+        throw std::invalid_argument("trap mask size mismatch");
+    trap_mask_ = mask;
+    trap_D_it_ = D_it;
+    trap_E_t_ = E_t;
+}
+
+void DeviceSimulator::set_oxide_traps(const std::vector<real_t>& Q_ot) {
+    Q_ot_ = Q_ot;
 }
 
 void DeviceSimulator::set_initial_guess(const std::vector<real_t>& phi,
@@ -352,11 +435,42 @@ SimulationResult DeviceSimulator::solve() {
     opt.btbt.B_kane = btbt_B_;
     opt.btbt.D = btbt_D_;
     opt.btbt.use_nonlocal = btbt_use_nonlocal_;
+    // Impact ionization parameters
+    opt.ii.enabled = ii_enabled_;
+    opt.ii.A_n = ii_A_n_;
+    opt.ii.B_n = ii_B_n_;
+    opt.ii.A_p = ii_A_p_;
+    opt.ii.B_p = ii_B_p_;
     // Ferroelectric parameters
     opt.ferro.enabled = fe_enabled_;
     opt.ferro.fe_mask = fe_mask_;
     opt.ferro.alpha = fe_alpha_;
     opt.ferro.beta = fe_beta_;
+    opt.ferro.model = static_cast<FerroelectricModel>(fe_model_);
+    opt.ferro.ps = fe_ps_;
+    opt.ferro.ec = fe_ec_;
+    opt.ferro.escale = fe_escale_;
+    opt.ferro.E_bi = fe_E_bi_;   // P2.1: internal/imprint offset
+    opt.ferro.nls_tau0 = fe_nls_tau0_;   // P3: NLS Merz parameters
+    opt.ferro.nls_E0 = fe_nls_E0_;
+    opt.ferro.nls_dt = fe_nls_dt_;
+    // Leakage current (PF/FN) parameters (P2.2)
+    opt.leakage.enabled = leak_enabled_;
+    opt.leakage.mask = leak_mask_;
+    opt.leakage.C_pf = leak_C_pf_; opt.leakage.B_pf = leak_B_pf_; opt.leakage.phi_t = leak_phi_t_;
+    opt.leakage.C_fn = leak_C_fn_; opt.leakage.B_fn = leak_B_fn_; opt.leakage.phi_b = leak_phi_b_;
+    opt.leakage.E_floor = leak_E_floor_;
+    opt.leakage.sigma_cap = leak_sigma_cap_;
+
+    // Dielectric breakdown: one-time init of the irreversible state vector
+    // (mirrors fe_polarization_init_).  bd_state_ persists across solve() so a
+    // broken-down node stays broken down on subsequent bias points. (M7b, §22)
+    if (bd_enabled_) {
+        if (!bd_state_init_) {
+            bd_state_.assign(N, 0);
+            bd_state_init_ = true;
+        }
+    }
 
     if (use_newton_) {
         // Hybrid: Gummel first for robust initial guess, then Newton for fast convergence
@@ -381,9 +495,27 @@ SimulationResult DeviceSimulator::solve() {
                 fe_polarization_init_ = true;
             }
             gummel_.set_fe_polarization(fe_polarization_);
+            // Inject the persistent Preisach play state (M7c).
+            if (fe_model_ == 1) {
+                if (fe_play_state_.size() != N) fe_play_state_.assign(N, 0.0Q);
+                gummel_.set_fe_play_state(fe_play_state_);
+            }
         }
+        // Inject the persistent breakdown state so the Gummel warm-up Poisson
+        // assemble applies the leakage term at already-broken nodes. (M7b)
+        if (bd_enabled_) {
+            gummel_.set_breakdown_state(bd_state_, sigma_bd_);
+        }
+        // Inject trap charge into Gummel's PoissonSolver (P6).
+        if (!trap_mask_.empty()) {
+            gummel_.set_interface_traps(trap_mask_, trap_D_it_, trap_E_t_);
+        }
+        if (!Q_ot_.empty()) gummel_.set_oxide_traps(Q_ot_);
         bool gummel_ok = gummel_.solve(res.phi, res.n, res.p);
-        if (fe_enabled_) fe_polarization_ = gummel_.fe_polarization();
+        if (fe_enabled_) {
+            fe_polarization_ = gummel_.fe_polarization();
+            if (fe_model_ == 1) fe_play_state_ = gummel_.fe_play_state();
+        }
         size_t gummel_iters = gummel_.poisson_residuals().size();
 
         if (gummel_ok) {
@@ -404,9 +536,18 @@ SimulationResult DeviceSimulator::solve() {
             nopt.btbt_A = btbt_A_;
             nopt.btbt_B = btbt_B_;
             nopt.btbt_D = btbt_D_;
+            nopt.enable_ii = ii_enabled_;
+            nopt.ii_A_n = ii_A_n_;
+            nopt.ii_B_n = ii_B_n_;
+            nopt.ii_A_p = ii_A_p_;
+            nopt.ii_B_p = ii_B_p_;
             nopt.temperature = temperature_;
             nopt.statistics_type = statistics_type_;
             nopt.linear_solver = (N > 2000) ? SolverType::PETSC : SolverType::DENSE_DIRECT;
+            // C档: Newton freeze flags (isolated-continuity MMS).
+            nopt.freeze_phi = newton_freeze_phi_;
+            nopt.freeze_n = newton_freeze_n_;
+            nopt.freeze_p = newton_freeze_p_;
             newton_ = NewtonSolver(g_, nopt);
             newton_.set_permittivity(eps_);
             newton_.set_mobility(mu_n_eff, mu_p_eff);
@@ -419,6 +560,17 @@ SimulationResult DeviceSimulator::solve() {
             newton_.set_phi_dirichlet(phi_bc_);
             newton_.set_electron_bc(n_bc_);
             newton_.set_hole_bc(p_bc_);
+            // Inject ferroelectric P + mask so the Newton Poisson residual
+            // includes -div(P) (FE-coupling fix, audit §21).  P was already
+            // refreshed by the Gummel warm-up above and read back into
+            // fe_polarization_; without this, Newton silently dropped FE.
+            if (fe_enabled_) {
+                newton_.set_ferroelectric_polarization(fe_mask_, fe_polarization_);
+            }
+            // Inject trap charge so Newton Poisson residual carries Q_it+Q_ot (P6).
+            if (!trap_mask_.empty()) {
+                newton_.set_trap_charge(trap_mask_, trap_D_it_, trap_E_t_, Q_ot_);
+            }
             res.converged = newton_.solve(res.phi, res.n, res.p);
             // Report total iterations (Gummel + Newton) for transparency
             res.iterations = gummel_iters + newton_.residuals().size();
@@ -446,10 +598,26 @@ SimulationResult DeviceSimulator::solve() {
                 fe_polarization_init_ = true;
             }
             gummel_.set_fe_polarization(fe_polarization_);
+            if (fe_model_ == 1) {
+                if (fe_play_state_.size() != N) fe_play_state_.assign(N, 0.0Q);
+                gummel_.set_fe_play_state(fe_play_state_);
+            }
         }
+        // Inject the persistent breakdown state (M7b).
+        if (bd_enabled_) {
+            gummel_.set_breakdown_state(bd_state_, sigma_bd_);
+        }
+        // Inject trap charge into Gummel's PoissonSolver (P6).
+        if (!trap_mask_.empty()) {
+            gummel_.set_interface_traps(trap_mask_, trap_D_it_, trap_E_t_);
+        }
+        if (!Q_ot_.empty()) gummel_.set_oxide_traps(Q_ot_);
 
         res.converged = gummel_.solve(res.phi, res.n, res.p);
-        if (fe_enabled_) fe_polarization_ = gummel_.fe_polarization();
+        if (fe_enabled_) {
+            fe_polarization_ = gummel_.fe_polarization();
+            if (fe_model_ == 1) fe_play_state_ = gummel_.fe_play_state();
+        }
         res.iterations = gummel_.poisson_residuals().size();
     }
 
@@ -459,6 +627,23 @@ SimulationResult DeviceSimulator::solve() {
 
     // Compute E-field even if not fully converged (results may still be useful)
     poisson_.compute_electric_field(res.phi, res.Ex, res.Ey, res.Ez);
+
+    // Dielectric breakdown detection (M7b, audit §22).  After the field is
+    // known, flag any masked dielectric node whose |E| exceeds its material
+    // breakdown field E_bd.  The flip is IRREVERSIBLE (bd_state_ only goes 0->1)
+    // and persists across solve() calls — a broken-down oxide node stays broken
+    // down on subsequent (even lower) bias points, modelling the conductive
+    // filament.  The leakage term itself is applied on the NEXT solve() via
+    // set_breakdown_state above (this solve already assembled without it).
+    if (bd_enabled_ && !bd_mask_.empty() && E_bd_.size() == N) {
+        for (size_t i = 0; i < N; ++i) {
+            if (!bd_mask_[i] || bd_state_[i]) continue;   // skip non-dielectric / already broken
+            real_t E2 = res.Ex[i] * res.Ex[i] + res.Ey[i] * res.Ey[i] + res.Ez[i] * res.Ez[i];
+            if (E_bd_[i] > 0.0Q && E2 > E_bd_[i] * E_bd_[i]) {
+                bd_state_[i] = 1;   // irreversible soft-breakdown
+            }
+        }
+    }
 
     // Full-precision edge current densities (Audit §20).  Computed in
     // __float128 from the converged phi/n/p to avoid the catastrophic

@@ -21,6 +21,21 @@ GummelSolver::GummelSolver(const Grid3D& grid, const GummelOptions& opt)
     // Ferroelectric
     if (opt_.ferro.enabled && !opt_.ferro.fe_mask.empty()) {
         poisson_.set_ferroelectric(opt_.ferro.fe_mask, opt_.ferro.alpha, opt_.ferro.beta);
+        // Model selection + Preisach params (M7c).
+        poisson_.set_ferroelectric_model(static_cast<int>(opt_.ferro.model));
+        poisson_.set_ferroelectric_preisach(opt_.ferro.ps, opt_.ferro.ec, opt_.ferro.escale);
+        // P2.1: internal/imprint field offset.
+        poisson_.set_ferroelectric_builtin_field(opt_.ferro.E_bi);
+        // P3: NLS Merz-law parameters.
+        poisson_.set_ferroelectric_nls(opt_.ferro.nls_tau0, opt_.ferro.nls_E0,
+                                       opt_.ferro.nls_dt);
+    }
+    // Leakage current (PF/FN) (P2.2)
+    if (opt_.leakage.enabled && !opt_.leakage.mask.empty()) {
+        poisson_.set_leakage(opt_.leakage.mask,
+                             opt_.leakage.C_pf, opt_.leakage.B_pf, opt_.leakage.phi_t,
+                             opt_.leakage.C_fn, opt_.leakage.B_fn, opt_.leakage.phi_b,
+                             opt_.leakage.E_floor, opt_.leakage.sigma_cap);
     }
 }
 
@@ -113,6 +128,83 @@ void GummelSolver::compute_btbt(const std::vector<real_t>& phi,
             }
         }
     }
+}
+
+void GummelSolver::compute_impact_ionization(const std::vector<real_t>& phi,
+                                             const std::vector<real_t>& n,
+                                             const std::vector<real_t>& p,
+                                             std::vector<real_t>& G_ii) const {
+    // Avalanche impact ionization (Chynoweth).  alpha(E) = A*exp(-B/|E|) [1/m].
+    // Per-pair generation rate G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q [m^-3 s^-1].
+    //
+    // We use the EDGE form, which is the physically correct and numerically
+    // stable convention used by commercial tools (Sentaurus/DESSIS): for each
+    // interior edge (idx -> nbr) the Scharfetter-Gummel current density is
+    //   Jn = q*Dn/d * (n[idx]*B(-dphi/VT) - n[nbr]*B(+dphi/VT))   [A/m^2]
+    // (identical to DeviceSimulator::compute_edge_currents, audit §20).
+    // The ionization integral contribution of that edge is
+    //   alpha_n(|E_edge|) * |Jn_edge| / q   [+ alpha_p*|Jp_edge|/q],
+    // and it is deposited half to each endpoint with a 1/d weighting so the
+    // returned per-node G_ii has units [m^-3 s^-1] matching SRH/BTBT.  |E_edge|
+    // is the edge-aligned field component (the gradient along the edge), which
+    // is what accelerates carriers across that edge — using the full |grad phi|
+    // here would double-count across the three axes.
+    const size_t N = g_.npts();
+    G_ii.assign(N, 0.0Q);
+    if (!opt_.ii.enabled) return;
+
+    const real_t VT = opt_.VT;
+    const real_t E_floor = opt_.ii.E_floor;
+
+    // Helper: ionization coefficient alpha for a given |E| and (A,B) pair.
+    auto alpha_of = [&](real_t E_mag, real_t A, real_t B) -> real_t {
+        if (E_mag < E_floor) return 0.0Q;     // negligible below ~1e5 V/m
+        return A * exp_q(-B / E_mag);
+    };
+
+    // Process one axis.  stride/spacing/dim pick out x/y/z.  `idx` -> `nbr`.
+    auto process_axis = [&](size_t stride, real_t d, size_t n0) {
+        for (size_t k = 0; k < g_.nz; ++k) {
+            for (size_t j = 0; j < g_.ny; ++j) {
+                for (size_t i = 0; i < n0; ++i) {  // i in [0, dim-1): +neighbor exists
+                    size_t idx = g_.index(i, j, k);
+                    size_t nbr = idx + stride;
+                    // Skip edges touching insulator/metal: no carrier flux there.
+                    if (mu_n_[idx] < EPSILON && mu_p_[idx] < EPSILON) continue;
+                    if (mu_n_[nbr] < EPSILON && mu_p_[nbr] < EPSILON) continue;
+
+                    real_t dphi = phi[nbr] - phi[idx];
+                    real_t delta = dphi / VT;
+                    real_t Bm = bernoulli(-delta);
+                    real_t Bp = bernoulli(delta);
+                    // Edge-aligned electric field magnitude [V/m] along this edge.
+                    real_t E_edge = abs_q(dphi / d);
+
+                    real_t alpha_n = alpha_of(E_edge, opt_.ii.A_n, opt_.ii.B_n);
+                    real_t alpha_p = alpha_of(E_edge, opt_.ii.A_p, opt_.ii.B_p);
+                    if (alpha_n == 0.0Q && alpha_p == 0.0Q) continue;
+
+                    // SG current densities along this edge [A/m^2].
+                    real_t Dn = mu_n_[idx] * VT / d;
+                    real_t Dp = mu_p_[idx] * VT / d;
+                    real_t Jn = QE * Dn * (n[idx] * Bm - n[nbr] * Bp);
+                    real_t Jp = QE * Dp * (p[idx] * Bp - p[nbr] * Bm);
+
+                    // alpha*|J|/q [m^-3 s^-1], split half to each endpoint.
+                    // (The 1/d already implicit in D = mu*VT/d is the per-edge
+                    //  volume weighting; depositing half to each node matches the
+                    //  box-integration of the continuity source term.)
+                    real_t g_node = (alpha_n * abs_q(Jn) + alpha_p * abs_q(Jp)) / QE * 0.5Q;
+                    G_ii[idx] += g_node;
+                    G_ii[nbr] += g_node;
+                }
+            }
+        }
+    };
+
+    process_axis(1,             g_.dx, g_.nx - 1);                 // +x edges
+    process_axis(g_.nx,         g_.dy, g_.ny - 1);                 // +y edges
+    process_axis(g_.nx * g_.ny, g_.dz, g_.nz - 1);                 // +z edges
 }
 
 void GummelSolver::compute_nonlocal_btbt(const std::vector<real_t>& phi,
@@ -267,6 +359,11 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
     if (opt_.btbt.enabled) {
         compute_btbt(phi, G_btbt);
     }
+    // Compute avalanche impact-ionization generation
+    std::vector<real_t> G_ii;
+    if (opt_.ii.enabled) {
+        compute_impact_ionization(phi, n, p, G_ii);
+    }
 
     const size_t N = g_.npts();
     SparseMatrix A(N);
@@ -328,6 +425,7 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
                 }
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
                 if (opt_.btbt.enabled && idx < G_btbt.size()) G += G_btbt[idx];
+                if (opt_.ii.enabled && idx < G_ii.size()) G += G_ii[idx];
                 real_t source_scale = g_.dx;
                 A.add_entry(idx, idx, center);
                 rhs[idx] = (G - R) * source_scale;
@@ -372,6 +470,11 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
     std::vector<real_t> G_btbt;
     if (opt_.btbt.enabled) {
         compute_btbt(phi, G_btbt);
+    }
+    // Compute avalanche impact-ionization generation
+    std::vector<real_t> G_ii;
+    if (opt_.ii.enabled) {
+        compute_impact_ionization(phi, n, p, G_ii);
     }
 
     // Symmetric to electron solve with sign flips for holes
@@ -430,6 +533,7 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
                 }
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
                 if (opt_.btbt.enabled && idx < G_btbt.size()) G += G_btbt[idx];
+                if (opt_.ii.enabled && idx < G_ii.size()) G += G_ii[idx];
                 real_t source_scale = g_.dx;
                 A.add_entry(idx, idx, center);
                 rhs[idx] = (G - R) * source_scale;
@@ -513,19 +617,30 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         p_old = p;
 
         // --- Step 1: Solve Poisson with frozen n, p (skip if phi already frozen) ---
+        // Ferroelectric polarization is refreshed EVERY iteration, even when phi
+        // is frozen.  Previously P was updated inside the (!phi_frozen) block,
+        // so once phi froze the polarization was pinned to its value at the
+        // freeze instant — it could no longer follow the (externally ramped)
+        // gate bias, producing sporadic non-switching in HZO and no memory
+        // window.  Refreshing P against the current phi (which still carries
+        // the latest contact voltages even when the Gummel update is frozen)
+        // restores the path-dependent loop.  (FE-coupling fix, audit §21.)
+        if (opt_.ferro.enabled) {
+            if (opt_.transient_enabled) {
+                poisson_.update_ferroelectric_polarization_transient(phi, opt_.transient_dt);
+            } else {
+                poisson_.update_ferroelectric_polarization(phi);
+            }
+        }
         if (!phi_frozen) {
             std::vector<real_t> n_solve = n, p_solve = p;
             if (opt_.enable_quantum) {
                 dg_.correct(n, p, n_solve, p_solve);
             }
-            // Update ferroelectric polarization self-consistently before Poisson
-            if (opt_.ferro.enabled) {
-                if (opt_.transient_enabled) {
-                    poisson_.update_ferroelectric_polarization_transient(phi, opt_.transient_dt);
-                } else {
-                    poisson_.update_ferroelectric_polarization(phi);
-                }
-            }
+            // P2.2: cache phi for the leakage field-dependent conductance.
+            // P6: also needed for interface-trap charge (uses cached phi for f_t).
+            // Always cache - it's cheap and serves both leakage and trap models.
+            poisson_.set_leakage_field(phi);
             poisson_.assemble(n_solve, p_solve);
             if (!poisson_.solve(phi)) {
                 std::cerr << "Gummel iter " << iter << ": Poisson solve failed\n";

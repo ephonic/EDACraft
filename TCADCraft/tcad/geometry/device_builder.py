@@ -27,6 +27,42 @@ class Material:
     # Ferroelectric Landau-Khalatnikov parameters (for ferroelectric materials)
     fe_alpha: float = 0.0            # Landau alpha coefficient [m/F]
     fe_beta: float = 0.0             # Landau beta coefficient [m^5/(F·C^2)]
+    # Direct (Preisach/NLS) ferroelectric parameters. When nonzero these
+    # parameterise the saturation polarization Ps [C/m^2] and coercive field
+    # Ec [V/m] directly, sidestepping the L-K alpha/beta dimensional ambiguity.
+    # 0.0 => derive from alpha/beta where applicable (Ps=sqrt(-alpha/beta)).
+    # (P1.4: lets the material library express AlScN's large Ps directly.)
+    fe_ps: float = 0.0               # saturation polarization [C/m^2] (0=>from L-K)
+    fe_ec: float = 0.0               # coercive field [V/m] (0=>from L-K)
+    # Internal field / Imprint offset [V/m]. Shifts the effective switching
+    # drive E_eff = E - E_bi. 0 => symmetric loop. (P2.1.)
+    fe_E_bi: float = 0.0
+    # Dielectric breakdown field [V/m]. 0.0 = no breakdown modelling for this
+    # material. Typical values: SiO2 ~ 1.2e9, HfO2/HfZrO ~ 6e8, SiO2 thin <5nm
+    # can sustain up to ~1.4e9 (Rathore limit). Used by the breakdown model
+    # (DeviceSimulator) to flag soft-breakdown when |E| > E_bd in dielectric
+    # nodes. (M7b, audit §22.)
+    E_bd: float = 0.0
+    # Interface trap density D_it [cm^-2 eV^-1]. 0 = no interface trap modelling.
+    # Typical: SiO2/Si ~1e10-1e12, HfO2/SiO2 ~1e11-1e12. (P6.)
+    Dit: float = 0.0
+    # Bulk oxide trap charge [C/m^3]. Persistent, evolved externally for
+    # retention/endurance. 0 = no oxide trap charge. (P6.)
+    Q_ot: float = 0.0
+    # Endurance fatigue parameters (P7). Q_ot_max = max accumulated trap charge
+    # [C/m^3] after infinite cycling. fatigue_Nc = characteristic cycle count.
+    Q_ot_max: float = 0.0
+    fatigue_Nc: float = 1.0e6
+    # Avalanche impact-ionization Chynoweth coefficients (M7a). alpha(E)=A*exp(-B/|E|)
+    # with |E| in [V/m]. 0.0 = use the solver default (silicon). Stored in SI
+    # (1/m, V/m) — literature 1/cm & V/cm values must be x100 before passing.
+    # Defaults are silicon (Overstraeten-De Man 1970), pre-converted:
+    #   A_n=7.03e5/cm -> 7.03e7/m, B_n=1.231e6 V/cm -> 1.231e8 V/m
+    #   A_p=1.58e6/cm -> 1.58e8/m, B_p=2.036e6 V/cm -> 2.036e8 V/m
+    ii_A_n: float = 0.0
+    ii_B_n: float = 0.0
+    ii_A_p: float = 0.0
+    ii_B_p: float = 0.0
 
 
 @dataclass
@@ -104,6 +140,18 @@ class Device:
             "Nv": np.zeros(x.shape, dtype=float),
             "mu_n": np.zeros(x.shape, dtype=float),
             "mu_p": np.zeros(x.shape, dtype=float),
+            "E_bd": np.zeros(x.shape, dtype=float),
+            "ii_A_n": np.zeros(x.shape, dtype=float),
+            "ii_B_n": np.zeros(x.shape, dtype=float),
+            "ii_A_p": np.zeros(x.shape, dtype=float),
+            "ii_B_p": np.zeros(x.shape, dtype=float),
+            "fe_alpha": np.zeros(x.shape, dtype=float),
+            "fe_beta": np.zeros(x.shape, dtype=float),
+            "fe_ps": np.zeros(x.shape, dtype=float),
+            "fe_ec": np.zeros(x.shape, dtype=float),
+            "fe_E_bi": np.zeros(x.shape, dtype=float),
+            "Dit": np.zeros(x.shape, dtype=float),
+            "Q_ot": np.zeros(x.shape, dtype=float),
         }
         for rid, region in enumerate(self.regions):
             mask = region.shape.contains(x, y, z)
@@ -116,6 +164,24 @@ class Device:
             out["Nv"][mask] = region.material.Nv
             out["mu_n"][mask] = region.material.mu_n * 1e-4  # m^2/(V·s)
             out["mu_p"][mask] = region.material.mu_p * 1e-4  # m^2/(V·s)
+            out["E_bd"][mask] = region.material.E_bd
+            # Impact ionization (SI units already). M7a.
+            out["ii_A_n"][mask] = region.material.ii_A_n
+            out["ii_B_n"][mask] = region.material.ii_B_n
+            out["ii_A_p"][mask] = region.material.ii_A_p
+            out["ii_B_p"][mask] = region.material.ii_B_p
+            # Ferroelectric material parameters (P1.1): written to the mesh so
+            # Simulator.set_ferroelectric can identify FE nodes by fe_alpha!=0
+            # (material-driven, NOT by a dielectric-constant window — which fails
+            # for AlScN with epsilon_r~15). (P1.4: fe_ps/fe_ec/fe_E_bi.)
+            out["fe_alpha"][mask] = region.material.fe_alpha
+            out["fe_beta"][mask] = region.material.fe_beta
+            out["fe_ps"][mask] = region.material.fe_ps
+            out["fe_ec"][mask] = region.material.fe_ec
+            out["fe_E_bi"][mask] = region.material.fe_E_bi
+            # Interface/oxide traps (P6)
+            out["Dit"][mask] = region.material.Dit
+            out["Q_ot"][mask] = region.material.Q_ot
         return out
 
     def get_contacts_on_grid(self, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> Dict[str, np.ndarray]:
@@ -855,6 +921,88 @@ class Device:
         dev.add_contact("gate", Box(Lsd, Lsd + Lg, -t_outer - t_gate, W_sheet + t_outer + t_gate,
                                      t_sheet + t_outer, t_sheet + t_outer + 5e-9), voltage=Vg)
 
+        return dev
+
+    @staticmethod
+    def alscn_mos2_fefet(
+        Lg: float = 50e-9,
+        t_fe: float = 20e-9,
+        t_ox: float = 2e-9,
+        t_ch: float = 5e-9,
+        Lsd: float = 50e-9,
+        Vg: float = 0.0,
+        Vd: float = 0.05,
+        Vs: float = 0.0,
+    ) -> Device:
+        """AlScN + MoS₂ FeFET (1-D MFIS capacitor/transistor stack).
+
+        Gate stack (top to bottom): metal gate | AlScN ferroelectric | SiO₂
+        interfacial oxide | MoS₂ channel | source/drain contacts.
+
+        Uses the material library ``alscn()`` (Ps=140 μC/cm², Ec=3.5 MV/cm)
+        and ``mos2_channel()`` (Eg=1.8 eV) directly -- no hardcoded inline
+        materials. This is the device template for validating the FeFET
+        capability improvements (P5-P8) from comments.docx feedback.
+
+        Parameters
+        ----------
+        Lg : float
+            Gate length [m].
+        t_fe : float
+            AlScN ferroelectric thickness [m] (20nm => ~7V coercive voltage).
+        t_ox : float
+            Interfacial SiO₂ thickness [m].
+        t_ch : float
+            MoS₂ channel thickness [m].
+        Lsd : float
+            Source/drain extension length [m].
+        Vg, Vd, Vs : float
+            Bias voltages [V].
+        """
+        from tcad.material.library import alscn, mos2_channel, sio2
+
+        dev = Device("alscn_mos2_fefet")
+        x_total = 2 * Lsd + Lg
+        fe = alscn()
+        ch = mos2_channel()
+        ox = sio2()
+        metal = Material(name="TiN", epsilon_r=100.0, Eg=0.0, mu_n=0.0, mu_p=0.0)
+
+        # Gate metal (top)
+        dev.add_region(Region("gate_metal",
+            Box(0, x_total, 0, 1e-9, t_ch + t_ox + t_fe, t_ch + t_ox + t_fe + 10e-9),
+            metal, DopingProfile()))
+
+        # AlScN ferroelectric
+        dev.add_region(Region("fe",
+            Box(0, x_total, 0, 1e-9, t_ch + t_ox, t_ch + t_ox + t_fe),
+            fe, DopingProfile()))
+
+        # Interfacial SiO2
+        dev.add_region(Region("il_ox",
+            Box(0, x_total, 0, 1e-9, t_ch, t_ch + t_ox),
+            ox, DopingProfile()))
+
+        # MoS2 channel (lightly n-doped for FET operation)
+        dev.add_region(Region("channel",
+            Box(0, x_total, 0, 1e-9, 0, t_ch),
+            ch, DopingProfile(Nd=1e15, Na=0.0)))
+
+        # Source (n+ doped MoS2)
+        dev.add_region(Region("source",
+            Box(0, Lsd, 0, 1e-9, 0, t_ch),
+            ch, DopingProfile(Nd=1e19, Na=0.0)))
+
+        # Drain (n+ doped MoS2)
+        dev.add_region(Region("drain",
+            Box(Lsd + Lg, x_total, 0, 1e-9, 0, t_ch),
+            ch, DopingProfile(Nd=1e19, Na=0.0)))
+
+        # Contacts
+        dev.add_contact("source", Box(0, Lsd, 0, 1e-9, -5e-9, 0), voltage=Vs)
+        dev.add_contact("drain", Box(Lsd + Lg, x_total, 0, 1e-9, -5e-9, 0), voltage=Vd)
+        dev.add_contact("gate", Box(0, x_total, 0, 1e-9,
+                                     t_ch + t_ox + t_fe, t_ch + t_ox + t_fe + 5e-9), voltage=Vg)
         return dev
 
     @staticmethod

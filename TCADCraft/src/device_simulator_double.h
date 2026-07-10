@@ -37,6 +37,10 @@ public:
     void set_poisson_solver_type(int type);
     void set_continuity_solver_type(int type);
     void set_use_newton(bool enable);
+    // C档: Newton freeze flags (isolated-continuity MMS).
+    void set_newton_freeze_phi(bool enable);
+    void set_newton_freeze_n(bool enable);
+    void set_newton_freeze_p(bool enable);
 
     void set_newton_damping(double damping);
     void set_newton_min_damping(double min_damping);
@@ -53,8 +57,28 @@ public:
     void set_btbt_enabled(bool enable);
     void set_btbt_params(double A, double B, int D);
     void set_btbt_use_nonlocal(bool enable);
+    // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
+    void set_ii_enabled(bool enable);
+    void set_ii_params(double A_n, double B_n, double A_p, double B_p);
+    // Dielectric breakdown (M7b).
+    void set_breakdown_enabled(bool enable);
+    void set_breakdown_params(const std::vector<signed char>& bd_mask,
+                              const std::vector<double>& E_bd, double sigma_bd);
+    std::vector<signed char> breakdown_state();
     void set_ferroelectric_enabled(bool enable);
     void set_ferroelectric_params(const std::vector<signed char>& fe_mask, double alpha, double beta);
+    // Ferroelectric model + Preisach (M7c).
+    void set_ferroelectric_model(int model);
+    void set_ferroelectric_preisach(double ps, double ec, double escale);
+    void set_ferroelectric_builtin_field(double E_bi);   // P2.1
+    void set_ferroelectric_nls(double tau0, double E0, double dt);  // P3
+    void set_leakage(const std::vector<signed char>& mask,
+                     double C_pf, double B_pf, double phi_t,
+                     double C_fn, double B_fn, double phi_b,
+                     double E_floor, double sigma_cap);   // P2.2
+    void set_leakage_enabled(bool enable);                // P2.2
+    void set_interface_traps(const std::vector<signed char>& mask, double D_it, double E_t);  // P6
+    void set_oxide_traps(const std::vector<double>& Q_ot);  // P6
     // Persistent signed polarization field (double-converted from internal quad).
     std::vector<double> fe_polarization();
 

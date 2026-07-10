@@ -77,6 +77,16 @@ class Simulator:
             raise KeyError(f"Contact '{name}' not found in mesh fields. Available: {list(self.mesh.fields.keys())}")
         mask = self.mesh.fields[field_name].astype(bool)
         indices = np.nonzero(mask.ravel())[0].astype(np.int64)
+        # B档修复 (Bug 4): a contact that hits zero mesh nodes (thinner than a
+        # cell, or outside the region bbox) would leave phi_bc empty and the C++
+        # solver would silently apply NO Dirichlet BC — the contact floats,
+        # producing wrong physics with no error (the devsim-2D failure mode).
+        # Fail loudly instead.
+        if len(indices) == 0:
+            raise ValueError(
+                f"Contact '{name}' matches zero mesh nodes. The contact Box is "
+                f"likely thinner than one cell or lies outside the device bbox; "
+                f"refine the mesh or widen the contact region.")
 
         # Equilibrium carrier densities at contacts (Boltzmann approx)
         if "doping" not in self.mesh.fields:
@@ -174,6 +184,26 @@ class Simulator:
         or strongly coupled problems.
         """
         self._sim.set_use_newton(enable)
+
+    def set_freeze_phi(self, enable: bool = True):
+        """Freeze the Poisson block (phi) during the Newton solve (C档).
+
+        Pins phi to its current value so the Newton system reduces to a 2-block
+        (n, p) continuity solve. With phi held flat (set via ``set_initial_guess``
+        or a uniform Dirichlet bias) this kills the drift term, reducing the
+        Scharfetter-Gummel scheme to pure central-difference diffusion — the
+        basis for an isolated continuity-equation MMS (manufactured solution)
+        grid-convergence test. Newton-only; the Gummel path is unaffected.
+        """
+        self._sim.set_newton_freeze_phi(enable)
+
+    def set_freeze_n(self, enable: bool = True):
+        """Freeze the electron block (n) during the Newton solve (C档)."""
+        self._sim.set_newton_freeze_n(enable)
+
+    def set_freeze_p(self, enable: bool = True):
+        """Freeze the hole block (p) during the Newton solve (C档)."""
+        self._sim.set_newton_freeze_p(enable)
 
     def set_newton_options(
         self,
@@ -286,40 +316,376 @@ class Simulator:
         self._sim.set_btbt_params(A_kane, B_kane, int(D))
         self._sim.set_btbt_use_nonlocal(use_nonlocal)
 
-    def set_ferroelectric(self, enabled: bool = True,
-                          alpha: float = -1.0e8,
-                          beta: float = 1.0e18) -> None:
-        """Enable ferroelectric polarization (Landau-Khalatnikov model).
+    def set_impact_ionization(self, enabled: bool = True,
+                              A_n: float = 7.03e7,
+                              B_n: float = 1.231e8,
+                              A_p: float = 1.58e8,
+                              B_p: float = 2.036e8,
+                              from_mesh: bool = False) -> None:
+        """Enable avalanche impact ionization (Chynoweth model).
 
-        Ferroelectric regions are identified from the mesh ``material_id`` field.
-        The ferroelectric model adds a self-consistent polarization charge to the
-        Poisson equation, producing the negative capacitance amplification effect.
+        Adds an electron-hole-pair generation source to both continuity
+        equations:
+
+            G_ii = (alpha_n(E)*|Jn| + alpha_p(E)*|Jp|) / q    [m^-3 s^-1]
+
+        where the Chynoweth ionization coefficient is
+
+            alpha(E) = A * exp(-B / |E|)            [1/m]
+
+        and ``|E|`` is the edge-aligned electric field [V/m], and ``Jn``, ``Jp``
+        are the Scharfetter-Gummel edge current densities [A/m^2]. This drives
+        avalanche breakdown in reverse-biased junctions, MOSFET drain-substrate
+        breakdown, BJT snapback, and ESD clamps.
+
+        Parameters
+        ----------
+        enabled : bool
+            Turn impact ionization on/off.
+        A_n, B_n : float
+            Electron ionization coefficients (alpha_n = A_n*exp(-B_n/|E|)).
+            Units: ``A_n`` [1/m], ``B_n`` [V/m]. Defaults are silicon
+            (Chynoweth 1959 / Overstraeten-De Man 1970), pre-converted from the
+            literature 1/cm & V/cm values (A_n=7.03e5 /cm, B_n=1.231e6 V/cm).
+        A_p, B_p : float
+            Hole ionization coefficients. Defaults are silicon
+            (A_p=1.58e6 /cm, B_p=2.036e6 V/cm) pre-converted to SI.
+        from_mesh : bool
+            If True, read the four coefficients from the per-node ``ii_*`` mesh
+            fields (populated by ``Material.ii_A_n`` etc., e.g. ``silicon()``),
+            taking the median over semiconductor (mu_n>0) nodes. This makes the
+            material library the single source of truth. Defaults to False
+            (explicit args override).
+
+        Notes
+        -----
+        Coefficients are passed in SI units (no runtime scaling). To use
+        literature values quoted in ``1/cm`` and ``V/cm``, multiply ``A`` by
+        ``1e2`` and ``B`` by ``1e2`` before passing. For materials other than
+        Si, supply the appropriate Chynoweth coefficients — they are strongly
+        material- and temperature-dependent.
+        """
+        self._sim.set_ii_enabled(enabled)
+        if from_mesh and "ii_A_n" in self.mesh.fields:
+            ii_A_n = self.mesh.fields["ii_A_n"].ravel()
+            ii_B_n = self.mesh.fields["ii_B_n"].ravel()
+            ii_A_p = self.mesh.fields["ii_A_p"].ravel()
+            ii_B_p = self.mesh.fields["ii_B_p"].ravel()
+            # Semiconductor nodes: mu_n > 0 (where II is physically active).
+            if "mu_n" in self.mesh.fields:
+                mu_n = self.mesh.fields["mu_n"].ravel()
+                semi = mu_n > 0
+            else:
+                semi = np.ones(ii_A_n.shape, dtype=bool)
+            # Use median over semiconductor nodes (a single global coefficient
+            # set; median is robust to oxide zeros).
+            if semi.any() and ii_A_n[semi].max() > 0:
+                A_n = float(np.median(ii_A_n[semi]))
+                B_n = float(np.median(ii_B_n[semi]))
+                A_p = float(np.median(ii_A_p[semi]))
+                B_p = float(np.median(ii_B_p[semi]))
+        self._sim.set_ii_params(A_n, B_n, A_p, B_p)
+
+    def set_breakdown(self, enabled: bool = True,
+                      sigma_bd: float = 1.0e-2) -> None:
+        """Enable dielectric breakdown modelling (M7b, audit §22).
+
+        After each converged solve, dielectric-region nodes whose electric
+        field magnitude ``|E|`` exceeds the material breakdown field ``E_bd``
+        are flagged as *soft-broken*. On subsequent solves a leakage term
+        ``sigma_bd`` is added to the Poisson diagonal at those nodes (same
+        units as the Laplacian diagonal ``eps/dx^2``), locally relaxing
+        ``phi`` toward 0 (a soft short) so a gate leak develops. The breakdown
+        is **irreversible** — once a node breaks down it stays broken down,
+        modelling the conductive filament.
+
+        The breakdown field ``E_bd`` is read per-node from the mesh's
+        ``E_bd`` field, which ``Device.sample_on_grid`` populates from each
+        ``Material.E_bd`` (e.g. ``sio2()`` -> 1.2e9 V/m, ``hfo2()`` -> 6e8
+        V/m). Materials with ``E_bd == 0`` never break down.
+
+        Parameters
+        ----------
+        enabled : bool
+            Turn breakdown detection on/off.
+        sigma_bd : float
+            Soft-breakdown leakage term [F/m^3] — an effective added
+            permittivity-density added to the Poisson diagonal at broken nodes
+            (same units as ``eps/dx^2``, so dimensionally consistent with the
+            Laplacian). Default 1e-2 (~10% of a typical oxide diagonal
+            ``eps_SiO2/dx^2`` for a 2 nm oxide; raise for a harder short,
+            e.g. 1e0 dominates the diagonal and pins phi≈0).
+            (A档: was documented [S/m], which was dimensionally wrong.)
+
+        Notes
+        -----
+        Call ``set_material_from_mesh`` first so the ``E_bd`` mesh field is
+        populated. After solving, inspect the breakdown state via
+        ``sim._sim.breakdown_state()`` (an int8 array, 1 = broken down).
+        """
+        self._sim.set_breakdown_enabled(enabled)
+        if enabled:
+            import numpy as np
+            if "E_bd" in self.mesh.fields:
+                E_bd = self.mesh.fields["E_bd"].astype(np.float64).ravel()
+                # Dielectric mask: nodes with E_bd > 0 (i.e. a dielectric
+                # material that has a breakdown field defined).
+                bd_mask = (E_bd > 0.0).astype(np.int8)
+                self._sim.set_breakdown_params(bd_mask, E_bd, float(sigma_bd))
+            else:
+                # No E_bd field -> nothing to monitor; warn implicitly by no-op.
+                import warnings
+                warnings.warn(
+                    "set_breakdown(enabled=True) but mesh has no 'E_bd' field; "
+                    "call set_material_from_mesh() with materials that define E_bd.",
+                    RuntimeWarning, stacklevel=2)
+
+    def set_ferroelectric(self, enabled: bool = True,
+                          alpha: float = -5.0e8,
+                          beta: float = 1.5e10,
+                          model: str = "landau_khalatnikov",
+                          Ps: float = 0.2,
+                          Ec: float = 1.0e9,
+                          Escale: float = 0.0,
+                          nls_tau0: float = 1.0e-6,
+                          nls_E0: float = 2.0e9,
+                          nls_dt: float = 1.0e-6,
+                          fe_mask_override: Optional[np.ndarray] = None) -> None:
+        """Enable ferroelectric polarization.
+
+        Three models are supported (M7c + P3):
+
+        - ``"landau_khalatnikov"`` (default): the cubic L-K model
+          ``alpha*P + beta*P^3 = E``. Hysteresis arises from per-component
+          branch continuation. Parameters ``alpha``/``beta`` set the double-well
+          shape (Ps = sqrt(-alpha/beta), Ec = (2|alpha|/3)*sqrt(-alpha/(3beta))).
+        - ``"preisach"``: the classical scalar Preisach (play-operator) model,
+          parameterised DIRECTLY by saturation polarization ``Ps`` [C/m^2] and
+          coercive field ``Ec`` [V/m]. This sidesteps the L-K alpha/beta
+          dimensional ambiguity and produces a natural memory loop.
+        - ``"nls"``: Nucleation-Limited Switching (Merz law
+          ``tau(E)=tau0·exp(E0/|E|)``), suited to wurtzite ferroelectrics like
+          AlScN whose switching is domain-nucleation-limited. Produces a finite-
+          slope (S-shaped) loop instead of a vertical jump. (P3.)
+
+        Ferroelectric regions are identified from the mesh by the material's
+        ``fe_alpha`` field (``fe_alpha != 0``), NOT by a dielectric-constant
+        window. This lets low-permittivity ferroelectrics such as AlScN
+        (epsilon_r ~ 15) be correctly detected — the old ``eps_r in [25,50]``
+        window silently excluded them. Pass ``fe_mask_override`` to force a
+        specific node mask regardless of materials. (P1.1.)
 
         Parameters
         ----------
         enabled : bool
             Turn ferroelectric on/off.
-        alpha : float
-            Landau coefficient alpha [m/F]. Must be negative for double-well
-            potential. Typical for HfZrO: ~-1e8.
-        beta : float
-            Landau coefficient beta [m^5/(F*C^2)]. Must be positive.
-            Typical for HfZrO: ~1e18.
+        alpha, beta : float
+            L-K coefficients. Defaults now match the material library HfZrO
+            (-5e8 / 1.5e10). When the mesh carries a ``fe_alpha`` field the
+            per-node alpha/beta are read from it, overriding these scalars.
+        model : str
+            ``"landau_khalatnikov"`` or ``"preisach"``.
+        Ps : float
+            Preisach saturation polarization [C/m^2]. When the mesh carries a
+            ``fe_ps`` field with nonzero values, those are used instead.
+        Ec : float
+            Preisach coercive field [V/m]. Overridden by mesh ``fe_ec`` if set.
+        Escale : float
+            Preisach tanh output width [V/m]. Default 0 = ``Ec`` (keeps the
+            play-operator loop correctly shaped with a nonzero remanence window).
+            A smaller ``Escale`` (e.g. ``Ec/3``) lets |P| approach the named
+            saturation Ps on a monotonic ramp, but too small collapses the loop.
+        fe_mask_override : np.ndarray, optional
+            Explicit int8 node mask (1 = ferroelectric). Bypasses material
+            auto-detection when provided.
         """
         self._sim.set_ferroelectric_enabled(enabled)
-        # Identify ferroelectric nodes from material_id field
-        if "material_id" in self.mesh.fields:
-            mat_id = self.mesh.fields["material_id"].astype(np.int8).ravel()
-            # HfZrO materials have material_id >= 4 (based on device region order)
-            # Use a simple heuristic: nodes in the gate oxide region of FeFET devices
-            fe_mask = np.zeros(self.mesh.npts(), dtype=np.int8)
-            # Mark nodes with epsilon corresponding to ferroelectric material
-            if "epsilon" in self.mesh.fields:
-                eps = self.mesh.fields["epsilon"].ravel()
-                # HfZrO epsilon_r ~30-40, eps = eps_r * eps0
-                eps0 = 8.854187817e-12
-                fe_mask = ((eps > 25.0 * eps0) & (eps < 50.0 * eps0)).astype(np.int8)
-            self._sim.set_ferroelectric_params(fe_mask, alpha, beta)
+        model_map = {"landau_khalatnikov": 0, "preisach": 1, "nls": 2}
+        model_int = model_map.get(model.lower(), 0)
+        self._sim.set_ferroelectric_model(model_int)
+
+        # --- Determine the FE node mask (P1.1: material-driven) ---
+        npts = self.mesh.npts()
+        if fe_mask_override is not None:
+            fe_mask = np.asarray(fe_mask_override, dtype=np.int8).ravel()
+        elif "fe_alpha" in self.mesh.fields:
+            # Material-driven detection: a node is ferroelectric if its material
+            # declares a nonzero Landau alpha. This supersedes the old
+            # eps_r-in-[25,50] window which silently excluded AlScN (eps_r~15).
+            fe_alpha_field = self.mesh.fields["fe_alpha"].ravel()
+            fe_mask = (np.abs(fe_alpha_field) > 0.0).astype(np.int8)
+        elif "material_id" in self.mesh.fields and "epsilon" in self.mesh.fields:
+            # Legacy fallback (no fe_alpha field): eps_r window for HfZrO.
+            eps = self.mesh.fields["epsilon"].ravel()
+            eps0 = 8.854187817e-12
+            fe_mask = ((eps > 25.0 * eps0) & (eps < 50.0 * eps0)).astype(np.int8)
+        else:
+            fe_mask = np.zeros(npts, dtype=np.int8)
+
+        # --- Resolve alpha/beta (scalar default, or per-node from material) ---
+        if "fe_alpha" in self.mesh.fields and np.any(fe_mask):
+            alpha = float(self.mesh.fields["fe_alpha"].ravel()[fe_mask.astype(bool)][0])
+            beta = float(self.mesh.fields["fe_beta"].ravel()[fe_mask.astype(bool)][0])
+        if model_int == 1 or model_int == 2:
+            # Resolve Preisach/NLS Ps/Ec from material field when available.
+            if "fe_ps" in self.mesh.fields and np.any(fe_mask):
+                ps_field = self.mesh.fields["fe_ps"].ravel()[fe_mask.astype(bool)]
+                ec_field = self.mesh.fields["fe_ec"].ravel()[fe_mask.astype(bool)]
+                if np.any(np.abs(ps_field) > 0.0):
+                    Ps = float(ps_field[np.abs(ps_field) > 0.0][0])
+                if np.any(np.abs(ec_field) > 0.0):
+                    Ec = float(ec_field[np.abs(ec_field) > 0.0][0])
+            self._sim.set_ferroelectric_preisach(Ps, Ec, Escale)
+            if model_int == 2:
+                # NLS Merz-law parameters (P3).
+                self._sim.set_ferroelectric_nls(nls_tau0, nls_E0, nls_dt)
+        self._sim.set_ferroelectric_params(fe_mask, alpha, beta)
+        # Internal field / Imprint offset (P2.1): read from material field.
+        if "fe_E_bi" in self.mesh.fields and np.any(fe_mask):
+            ebi = self.mesh.fields["fe_E_bi"].ravel()[fe_mask.astype(bool)]
+            if np.any(np.abs(ebi) > 0.0):
+                self._sim.set_ferroelectric_builtin_field(float(ebi[np.abs(ebi) > 0.0][0]))
+
+    def set_ferroelectric_model(self, model: str = "landau_khalatnikov",
+                                Ps: float = 0.2, Ec: float = 1.0e9,
+                                Escale: float = 0.0,
+                                nls_tau0: float = 1.0e-6,
+                                nls_E0: float = 2.0e9,
+                                nls_dt: float = 1.0e-6) -> None:
+        """Select the ferroelectric model (M7c + P3).
+
+        Parameters
+        ----------
+        model : str
+            ``"landau_khalatnikov"``, ``"preisach"``, or ``"nls"``.
+        Ps, Ec : float
+            Saturation polarization [C/m^2] and coercive field [V/m] (used by
+            the Preisach and NLS models).
+        Escale : float
+            Preisach tanh output width [V/m] (0 = ``Ec``; see
+            ``set_ferroelectric`` for the saturation-Ps trade-off).
+        nls_tau0, nls_E0 : float
+            NLS Merz-law switching time ``tau(E) = tau0·exp(E0/|E|)`` [s], [V/m]
+            (used only for the NLS model).
+        nls_dt : float
+            NLS effective dwell time per bias step [s] — controls the loop
+            slope (larger => faster, more vertical switching).
+        """
+        model_map = {"landau_khalatnikov": 0, "preisach": 1, "nls": 2}
+        model_int = model_map.get(model.lower(), 0)
+        self._sim.set_ferroelectric_model(model_int)
+        if model_int == 1:
+            self._sim.set_ferroelectric_preisach(Ps, Ec, Escale)
+        if model_int == 2:
+            self._sim.set_ferroelectric_preisach(Ps, Ec, Escale)
+            self._sim.set_ferroelectric_nls(nls_tau0, nls_E0, nls_dt)
+
+    def set_ferroelectric_builtin_field(self, E_bi: float = 0.0) -> None:
+        """Set the internal/imprint field offset (P2.1).
+
+        The effective ferroelectric switching drive becomes ``E_eff = E - E_bi``.
+        This models a built-in bias or wake-up imprint that breaks the +/- loop
+        symmetry. ``E_bi = 0`` (default) restores a symmetric loop.
+
+        Parameters
+        ----------
+        E_bi : float
+            Internal field offset [V/m].
+        """
+        self._sim.set_ferroelectric_builtin_field(E_bi)
+
+    def set_leakage(self, enabled: bool = True,
+                    pf_C: float = 0.02, pf_B: float = 5.0e5, pf_phi_t: float = 0.5,
+                    fn_C: float = 0.0, fn_B: float = 0.0, fn_phi_b: float = 0.0,
+                    E_floor: float = 1.0e6, sigma_cap: float = 0.05,
+                    leak_mask_override: Optional[np.ndarray] = None) -> None:
+        """Enable leakage current (Poole-Frenkel / Fowler-Nordheim) (P2.2).
+
+        Leakage provides a field-dependent conductive path across the
+        ferroelectric/insulator stack. This relaxes the internal potential
+        slightly at the leaky layer so the P-V loop does NOT close at V=0
+        — reproducing the experimentally observed "0V non-closure" and the
+        off-state gate leakage in FeFETs.
+
+        The leaky nodes default to the ferroelectric nodes (auto-detected from
+        the material's ``fe_alpha`` field); pass ``leak_mask_override`` to
+        force a specific node mask.
+
+        The PF/FN conductance is added to the Poisson diagonal **normalised to
+        the local Laplacian diagonal** ``eps/dx²``, so ``pf_C``/``fn_C`` are
+        dimensionless fractions (e.g. 0.02 ≈ 2% of the dielectric conductance at
+        high field). This makes the model grid-independent.
+
+        Parameters
+        ----------
+        enabled : bool
+            Turn leakage on/off.
+        pf_C, pf_B, pf_phi_t : float
+            Poole-Frenkel prefactor (fraction of ``eps/dx²``), barrier
+            coefficient, and trap ionization energy [eV].
+            ``frac_pf = pf_C·exp(-pf_B·sqrt(pf_phi_t/|E|))``.
+        fn_C, fn_B, fn_phi_b : float
+            Fowler-Nordheim prefactor, exponent coefficient, and barrier height
+            [eV]. ``frac_fn = fn_C·|E|·exp(-fn_B·fn_phi_b^1.5/|E|)``.
+        E_floor : float
+            Field below which leakage is negligible [V/m].
+        sigma_cap : float
+            Cap on added conductance as a fraction of ``eps/dx²``.
+        leak_mask_override : np.ndarray, optional
+            Explicit int8 node mask (1 = leaky). Defaults to the FE mask.
+        """
+        if not enabled:
+            self._sim.set_leakage_enabled(False)
+            return
+        npts = self.mesh.npts()
+        if leak_mask_override is not None:
+            mask = np.asarray(leak_mask_override, dtype=np.int8).ravel()
+        elif "fe_alpha" in self.mesh.fields:
+            mask = (np.abs(self.mesh.fields["fe_alpha"].ravel()) > 0.0).astype(np.int8)
+        else:
+            mask = np.zeros(npts, dtype=np.int8)
+        self._sim.set_leakage(mask, pf_C, pf_B, pf_phi_t,
+                              fn_C, fn_B, fn_phi_b, E_floor, sigma_cap)
+
+    def set_interface_traps(self, D_it: float = 0.0, E_t: float = 0.0,
+                            trap_mask_override: Optional[np.ndarray] = None) -> None:
+        """Enable interface traps (Dit) and bulk oxide traps (P6).
+
+        Interface traps inject a charge ``Q_it = -q·D_it·dE·(f_t−0.5)`` into the
+        Poisson RHS of interface nodes, where ``f_t`` is the trap occupancy
+        determined by the local potential. This shifts the threshold voltage and
+        affects memory window, retention, and endurance (comments.docx).
+
+        The trap mask defaults to nodes where ``Dit > 0`` in the mesh fields;
+        pass ``trap_mask_override`` to force a specific mask.
+
+        Parameters
+        ----------
+        D_it : float
+            Interface trap density [cm^-2 eV^-1]. Overridden by mesh field if
+            nonzero values exist.
+        E_t : float
+            Trap energy level [eV] relative to intrinsic Fermi level. 0 = at
+            midgap (maximally effective).
+        trap_mask_override : np.ndarray, optional
+            Explicit int8 node mask (1 = trap node).
+        """
+        npts = self.mesh.npts()
+        if trap_mask_override is not None:
+            mask = np.asarray(trap_mask_override, dtype=np.int8).ravel()
+        elif "Dit" in self.mesh.fields:
+            dit_field = self.mesh.fields["Dit"].ravel()
+            mask = (np.abs(dit_field) > 0.0).astype(np.int8)
+            if np.any(mask) and D_it == 0.0:
+                D_it = float(dit_field[mask.astype(bool)][0])
+        else:
+            mask = np.zeros(npts, dtype=np.int8)
+        self._sim.set_interface_traps(mask, D_it, E_t)
+        # Also set bulk oxide traps if present in mesh.
+        if "Q_ot" in self.mesh.fields:
+            qot = self.mesh.fields["Q_ot"].ravel()
+            if np.any(np.abs(qot) > 0.0):
+                self._sim.set_oxide_traps(qot.astype(float))
 
     def set_mobility_model(self, model: str = "constant") -> None:
         """Set mobility model for temperature/doping-dependent mobility.

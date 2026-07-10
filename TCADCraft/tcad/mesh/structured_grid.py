@@ -23,6 +23,17 @@ class StructuredGrid(Mesh):
     ):
         super().__init__()
         (self.xmin, self.xmax), (self.ymin, self.ymax), (self.zmin, self.zmax) = bbox
+        # B档修复: validate bbox — an inverted or zero-width span silently
+        # produces a negative/zero dx that poisons the stencil and reshapes.
+        # (nx=1 with a valid span is allowed; the degenerate axis spacing is
+        #  then computed but unused since there is only one node.)
+        for axis, (lo, hi) in [("x", (self.xmin, self.xmax)),
+                               ("y", (self.ymin, self.ymax)),
+                               ("z", (self.zmin, self.zmax))]:
+            if not (lo < hi):
+                raise ValueError(
+                    f"StructuredGrid bbox {axis}-span must be strictly increasing "
+                    f"(lo < hi); got ({lo}, {hi}).")
         self.nx = nx
         self.ny = ny
         self.nz = nz

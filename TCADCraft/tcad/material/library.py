@@ -47,7 +47,14 @@ _M_STAR_MOS2_P = 0.60
 
 
 def silicon() -> Material:
-    """Crystalline silicon baseline."""
+    """Crystalline silicon baseline.
+
+    Includes the Chynoweth avalanche impact-ionization coefficients
+    (Overstraeten-De Man 1970), pre-converted to SI (1/m, V/m) — see
+    ImpactIonizationParams in src/gummel_solver.h for the provenance. These
+    populate the per-node ``ii_*`` mesh fields and are auto-applied when
+    ``Simulator.set_impact_ionization(True)`` reads them.
+    """
     return Material(
         name="Si",
         epsilon_r=11.7,
@@ -61,6 +68,11 @@ def silicon() -> Material:
         tau_p=1e-6,
         b_n=dg_coefficient(_M_STAR_SI_N),
         b_p=dg_coefficient(_M_STAR_SI_P),
+        # Avalanche impact ionization (Chynoweth, SI units). M7a.
+        ii_A_n=7.03e7,    # electrons [1/m]
+        ii_B_n=1.231e8,   # [V/m]
+        ii_A_p=1.58e8,    # holes [1/m]
+        ii_B_p=2.036e8,   # [V/m]
     )
 
 
@@ -79,6 +91,8 @@ def sio2() -> Material:
         tau_p=1e-7,
         b_n=dg_coefficient(_M_STAR_INSULATOR),
         b_p=dg_coefficient(_M_STAR_INSULATOR),
+        E_bd=1.2e9,   # intrinsic breakdown field ~12 MV/cm (M7b)
+        Dit=1.0e11,   # interface trap density ~1e11 cm^-2 eV^-1 (P6)
     )
 
 
@@ -100,6 +114,7 @@ def hfo2(kappa: float = 25.0) -> Material:
         tau_p=1e-7,
         b_n=dg_coefficient(_M_STAR_INSULATOR),
         b_p=dg_coefficient(_M_STAR_INSULATOR),
+        E_bd=6.0e8,   # intrinsic breakdown field ~6 MV/cm (M7b)
     )
 
 
@@ -134,6 +149,63 @@ def hfzro(hf_ratio: float = 0.5) -> Material:
         b_p=dg_coefficient(_M_STAR_INSULATOR),
         fe_alpha=fe_alpha,
         fe_beta=fe_beta,
+        fe_ps=0.0,    # derive from L-K alpha/beta (Ps = sqrt(-alpha/beta) ~ 18 uC/cm^2)
+        fe_ec=0.0,
+        E_bd=6.0e8,   # intrinsic breakdown field ~6 MV/cm (M7b)
+        Dit=5.0e11,   # interface trap density (P6)
+    )
+
+
+def alscn(sc_fraction: float = 0.27) -> Material:
+    """AlScN (wurtzite aluminum scandium nitride) ferroelectric.
+
+    AlScN is an emerging wurtzite-structured ferroelectric with a very large
+    spontaneous polarization. sc_fraction is the Sc/(Sc+Al) fraction; ~0.27
+    maximizes ferroelectric response.
+
+    Key targets (from experimental PUND, see comments.docx):
+      Ps ~ 130-150 uC/cm^2 (= 1.3-1.5 C/m^2)
+      Ec ~ 3-4 MV/cm (= 3-5e8 V/m; a 40 nm film switches at ~12-16 V)
+
+    The Landau coefficients are reverse-engineered so the cubic L-K double well
+    reproduces the target Ps and Ec:
+        Ps = sqrt(-alpha/beta)
+        Ec = (2|alpha|/3) * sqrt(-alpha/(3*beta)) = 2*beta*Ps^3 / (3*sqrt(3))
+    =>  beta = Ec * 3*sqrt(3) / (2*Ps^3),   alpha = -beta * Ps^2.
+    (P1.4.)
+
+    The direct Preisach parameters fe_ps/fe_ec are also set, so the Preisach and
+    NLS models can be parameterised without the L-K dimensional ambiguity.
+    epsilon_r ~ 15 is well BELOW the old [25,50] HfZrO detection window, so
+    material-driven FE detection (fe_alpha != 0) is essential here.
+    """
+    import math
+    Ps = 1.4               # C/m^2 (140 uC/cm^2)
+    Ec = 3.5e8             # V/m (3.5 MV/cm)
+    sqrt3 = math.sqrt(3.0)
+    fe_beta = Ec * 3.0 * sqrt3 / (2.0 * Ps ** 3)    # ~3.31e8
+    fe_alpha = -fe_beta * Ps * Ps                     # ~-6.49e8
+    epsilon_r = 15.0       # Al(1-x)Sc(x)N, x~0.27
+    return Material(
+        name=f"AlScN_x{sc_fraction:.2f}",
+        epsilon_r=epsilon_r,
+        Eg=5.5,
+        chi=1.5,
+        Nc=1.0e19,
+        Nv=1.0e19,
+        mu_n=0.0,
+        mu_p=0.0,
+        tau_n=1e-7,
+        tau_p=1e-7,
+        b_n=dg_coefficient(_M_STAR_INSULATOR),
+        b_p=dg_coefficient(_M_STAR_INSULATOR),
+        fe_alpha=fe_alpha,
+        fe_beta=fe_beta,
+        fe_ps=Ps,          # direct saturation polarization for Preisach/NLS
+        fe_ec=Ec,
+        E_bd=6.0e8,        # breakdown field ~6 MV/cm
+        Dit=5.0e11,        # interface trap density (P6)
+        Q_ot_max=1.0e5,    # max accumulated oxide trap charge [C/m^3] (P7)
     )
 
 

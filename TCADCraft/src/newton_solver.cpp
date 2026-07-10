@@ -63,6 +63,23 @@ void NewtonSolver::set_hole_bc(const std::map<size_t, real_t>& bc) {
     p_bc_ = bc;
 }
 
+void NewtonSolver::set_ferroelectric_polarization(const std::vector<char>& fe_mask,
+                                                  const std::vector<real_t>& fe_polarization) {
+    // fe_polarization is [Px,Py,Pz] interleaved per node (length 3*npts);
+    // fe_mask is length npts.  Empty mask disables the FE feedback.
+    fe_mask_ = fe_mask;
+    fe_polarization_ = fe_polarization;
+}
+
+void NewtonSolver::set_trap_charge(const std::vector<char>& trap_mask,
+                                   real_t D_it, real_t E_t,
+                                   const std::vector<real_t>& Q_ot) {
+    trap_mask_ = trap_mask;
+    trap_D_it_ = D_it;
+    trap_E_t_ = E_t;
+    Q_ot_ = Q_ot;
+}
+
 real_t NewtonSolver::compute_btbt_at(const real_t* phi, size_t idx) const {
     if (!opt_.enable_btbt) return 0.0Q;
     // Skip insulator/metal
@@ -104,6 +121,56 @@ real_t NewtonSolver::compute_btbt_at(const real_t* phi, size_t idx) const {
     real_t E_D = 1.0Q;
     for (int d = 0; d < D; ++d) E_D *= E_mag;
     return A * E_D * exp_q(-B / E_mag);
+}
+
+real_t NewtonSolver::compute_ii_at(const real_t* phi, const real_t* n,
+                                   const real_t* p, size_t idx) const {
+    // Per-node impact-ionization generation [m^-3 s^-1] via the EDGE form
+    // (same convention as GummelSolver::compute_impact_ionization and
+    // DeviceSimulator::compute_edge_currents).  For each of the up-to-6 edges
+    // meeting at idx we add alpha(|E_edge|)*|J_edge|/q (full edge, not halved —
+    // the per-node variant sums whole edges rather than splitting, matching how
+    // SRH/BTBT are returned as per-node rates here).
+    if (!opt_.enable_ii) return 0.0Q;
+    if (mu_n_[idx] < EPSILON && mu_p_[idx] < EPSILON) return 0.0Q;
+
+    size_t i = idx % g_.nx;
+    size_t j = (idx / g_.nx) % g_.ny;
+    size_t k = idx / (g_.nx * g_.ny);
+    const real_t VT = VT_;
+
+    auto alpha_of = [&](real_t E_mag, real_t A, real_t B) -> real_t {
+        if (E_mag < opt_.ii_E_floor) return 0.0Q;
+        return A * exp_q(-B / E_mag);
+    };
+
+    real_t G = 0.0Q;
+
+    // process one +neighbor edge: idx -> nbr (spacing d).
+    auto edge = [&](size_t nbr, real_t d) {
+        if (mu_n_[nbr] < EPSILON && mu_p_[nbr] < EPSILON) return;
+        real_t dphi = phi[nbr] - phi[idx];
+        real_t delta = dphi / VT;
+        real_t Bm = bernoulli(-delta);
+        real_t Bp = bernoulli(delta);
+        real_t E_edge = abs_q(dphi / d);
+        real_t an = alpha_of(E_edge, opt_.ii_A_n, opt_.ii_B_n);
+        real_t ap = alpha_of(E_edge, opt_.ii_A_p, opt_.ii_B_p);
+        if (an == 0.0Q && ap == 0.0Q) return;
+        real_t Dn = mu_n_[idx] * VT / d;
+        real_t Dp = mu_p_[idx] * VT / d;
+        real_t Jn = QE * Dn * (n[idx] * Bm - n[nbr] * Bp);
+        real_t Jp = QE * Dp * (p[idx] * Bp - p[nbr] * Bm);
+        G += (an * abs_q(Jn) + ap * abs_q(Jp)) / QE;
+    };
+
+    if (i + 1 < g_.nx) edge(idx + 1, g_.dx);
+    if (i > 0)         edge(idx - 1, g_.dx);
+    if (j + 1 < g_.ny) edge(idx + g_.nx, g_.dy);
+    if (j > 0)         edge(idx - g_.nx, g_.dy);
+    if (k + 1 < g_.nz) edge(idx + g_.nx * g_.ny, g_.dz);
+    if (k > 0)         edge(idx - g_.nx * g_.ny, g_.dz);
+    return G;
 }
 
 // Bernoulli function: B(x) = x / (exp(x) - 1)
@@ -205,7 +272,41 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                 if (j > 0)        add_link(idx - g_.nx, g_.dy);
                 if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz);
                 if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz);
-                F[phi_idx(idx)] = sum - center * phi[idx] + QE * (p[idx] - n[idx] + Nd_minus_Na_[idx]);
+                real_t rhs_poisson = sum - center * phi[idx] + QE * (p[idx] - n[idx] + Nd_minus_Na_[idx]);
+                // Ferroelectric bound charge: -div(P), mirroring
+                // PoissonSolver::assemble (poisson_solver.cpp:187-199).  This
+                // was previously MISSING from the Newton path, so any solve
+                // routed through Newton (use_newton=True / solve_transient)
+                // silently dropped ferroelectric coupling — the root cause of
+                // sporadic HZO non-switching and missing memory window.
+                // (FE-coupling fix, audit §21.)
+                if (!fe_mask_.empty() && idx < fe_mask_.size() && fe_mask_[idx] &&
+                    fe_polarization_.size() == 3 * g_.npts()) {
+                    auto Pxc = [&](size_t id){ return fe_polarization_[3*id + 0]; };
+                    auto Pyc = [&](size_t id){ return fe_polarization_[3*id + 1]; };
+                    auto Pzc = [&](size_t id){ return fe_polarization_[3*id + 2]; };
+                    real_t divP = 0.0Q;
+                    if (i + 1 < g_.nx) divP += (Pxc(idx + 1) - Pxc(idx)) / g_.dx;
+                    if (i > 0)         divP -= (Pxc(idx) - Pxc(idx - 1)) / g_.dx;
+                    if (j + 1 < g_.ny) divP += (Pyc(idx + g_.nx) - Pyc(idx)) / g_.dy;
+                    if (j > 0)         divP -= (Pyc(idx) - Pyc(idx - g_.nx)) / g_.dy;
+                    if (k + 1 < g_.nz) divP += (Pzc(idx + g_.nx * g_.ny) - Pzc(idx)) / g_.dz;
+                    if (k > 0)         divP -= (Pzc(idx) - Pzc(idx - g_.nx * g_.ny)) / g_.dz;
+                    rhs_poisson -= divP;
+                }
+                // Interface/bulk trap charge (P6), mirroring PoissonSolver.
+                // Q_it = -q * D_it * dE * (f_t - 0.5), Q_ot = persistent [C/m^3].
+                if (!trap_mask_.empty() && idx < trap_mask_.size() && trap_mask_[idx]) {
+                    real_t E_F_shift = phi[idx] / VT_;
+                    real_t f_t = 1.0Q / (1.0Q + exp_q(trap_E_t_ - E_F_shift));
+                    real_t D_it_m2 = trap_D_it_ * 1.0e4Q;
+                    real_t Q_it = -QE * D_it_m2 * 1.0Q * (f_t - 0.5Q) / g_.dx;
+                    rhs_poisson -= Q_it;   // subtract because F = A*phi - rhs
+                }
+                if (!Q_ot_.empty() && idx < Q_ot_.size()) {
+                    rhs_poisson -= Q_ot_[idx];
+                }
+                F[phi_idx(idx)] = rhs_poisson;
             }
         }
     }
@@ -263,6 +364,7 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                 compute_srh_and_derivs(idx, n[idx], p[idx], ni[idx], R, dRdn, dRdp);
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
                 if (opt_.enable_btbt) G += compute_btbt_at(phi, idx);
+                if (opt_.enable_ii)   G += compute_ii_at(phi, n, p, idx);
                 real_t source_scale = g_.dx;
                 F[n_idx(idx)] = center * n[idx] + flux_sum - (G - R) * source_scale;
                 // Backward-Euler transient term: +(n - n_prev)/dt * dx.
@@ -332,6 +434,7 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                 compute_srh_and_derivs(idx, n[idx], p[idx], ni[idx], R, dRdn, dRdp);
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
                 if (opt_.enable_btbt) G += compute_btbt_at(phi, idx);
+                if (opt_.enable_ii)   G += compute_ii_at(phi, n, p, idx);
                 real_t source_scale = g_.dx;
                 F[p_idx(idx)] = center * p[idx] + flux_sum - (G - R) * source_scale;
                 // Backward-Euler transient term (see electron block above):
