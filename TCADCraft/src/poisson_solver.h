@@ -80,6 +80,10 @@ public:
     // imprint that breaks the +/- loop symmetry. 0 (default) => symmetric loop.
     void set_ferroelectric_builtin_field(real_t E_bi);
 
+    // Depolarization field (comments2.docx P3). Sets the FE relative permittivity
+    // so the update applies E_dep = -P/(eps_fe * eps_0). 0 disables the term.
+    void set_ferroelectric_depol(real_t eps_fe);
+
     // NLS (Nucleation-Limited Switching) parameters (P3, model==2). Sets the
     // Merz-law switching-time parameters tau0 [s] and E0 [V/m], plus an
     // effective dwell time dt [s] per bias step (controls loop slope).
@@ -205,6 +209,14 @@ private:
     // Internal field / Imprint offset (P2.1). Subtracted from the applied field
     // to form the effective switching drive E_eff = E - E_bi. 0 => symmetric.
     real_t fe_E_bi_ = 0.0Q;
+    // Depolarization field (comments2.docx P3). The bound-charge self-field
+    // E_dep = -P / (eps_fe * eps_0) opposes the polarization, limiting it in
+    // thin films. eps_fe is the FE relative permittivity; 0 => no depol term.
+    real_t fe_eps_fe_ = 0.0Q;     // FE layer relative permittivity (0 => disabled)
+    // Under-relaxation factor for P update (comments2.docx): correct div(P)
+    // coupling produces stronger P-phi feedback; a relaxation factor < 1
+    // stabilises the self-consistent iteration. P_new = relax*P_new + (1-relax)*P_old.
+    real_t fe_relax_ = 1.0Q;   // 1.0 = no relaxation (full update)
     // NLS (P3, model==2): Merz-law tau(E) = tau0*exp(E0/|E|).
     real_t fe_nls_tau0_ = 1.0e-6Q;   // characteristic switching time [s]
     real_t fe_nls_E0_ = 2.0e9Q;      // Merz activation field [V/m]

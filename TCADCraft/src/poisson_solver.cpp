@@ -217,12 +217,29 @@ void PoissonSolver::assemble(const std::vector<real_t>& n, const std::vector<rea
                     auto Pyc = [this](size_t id){ return fe_polarization_[3*id + 1]; };
                     auto Pzc = [this](size_t id){ return fe_polarization_[3*id + 2]; };
                     real_t divP = 0.0Q;
-                    if (i + 1 < g_.nx) divP += (Pxc(idx + 1) - Pxc(idx)) / g_.dx;
-                    if (i > 0)         divP -= (Pxc(idx) - Pxc(idx - 1)) / g_.dx;
-                    if (j + 1 < g_.ny) divP += (Pyc(idx + g_.nx) - Pyc(idx)) / g_.dy;
-                    if (j > 0)         divP -= (Pyc(idx) - Pyc(idx - g_.nx)) / g_.dy;
-                    if (k + 1 < g_.nz) divP += (Pzc(idx + g_.nx * g_.ny) - Pzc(idx)) / g_.dz;
-                    if (k > 0)         divP -= (Pzc(idx) - Pzc(idx - g_.nx * g_.ny)) / g_.dz;
+                    // div(P) = dPx/dx + dPy/dy + dPz/dz (correct central difference).
+                    // BUG FIX (comments2.docx): the old code used a MINUS sign on
+                    // the lower-neighbor term, turning the divergence into a second
+                    // difference (Laplacian) for interior nodes — which injected a
+                    // grossly wrong bound charge and pinned P at a non-physical value.
+                    if (i + 1 < g_.nx && i > 0)
+                        divP += (Pxc(idx + 1) - Pxc(idx - 1)) / (2.0Q * g_.dx);
+                    else if (i + 1 < g_.nx)
+                        divP += (Pxc(idx + 1) - Pxc(idx)) / g_.dx;
+                    else if (i > 0)
+                        divP += (Pxc(idx) - Pxc(idx - 1)) / g_.dx;
+                    if (j + 1 < g_.ny && j > 0)
+                        divP += (Pyc(idx + g_.nx) - Pyc(idx - g_.nx)) / (2.0Q * g_.dy);
+                    else if (j + 1 < g_.ny)
+                        divP += (Pyc(idx + g_.nx) - Pyc(idx)) / g_.dy;
+                    else if (j > 0)
+                        divP += (Pyc(idx) - Pyc(idx - g_.nx)) / g_.dy;
+                    if (k + 1 < g_.nz && k > 0)
+                        divP += (Pzc(idx + g_.nx * g_.ny) - Pzc(idx - g_.nx * g_.ny)) / (2.0Q * g_.dz);
+                    else if (k + 1 < g_.nz)
+                        divP += (Pzc(idx + g_.nx * g_.ny) - Pzc(idx)) / g_.dz;
+                    else if (k > 0)
+                        divP += (Pzc(idx) - Pzc(idx - g_.nx * g_.ny)) / g_.dz;
                     rhs_[idx] -= divP;
                 }
 
@@ -400,6 +417,13 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
                     else if (i > 0)
                         Ex = -(phi[idx] - phi[idx - 1]) / g_.dx;
                     Ex -= fe_E_bi_;   // imprint / built-in offset (P2.1)
+                    // Depolarization field (comments2.docx P3):
+                    // E_dep = -P_current / (eps_fe * eps_0), opposes P.
+                    if (fe_eps_fe_ > 0.0Q) {
+                        real_t P_cur = fe_polarization_[3*idx+0];
+                        real_t eps0 = 8.854187817e-12Q;
+                        Ex -= P_cur / (fe_eps_fe_ * eps0);
+                    }
 
                     // Play operator update: w follows E but lags by Ec.
                     real_t w = fe_play_state_[idx];
@@ -410,8 +434,10 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
 
                     // Saturating output: P = Ps * tanh((E - w)/Escale).
                     real_t arg = (Ex - w) / Escale;
-                    real_t P = Ps * tanh_q(arg);
-                    fe_polarization_[3*idx+0] = P;
+                    real_t P_new = Ps * tanh_q(arg);
+                    // Under-relaxation (comments2.docx): blend new and old P.
+                    real_t P_old_p = fe_polarization_[3*idx+0];
+                    fe_polarization_[3*idx+0] = fe_relax_ * P_new + (1.0Q - fe_relax_) * P_old_p;
                     // Off-axis components stay 0 (scalar Preisach in 1-D).
                     fe_polarization_[3*idx+1] = 0.0Q;
                     fe_polarization_[3*idx+2] = 0.0Q;
@@ -466,6 +492,12 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
                     else if (i > 0)
                         Ex = -(phi[idx] - phi[idx - 1]) / g_.dx;
                     Ex -= fe_E_bi_;   // imprint / built-in offset (P2.1)
+                    // Depolarization field (comments2.docx P3).
+                    if (fe_eps_fe_ > 0.0Q) {
+                        real_t P_cur = fe_polarization_[3*idx+0];
+                        real_t eps0 = 8.854187817e-12Q;
+                        Ex -= P_cur / (fe_eps_fe_ * eps0);
+                    }
 
                     real_t P_old = fe_polarization_[3*idx+0];
                     real_t P_target;
@@ -489,7 +521,9 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
                     }
                     // Only relax if the target opposes the current state (switching
                     // direction); if aligned, P is already near the well.
-                    real_t P = P_old + f * (P_target - P_old);
+                    real_t P_step = P_old + f * (P_target - P_old);
+                    // Under-relaxation (comments2.docx): blend new and old P.
+                    real_t P = fe_relax_ * P_step + (1.0Q - fe_relax_) * P_old;
                     // Smooth saturation: P must stay in [-Ps, +Ps].
                     if (P > Ps) P = Ps;
                     if (P < -Ps) P = -Ps;
@@ -548,6 +582,11 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
                 // P2.1: apply the internal/imprint field offset to the primary
                 // (x) switching axis. E_eff = E - E_bi breaks +/- symmetry.
                 Ex -= fe_E_bi_;
+                // Depolarization field (comments2.docx P3): E_dep = -P/(eps_fe*eps0).
+                if (fe_eps_fe_ > 0.0Q) {
+                    real_t eps0 = 8.854187817e-12Q;
+                    Ex -= fe_polarization_[3*idx + 0] / (fe_eps_fe_ * eps0);
+                }
                 const real_t Ei[3] = {Ex, Ey, Ez};
                 // Spinodal polarization / coercive field of the double well:
                 //   P_sp = sqrt(-alpha/(3*beta)),  Ec = (2|alpha|/3)*P_sp.
@@ -589,9 +628,14 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
                         if (abs_q(df) < 1e-30Q) break;
                         real_t dP = f / df;
                         P -= dP;
-                        // No P>=0 clamp: the -Ps branch must be reachable for hysteresis.
                         if (abs_q(dP) < 1e-15Q * abs_q(P)) break;
                     }
+                    // BUG FIX (comments2.docx): clamp P to [-Ps, +Ps].
+                    if (P > Ps) P = Ps;
+                    if (P < -Ps) P = -Ps;
+                    // Under-relaxation (comments2.docx): blend new and old P.
+                    real_t P_prev = fe_polarization_[3*idx + c];
+                    P = fe_relax_ * P + (1.0Q - fe_relax_) * P_prev;
                     fe_polarization_[3*idx + c] = P;
                 }
             }
@@ -623,6 +667,10 @@ void PoissonSolver::set_ferroelectric_preisach(real_t ps, real_t ec, real_t esca
 
 void PoissonSolver::set_ferroelectric_builtin_field(real_t E_bi) {
     fe_E_bi_ = E_bi;       // P2.1: internal/imprint offset; 0 => symmetric
+}
+
+void PoissonSolver::set_ferroelectric_depol(real_t eps_fe) {
+    fe_eps_fe_ = eps_fe;   // comments2.docx P3: depol E_dep = -P/(eps_fe*eps0)
 }
 
 void PoissonSolver::set_interface_traps(const std::vector<char>& mask,

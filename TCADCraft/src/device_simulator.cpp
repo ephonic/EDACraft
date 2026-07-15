@@ -245,6 +245,10 @@ void DeviceSimulator::set_ferroelectric_builtin_field(real_t E_bi) {
     fe_E_bi_ = E_bi;   // P2.1: internal/imprint offset; 0 => symmetric
 }
 
+void DeviceSimulator::set_ferroelectric_depol(real_t eps_fe) {
+    fe_eps_fe_ = eps_fe;   // comments2.docx P3: depol field
+}
+
 void DeviceSimulator::set_ferroelectric_nls(real_t tau0, real_t E0, real_t dt) {
     fe_nls_tau0_ = tau0;   // P3: Merz tau(E) = tau0*exp(E0/|E|)
     fe_nls_E0_ = E0;
@@ -451,6 +455,7 @@ SimulationResult DeviceSimulator::solve() {
     opt.ferro.ec = fe_ec_;
     opt.ferro.escale = fe_escale_;
     opt.ferro.E_bi = fe_E_bi_;   // P2.1: internal/imprint offset
+    opt.ferro.eps_fe = fe_eps_fe_;   // comments2.docx P3: depol permittivity
     opt.ferro.nls_tau0 = fe_nls_tau0_;   // P3: NLS Merz parameters
     opt.ferro.nls_E0 = fe_nls_E0_;
     opt.ferro.nls_dt = fe_nls_dt_;

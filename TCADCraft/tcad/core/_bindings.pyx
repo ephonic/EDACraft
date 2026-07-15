@@ -86,6 +86,7 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_ferroelectric_model(int model)
         void set_ferroelectric_preisach(double ps, double ec, double escale)
         void set_ferroelectric_builtin_field(double E_bi)
+        void set_ferroelectric_depol(double eps_fe)
         void set_ferroelectric_nls(double tau0, double E0, double dt)
         void set_leakage(const vector[signed char]& mask,
                          double C_pf, double B_pf, double phi_t,
@@ -319,6 +320,10 @@ cdef class PyDeviceSimulator:
     def set_ferroelectric_builtin_field(self, double E_bi):
         # P2.1: internal/imprint field offset [V/m]; 0 => symmetric loop.
         self._sim.set_ferroelectric_builtin_field(E_bi)
+
+    def set_ferroelectric_depol(self, double eps_fe):
+        # comments2.docx P3: depolarization field E_dep=-P/(eps_fe*eps0).
+        self._sim.set_ferroelectric_depol(eps_fe)
 
     def set_ferroelectric_nls(self, double tau0, double E0, double dt):
         # P3: NLS Merz-law tau(E)=tau0*exp(E0/|E|); dt = dwell time per step.

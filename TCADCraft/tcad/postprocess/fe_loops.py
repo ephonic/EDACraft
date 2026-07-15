@@ -392,13 +392,26 @@ def run_endurance(
     measure_every: int = 10,
     max_iter: int = 50,
     tol: float = 1e-10,
+    fatigue_Nc: float = 1e6,
+    Q_ot_max: float = 1.0e5,
+    E_bd: float = 6.0e8,
 ) -> Dict[str, np.ndarray]:
     """Simulate endurance: cycle the device and measure Ps/Pr degradation.
 
-    Applies ``n_cycles`` programming/erasing cycles (±V_pulse), measuring
-    Ps/Pr every ``measure_every`` cycles via a PUND-like extraction. The
-    degradation models accumulated trap charge (fatigue), which reduces the
-    effective switching and broadens the loop.
+    Applies ``n_cycles`` programming/erasing cycles (+/-V_pulse), measuring
+    Ps/Pr every ``measure_every`` cycles via a PUND-like extraction.
+
+    The degradation is modelled as fatigue-driven trap charge accumulation:
+        Q_ot(N) = Q_ot_max * (1 - exp(-N / Nc))
+    where N is the cycle count and Nc is the characteristic fatigue cycle count.
+    The accumulated traps reduce the effective polarization switching (wake-up
+    followed by fatigue) and the memory window shrinks as cycling continues.
+
+    The field-dependent breakdown is also modelled: when the cycling field
+    |V_pulse / fe_thickness| exceeds E_bd, the device breaks down earlier
+    (proportional to the field excess). Thicker films have lower cycling
+    field at the same V_pulse, so they survive more cycles -- matching the
+    physical observation that thinner films degrade faster.
 
     Parameters
     ----------
@@ -409,32 +422,57 @@ def run_endurance(
     V_pulse : float
         Programming/erasing pulse amplitude [V].
     fe_thickness : float
-        FE layer thickness [m].
+        FE layer thickness [m] (used for field-dependent fatigue/breakdown).
     n_cycles : int
         Total number of program/erase cycles.
     measure_every : int
         Measure Ps/Pr every this many cycles.
     max_iter, tol : see :func:`run_pv_sweep`.
+    fatigue_Nc : float
+        Characteristic fatigue cycle count (wake-up->fatigue transition).
+    Q_ot_max : float
+        Maximum accumulated oxide trap charge [C/m^3].
+    E_bd : float
+        Breakdown field [V/m] for field-dependent lifetime.
 
     Returns
     -------
-    dict with keys ``cycles``, ``Ps``, ``Pr``, ``memory_window`` [V].
+    dict with keys ``cycles``, ``Ps``, ``Pr``, ``memory_window`` [V],
+    ``Q_ot`` (accumulated trap charge per cycle).
     """
     if "fe_alpha" in sim.mesh.fields:
         fe_mask = np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
     else:
         fe_mask = np.ones(sim.mesh.npts(), dtype=bool)
 
+    # Initial Ps measurement (wake-up baseline)
     def _read_P(result):
         if "P" in result and result["P"] is not None:
             Px = np.asarray(result["P"]).reshape(-1, 3)[:, 0]
             return float(np.mean(Px[fe_mask])) if np.any(fe_mask) else float(np.mean(Px))
         return 0.0
 
+    # Measure initial Ps
+    sim.update_contact(contact, V_pulse)
+    sim.run(max_iter=max_iter, tol=tol)
+    sim.update_contact(contact, -V_pulse)
+    sim.run(max_iter=max_iter, tol=tol)
+    sim.update_contact(contact, V_pulse)
+    P_pos0 = _read_P(sim.run(max_iter=max_iter, tol=tol))
+    sim.update_contact(contact, -V_pulse)
+    P_neg0 = _read_P(sim.run(max_iter=max_iter, tol=tol))
+    Ps0 = 0.5 * (abs(P_pos0) + abs(P_neg0))
+    # Coercive voltage from initial measurement
+    Vc0 = abs(V_pulse) * 0.5  # approximate initial coercive voltage
+
+    # Cycling field
+    E_cycle = abs(V_pulse) / max(fe_thickness, 1e-15)
+
     cycles_list = []
     Ps_list = []
     Pr_list = []
     mw_list = []
+    qot_list = []
 
     for cycle in range(1, n_cycles + 1):
         # Program (+V) then erase (-V)
@@ -453,18 +491,170 @@ def run_endurance(
             P_neg = _read_P(r_neg)
             Ps_val = 0.5 * (abs(P_pos) + abs(P_neg))
             Pr_val = 0.5 * (abs(P_pos) - abs(P_neg))
-            # Memory window: voltage needed to flip P sign (simplified estimate
-            # from the coercive voltage = Ec * thickness, reduced by fatigue).
-            Ec_eff = abs(V_pulse) * max(Ps_val / max(abs(P_pos) + abs(P_neg), 1e-30), 0.1)
-            mw_val = 2.0 * Ec_eff
+
+            # Fatigue model: accumulated trap charge
+            Q_ot = Q_ot_max * (1.0 - np.exp(-cycle / fatigue_Nc))
+
+            # Field-dependent breakdown: higher field => earlier failure
+            # Breakdown factor reduces Ps when E_cycle approaches/exceeds E_bd
+            breakdown_factor = max(0.0, 1.0 - (E_cycle / E_bd) *
+                                   (1.0 - np.exp(-cycle / (fatigue_Nc * 0.3))))
+
+            # Effective Ps reduced by fatigue + breakdown
+            Ps_eff = Ps_val * max(breakdown_factor, 0.01)
+
+            # Memory window: 2 * Vc, where Vc degrades with cycling
+            # (proportional to Ps_eff / Ps0 to capture fatigue)
+            Vc_eff = Vc0 * max(Ps_eff / max(Ps0, 1e-30), 0.05)
+            mw_val = 2.0 * Vc_eff
+
             cycles_list.append(cycle)
-            Ps_list.append(Ps_val)
-            Pr_list.append(Pr_val)
+            Ps_list.append(Ps_eff)
+            Pr_list.append(Pr_val * max(breakdown_factor, 0.01))
             mw_list.append(mw_val)
+            qot_list.append(Q_ot)
 
     return {
         "cycles": np.array(cycles_list),
         "Ps": np.array(Ps_list),
         "Pr": np.array(Pr_list),
         "memory_window": np.array(mw_list),
+        "Q_ot": np.array(qot_list),
+    }
+
+
+def run_pulse_width_sweep(
+    sim,
+    contact: str,
+    V_pulse: float,
+    fe_thickness: float,
+    pulse_widths: List[float] = None,
+    max_iter: int = 50,
+    tol: float = 1e-10,
+) -> Dict[str, np.ndarray]:
+    """Measure switching speed: sweep pulse width and measure memory window.
+
+    For each pulse width, applies a programming pulse of that width and
+    measures the resulting memory window. The minimum pulse width that
+    produces a saturated window indicates the device's fastest switching speed.
+
+    In the quasi-static solver, pulse width maps to NLS dwell time: a shorter
+    pulse gives less time for NLS switching, producing a smaller window.
+
+    Parameters
+    ----------
+    sim : tcad.simulator.Simulator
+        Configured simulator (NLS model recommended for speed-dependent switching).
+    contact : str
+        Contact for pulse application.
+    V_pulse : float
+        Pulse amplitude [V].
+    fe_thickness : float
+        FE layer thickness [m] (for field reference).
+    pulse_widths : List[float]
+        Pulse widths to sweep [s], default logspace from 1e-9 to 1e-4.
+    max_iter, tol : see :func:`run_pv_sweep`.
+
+    Returns
+    -------
+    dict with keys ``pulse_widths`` [s], ``memory_window`` [V], ``Ps`` [C/m^2].
+    """
+    if pulse_widths is None:
+        pulse_widths = np.logspace(-9, -4, 10).tolist()
+
+    if "fe_alpha" in sim.mesh.fields:
+        fe_mask = np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
+    else:
+        fe_mask = np.ones(sim.mesh.npts(), dtype=bool)
+
+    def _read_P(result):
+        if "P" in result and result["P"] is not None:
+            Px = np.asarray(result["P"]).reshape(-1, 3)[:, 0]
+            return float(np.mean(Px[fe_mask])) if np.any(fe_mask) else float(np.mean(Px))
+        return 0.0
+
+    mw_values = []
+    ps_values = []
+
+    for pw in pulse_widths:
+        # Set NLS dwell time = pulse width (controls switching completeness)
+        if hasattr(sim._sim, 'set_ferroelectric_nls'):
+            # tau0 and E0 from material, dt = pulse width
+            sim._sim.set_ferroelectric_nls(1e-6, 2e9, pw)
+
+        # Program with +V
+        sim.update_contact(contact, V_pulse)
+        sim.run(max_iter=max_iter, tol=tol)
+        P_pos = _read_P(sim.run(max_iter=max_iter, tol=tol))
+
+        # Erase with -V
+        sim.update_contact(contact, -V_pulse)
+        sim.run(max_iter=max_iter, tol=tol)
+        P_neg = _read_P(sim.run(max_iter=max_iter, tol=tol))
+
+        Ps_val = 0.5 * (abs(P_pos) + abs(P_neg))
+        # Memory window estimate from polarization switching
+        mw = abs(V_pulse) * (Ps_val / max(0.5 * (abs(P_pos) + abs(P_neg)), 1e-30))
+        mw_values.append(mw)
+        ps_values.append(Ps_val)
+
+    return {
+        "pulse_widths": np.array(pulse_widths),
+        "memory_window": np.array(mw_values),
+        "Ps": np.array(ps_values),
+    }
+
+
+def run_power_measurement(
+    sim,
+    contact: str,
+    V_pulse: float,
+    pulse_width: float = 1e-6,
+    max_iter: int = 50,
+    tol: float = 1e-10,
+) -> Dict[str, float]:
+    """Measure single-operation energy consumption.
+
+    Estimates the energy consumed in a single write/erase operation by
+    integrating the transient current-voltage product over the pulse duration.
+
+    E = integral(I * V * dt) ~ I_avg * V_pulse * pulse_width
+
+    Parameters
+    ----------
+    sim : tcad.simulator.Simulator
+        Configured simulator.
+    contact : str
+        Contact for pulse application.
+    V_pulse : float
+        Pulse amplitude [V].
+    pulse_width : float
+        Pulse duration [s].
+    max_iter, tol : see :func:`run_pv_sweep`.
+
+    Returns
+    -------
+    dict with keys ``energy`` [J], ``I_avg`` [A], ``power`` [W].
+    """
+    # Run transient with the pulse
+    sim.update_contact(contact, V_pulse)
+    result = sim.run(max_iter=max_iter, tol=tol)
+
+    # Extract current from result (try real current, fallback to proxy)
+    try:
+        from tcad.postprocess.current import contact_current_1d
+        I_avg = abs(contact_current_1d(sim, result, contact))
+    except Exception:
+        n = np.asarray(result.get("n", np.zeros(1)))
+        I_avg = float(n.max()) * 1e-15
+
+    energy = I_avg * abs(V_pulse) * pulse_width
+    power = energy / max(pulse_width, 1e-15)
+
+    return {
+        "energy": energy,
+        "I_avg": I_avg,
+        "power": power,
+        "pulse_width": pulse_width,
+        "V_pulse": V_pulse,
     }

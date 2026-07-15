@@ -1,0 +1,25 @@
+#!/bin/bash
+# TCAD pre-commit hook: run physics checks before allowing a commit.
+#
+# Install:  cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# Bypass:   git commit --no-verify   (use sparingly!)
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Running TCAD pre-commit physics checks..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+python scripts/pre_commit_check.py
+rc=$?
+
+if [ $rc -ne 0 ]; then
+    echo ""
+    echo "❌ Pre-commit checks FAILED. Commit aborted."
+    echo "   Fix the issues above, or use 'git commit --no-verify' to bypass."
+    echo ""
+    exit 1
+fi
+
+echo "✅ Pre-commit checks passed. Proceeding with commit."
+exit 0

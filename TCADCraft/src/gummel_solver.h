@@ -56,6 +56,7 @@ struct FerroelectricParams {
     real_t ec = 1.0e9Q;       // coercive field [V/m]
     real_t escale = 0.0Q;     // tanh width [V/m]; 0 => Ec (loop-shape default)
     real_t E_bi = 0.0Q;       // internal/imprint field offset [V/m] (P2.1); 0 => symmetric
+    real_t eps_fe = 0.0Q;     // FE permittivity for depol (comments2.docx P3); 0 => off
     // NLS (P3, model==2): Merz tau(E) = tau0*exp(E0/|E|).
     real_t nls_tau0 = 1.0e-6Q;   // characteristic switching time [s]
     real_t nls_E0 = 2.0e9Q;      // Merz activation field [V/m]

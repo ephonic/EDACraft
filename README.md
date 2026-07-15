@@ -101,26 +101,31 @@ A Python-driven 3D quantum-corrected semiconductor device simulator for nanoscal
 - **Device Templates**: MOSFET, FinFET, GAA nanosheet, TFET, heterojunction TFET, FeFET/NC-FET, tunnel diode (NDR), Dirac-source FET, PN junction, BSPDN GAA, and **AlScN+MoS₂ FeFET**.
 - **Multi-Physics Solver**: 3D finite-difference Poisson, drift–diffusion with Scharfetter–Gummel, adaptive Gummel and Newton–Raphson solvers, density-gradient quantum correction, band-to-band tunneling (local Kane + non-local WKB), and self-heating.
 - **Ferroelectric Models**: Three models for NC-FET/FeFET simulation:
-  - **Landau-Khalatnikov** (vector 3-component P, per-component branch continuation + spinodal switching)
+  - **Landau-Khalatnikov** (vector 3-component P, per-component branch continuation + spinodal switching, [-Ps,+Ps] saturation clamp)
   - **Preisach** (classical scalar play-operator, parameterised directly by Ps/Ec)
   - **NLS** (Nucleation-Limited Switching, Merz-law τ(E)=τ₀·exp(E₀/|E|), finite-slope S-shaped loop for wurtzite ferroelectrics like AlScN)
-  - **Material-driven FE detection** (fe_alpha≠0, not dielectric-constant window) - correctly identifies AlScN (ε_r≈15)
+  - **Material-driven FE detection** (fe_alpha≠0, not dielectric-constant window) — correctly identifies AlScN (ε_r≈15)
   - **Internal/imprint field** (E_bi offset for ±loop asymmetry)
+  - **Depolarization field** (E_dep = -P/(ε_fe·ε₀) for correct thickness-window scaling)
+- **Correct div(P) coupling**: Central-difference divergence stencil verified by physical-truth tests (prevents P pinning / divergence bugs).
 - **Leakage & Trap Models**: Poole-Frenkel + Fowler-Nordheim leakage current, interface traps (Dit) and bulk oxide traps (Q_ot) with charge injection into Poisson equation.
-- **Reliability Simulation**: Retention characteristics (polarization decay monitoring) and endurance (cycling degradation with fatigue model).
+- **Reliability Simulation**: Retention characteristics (polarization decay monitoring), endurance (field-dependent fatigue/breakdown model), pulse-width sweep (switching speed), and single-operation energy measurement.
 - **Cryo & Heterogeneous Models**: Temperature-dependent mobility, Fermi–Dirac statistics, freeze-out, and spatially varying effective DOS / bandgap.
-- **Mesh & Visualization**: Structured Cartesian grids, Gmsh unstructured tetrahedral meshes, adaptive refinement, and academic-style matplotlib / PyVista visualization with P-V/P-E loop, Id-Vg transfer, and PUND pulse plotters.
-- **Post-Processing**: Terminal-current extraction, band-diagram cutlines, TFET / NDR metrics, mechanism attribution, trust gates, discovery metrics (`Ion`, `Ioff`, `SS`, `Vth`, `DIBL`), and P-V/P-E loop drivers.
+- **Mesh & Visualization**: Structured Cartesian grids, Gmsh unstructured tetrahedral meshes, adaptive refinement, and academic-style matplotlib / PyVista visualization with P-V/P-E loop, Id-Vg transfer, and PUND pulse plotters (with correct log-scale formatting).
+- **Post-Processing**: Real terminal-current extraction via Scharfetter-Gummel edge flux, band-diagram cutlines, TFET / NDR metrics, mechanism attribution, trust gates, discovery metrics (`Ion`, `Ioff`, `SS`, `Vth`, `DIBL`), and P-V/P-E loop drivers.
 - **Device Discovery**: Evolvable device grammar, mutation operators, and NSGA-II-style search loop.
+- **Physics Invariant Checks**: Runtime checks (|P|≤Ps, n/p≥0, potential bounds, stencil correctness, material unit consistency) and physical-truth tests that encode inviolable physics laws.
+- **Pre-commit Quality Gate**: Automated physics + regression test suite (59 tests, 21 s) runs before every git commit via pre-commit hook.
 - **Validation Framework**: Systematic verification strategy set for new physics development including grid convergence, conservation laws, symmetry, limiting cases, boundedness, cross-validation, and sensitivity analysis.
 - **Solver Backends**: Dense direct LU for small grids and optional PETSc direct LU for larger grids.
 
 Key directories under `TCADCraft/`:
 
-- `src/` — Extended-precision C++ solver core
-- `tcad/` — Python package (geometry, materials, mesh, solver bindings, post-processing, search, knowledge, visualization, validation)
-- `examples/` — Runnable device examples (including AlScN PUND and AlScN+MoS₂ FeFET)
-- `tests/` — Comprehensive test suite (58 tests including 16 new validation tests)
+- `src/` — Extended-precision C++ solver core (Poisson, Gummel, Newton, ferroelectric, leakage, traps)
+- `tcad/` — Python package (geometry, materials, mesh, solver bindings, post-processing, search, knowledge, visualization, validation, **physics invariants**)
+- `examples/` — Runnable device examples (AlScN PUND, AlScN+MoS₂ FeFET, FinFET/GAA, MOSFET I-V)
+- `tests/` — Comprehensive test suite (**59 tests** including 11 physical-truth, 32 FE regression, 16 FE validation)
+- `scripts/` — Pre-commit physics check + git hook
 - `setup.py` / `pyproject.toml` / `CMakeLists.txt` — Build configuration
 
 See [TCADCraft/README.md](TCADCraft/README.md) for installation and usage details.

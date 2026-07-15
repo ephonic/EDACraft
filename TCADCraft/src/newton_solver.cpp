@@ -286,12 +286,26 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     auto Pyc = [&](size_t id){ return fe_polarization_[3*id + 1]; };
                     auto Pzc = [&](size_t id){ return fe_polarization_[3*id + 2]; };
                     real_t divP = 0.0Q;
-                    if (i + 1 < g_.nx) divP += (Pxc(idx + 1) - Pxc(idx)) / g_.dx;
-                    if (i > 0)         divP -= (Pxc(idx) - Pxc(idx - 1)) / g_.dx;
-                    if (j + 1 < g_.ny) divP += (Pyc(idx + g_.nx) - Pyc(idx)) / g_.dy;
-                    if (j > 0)         divP -= (Pyc(idx) - Pyc(idx - g_.nx)) / g_.dy;
-                    if (k + 1 < g_.nz) divP += (Pzc(idx + g_.nx * g_.ny) - Pzc(idx)) / g_.dz;
-                    if (k > 0)         divP -= (Pzc(idx) - Pzc(idx - g_.nx * g_.ny)) / g_.dz;
+                    // BUG FIX (comments2.docx): central-difference divergence
+                    // (was a second-difference Laplacian due to a sign error).
+                    if (i + 1 < g_.nx && i > 0)
+                        divP += (Pxc(idx + 1) - Pxc(idx - 1)) / (2.0Q * g_.dx);
+                    else if (i + 1 < g_.nx)
+                        divP += (Pxc(idx + 1) - Pxc(idx)) / g_.dx;
+                    else if (i > 0)
+                        divP += (Pxc(idx) - Pxc(idx - 1)) / g_.dx;
+                    if (j + 1 < g_.ny && j > 0)
+                        divP += (Pyc(idx + g_.nx) - Pyc(idx - g_.nx)) / (2.0Q * g_.dy);
+                    else if (j + 1 < g_.ny)
+                        divP += (Pyc(idx + g_.nx) - Pyc(idx)) / g_.dy;
+                    else if (j > 0)
+                        divP += (Pyc(idx) - Pyc(idx - g_.nx)) / g_.dy;
+                    if (k + 1 < g_.nz && k > 0)
+                        divP += (Pzc(idx + g_.nx * g_.ny) - Pzc(idx - g_.nx * g_.ny)) / (2.0Q * g_.dz);
+                    else if (k + 1 < g_.nz)
+                        divP += (Pzc(idx + g_.nx * g_.ny) - Pzc(idx)) / g_.dz;
+                    else if (k > 0)
+                        divP += (Pzc(idx) - Pzc(idx - g_.nx * g_.ny)) / g_.dz;
                     rhs_poisson -= divP;
                 }
                 // Interface/bulk trap charge (P6), mirroring PoissonSolver.

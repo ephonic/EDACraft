@@ -26,6 +26,8 @@ GummelSolver::GummelSolver(const Grid3D& grid, const GummelOptions& opt)
         poisson_.set_ferroelectric_preisach(opt_.ferro.ps, opt_.ferro.ec, opt_.ferro.escale);
         // P2.1: internal/imprint field offset.
         poisson_.set_ferroelectric_builtin_field(opt_.ferro.E_bi);
+        // comments2.docx P3: depolarization field.
+        poisson_.set_ferroelectric_depol(opt_.ferro.eps_fe);
         // P3: NLS Merz-law parameters.
         poisson_.set_ferroelectric_nls(opt_.ferro.nls_tau0, opt_.ferro.nls_E0,
                                        opt_.ferro.nls_dt);

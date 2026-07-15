@@ -545,6 +545,12 @@ class Simulator:
             ebi = self.mesh.fields["fe_E_bi"].ravel()[fe_mask.astype(bool)]
             if np.any(np.abs(ebi) > 0.0):
                 self._sim.set_ferroelectric_builtin_field(float(ebi[np.abs(ebi) > 0.0][0]))
+        # Depolarization field (comments2.docx P3): auto-set from epsilon_r.
+        if "epsilon" in self.mesh.fields and np.any(fe_mask):
+            eps0 = 8.854187817e-12
+            eps_fe = self.mesh.fields["epsilon"].ravel()[fe_mask.astype(bool)][0] / eps0
+            if eps_fe > 0.0:
+                self._sim.set_ferroelectric_depol(float(eps_fe))
 
     def set_ferroelectric_model(self, model: str = "landau_khalatnikov",
                                 Ps: float = 0.2, Ec: float = 1.0e9,
@@ -593,6 +599,22 @@ class Simulator:
             Internal field offset [V/m].
         """
         self._sim.set_ferroelectric_builtin_field(E_bi)
+
+    def set_ferroelectric_depol(self, eps_fe: float = 0.0) -> None:
+        """Set the depolarization field permittivity (comments2.docx P3).
+
+        The depolarization field ``E_dep = -P/(eps_fe * eps_0)`` opposes the
+        polarization. In thin films this limits the stable remanent charge and
+        ensures the memory window scales correctly with thickness (thinner =>
+        larger depol fraction => narrower window). Set ``eps_fe = 0`` (default)
+        to disable the term.
+
+        Parameters
+        ----------
+        eps_fe : float
+            Ferroelectric layer relative permittivity.
+        """
+        self._sim.set_ferroelectric_depol(eps_fe)
 
     def set_leakage(self, enabled: bool = True,
                     pf_C: float = 0.02, pf_B: float = 5.0e5, pf_phi_t: float = 0.5,

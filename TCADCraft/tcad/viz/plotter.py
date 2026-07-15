@@ -388,17 +388,26 @@ def plot_transfer(
     Vth : float, optional
         Threshold voltage [V] (vertical reference line).
     log_scale : bool
-        Use a logarithmic y-axis (default True — standard for transfer curves).
+        Use a logarithmic y-axis (default True -- standard for transfer curves).
     label, show_legend : see :func:`plot_pv_loop`.
     """
     from tcad.viz.style import set_academic_style
     import matplotlib.pyplot as plt
+    import matplotlib.ticker as ticker
     set_academic_style()
     if ax is None:
         fig, ax = plt.subplots()
     ids_arr = np.abs(np.asarray(ids, dtype=float))   # |Id| for log scale
+    # Clamp zero/negative values to a small floor for log scale.
     if log_scale:
+        ids_arr = np.maximum(ids_arr, 1e-30)
         ax.semilogy(vgs, ids_arr, "-o", ms=3, lw=1.5, label=label)
+        # Fix log-axis tick formatting (comments2.docx): use SciNotation
+        # formatter to avoid garbled "10^7" / missing-glyph minor ticks.
+        ax.yaxis.set_major_formatter(
+            ticker.LogFormatterMathtext(labelOnlyBase=True))
+        ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+        ax.yaxis.set_major_locator(ticker.LogLocator(numticks=10))
     else:
         ax.plot(vgs, ids_arr, "-o", ms=3, lw=1.5, label=label)
     ax.set_xlabel(r"Gate voltage $V_G$ [V]")

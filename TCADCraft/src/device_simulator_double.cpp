@@ -209,6 +209,10 @@ void DeviceSimulatorDouble::set_ferroelectric_builtin_field(double E_bi) {
     sim_.set_ferroelectric_builtin_field((real_t)E_bi);   // P2.1
 }
 
+void DeviceSimulatorDouble::set_ferroelectric_depol(double eps_fe) {
+    sim_.set_ferroelectric_depol((real_t)eps_fe);   // comments2.docx P3
+}
+
 void DeviceSimulatorDouble::set_ferroelectric_nls(double tau0, double E0, double dt) {
     sim_.set_ferroelectric_nls((real_t)tau0, (real_t)E0, (real_t)dt);   // P3
 }

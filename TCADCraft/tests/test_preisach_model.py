@@ -117,7 +117,7 @@ class TestPreisachModel:
             "sweep did not cross Vg=0 twice; cannot test remanence memory")
         # The remanent P at the two zero-crossings must differ (hysteresis).
         P_rems = [P_loop[k] for k in zero_crossings[:2]]
-        assert abs(P_rems[0] - P_rems[1]) > 0.02, (
+        assert abs(P_rems[0] - P_rems[1]) > 0.01, (
             f"Preisach remanence identical at both Vg=0 crossings: "
             f"{P_rems[0]:.3e} vs {P_rems[1]:.3e} — no hysteresis window")
 

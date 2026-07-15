@@ -71,6 +71,7 @@ public:
     void set_ferroelectric_model(int model);
     void set_ferroelectric_preisach(double ps, double ec, double escale);
     void set_ferroelectric_builtin_field(double E_bi);   // P2.1
+    void set_ferroelectric_depol(double eps_fe);   // comments2.docx P3
     void set_ferroelectric_nls(double tau0, double E0, double dt);  // P3
     void set_leakage(const std::vector<signed char>& mask,
                      double C_pf, double B_pf, double phi_t,

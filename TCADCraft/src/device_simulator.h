@@ -126,6 +126,8 @@ public:
     void set_ferroelectric_preisach(real_t ps, real_t ec, real_t escale);
     // Internal field / Imprint offset (P2.1). Shifts E_eff = E - E_bi; 0 => symmetric.
     void set_ferroelectric_builtin_field(real_t E_bi);
+    // Depolarization field (comments2.docx P3). Sets FE relative permittivity.
+    void set_ferroelectric_depol(real_t eps_fe);
     // NLS (P3, model==2): Merz-law parameters tau0 [s], E0 [V/m], dt [s].
     void set_ferroelectric_nls(real_t tau0, real_t E0, real_t dt);
     // Leakage current (PF/FN) (P2.2). Sets leaky-node mask + coefficients.
@@ -197,7 +199,7 @@ private:
     bool has_initial_guess_ = false;
     std::vector<real_t> init_phi_, init_n_, init_p_;
     bool quantum_enabled_ = false;
-    size_t max_iter_ = 50;
+    size_t max_iter_ = 100;   // raised from 50 for correct div(P) coupling
     real_t tol_ = 1e-25Q;
     real_t VT_ = 0.02585Q;
     SolverType poisson_solver_type_ = SolverType::DENSE_DIRECT;
@@ -251,6 +253,7 @@ private:
     real_t fe_ec_ = 1.0e9Q;        // Preisach coercive field [V/m]
     real_t fe_escale_ = 0.0Q;      // Preisach tanh width [V/m]; 0 => Ec (default)
     real_t fe_E_bi_ = 0.0Q;        // Internal/imprint field offset [V/m] (P2.1)
+    real_t fe_eps_fe_ = 0.0Q;      // FE relative permittivity for depol (comments2.docx P3)
     real_t fe_nls_tau0_ = 1.0e-6Q; // NLS Merz tau0 [s] (P3)
     real_t fe_nls_E0_ = 2.0e9Q;    // NLS Merz E0 [V/m] (P3)
     real_t fe_nls_dt_ = 1.0e-6Q;   // NLS dwell time [s] (P3)
