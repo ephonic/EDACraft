@@ -76,9 +76,15 @@ endif()
 # 注：本地 zip 路径（用户手动下载，避免 GitHub 直连慢/卡）。
 # CMake 的 FetchContent + URL 会自动解压；若顶层有单一目录（如 SuiteSparse-dev/），
 # 它会被作为 SOURCE_DIR。
+# 注：monorepo 后 CMAKE_SOURCE_DIR 是 CktCraft/，zip 在上两级。
+# 回退搜索：../../SuiteSparse.zip → ../SuiteSparse.zip → 绝对路径
+set(RFSIM_SUITESPARSE_ZIP "${CMAKE_SOURCE_DIR}/../../SuiteSparse.zip")
+if(NOT EXISTS "${RFSIM_SUITESPARSE_ZIP}")
+    set(RFSIM_SUITESPARSE_ZIP "${CMAKE_SOURCE_DIR}/../SuiteSparse.zip")
+endif()
 FetchContent_Declare(
     SuiteSparse
-    URL        ${CMAKE_SOURCE_DIR}/../SuiteSparse.zip
+    URL        ${RFSIM_SUITESPARSE_ZIP}
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 

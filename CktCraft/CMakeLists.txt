@@ -79,6 +79,10 @@ option(RFSIM_USE_OPENMP "Enable OpenMP parallel device eval" OFF)
 # 默认 OFF（需用户提供 BLAS 库 RFSIM_BLAS_LIB）。ON 时需 -DRFSIM_BLAS_LIB=<path>。
 option(RFSIM_USE_UMFPACK "Use SuiteSparse UMFPACK (requires BLAS via RFSIM_BLAS_LIB)" OFF)
 
+# MOR (Model Order Reduction): amor RC 互连线降阶。需 ARPACK（特征值）+ UMFPACK。
+# 默认 OFF。ON 时自动拉取 ARPACK-ng（FetchContent），并要求 RFSIM_USE_UMFPACK=ON。
+option(RFSIM_USE_MOR "Enable MOR (amor RC reduction, needs ARPACK+UMFPACK)" OFF)
+
 # ---- 配置头 -----------------------------------------------------------------
 configure_file(
     ${CMAKE_SOURCE_DIR}/cmake/rfsim_config.h.in
@@ -88,6 +92,21 @@ configure_file(
 # ---- 第三方依赖：SuiteSparse KLU（Shooting 稀疏直接求解器）------------------
 if(RFSIM_USE_KLU)
     include(${CMAKE_SOURCE_DIR}/cmake/SuiteSparseKLU.cmake)
+endif()
+
+# ---- ARPACK-ng（MOR 特征值计算所需）-----------------------------------------
+if(RFSIM_USE_MOR)
+    include(FetchContent)
+    FetchContent_Declare(
+        arpack-ng
+        GIT_REPOSITORY https://github.com/opencollab/arpack-ng.git
+        GIT_TAG        3.9.0
+    )
+    # ARPACK-ng 需要 Fortran 编译器（或用 C++ 接口 EXAMPLES=OFF MPI=OFF）
+    set(EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(MPI OFF CACHE BOOL "" FORCE)
+    set(INTERFACE64 OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(arpack-ng)
 endif()
 
 # ---- 子目录 -----------------------------------------------------------------

@@ -57,6 +57,28 @@ set(RFSIM_SOLVER_SOURCES
     solver/shooting.cpp
     solver/noise_analysis.cpp
 )
+
+# MOR (Model Order Reduction) — amor RC 互连线降阶（可选，需 RFSIM_USE_MOR=ON + ARPACK）
+set(RFSIM_MOR_SOURCES
+    mor/amor_amor.cpp
+    mor/amor_cap.cpp
+    mor/amor_ckt.cpp
+    mor/amor_eigs.cpp
+    mor/amor_element.cpp
+    mor/amor_linear_solver.cpp
+    mor/amor_node_list.cpp
+    mor/amor_res.cpp
+    mor/amor_subckt.cpp
+    mor/amor_timer.cpp
+    mor/amor_unit.cpp
+    mor/mor_wrapper.cpp
+)
+if(RFSIM_USE_MOR)
+    list(APPEND RFSIM_SOLVER_SOURCES ${RFSIM_MOR_SOURCES})
+else()
+    # mor_wrapper.cpp 也在无 MOR 时编译（stub 返回 false）
+    list(APPEND RFSIM_SOLVER_SOURCES mor/mor_wrapper.cpp)
+endif()
 set(RFSIM_OUTPUT_SOURCES
     output/hspice_out.cpp
     output/waveform_export.cpp
@@ -116,6 +138,17 @@ if(RFSIM_USE_OPENMP)
     find_package(OpenMP REQUIRED)
     target_link_libraries(rfsim_core PUBLIC OpenMP::OpenMP_CXX)
     target_compile_definitions(rfsim_core PUBLIC RFSIM_USE_OPENMP)
+endif()
+
+# MOR (amor RC 降阶)：需 ARPACK + UMFPACK。
+# ARPACK-ng 提供 arpack-ng::arpack 目标（Fortran 库）；UMFPACK 复用仓库的。
+if(RFSIM_USE_MOR)
+    target_compile_definitions(rfsim_core PUBLIC RFSIM_USE_MOR)
+    target_link_libraries(rfsim_core PUBLIC arpack-ng::arpack)
+    # MOR 的 amor_linear_solver 用 UMFPACK（直接 include <umfpack.h>）
+    if(RFSIM_USE_UMFPACK)
+        target_compile_definitions(rfsim_core PUBLIC RFSIM_USE_MOR_UMFPACK)
+    endif()
 endif()
 
 # V2-γ C3: bench.cpp 在 Windows 用 Psapi 取 RSS

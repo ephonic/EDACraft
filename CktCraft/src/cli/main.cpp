@@ -16,6 +16,7 @@
 #include "../solver/hb_nonlinear.hpp"
 #include "../solver/shooting.hpp"
 #include "../solver/noise_analysis.hpp"
+#include "../mor/mor_wrapper.h"
 #include "../output/hspice_out.hpp"
 #include "../output/waveform_export.hpp"
 #include "../output/measure.hpp"
@@ -104,14 +105,56 @@ void printParamValue(const rfsim::ParamValue& v) {
 }
 
 int run(const std::string& path, const std::string& libSearchDir) {
+    // MOR (Model Order Reduction)：.options mor=on 时先对网表做 RC 降阶。
+    // amor 读原网表 → 分区 → 特征值截断降阶 → 输出简化网表 → 仿真器用简化网表。
+    std::string actualPath = path;
+    bool morEnabled = std::getenv("RFSIM_MOR") && (
+        std::string(std::getenv("RFSIM_MOR")) == "1" ||
+        std::string(std::getenv("RFSIM_MOR")) == "on" ||
+        std::string(std::getenv("RFSIM_MOR")) == "true");
+
     std::ifstream f(path);
     if (!f) {
         std::cerr << "error: cannot open file: " << path << "\n";
         return 1;
     }
     std::stringstream ss; ss << f.rdbuf();
+    f.close();
 
-    auto pr = rfsim::parseNetlist(ss.str(), path);
+    // 检查网表内 .options mor=on
+    {
+        std::string src = ss.str();
+        // 简单扫描 .options ... mor=on
+        if (src.find("mor=on") != std::string::npos ||
+            src.find("mor=1") != std::string::npos ||
+            src.find("mor=true") != std::string::npos) {
+            morEnabled = true;
+        }
+    }
+
+    if (morEnabled) {
+        std::cerr << "  MOR: running RC reduction (amor)...\n";
+        std::string reducedPath = path + ".reduced.sp";
+        rfsim::MorOptions morOpts;
+        if (rfsim::runMorReduction(path, reducedPath, morOpts)) {
+            std::cerr << "  MOR: reduced netlist written to " << reducedPath << "\n";
+            // 读降阶后的网表
+            std::ifstream rf(reducedPath);
+            if (rf) {
+                ss.str("");
+                ss << rf.rdbuf();
+                actualPath = reducedPath;
+            }
+        } else {
+#ifdef RFSIM_USE_MOR
+            std::cerr << "  MOR: reduction failed, using original netlist\n";
+#else
+            std::cerr << "  MOR: not compiled (RFSIM_USE_MOR=OFF), using original netlist\n";
+#endif
+        }
+    }
+
+    auto pr = rfsim::parseNetlist(ss.str(), actualPath);
     if (pr.hasErrors()) {
         std::cerr << "parse errors (" << pr.diags.errors.size() << "):\n";
         for (const auto& e : pr.diags.errors) {
@@ -204,7 +247,20 @@ int run(const std::string& path, const std::string& libSearchDir) {
     if (hasOp || dcCard || acCard || hbCard || pssCard || tranCard || noiseCard) {
         rfsim::ParamEnv env;
         env.libSearchDir = libSearchDir;
-        env.temperature = temperatureC + 273.15;  // 优化项6：°C → K
+
+        // 优化项6：从 .options temp=<Celsius> 解析温度（转开尔文）。
+        double temperatureC = 27.0;  // 默认 27°C = 300.15K
+        for (const auto& cc : c.controls) {
+            if (cc.command != "options" && cc.command != "option") continue;
+            for (const auto& [pn, pv] : cc.params) {
+                if (pn == "temp" || pn == "temperature") {
+                    bool ok; double t = parseSpiceNumber(pv.str, ok);
+                    if (ok) temperatureC = t;
+                    else if (pv.kind == rfsim::ParamValue::Kind::Number) temperatureC = pv.num;
+                }
+            }
+        }
+        env.temperature = temperatureC + 273.15;  // °C → K
         auto fac = rfsim::buildDeviceModels(c, env);
         for (const auto& e : fac.diags.errors) {
             std::cerr << "  " << e.loc.file << ":" << e.loc.line << ": " << e.message << "\n";
@@ -225,19 +281,6 @@ int run(const std::string& path, const std::string& libSearchDir) {
         const rfsim::WaveFormat waveFmt = resolveWaveFormat(c);
         if (waveFmt != rfsim::WaveFormat::Csv)
             std::cerr << "  waveform format: " << rfsim::waveFormatName(waveFmt) << "\n";
-
-        // 优化项6：从 .options temp=<Celsius> 解析温度（转开尔文）。
-        double temperatureC = 27.0;  // 默认 27°C = 300.15K
-        for (const auto& cc : c.controls) {
-            if (cc.command != "options" && cc.command != "option") continue;
-            for (const auto& [pn, pv] : cc.params) {
-                if (pn == "temp" || pn == "temperature") {
-                    bool ok; double t = parseSpiceNumber(pv.str, ok);
-                    if (ok) temperatureC = t;
-                    else if (pv.kind == rfsim::ParamValue::Kind::Number) temperatureC = pv.num;
-                }
-            }
-        }
 
         // ---- .op: DC 宸ヤ綔鐐?----
         if (hasOp) {
