@@ -1,0 +1,14 @@
+****** rfsim RF simulator ******
+****** harmonic balance + osdi ******
+****** version 0.2 ******
+
+$ netlist: empty
+$ source: tests/netlists/_tmp_empty.sp
+
+$rfsim ============================================================
+$  node table
+$rfsim ============================================================
+
+  nodes (excl. gnd): 1
+  [1] vdd
+

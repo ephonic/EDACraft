@@ -1,0 +1,17 @@
+****** rfsim RF simulator ******
+****** harmonic balance + osdi ******
+****** version 0.2 ******
+
+$ netlist: HV PDK end-to-end (smaller, avoids 138K-line LC file): TT corner, level=54
+$ source: tests/netlists/pdk_hv_e2e_test.sp
+
+$rfsim ============================================================
+$  node table
+$rfsim ============================================================
+
+  nodes (excl. gnd): 4
+  [1] vdd
+  [2] d
+  [3] g
+  [4] agauss
+

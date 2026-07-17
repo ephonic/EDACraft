@@ -3,7 +3,7 @@
 ****** version 0.2 ******
 
 $ netlist: S-parameter device AC test
-$ source: netlists\sparam_test.sp
+$ source: netlists/sparam_test.sp
 
 $rfsim ============================================================
 $  node table

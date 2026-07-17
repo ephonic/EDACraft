@@ -1,0 +1,16 @@
+****** rfsim RF simulator ******
+****** harmonic balance + osdi ******
+****** version 0.2 ******
+
+$ netlist: C1 level=54 routing test: HSPICE-native BSIM4 model card → bsim4.dll (OSDI)
+$ source: tests/netlists/_tmp_l54b.sp
+
+$rfsim ============================================================
+$  node table
+$rfsim ============================================================
+
+  nodes (excl. gnd): 3
+  [1] vdd
+  [2] d
+  [3] g
+
