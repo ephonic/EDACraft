@@ -1,6 +1,6 @@
 // shooting.cpp — Single Shooting 周期稳态求解器
 #include "shooting.hpp"
-#include "../assembly/klu_solver.hpp"
+#include "../assembly/linear_solver_factory.hpp"
 #include "../assembly/hb_jacobian.hpp"
 #include "../model/builtin_devices.hpp"
 #include "../model/osdi_model.hpp"
@@ -76,7 +76,8 @@ bool integrateOnePeriod(uint32_t numNodes,
                         const ShootingOptions& opts,
                         std::vector<double>& xFinal,
                         Diagnostics& diags,
-                        TransientSystem& sys) {
+                        TransientSystem& sys,
+                        std::unique_ptr<LinearSolver>& solver) {
     uint32_t numVS = countVoltageSources(devices);
     uint32_t dim = numNodes + numVS;
     // V3-L0: 首次调用时做一次 dry-run assemble 建 pattern + commit。
@@ -234,16 +235,21 @@ bool integrateOnePeriod(uint32_t numNodes,
                 }
                 if (!sys.G.patternCommitted()) sys.G.finalize();
 
-                // Shooting 内层 Newton：稀疏不对称 MNA → KLU 直接求解器。
-                KluSolver solver;
-                if (!solver.factorize(sys.G)) {
-                    diags.error({}, "shooting: KLU factorization failed");
+                // Shooting 内层 Newton：稀疏不对称 MNA → 直接求解器。
+                // A1-4：复用外层持有的 solver（跨 nominal/FD/trial 路径同拓扑，
+                // KLU 符号分解复用 + refactor）。首次调用惰性构造。
+                // 升级：method==Auto 且大矩阵时走经验基准选择。
+                if (!solver) solver = (opts.solver == SolverMethod::Auto)
+                                      ? makeAutoSolver(sys.G)
+                                      : makeLinearSolver(opts.solver, hintsFromMatrix(sys.G));
+                if (!solver || !solver->factorize(sys.G)) {
+                    diags.error({}, "shooting: linear factorization failed");
                     return false;
                 }
                 Vector negF(sys.F.size());
                 for (size_t i = 0; i < sys.F.size(); ++i) negF[i] = -sys.F[i];
                 Vector x;
-                solver.solve(negF, x);
+                solver->solve(negF, x);
 
                 bool hasNan = false;
                 for (double val : x) if (std::isnan(val) || std::isinf(val)) { hasNan = true; break; }
@@ -371,6 +377,24 @@ ShootingResult solveShooting(uint32_t numNodes,
     // 首次 assembleTransient 建 pattern + commit + bind 指针，后续 zeroCommitted + O(1) stamp。
     TransientSystem sysShared;
 
+    // A1-4：持久化内层求解器，跨 nominal/FD-perturb/trial 三条 integrateOnePeriod
+    // 路径复用 KLU 符号分解（同电路拓扑，refactor 命中率高）。opts.solver 决定方法。
+    // 惰性构造：首次 integrateOnePeriod 调用前 sysShared.G 未 finalize，故延迟到
+    // 第一次调用时在 integrateOnePeriod 内部按 hintsFromMatrix 构造——这里仅持有空壳。
+    std::unique_ptr<LinearSolver> innerSolver;
+
+    // B2：自动 multi-rate——opts.multiRate 开启时对所有 OSDI 器件启用 mrAutoTune。
+    // FD 雅可比路径已强制 needsEval（见 integrateOnePeriod 注释），故不破坏 FD 一致性。
+    if (opts.multiRate) {
+        for (const auto& d : devices)
+            if (auto* o = dynamic_cast<OsdiModel*>(d.get())) o->setMrAutoTune(true);
+    }
+
+    // A1-4：外层 monodromy 雅可比求解器也提到外层 Newton 循环外。
+    // FD Jacobian Jsparse 维度 = dim（节点+分支），结构在 outer 迭代间稳定
+    // （除非 dim 变化），故可复用 KLU 符号分解。
+    std::unique_ptr<LinearSolver> outerSolver;
+
     // Stagnant/floor 历史记录（P1-7）：在外层 Newton 监测 ‖F‖ 序列，及早
     // 退出无效迭代。仅在 outer 级做检测——inner Newton（integrateOnePeriod）
     // 必须保持主路径与 FD 扰动路径决策一致，不能引入此类提前退出。
@@ -389,7 +413,7 @@ ShootingResult solveShooting(uint32_t numNodes,
         restoreDeviceStates(devices, savedStates);
         resetAllLimiting();   // 让积分从同一 limiting 锚点起步
         SteadyTimer tInt;
-        if (!integrateOnePeriod(numNodes, devices, nodeV, config, opts, xT, r.diags, sysShared)) {
+        if (!integrateOnePeriod(numNodes, devices, nodeV, config, opts, xT, r.diags, sysShared, innerSolver)) {
             restoreDeviceStates(devices, savedStates);
             if (bench) { bench->wall_ms = tWall.elapsedMs(); bench->newton_iter = r.iterations; bench->peak_rss_mb = currentRssMb(); }
             return r;
@@ -416,7 +440,15 @@ ShootingResult solveShooting(uint32_t numNodes,
                 std::cerr << "\n";
             }
         }
-        if (fNorm < opts.abstol) {
+        // A2-2：外层收敛判据从纯 abstol 改为 abstol + reltol·‖y‖（相对+绝对）。
+        // 原 fNorm < abstol 对大幅度 PSS（如 RF 大信号）不可达——abstol=1e-9 而 ‖y‖~1
+        // 时要求 1e-9 相对精度过严。改用 fNorm < abstol + reltol·xNorm 后，
+        // reltol=1e-6 给出与 DC/transient 一致的相对收敛语义。opts.reltol 原本声明
+        // 但未使用（见 shooting.hpp:22），此修复激活之。
+        double xNorm = 0.0;
+        for (double v : y) xNorm += v * v;
+        xNorm = std::sqrt(xNorm);
+        if (fNorm < opts.abstol + opts.reltol * xNorm) {
             r.converged = true;
             break;
         }
@@ -494,7 +526,7 @@ ShootingResult solveShooting(uint32_t numNodes,
             restoreDeviceStates(devices, savedStates);
             resetAllLimiting();   // FD 扰动从同一 limiting 锚点起步，消除噪声
             SteadyTimer tInt2;
-            if (!integrateOnePeriod(numNodes, devices, nodeVPert, config, opts, xTPert, r.diags, sysShared)) {
+            if (!integrateOnePeriod(numNodes, devices, nodeVPert, config, opts, xTPert, r.diags, sysShared, innerSolver)) {
                 restoreDeviceStates(devices, savedStates);
                 if (bench) { bench->wall_ms = tWall.elapsedMs(); bench->newton_iter = r.iterations; bench->peak_rss_mb = currentRssMb(); }
                 return r;
@@ -524,20 +556,25 @@ ShootingResult solveShooting(uint32_t numNodes,
         Jsparse.finalize();
         // 外层 monodromy 雅可比：稀疏稠密混合（含 ∂x_T/∂x_0），KLU 仍是合理选择。
         SteadyTimer tKlu;
-        KluSolver jsolver;
-        if (!jsolver.factorize(Jsparse)) {
-            r.diags.error({}, "shooting: Jacobian KLU failed");
+        // A1-4：外层 monodromy 求解器复用 outerSolver（跨外层 Newton 迭代同维度，
+        // 复用 KLU 符号分解）。惰性构造于首次到达此点。
+        // 升级：method==Auto 且大矩阵时走经验基准选择。
+        if (!outerSolver) outerSolver = (opts.solver == SolverMethod::Auto)
+                                        ? makeAutoSolver(Jsparse)
+                                        : makeLinearSolver(opts.solver, hintsFromMatrix(Jsparse));
+        if (!outerSolver || !outerSolver->factorize(Jsparse)) {
+            r.diags.error({}, "shooting: Jacobian linear solve failed");
             if (bench) tKluOuter += tKlu.elapsedMs();
             break;
         }
         Vector negF(dim);
         for (uint32_t i = 0; i < dim; ++i) negF[i] = -F[i];
         Vector dy;
-        jsolver.solve(negF, dy);
+        outerSolver->solve(negF, dy);
         if (bench) {
             tKluOuter += tKlu.elapsedMs();
-            bench->klu_factor_ms += jsolver.factorMs();
-            bench->klu_solve_ms  += jsolver.solveMs();
+            bench->klu_factor_ms += outerSolver->factorMs();
+            bench->klu_solve_ms  += outerSolver->solveMs();
         }
 
         // 阻尼更新
@@ -556,7 +593,7 @@ ShootingResult solveShooting(uint32_t numNodes,
             restoreDeviceStates(devices, savedStates);
             resetAllLimiting();   // 每次试探从同一 limiting 锚点起步
             SteadyTimer tInt3;
-            if (!integrateOnePeriod(numNodes, devices, nodeV, config, opts, xTtrial, r.diags, sysShared)) {
+            if (!integrateOnePeriod(numNodes, devices, nodeV, config, opts, xTtrial, r.diags, sysShared, innerSolver)) {
                 if (bench) { tIntegrate += tInt3.elapsedMs(); ++nIntegrations; }
                 alpha *= 0.5;
                 yNew = y;

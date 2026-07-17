@@ -1,6 +1,8 @@
 // test_parser.cpp - parser unit tests
 #include "parser/parser.hpp"
 #include <gtest/gtest.h>
+#include <cstdio>
+#include <fstream>
 
 using namespace rfsim;
 
@@ -114,6 +116,88 @@ TEST(Parser, ExampleNetlist) {
             std::cerr << "  " << e.loc.file << ":" << e.loc.line << ": " << e.message << "\n";
         }
     }
+}
+
+// ===== C1（Phase C）.lib/.endl corner 块选择测试 =====
+
+TEST(Parser, C1LibEndlSameFileBlockIgnoredIfNotSelected) {
+    // .lib NAME ... .endl NAME 块定义：未在 .lib "path" CORNER 选择时，块内容不应出现。
+    // 顶层非块行正常解析。
+    std::string src =
+        "title\n"
+        "R1 n1 n2 1k\n"           // 块外：正常
+        ".lib TT\n"               // 块 TT 开始
+        "R2 n3 n4 2k\n"           // 块内
+        ".endl TT\n"
+        "R3 n5 n6 3k\n";          // 块外：正常
+    auto r = parseNetlist(src, "<test>");
+    ASSERT_TRUE(r.ok);
+    // 块外 2 个器件（R1, R3），块内 R2 不应出现（未被选择）
+    EXPECT_EQ(r.netlist.items.size(), 2u);
+    const auto& d0 = std::get<DeviceCard>(r.netlist.items[0]);
+    EXPECT_EQ(d0.name, "r1");
+    const auto& d1 = std::get<DeviceCard>(r.netlist.items[1]);
+    EXPECT_EQ(d1.name, "r3");
+}
+
+TEST(Parser, C1LibEndlCrossFileCornerSelect) {
+    // 跨文件 .lib "path" CORNER：创建一个 PDK 风格的临时文件，含多个 corner 块，
+    // 主网表用 .lib 选择其中一个，验证只有该块的器件被包含。
+    const char* dir = RFSIM_TEST_DATA_DIR;
+    std::string libPath = std::string(dir) + "/_test_pdk_corner.l";
+    {
+        std::ofstream f(libPath);
+        f <<
+            "* test PDK lib\n"
+            ".lib TT\n"
+            "Rtt a b 1k\n"
+            ".endl TT\n"
+            ".lib SS\n"
+            "Rss a b 2k\n"
+            ".endl SS\n"
+            ".lib FF\n"
+            "Rff a b 3k\n"
+            ".endl FF\n";
+    }
+    std::string src =
+        "title\n"
+        ".lib \"" + libPath + "\" TT\n";
+    auto r = parseNetlist(src, "<test>");
+    // 清理临时文件
+    std::remove(libPath.c_str());
+    ASSERT_TRUE(r.ok);
+    // 只有 TT corner 的 Rtt 应出现（1 个器件）
+    EXPECT_EQ(r.netlist.items.size(), 1u);
+    const auto& d = std::get<DeviceCard>(r.netlist.items[0]);
+    EXPECT_EQ(d.name, "rtt");
+    EXPECT_DOUBLE_EQ(d.positional[0].num, 1000.0);
+}
+
+TEST(Parser, C1LibEndlSelectDifferentCorner) {
+    // 选择 SS corner 验证 corner 路由正确（不是固定 TT）
+    const char* dir = RFSIM_TEST_DATA_DIR;
+    std::string libPath = std::string(dir) + "/_test_pdk_corner2.l";
+    {
+        std::ofstream f(libPath);
+        f <<
+            "* test PDK lib\n"
+            ".lib TT\n"
+            "Rtt a b 1k\n"
+            ".endl TT\n"
+            ".lib SS\n"
+            "Rss a b 2k\n"
+            ".endl SS\n";
+    }
+    std::string src =
+        "title\n"
+        ".lib \"" + libPath + "\" SS\n";
+    auto r = parseNetlist(src, "<test>");
+    std::remove(libPath.c_str());
+    ASSERT_TRUE(r.ok);
+    EXPECT_EQ(r.netlist.items.size(), 1u);
+    const auto& d = std::get<DeviceCard>(r.netlist.items[0]);
+    EXPECT_EQ(d.name, "rss");
+    EXPECT_DOUBLE_EQ(d.positional[0].num, 2000.0);
 }
 
 

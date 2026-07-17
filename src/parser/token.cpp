@@ -179,9 +179,10 @@ Token Lexer::lexWord() {
 
 Token Lexer::lexString() {
     SourceLoc start = here();
+    char quote = source_[pos_];  // 开引号（" 或 '）
     advance(); // 跳过开引号
     size_t begin = pos_;
-    while (pos_ < source_.size() && source_[pos_] != '"') {
+    while (pos_ < source_.size() && source_[pos_] != quote) {
         if (source_[pos_] == '\\' && pos_ + 1 < source_.size()) advance();
         advance();
     }
@@ -235,8 +236,8 @@ Token Lexer::lexOne() {
         return lexNumber();
     }
 
-    // 字符串
-    if (c == '"') return lexString();
+    // 字符串（双引号或单引号——HSPICE .lib 路径常用单引号）
+    if (c == '"' || c == '\'') return lexString();
 
     // 花括号参数表达式 {expr}：作为整体 Expr token 返回（保留内部文本，去掉外层花括号）
     if (c == '{') return lexBraceExpr();

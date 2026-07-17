@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 
 namespace rfsim {
@@ -205,6 +206,10 @@ void OsdiModel::evalTimeSamples(const std::vector<std::vector<double>>& timeVolt
     // S5 路径 B2：电抗残差 scratch（电荷 Q），与阻性残差分开暂存。
     thread_local std::vector<double> reactResid;
     thread_local std::vector<double> reactLimRhs;
+
+    // 并行化在 hb_jacobian.cpp 的器件循环层做（每器件独立 OsdiClient，天然线程安全），
+    // 而非此处的 sample 循环（instance_data 克隆有指针安全问题）。
+    // 串行路径（每器件内 N 个 sample 串行 eval）：
     for (size_t s = 0; s < timeVoltages.size(); ++s) {
         // 每次 eval 前重新设置 node_mapping：某些模型可能在 eval 中修改它
         const_cast<OsdiClient*>(client_.get())->setNodeMapping(nodeMap);
@@ -215,7 +220,7 @@ void OsdiModel::evalTimeSamples(const std::vector<std::vector<double>>& timeVolt
                 double vv = timeVoltages[s][i];
                 // V2-δ S1 plan0621-v4 §1.3 补丁2：原门槛 |vv|>100V 对 ~1.5V
                 // 电源体系太松；改用 20V (BSIM4 limiting 内部最大 ~5V Vbs/Vgs，
-                // 已含安全裕度)。超界时 clamp 到 ±20V 而非整段 sample 直接零填，
+                // 已含安全裕度）。超界时 clamp 到 ±20V 而非整段 sample 直接零填，
                 // 保持 FFT 输入周期性，避免方波 artifact 破坏卷积 Jacobian。
                 if (std::isnan(vv) || std::isinf(vv)) {
                     bad = true;

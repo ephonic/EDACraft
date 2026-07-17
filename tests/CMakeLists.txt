@@ -36,6 +36,12 @@ set(RFSIM_TEST_SOURCES
     test_gmin_floor.cpp
     test_large_scale.cpp
     test_large_circuit.cpp
+    test_sparam.cpp
+    test_solver_selection.cpp
+    test_solver_benchmark.cpp
+    test_nonlinear_damping.cpp
+    test_waveform_export.cpp
+    test_stability.cpp
 )
 
 add_executable(rfsim_tests ${RFSIM_TEST_SOURCES})

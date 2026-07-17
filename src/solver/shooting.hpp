@@ -4,6 +4,7 @@
 
 #include "time_stepper.hpp"
 #include "hb_solver.hpp"
+#include "../assembly/linear_solver_factory.hpp"
 #include "../model/device_model.hpp"
 #include "../util/bench.hpp"
 #include "gmin_options.hpp"
@@ -36,6 +37,15 @@ struct ShootingOptions {
     GminOptions gmin{};
 
     bool verbose = false;
+
+    // A1-7：线性求解方法（默认 Auto）。外层 monodromy 雅可比与内层时间步 Newton 共用。
+    SolverMethod solver = SolverMethod::Auto;
+
+    // B2：自动 multi-rate。开启后对所有 OSDI 器件启用 mrAutoTune（K 自适应）。
+    // 注意：Shooting 的 FD 雅可比路径已强制 needsEval（见 integrateOnePeriod），
+    // 故 multi-rate 仅影响主路径与最终波形积分的器件 eval 频率，不破坏 FD 一致性。
+    // 默认 false（与原 bit-identical）。
+    bool multiRate = false;
 };
 
 struct ShootingResult {

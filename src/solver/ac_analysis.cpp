@@ -8,7 +8,9 @@
 #include "../model/osdi_model.hpp"
 #include "../model/sparam_device.hpp"
 #include "../assembly/sparse_cmpl_matrix.hpp"
+#ifdef RFSIM_USE_KLU
 #include "../assembly/klu_z_solver.hpp"
+#endif
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -20,7 +22,13 @@ AcResult solveAc(uint32_t numNodes,
                  const AcSpec& spec,
                  const std::vector<double>& spec_freqs) {
     AcResult r;
-
+#ifndef RFSIM_USE_KLU
+    // AC 分析依赖 KluZSolver（复数稀疏 KLU）。RFSIM_USE_KLU=OFF 时不可用。
+    r.ok = false;
+    r.diags.error({}, "AC analysis requires SuiteSparse KLU (build with -DRFSIM_USE_KLU=ON)");
+    (void)numNodes; (void)devices; (void)spec; (void)spec_freqs;
+    return r;
+#else
     // 从 spec 生成频率列表（若调用方未显式传入）
     std::vector<double> freqs = spec_freqs;
     if (freqs.empty() && spec.startFreq > 0 && spec.stopFreq > 0) {
@@ -214,6 +222,7 @@ AcResult solveAc(uint32_t numNodes,
 
     r.ok = !r.points.empty() && !r.diags.has_errors();
     return r;
+#endif // RFSIM_USE_KLU
 }
 
 } // namespace rfsim

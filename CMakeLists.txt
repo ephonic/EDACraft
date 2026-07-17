@@ -63,6 +63,22 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # 测试使能（默认开）
 option(RFSIM_BUILD_TESTS "Build unit tests with GoogleTest" ON)
 
+# Phase A1-5：KLU 稀疏直接求解器可选。默认 ON（保持现有构建行为）。
+# OFF 时：cmake/SuiteSparseKLU.cmake 不 include，klu_solver.cpp/klu_z_solver.cpp
+# 不编译，rfsim_core 不定义 RFSIM_USE_KLU；linear_solver_factory 的 Auto 策略
+# 与显式 Klu 请求都回退到 DenseLu。AC 分析（KluZSolver）在 OFF 时不可用——
+# 此时 AC 测试会跳过（依赖门控）。
+option(RFSIM_USE_KLU "Use SuiteSparse KLU sparse direct solver" ON)
+
+# 优化项3：器件 eval 并行化（OpenMP）。默认 OFF——MSVC mingw OpenMP 与 OSDI DLL
+# 的线程安全需验证。ON 时在 assembleTransient 的器件循环加 #pragma omp parallel for。
+# 并行收益主要在大电路（器件多）transient/HB。
+option(RFSIM_USE_OPENMP "Enable OpenMP parallel device eval" OFF)
+
+# UMFPACK 稀疏直接求解器（multifrontal + BLAS-3）。作为经验性求解器选择的候选。
+# 默认 OFF（需用户提供 BLAS 库 RFSIM_BLAS_LIB）。ON 时需 -DRFSIM_BLAS_LIB=<path>。
+option(RFSIM_USE_UMFPACK "Use SuiteSparse UMFPACK (requires BLAS via RFSIM_BLAS_LIB)" OFF)
+
 # ---- 配置头 -----------------------------------------------------------------
 configure_file(
     ${CMAKE_SOURCE_DIR}/cmake/rfsim_config.h.in
@@ -70,7 +86,9 @@ configure_file(
     @ONLY)
 
 # ---- 第三方依赖：SuiteSparse KLU（Shooting 稀疏直接求解器）------------------
-include(${CMAKE_SOURCE_DIR}/cmake/SuiteSparseKLU.cmake)
+if(RFSIM_USE_KLU)
+    include(${CMAKE_SOURCE_DIR}/cmake/SuiteSparseKLU.cmake)
+endif()
 
 # ---- 子目录 -----------------------------------------------------------------
 add_subdirectory(src)

@@ -25,6 +25,11 @@ namespace rfsim {
 struct HbConfig {
     double fundamental = 1e9;   // 基频 Hz
     uint32_t numHarmonics = 5;  // NH（谐波 0..NH，0=DC）
+    // A2-1：FFT 过采样因子。卷积采样点数 N = 2*oversample*(NH+1)。
+    //   oversample=1 → N=2(NH+1)（最低采样，易混叠，原行为）；
+    //   oversample=2 → N=4(NH+1)（默认，吸收高次谐波混叠，改善 HB-NL 收敛，KI-1 根因之二）。
+    // 提升采样数会增加每 Newton 步的 OSDI eval 次数（线性），但显著降低卷积混叠噪声。
+    uint32_t oversample = 2;
     // 源的各谐波激励（按源名 -> 谐波复幅度）。M3 简化：正弦源只激励基频(1次谐波)。
 };
 

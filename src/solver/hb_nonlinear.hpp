@@ -13,10 +13,12 @@
 #define RFSIM_SOLVER_HB_NONLINEAR_HPP
 
 #include "hb_solver.hpp"
+#include "../assembly/linear_solver_factory.hpp"
 #include "../model/device_model.hpp"
 #include "../model/osdi_model.hpp"
 #include "../util/bench.hpp"
 #include "gmin_options.hpp"
+#include "nonlinear_damping.hpp"
 #include <complex>
 #include <vector>
 
@@ -64,6 +66,22 @@ struct HbNlOptions {
     // 失败时静默回退到 DC-only 暖启动，等价原行为，无回归风险。
     // 默认 true：AC 仅在 NH>=1 且 sources 非零时生效，零激励/纯 DC 测试无影响。
     bool acWarmStart = true;
+
+    // A1-7：线性求解方法（默认 Auto）。HB-NL 当前走内部 dense LU / GMRES 路径
+    //（按 dim<=gmresThreshold 自动选，见 hb_nonlinear.cpp），此字段为预留——
+    // 未来若把 HB 内层求解也纳入 LinearSolver 抽象时启用。
+    SolverMethod solver = SolverMethod::Auto;
+
+    // A1-7：GMRES 可配参数（替换 hb_nonlinear.cpp 的硬编码 min(50,dim)/dim*2）。
+    // 0 表示用默认（restart=50 或 dim，maxIter=dim*2）。
+    uint32_t gmresRestart = 0;
+    uint32_t gmresMaxIter = 0;
+    double gmresReltol = 1e-8;
+
+    // A2-4：Newton 阻尼策略。默认 LevenbergMarquardt（自适应 λ，对强非线性/病态
+    // 雅可比比固定 Tikhonov 更鲁棒）。可选 Backtracking（原行为）/TrustRegion。
+    // lambda 仍作为 LM 的初始 λ（lambda>0 时启用 LM 正则；=0 退化为纯 Newton）。
+    DampingStrategy damping = DampingStrategy::LevenbergMarquardt;
 };
 
 // 求解非线性 HB。

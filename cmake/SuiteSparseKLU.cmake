@@ -21,8 +21,15 @@ include(FetchContent)
 
 # ---- SuiteSparse 子项目过滤 -------------------------------------------------
 # 必须在 FetchContent_MakeAvailable 之前设为 CACHE，才会被子目录识别。
-set(SUITESPARSE_ENABLE_PROJECTS "suitesparse_config;amd;colamd;btf;klu"
-    CACHE STRING "SuiteSparse subprojects to build" FORCE)
+# KLU 核心：suitesparse_config + amd + colamd + btf + klu
+# UMFPACK（可选，RFSIM_USE_UMFPACK=ON）：额外需要 umfpack 子项目 + BLAS。
+if(RFSIM_USE_UMFPACK)
+    set(SUITESPARSE_ENABLE_PROJECTS "suitesparse_config;amd;colamd;btf;klu;umfpack"
+        CACHE STRING "SuiteSparse subprojects to build" FORCE)
+else()
+    set(SUITESPARSE_ENABLE_PROJECTS "suitesparse_config;amd;colamd;btf;klu"
+        CACHE STRING "SuiteSparse subprojects to build" FORCE)
+endif()
 
 # 关闭 Fortran/OpenMP/CUDA：保证纯 C 构建路径在 MinGW-w64 上无外部依赖
 set(SUITESPARSE_USE_FORTRAN OFF CACHE BOOL "" FORCE)
@@ -51,8 +58,19 @@ set(NSTATIC OFF CACHE BOOL "" FORCE)
 # 走它的"用户已提供 BLAS 变量"分支（line 65 的 DEFINED 早返回）以跳过查找。
 # BLA_VENDOR 必须设非空字符串（避免 SuiteSparse__blas_threading 里
 # string(REGEX MATCH ...) 因空入参而失败）；"Generic" 是安全占位。
-set(BLAS_LIBRARIES "" CACHE STRING "BLAS placeholder for KLU-only build" FORCE)
-set(BLA_VENDOR     "Generic" CACHE STRING "BLAS placeholder vendor" FORCE)
+#
+# RFSIM_USE_UMFPACK=ON 时 UMFPACK 真实调用 BLAS-3（dgemm/dgemv/dtrsm），
+# 此时 KLU-only 的空占位会导致链接失败（未解析 BLAS 符号）。用户需提供
+# RFSIM_BLAS_LIB（MSVC 兼容的 BLAS 库路径，如 OpenBLAS/MKL）。
+if(RFSIM_USE_UMFPACK AND RFSIM_BLAS_LIB)
+    # 真实 BLAS：用用户提供的库
+    set(BLAS_LIBRARIES "${RFSIM_BLAS_LIB}" CACHE STRING "BLAS library for UMFPACK" FORCE)
+    set(BLA_VENDOR     "Generic" CACHE STRING "" FORCE)
+else()
+    # KLU-only：空占位跳过 BLAS 查找
+    set(BLAS_LIBRARIES "" CACHE STRING "BLAS placeholder for KLU-only build" FORCE)
+    set(BLA_VENDOR     "Generic" CACHE STRING "BLAS placeholder vendor" FORCE)
+endif()
 
 # ---- FetchContent 声明 ------------------------------------------------------
 # 注：本地 zip 路径（用户手动下载，避免 GitHub 直连慢/卡）。
@@ -86,6 +104,24 @@ else()
     message(FATAL_ERROR "SuiteSparse KLU target not found after FetchContent_MakeAvailable")
 endif()
 
+# ---- UMFPACK 目标别名（RFSIM_USE_UMFPACK=ON 时）----------------------------
+if(RFSIM_USE_UMFPACK)
+    if(TARGET UMFPACK_static)
+        if(NOT TARGET SuiteSparse::UMFPACK)
+            add_library(SuiteSparse::UMFPACK INTERFACE IMPORTED)
+            target_link_libraries(SuiteSparse::UMFPACK INTERFACE UMFPACK_static)
+        endif()
+    elseif(TARGET UMFPACK)
+        if(NOT TARGET SuiteSparse::UMFPACK)
+            add_library(SuiteSparse::UMFPACK INTERFACE IMPORTED)
+            target_link_libraries(SuiteSparse::UMFPACK INTERFACE UMFPACK)
+        endif()
+    else()
+        message(WARNING "RFSIM_USE_UMFPACK=ON but UMFPACK target not found; UMFPACK disabled")
+        set(RFSIM_USE_UMFPACK OFF CACHE BOOL "" FORCE)
+    endif()
+endif()
+
 # ---- MSVC 下降低 SuiteSparse 子项目警告噪声 --------------------------------
 # SuiteSparse 上游已支持 MSVC CI (root-cmakelists-msvc.yaml)，但 /W4 在其 C 源
 # (printf / sign-compare / unused-param) 上噪声大；KLU/AMD 等 C11 源本身已干净，
@@ -94,6 +130,7 @@ if(MSVC)
     foreach(tgt
             KLU_static AMD_static BTF_static COLAMD_static
             KLU AMD BTF COLAMD
+            UMFPACK_static UMFPACK
             SuiteSparseConfig_static SuiteSparseConfig)
         if(TARGET ${tgt})
             target_compile_options(${tgt} PRIVATE /W0)

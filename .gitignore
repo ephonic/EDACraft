@@ -19,6 +19,27 @@
 /models/*.exp
 /models/*.so
 
+# Temp build helpers (dev-only MSVC wrappers)
+/_msvc_*.bat
+/_reconfigure.bat
+/_build_*.bat
+/_probe*.bat
+/_heavy.bat
+/_diag.bat
+/_noklu.bat
+/_run*.bat
+/_genblas.bat
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Benchmark / convergence grid outputs
+/conv_grid_*.csv
+
+# Temp files
+/nul
+
 # IDE
 /.vscode/
 /.idea/

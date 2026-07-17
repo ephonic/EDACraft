@@ -2,6 +2,7 @@
 #include "mna.hpp"
 #include "../model/builtin_devices.hpp"
 #include "../model/osdi_model.hpp"
+#include "../model/sparam_device.hpp"
 
 namespace rfsim {
 
@@ -117,6 +118,28 @@ AssembleResult assembleMna(uint32_t numNodes,
                 r.system.G.addPattern(n1 - 1, n1 - 1); r.system.G.add(n1 - 1, n1 - 1, g);
             } else if (n2 != 0) {
                 r.system.G.addPattern(n2 - 1, n2 - 1); r.system.G.add(n2 - 1, n2 - 1, g);
+            }
+            continue;
+        }
+
+        // S 参数器件: DC 使用 Y(ω→0) 的实部作为电导
+        if (auto* sp = dynamic_cast<SParamDevice*>(dev.get())) {
+            auto Y = sp->dcAdmittanceMatrix();
+            uint32_t N = sp->numPorts();
+
+            // Stamp N×N Y 矩阵到 MNA（取实部作为电导）
+            for (uint32_t i = 0; i < N; ++i) {
+                uint32_t ni = nodes.size() > i ? nodes[i] : 0;
+                if (ni == 0) continue;  // 地节点跳过
+
+                for (uint32_t j = 0; j < N; ++j) {
+                    uint32_t nj = nodes.size() > j ? nodes[j] : 0;
+                    if (nj == 0) continue;  // 地节点跳过
+
+                    double g = Y[i * N + j].real();
+                    r.system.G.addPattern(ni - 1, nj - 1);
+                    r.system.G.add(ni - 1, nj - 1, g);
+                }
             }
             continue;
         }

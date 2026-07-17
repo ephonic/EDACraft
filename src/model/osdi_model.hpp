@@ -133,6 +133,15 @@ public:
     // L6: 当前未被 assembler 调用（死代码），保留供未来 f/jac 分离优化
     void evalTransientResidOnly(const TransientOpPoint& op, DeviceContribution& out) const;
 
+    // B1: Jacobian 级 bypass 控制。Newton 内层迭代时，首步算完整 f+jac（beginNewtonStep），
+    // 后续 line-search 试验点只需 residual（jacobian 不变）→ assembler 调 evalTransientResidOnly。
+    // residOnlyPending_=true 表示本器件在当前 Newton 步内已 eval 过 jac，下次装配可走 resid-only。
+    void beginNewtonStep() { residOnlyPending_ = false; }  // 新 Newton 步：首装配算完整 jac
+    void markJacComputed() { residOnlyPending_ = true; }   // 完整 eval 后标记 jac 已算
+    [[nodiscard]] bool residOnlyPending() const { return residOnlyPending_; }
+    void setResidOnlyMode(bool m) { residOnlyActive_ = m; }
+    [[nodiscard]] bool residOnlyMode() const { return residOnlyActive_; }
+
     // V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock。
     // 在 initialize() 之前注入预存的 block；OsdiClient::init 检测到 block->setup
     // 已置位时只为新实例分配 instance 数据，跳过 setup_model（避免多次 setup_model
@@ -228,6 +237,11 @@ private:
     double mrVoltFloor_ = 1.0;      // L4: 相对容差电压 floor（可配）
     bool mrAutoTune_ = false;       // V3-MR Phase4: 自动速率分级
     uint32_t mrForcedEvalCount_ = 0; // K 步周期内强制 eval 次数
+
+    // B1: Jacobian 级 bypass。Newton 步内首装配算完整 jac（markJacComputed），
+    // 后续 line-search 试验点走 evalTransientResidOnly（residOnlyActive_=true）。
+    bool residOnlyPending_ = false;
+    bool residOnlyActive_ = false;
 };
 
 } // namespace rfsim

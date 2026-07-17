@@ -1,8 +1,9 @@
 // dc_op.cpp - DC operating point (nonlinear Newton + gmin stepping + line search)
 #include "dc_op.hpp"
-#include "../assembly/klu_solver.hpp"
+#include "../assembly/linear_solver_factory.hpp"
 #include "../model/builtin_devices.hpp"
 #include "../model/osdi_model.hpp"
+#include "../model/sparam_device.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -91,6 +92,38 @@ void assemble(uint32_t numNodes,
             else if(n2!=0){G.addPattern(n2-1,n2-1);G.add(n2-1,n2-1,g);}
             double iL=g*(getV(n1)-getV(n2));
             if(n1!=0)F[n1-1]+=iL; if(n2!=0)F[n2-1]-=iL;
+        } else if (auto* sp = dynamic_cast<SParamDevice*>(dev.get())) {
+            // S 参数器件: DC 使用 Y(ω→0) 的实部作为电导
+            auto Y = sp->dcAdmittanceMatrix();
+            uint32_t N = sp->numPorts();
+            
+            // Stamp 导纳矩阵 G
+            for (uint32_t i = 0; i < N; ++i) {
+                uint32_t ni = nds.size() > i ? nds[i] : 0;
+                if (ni == 0) continue;
+                for (uint32_t j = 0; j < N; ++j) {
+                    uint32_t nj = nds.size() > j ? nds[j] : 0;
+                    if (nj == 0) continue;
+                    double g = Y[i * N + j].real();
+                    if (g != 0.0) {
+                        G.addPattern(ni - 1, nj - 1);
+                        G.add(ni - 1, nj - 1, g);
+                    }
+                }
+            }
+            
+            // 计算电流贡献到残差向量 F: I_i = Σ_j Y[i][j] * V[j]
+            for (uint32_t i = 0; i < N; ++i) {
+                uint32_t ni = nds.size() > i ? nds[i] : 0;
+                if (ni == 0) continue;
+                double Ii = 0.0;
+                for (uint32_t j = 0; j < N; ++j) {
+                    uint32_t nj = nds.size() > j ? nds[j] : 0;
+                    double Vj = getV(nj);
+                    Ii += Y[i * N + j].real() * Vj;
+                }
+                F[ni - 1] += Ii;
+            }
         } else if (auto* osdi = dynamic_cast<OsdiModel*>(dev.get())) {
             if (!osdi->ready()) continue;
             const OsdiDescriptor* d = osdi->descriptor();
@@ -152,19 +185,26 @@ bool newtonSolve(uint32_t numNodes,
                  BenchCounters* bench = nullptr,
                  bool* floorAccepted = nullptr) {
     int vb = dcopVerbose();
+    // A1-4：求解器提到 Newton 循环外（复用 KLU 符号分解）。结构变化时 KluSolver
+    // 内部自动释放 num_/sym_ 重新 analyze（见 klu_solver.cpp 结构指纹逻辑）。
+    const SolverMethod method = opts.solver;
+    std::unique_ptr<LinearSolver> solver;
     for (uint32_t iter = 0; iter < opts.maxIterations; ++iter) {
         SparseMatrix J; Vector F; std::vector<uint32_t> vsOff;
         assemble(numNodes, devices, nodeV, opts, J, F, vsOff);
-        KluSolver solver;
-        if (!solver.factorize(J)) {
+        // 升级：method==Auto 且大矩阵时走经验基准选择（makeAutoSolver）；
+        //       显式方法或小矩阵走静态规则（makeLinearSolver）。
+        if (!solver) solver = (method == SolverMethod::Auto)
+                              ? makeAutoSolver(J) : makeLinearSolver(method, hintsFromMatrix(J));
+        if (!solver->factorize(J)) {
             if (vb) std::fprintf(stderr, "  [dc] iter=%u factorize FAILED\n", iter);
-            if (bench) { bench->klu_factor_ms += solver.factorMs(); bench->klu_solve_ms += solver.solveMs(); }
+            if (bench) { bench->klu_factor_ms += solver->factorMs(); bench->klu_solve_ms += solver->solveMs(); }
             return false;
         }
         Vector negF(F.size());
         for (size_t k=0;k<F.size();++k) negF[k]=-F[k];
-        Vector dx; solver.solve(negF, dx);
-        if (bench) { bench->klu_factor_ms += solver.factorMs(); bench->klu_solve_ms += solver.solveMs(); }
+        Vector dx; solver->solve(negF, dx);
+        if (bench) { bench->klu_factor_ms += solver->factorMs(); bench->klu_solve_ms += solver->solveMs(); }
 
         double fOld=0; for(double fv:F) fOld+=fv*fv; fOld=std::sqrt(fOld);
         double alpha=1.0;
@@ -548,13 +588,14 @@ DcOpResult solveDcOp(uint32_t numNodes,
         nodeV = bestNodeV;              // 保证 polish 输入是最佳已收敛点
         SparseMatrix J; Vector F; std::vector<uint32_t> vsOff;
         assemble(numNodes,devices,nodeV,oFinal,J,F,vsOff);
-        KluSolver solver;
+        J.finalize();
+        auto solver = makeLinearSolver(oFinal.solver, hintsFromMatrix(J));
         std::vector<double> nodeVFinal = nodeV;
-        if(solver.factorize(J)){
-            if (bench) bench->klu_factor_ms += solver.factorMs();
+        if(solver && solver->factorize(J)){
+            if (bench) bench->klu_factor_ms += solver->factorMs();
             Vector negF(F.size()); for(size_t k=0;k<F.size();++k) negF[k]=-F[k];
-            Vector dx; solver.solve(negF,dx);
-            if (bench) bench->klu_solve_ms += solver.solveMs();
+            Vector dx; solver->solve(negF,dx);
+            if (bench) bench->klu_solve_ms += solver->solveMs();
 
             // V2-γ C3-bis 修复：polish step 原来是裸一步 Newton (nodeV+dx)，
             // 既无 dvmax 限幅也无下降检查。在 Newton 多解陷阱拓扑

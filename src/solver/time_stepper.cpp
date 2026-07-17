@@ -1,6 +1,6 @@
 // time_stepper.cpp — 固定步长时域积分器
 #include "time_stepper.hpp"
-#include "../assembly/klu_solver.hpp"
+#include "../assembly/linear_solver_factory.hpp"
 #include "../model/builtin_devices.hpp"
 #include "../model/osdi_model.hpp"
 
@@ -84,6 +84,13 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
         return s;
     };
 
+    // B2：自动 multi-rate——opts.multiRate 开启时对所有 OSDI 器件启用 mrAutoTune。
+    // 现有 mrRateRatio/mrStepCounter/mrAutoTune 机制自动分级（稳定器件 K 增大）。
+    if (opts.multiRate) {
+        for (const auto& d : devices)
+            if (auto* o = dynamic_cast<OsdiModel*>(d.get())) o->setMrAutoTune(true);
+    }
+
     // 用 DC 工作点初始化所有动态器件状态
     initializeDeviceStates(devices, nodeV);
 
@@ -96,6 +103,12 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
 
     std::vector<double> prevNodeV = nodeV;
 
+    // A1-4：求解器提到时间步循环外。同一电路拓扑下跨时间步 + 跨内层 Newton
+    // 迭代复用 KLU 符号分解（sym_），只做数值 refactor——大幅省 klu_analyze 开销。
+    // 固定步长 transient 中雅可比结构（节点/分支拓扑）全程稳定，refactor 命中率高。
+    std::unique_ptr<LinearSolver> solver;
+    const SolverMethod solverMethod = opts.solver;
+
     for (uint32_t step = 1; step <= numSteps; ++step) {
         double t = step * dt;
         std::vector<double> trialNodeV = nodeV;
@@ -103,12 +116,15 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
 
         // 把 stamp 装配 + gmin 旁路 + 残差范数计算合到一处，方便线搜索复用。
         // 失败返回 false。成功填充 sysOut 与 fNormOut。
+        // B1: residOnly=true 时 OSDI 器件走 evalTransientResidOnly（复用本 Newton 步的 jac），
+        //     仅用于 line-search 试验点的 ‖F‖ 判断（不消费 sysOut.G）。首次装配必须 false。
         auto assembleAndNorm = [&](const std::vector<double>& tV,
                                    TransientSystem& sysOut,
-                                   double& fNormOut) -> bool {
+                                   double& fNormOut,
+                                   bool residOnly = false) -> bool {
             sysOut = TransientSystem();
             if (!assembleTransient(numNodes, devices, tV, prevNodeV, t, dt, opts.method,
-                                   sysOut, r.diags)) return false;
+                                   sysOut, r.diags, residOnly)) return false;
             if (opts.gmin.gmin != 0.0) {
                 for (uint32_t i = 0; i < numNodes; ++i) {
                     sysOut.G.add(i, i, opts.gmin.gmin);  // add 自动走 addCommitted
@@ -133,6 +149,9 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
         std::vector<double> fHistory;
         fHistory.reserve(opts.localNewtonMaxIter);
         for (uint32_t lit = 0; lit < opts.localNewtonMaxIter; ++lit) {
+            // B1: 新 Newton 步——重置 OSDI 器件的 resid-only 标记，首装配算完整 jac。
+            for (const auto& d : devices)
+                if (auto* o = dynamic_cast<OsdiModel*>(d.get())) o->beginNewtonStep();
             TransientSystem sys;
             double fNorm = 0.0;
             if (!assembleAndNorm(trialNodeV, sys, fNorm)) {
@@ -162,15 +181,20 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
 
             // Shooting/Transient 雅可比是稀疏不对称结构，KLU(BTF+AMD+部分选主元 LU)
             // 比稠密 LuSolver 在 O(n) 节点规模下渐进更优，且电路矩阵特别契合 KLU 设计。
-            KluSolver solver;
-            if (!solver.factorize(sys.G)) {
-                r.diags.error({}, "transient KLU factorization failed at t=" + std::to_string(t));
+            // A1-4：solver 已提到时间步循环外，复用 KLU 符号分解。
+            // 升级：method==Auto 且大矩阵时走经验基准选择。
+            if (!sys.G.finalized() && !sys.G.patternCommitted()) sys.G.finalize();
+            if (!solver) solver = (solverMethod == SolverMethod::Auto)
+                                  ? makeAutoSolver(sys.G)
+                                  : makeLinearSolver(solverMethod, hintsFromMatrix(sys.G));
+            if (!solver || !solver->factorize(sys.G)) {
+                r.diags.error({}, "transient linear factorization failed at t=" + std::to_string(t));
                 return r;
             }
             Vector negF(sys.F.size());
             for (size_t i = 0; i < sys.F.size(); ++i) negF[i] = -sys.F[i];
             Vector dx;
-            solver.solve(negF, dx);
+            solver->solve(negF, dx);
 
             // NaN/Inf 防护
             bool dxBad = false;
@@ -229,7 +253,8 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
 
                 TransientSystem sysTry;
                 double fTrial = 0.0;
-                if (!assembleAndNorm(tV, sysTry, fTrial)) {
+                // B1: line-search 试验点走 resid-only（复用本 Newton 步的 jac，省 jac 计算）。
+                if (!assembleAndNorm(tV, sysTry, fTrial, /*residOnly=*/true)) {
                     alpha *= 0.5;
                     if (alpha < 1e-8) break;
                     continue;

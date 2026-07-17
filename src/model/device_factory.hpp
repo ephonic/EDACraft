@@ -36,6 +36,9 @@ struct ParamEnv {
     // OSDI 库搜索路径（用于查找模型共享库）
     // 工厂会尝试: <libSearchDir>/<modelname>.dll|.so 以及 .model 里的 file= 参数
     std::string libSearchDir;
+    // 优化项6：器件温度（K），传给 OsdiModel::setTemperature → setup_instance。
+    // 默认 300.15K（室温）。.options temp=<C> 或 .temp 扫描覆盖。
+    double temperature = 300.15;
 };
 
 // 从扁平化电路构造器件 wrapper 列表

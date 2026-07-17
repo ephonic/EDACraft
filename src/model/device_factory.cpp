@@ -12,19 +12,48 @@ namespace rfsim {
 
 namespace {
 
+// C2：构建一个 EvalContext，其 vars 包含所有已求值的全局参数。
+// 多遍迭代求值：Expr 类型的全局参数（.param x='2*y'）在依赖的参数已求值后求值。
+// 这修复了原实现只把 Number 类型全局参数加入 ctx、Expr 参数无法被引用的问题。
+// 最多迭代 N 轮（每轮至少求值一个新参数则继续），处理顺序无关的前向引用。
+EvalContext buildResolvedEvalContext(const ParamEnv& env) {
+    EvalContext ctx;
+    registerBuiltinFunctions(ctx);
+    if (!env.globalParams) return ctx;
+    // 第一遍：所有 Number 直接加入
+    for (const auto& [gn, gv] : *env.globalParams) {
+        if (gv.kind == ParamValue::Kind::Number) ctx.vars[gn] = gv.num;
+    }
+    // 多遍求值 Expr 全局参数，直到一轮无新进展或全部求值完
+    const size_t total = env.globalParams->size();
+    for (size_t round = 0; round <= total; ++round) {
+        bool progressed = false;
+        for (const auto& [gn, gv] : *env.globalParams) {
+            if (gv.kind != ParamValue::Kind::Expr) continue;
+            if (ctx.vars.count(gn)) continue;  // 已求值
+            std::string err;
+            double v = 0;
+            if (evaluateExpression(gv.str, ctx, v, err)) {
+                ctx.vars[gn] = v;
+                progressed = true;
+            } else {
+                // 可能是纯参数名引用（未带算术）
+                auto it = ctx.vars.find(gv.str);
+                if (it != ctx.vars.end()) { ctx.vars[gn] = it->second; progressed = true; }
+            }
+        }
+        if (!progressed) break;  // 剩余的都是无法求值（循环依赖/未定义引用）
+    }
+    return ctx;
+}
+
 // 取参数列表中命名参数的数值；支持 Number 与 Expr(参数引用)。
 // Expr 形式会尝试在 env 中查找并求值；找不到返回 has=false。
 // 将单个 ParamValue 解析为 double（支持 Number/Expr/字符串数值）。
 bool resolveParamValue(const ParamValue& pv, const ParamEnv& env, double& out) {
     if (pv.kind == ParamValue::Kind::Number) { out = pv.num; return true; }
     if (pv.kind == ParamValue::Kind::Expr) {
-        EvalContext ctx;
-        registerBuiltinFunctions(ctx);
-        if (env.globalParams) {
-            for (const auto& [gn, gv] : *env.globalParams) {
-                if (gv.kind == ParamValue::Kind::Number) ctx.vars[gn] = gv.num;
-            }
-        }
+        EvalContext ctx = buildResolvedEvalContext(env);
         std::string err;
         if (evaluateExpression(pv.str, ctx, out, err)) return true;
         auto it = ctx.vars.find(pv.str);
@@ -44,13 +73,7 @@ bool lookupNumber(const ParamList& params, const std::string& name,
         if (pv.kind == ParamValue::Kind::Number) { out = pv.num; return true; }
         if (pv.kind == ParamValue::Kind::Expr) {
             // 尝试作为表达式求值（含全局参数引用）
-            EvalContext ctx;
-            registerBuiltinFunctions(ctx);
-            if (env.globalParams) {
-                for (const auto& [gn, gv] : *env.globalParams) {
-                    if (gv.kind == ParamValue::Kind::Number) ctx.vars[gn] = gv.num;
-                }
-            }
+            EvalContext ctx = buildResolvedEvalContext(env);
             std::string err;
             double v = 0;
             if (evaluateExpression(pv.str, ctx, v, err)) { out = v; return true; }
@@ -70,13 +93,7 @@ bool lookupFirstPositionalNumber(const std::vector<ParamValue>& positional,
     const auto& pv = positional.front();
     if (pv.kind == ParamValue::Kind::Number) { out = pv.num; return true; }
     if (pv.kind == ParamValue::Kind::Expr || pv.kind == ParamValue::Kind::String) {
-        EvalContext ctx;
-        registerBuiltinFunctions(ctx);
-        if (env.globalParams) {
-            for (const auto& [gn, gv] : *env.globalParams) {
-                if (gv.kind == ParamValue::Kind::Number) ctx.vars[gn] = gv.num;
-            }
-        }
+        EvalContext ctx = buildResolvedEvalContext(env);
         std::string err; double v = 0;
         if (evaluateExpression(pv.str, ctx, v, err)) { out = v; return true; }
         auto it = ctx.vars.find(pv.str);
@@ -254,6 +271,28 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
             typeOrName = mdlDef->type;
         }
 
+        // C1-level54：HSPICE level=54/14/4/7（BSIM4）→ 路由到 bsim4.dll (OSDI)。
+        // PDK 的 .model nch nmos (level=54 vth0=... u0=...) 是 HSPICE 原生 BSIM4 格式。
+        // 仿真器只有 OSDI (Verilog-A bsim4.dll)，但 VA bsim4 接受与 HSPICE 同名的参数
+        // （1:1 name-identical：vth0/u0/vsat/toxe/... + 几何/分箱 lmin/ll/xl/dlc/binunit）。
+        // 故 level=54 的 MOSFET：强制把 descriptor 搜索导向 "bsim4"，
+        // 参数照原样传递（表达式参数由 C2 多遍求值解析）。
+        std::string origType = (mdlDef && !mdlDef->type.empty()) ? mdlDef->type : "";
+        bool routedToBsim4 = false;
+        if (mdlDef && (origType == "nmos" || origType == "pmos")) {
+            double lvl = 0.0;
+            if (lookupNumber(mdlDef->params, "level", env, lvl)) {
+                int li = static_cast<int>(lvl);
+                // HSPICE BSIM4 levels: 54 (BSIM4), 14 (BSIM4.0+), 4 (BSIM4), 7 (一些 vendor 映射)
+                if (li == 54 || li == 14 || li == 4 || li == 7) {
+                    // 路由到 bsim4.dll descriptor。descriptor 名为 "bsim4va"
+                    // （models/bsim4.va 的 module 名）。
+                    typeOrName = "bsim4va";
+                    routedToBsim4 = true;
+                }
+            }
+        }
+
         // 尝试加载 OSDI 库：
         //   1. .model 参数 file=<path>
         //   2. <libSearchDir>/<modelName>.dll|.so
@@ -281,6 +320,15 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
                     }
                 }
             }
+        }
+        // C1-level54：若 level=54 路由到 bsim4va，优先把 bsim4.dll 放到候选最前。
+        // 文件名是 bsim4.dll（VA 源文件名），descriptor 名是 bsim4va（module 名）。
+        if (routedToBsim4 && !env.libSearchDir.empty()) {
+#ifdef _WIN32
+            candidates.insert(candidates.begin(), env.libSearchDir + "\\bsim4.dll");
+#else
+            candidates.insert(candidates.begin(), env.libSearchDir + "/libbsim4.so");
+#endif
         }
         if (!env.libSearchDir.empty() && !modelName.empty()) {
 #ifdef _WIN32
@@ -355,6 +403,19 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
             }
         }
 
+        // C1-level54：level=54 路由到 bsim4.dll 时，根据 .model type 注入极性。
+        // VA bsim4 用 type 参数选极性（1=nmos, -1=pmos）。仅 pmos 需显式 type=-1
+        // （nmos 是 VA 默认，不注入保持默认行为，避免与直接 file= 路径不一致）。
+        if (routedToBsim4 && origType == "pmos") {
+            bool hasTypeParam = false;
+            for (const auto& [pn, pv] : modelParams) {
+                if (pn == "type") { hasTypeParam = true; break; }
+            }
+            if (!hasTypeParam) {
+                modelParams.push_back({"type", ParamValue{ParamValue::Kind::Number, -1.0, "", SourceLoc{}}});
+            }
+        }
+
         auto m = std::make_unique<OsdiModel>(fd.name, fd.nodes, lib, desc, fd.params, modelParams);
         m->setFallbackTypeName(typeOrName);
 
@@ -366,6 +427,12 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
             if (it != blockCache->end() && it->second) {
                 m->useSharedModelBlock(it->second);
             }
+        }
+
+        // 优化项6：设置器件温度（从 ParamEnv，默认 300.15K）。
+        // 必须在 initialize（→ setup_instance）之前调用。
+        if (env.temperature != 300.15) {
+            m->setTemperature(env.temperature);
         }
 
         if (!m->initialize(diags, internalNodeBase)) {

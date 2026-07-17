@@ -48,6 +48,8 @@ KluSolver::KluSolver(KluSolver&& o) noexcept {
     Ap_ = std::move(o.Ap_);
     Ai_ = std::move(o.Ai_);
     Ax_ = std::move(o.Ax_);
+    prevAp_ = std::move(o.prevAp_);
+    prevAi_ = std::move(o.prevAi_);
     sym_ = o.sym_; o.sym_ = nullptr;
     num_ = o.num_; o.num_ = nullptr;
     common_ = o.common_; o.common_ = nullptr;
@@ -64,6 +66,8 @@ KluSolver& KluSolver::operator=(KluSolver&& o) noexcept {
         Ap_ = std::move(o.Ap_);
         Ai_ = std::move(o.Ai_);
         Ax_ = std::move(o.Ax_);
+        prevAp_ = std::move(o.prevAp_);
+        prevAi_ = std::move(o.prevAi_);
         sym_ = o.sym_; o.sym_ = nullptr;
         num_ = o.num_; o.num_ = nullptr;
         common_ = o.common_; o.common_ = nullptr;
@@ -86,6 +90,8 @@ void KluSolver::freeFactors() noexcept {
     }
     sym_ = nullptr;
     analyzed_ = false;  // 方案2: 重置 symbolic 状态
+    prevAp_.clear();
+    prevAi_.clear();
 }
 
 bool KluSolver::factorize(const SparseMatrix& A) {
@@ -128,7 +134,33 @@ bool KluSolver::factorize(const SparseMatrix& A) {
     }
 
     // ---- 符号因子化（方案2: pattern 不变时复用 symbolic）---
-    if (!analyzed_) {
+    // 结构指纹：判断新矩阵的稀疏模式是否与已分析的完全相同。
+    // A1-4：把求解器提到 Newton 循环外后，连续 factorize 会在同结构（不同值）
+    // 矩阵间调用——此时复用 sym_ 走 klu_refactor。但 klu_refactor 要求**完全相同**
+    // 的稀疏模式（Ap_/Ai_）；若结构变了（哪怕 nnz 巧合相同），refactor 会在错误
+    // 的数值因子内存布局上写值 → 堆腐败（实测 0xC0000374 on BSIM4 LcTank）。
+    // 故必须做完整的 Ap_ + Ai_ 逐元素比较（O(nnz)，远低于 factor 的 O(nnz·fill)）。
+    // prevAi_/prevAp_ 在首次 analyze 后保存，后续每次 factorize 比对。
+    bool structureSame = analyzed_ && sym_ &&
+                         prevAp_.size() == Ap_.size() &&
+                         prevAi_.size() == Ai_.size();
+    if (structureSame) {
+        // Ap_ 已是 size n+1；Ai_ 已是 size nnz。逐元素 memcmp（int 数组）。
+        if (std::memcmp(prevAp_.data(), Ap_.data(), Ap_.size() * sizeof(int)) != 0 ||
+            std::memcmp(prevAi_.data(), Ai_.data(), Ai_.size() * sizeof(int)) != 0) {
+            structureSame = false;
+        }
+    }
+    if (!analyzed_ || !structureSame) {
+        // 结构变化（或首次）：必须重新 analyze。注意 num_（数值因子）绑定在旧 sym_
+        // 的内存布局上——若只 free sym_ 而保留 num_，后续 klu_factor/klu_refactor 会用
+        // 不匹配的 sym_/num_ 组合 → 堆腐败（实测 BSIM-CMG dc_op 多 gmin 步崩溃 0xC0000374）。
+        // 故结构变化时同时释放 num_ 与 sym_，强制下一节重新 klu_factor。
+        if (num_) {
+            klu_numeric* pn = num(num_);
+            klu_free_numeric(&pn, cmn(common_));
+            num_ = nullptr;
+        }
         if (sym_) {
             klu_symbolic* p = sym(sym_);
             klu_free_symbolic(&p, cmn(common_));
@@ -140,6 +172,9 @@ bool KluSolver::factorize(const SparseMatrix& A) {
             return false;
         }
         analyzed_ = true;
+        // 保存本次结构供下次比对
+        prevAp_ = Ap_;
+        prevAi_ = Ai_;
     }
 
     // ---- 数值因子化（方案2: 尝试 refactor，失败则 full factor）---

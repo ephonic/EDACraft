@@ -463,6 +463,15 @@ bool solveHbNewton(uint32_t numNodes,
     double f0Norm = 0;
     std::vector<double> prevDx;
 
+    // A2-4：阻尼控制器（跨 solveHbNewton 的 Newton 迭代保持自适应 λ/Δ）。
+    // LM 模式下用 controller.applyLmRegularization 替代固定 opts.lambda；
+    // 线搜索失败时 controller.step 升 λ 触发重解。控制器维度用首个 sys.dim（下面首步填充）。
+    DampingController damper(0, opts.damping);
+    damper.setInitialLambda(opts.lambda);
+    damper.setStepClamp(opts.dvmax);
+    bool damperDimKnown = false;
+    std::vector<double> lastJreg;  // LM 重解时复用上次的 Jreg（避免重 assemble）
+
     auto doSafestep = [&]() {
         std::vector<std::vector<Complex>> Fcplx(nEntities + 1,
             std::vector<Complex>(NH + 1, Complex(0,0)));
@@ -502,12 +511,21 @@ bool solveHbNewton(uint32_t numNodes,
         // 解 J·dx = -F：小规模用稠密 LU，大规模用 GMRES
         std::vector<double> negF(sys.dim);
         for (size_t i = 0; i < sys.dim; ++i) negF[i] = -sys.F[i];
-        // Tikhonov 正则化，抑制近奇异分量导致的大幅振荡
+        // A2-4：阻尼正则化。LM 模式由 damper.applyLmRegularization 自适应 λ；
+        // Backtracking 模式退化为原固定 Tikhonov（opts.lambda）。
+        if (!damperDimKnown) { damper = DampingController(sys.dim, opts.damping);
+                               damper.setInitialLambda(opts.lambda); damper.setStepClamp(opts.dvmax);
+                               damperDimKnown = true; }
         std::vector<double> Jreg = sys.J;
-        if (opts.lambda != 0.0) {
+        if (opts.damping == DampingStrategy::LevenbergMarquardt ||
+            opts.damping == DampingStrategy::TrustRegion) {
+            damper.applyLmRegularization(Jreg);
+        } else if (opts.lambda != 0.0) {
+            // Backtracking：保留原固定 Tikhonov 行为
             for (uint32_t i = 0; i < sys.dim; ++i)
                 Jreg[size_t(i) * sys.dim + i] += opts.lambda;
         }
+        lastJreg = Jreg;  // LM 失败重解时复用
         std::vector<double> dx;
         bool solved = false;
         const uint32_t gmresThreshold = 200;
@@ -522,9 +540,12 @@ bool solveHbNewton(uint32_t numNodes,
             dx = prevDx;
             if (dx.size() != sys.dim) dx.assign(sys.dim, 0.0);
             GmresOptions gopts;
-            gopts.restart = std::min(uint32_t(50), sys.dim);
-            gopts.maxIter = sys.dim * 2;
-            gopts.reltol = 1e-8;
+            // A2-5：GMRES 参数可配（opts.gmresRestart/MaxIter/Reltol）。
+            // 0 表示用默认（restart=min(50,dim)，maxIter=dim*2，reltol=1e-8）。
+            gopts.restart = (opts.gmresRestart > 0) ? std::min(opts.gmresRestart, sys.dim)
+                                                    : std::min(uint32_t(50), sys.dim);
+            gopts.maxIter = (opts.gmresMaxIter > 0) ? opts.gmresMaxIter : sys.dim * 2;
+            gopts.reltol = opts.gmresReltol;
             gopts.abstol = 1e-12;
             auto gr = solveGmres(op, &pcBlk, negF, dx, gopts);
             if (!gr.converged) {
@@ -604,6 +625,20 @@ bool solveHbNewton(uint32_t numNodes,
         if (!accepted) {
             // 回溯结束时未找到满足 Armijo 的步长
             if (bestF >= fNorm * (1.0 - 1e-10)) {
+                // A2-4：LM 模式下，线搜索完全失败 → 升 λ（下次迭代 J 正则更强，
+                // 步长更保守），替代直接 doSafestep。最多升 6 次（λ 上限 ~1e6），
+                // 仍无下降才回退 safestep。这把"失败即跳过"改为"失败即增稳"，
+                // 对强非线性 HB 收敛明显改善；Backtracking 模式保持原 doSafestep 行为。
+                if ((opts.damping == DampingStrategy::LevenbergMarquardt ||
+                     opts.damping == DampingStrategy::TrustRegion) && damper.lambda() < 1e5) {
+                    // 触发 controller 升 λ（step 用失败标记驱动）
+                    DampingController::StepResult sr = damper.step(fNorm, bestF, 1.0, 0.0, 0.0);
+                    (void)sr;  // 副作用：内部 lambda_ 已升
+                    if (hbnlVerbose() >= 1)
+                        std::fprintf(stderr, "[HB-NL] iter=%u  LM λ→%.3e (retry)\n",
+                                     iter, damper.lambda());
+                    continue;  // 下轮用更强正则重解 J·dx=-F
+                }
                 // 没有任何试验步使残差下降，回退 safeguard
                 if (hbnlVerbose() >= 1)
                     std::fprintf(stderr, "[HB-NL] iter=%u  λ-search exhausted, safestep\n",
@@ -625,6 +660,12 @@ bool solveHbNewton(uint32_t numNodes,
                              iter, alpha, bestF);
         } else if (hbnlVerbose() >= 2) {
             std::fprintf(stderr, "[HB-NL] iter=%u  armijo-OK α=%.3e\n", iter, alpha);
+        }
+        // A2-4：步被接受 → LM 降 λ（向纯 Newton 靠拢，加速收敛）。
+        if (opts.damping == DampingStrategy::LevenbergMarquardt ||
+            opts.damping == DampingStrategy::TrustRegion) {
+            DampingController::StepResult sr = damper.step(fNorm, bestF, 1.0, 0.0, 0.0);
+            (void)sr;  // 成功路径：内部 lambda_ 已降
         }
         X = std::move(Xtrial);
         prevDx = dx;

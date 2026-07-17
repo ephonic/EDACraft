@@ -2,6 +2,7 @@
 #include "transient_assembly.hpp"
 #include "../model/builtin_devices.hpp"
 #include "../model/osdi_model.hpp"
+#include "../model/sparam_device.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -36,7 +37,8 @@ bool assembleTransient(uint32_t numNodes,
                        double dt,
                        IntegrationMethod method,
                        TransientSystem& sys,
-                       Diagnostics& diags) {
+                       Diagnostics& diags,
+                       bool residOnly) {
     (void)diags;
     static thread_local std::vector<uint32_t> vsIdx;
     vsIdx.clear();
@@ -142,16 +144,24 @@ bool assembleTransient(uint32_t numNodes,
             op.v = nodeV; op.v_prev = prevNodeV;
             op.time = t; op.dt = dt; op.method = method;
             DeviceContribution dc;
-            // V3-MR Phase3: 自适应 multi-rate——跳过 eval 复用 cache
-            // 但端电压变化超 mrRelTol_ 时强制重新 eval
-            if (osdi->mrNeedsEval()) {
+            // B1: Jacobian 级 bypass。Newton 内层 line-search（residOnly=true）且本 Newton
+            // 步已算过 jac（residOnlyPending）→ 走 evalTransientResidOnly（复用 jac，只重算 resid）。
+            // 首 assembly（residOnly=false）算完整 f+jac 并 markJacComputed。
+            // 注意：仅当不走 multi-rate bypass（mrNeedsEval / evalCached 路径）时生效——
+            // multi-rate 的完全 cache 命中优先级更高。
+            bool useResidOnly = residOnly && osdi->residOnlyPending();
+            if (useResidOnly) {
+                osdi->evalTransientResidOnly(op, dc);
+            } else if (osdi->mrNeedsEval()) {
                 osdi->evalTransient(op, dc);
                 osdi->mrMarkEvalDone();
+                if (!residOnly) osdi->markJacComputed();  // B1: 标记 jac 已算供后续 resid-only
             } else {
                 osdi->mrCheckVoltages(nodeV);  // 自适应检查
                 if (osdi->mrNeedsEval()) {
                     osdi->evalTransient(op, dc);  // 电压变化大，重新 eval
                     osdi->mrMarkEvalDone();
+                    if (!residOnly) osdi->markJacComputed();
                 } else {
                     // cache 有效且电压稳定——复用
                     // 注意: resetLimiting 会清 evalCached_，此时不走 bypass
@@ -160,6 +170,7 @@ bool assembleTransient(uint32_t numNodes,
                     } else {
                         osdi->evalTransient(op, dc);
                         osdi->mrMarkEvalDone();
+                        if (!residOnly) osdi->markJacComputed();
                     }
                 }
             }
@@ -180,6 +191,39 @@ bool assembleTransient(uint32_t numNodes,
                     if (gr == 0) { sys.G.addPattern(gc - 1, gc - 1); sys.G.add(gc - 1, gc - 1, v); }
                     else if (gc == 0) { sys.G.addPattern(gr - 1, gr - 1); sys.G.add(gr - 1, gr - 1, v); }
                     else { sys.G.addPattern(gr - 1, gc - 1); sys.G.add(gr - 1, gc - 1, v); }
+                }
+            }
+            continue;
+        }
+
+        // SParamDevice: Vector Fitting companion model
+        if (auto* sp = dynamic_cast<SParamDevice*>(dev.get())) {
+            TransientOpPoint op;
+            op.v = nodeV;
+            op.v_prev = prevNodeV;
+            op.time = t;
+            op.dt = dt;
+            op.method = method;
+
+            DeviceContribution dc;
+            sp->evalTransient(op, dc);
+
+            // 与 C/L 分支同构：状态更新由 time_stepper 在 Newton 收敛后
+            // 统一调 updateDeviceStates → updateTransientState 完成，
+            // 此处不更新状态（避免每次 Newton 迭代误推进 companion state）。
+            if (dc.f.size() != nTerm || dc.jac.size() != nTerm * nTerm) {
+                dc.f.assign(nTerm, 0.0);
+                dc.jac.assign(nTerm * nTerm, 0.0);
+            }
+            for (uint32_t r = 0; r < nTerm; ++r) {
+                NodeId gr = nds[r];
+                if (gr == 0) continue;
+                sys.F[gr - 1] += dc.f[r];
+                for (uint32_t c = 0; c < nTerm; ++c) {
+                    NodeId gc = nds[c];
+                    if (gc == 0) continue;
+                    sys.G.addPattern(gr - 1, gc - 1);
+                    sys.G.add(gr - 1, gc - 1, dc.jac[r * nTerm + c]);
                 }
             }
             continue;

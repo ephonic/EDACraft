@@ -3,6 +3,7 @@
 #define RFSIM_SOLVER_TIME_STEPPER_HPP
 
 #include "../assembly/transient_assembly.hpp"
+#include "../assembly/linear_solver_factory.hpp"
 #include "../model/device_model.hpp"
 #include "gmin_options.hpp"
 #include <vector>
@@ -22,6 +23,13 @@ struct TimeStepperOptions {
     double abstol = 1e-9;              // 节点电压收敛绝对容差
     double reltol = 1e-3;              // 节点电压收敛相对容差
     bool failOnNonConverge = true;     // 内层 Newton 失败时是否硬退出（true=报错；false=继续推进）
+    // A1-7：线性求解方法（默认 Auto）。
+    SolverMethod solver = SolverMethod::Auto;
+    // B2：自动 multi-rate。开启后对所有 OSDI 器件启用 mrAutoTune——静态/慢器件的
+    // 速率比 K 自适应增大（每 K 步只 eval 一次 + swapState），快器件回退 K=1。
+    // 现有 setRateRatio/setMrAutoTune 机制已实现；此处仅提供统一开关。
+    // 默认 false（与原 bit-identical）；大电路 transient/PSS 开启可省 eval。
+    bool multiRate = false;
 };
 
 struct TimePoint {

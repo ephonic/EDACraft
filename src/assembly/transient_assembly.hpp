@@ -36,6 +36,9 @@ struct TransientSystem {
 //   t, dt:    当前时刻与步长
 //   method:   积分方法（当前仅 BackwardEuler）
 //   sys:      输出装配结果
+//   residOnly: B1——Newton 内层 line-search 时置 true：OSDI 器件走 evalTransientResidOnly
+//              （复用本 Newton 步已算的 jacobian，只重算 residual），省 jac 计算开销。
+//              首次装配（Newton 步首）必须 false 以算完整 f+jac。
 bool assembleTransient(uint32_t numNodes,
                        const std::vector<std::unique_ptr<DeviceModel>>& devices,
                        const std::vector<double>& nodeV,
@@ -44,7 +47,8 @@ bool assembleTransient(uint32_t numNodes,
                        double dt,
                        IntegrationMethod method,
                        TransientSystem& sys,
-                       Diagnostics& diags);
+                       Diagnostics& diags,
+                       bool residOnly = false);
 
 } // namespace rfsim
 

@@ -8,6 +8,8 @@
 
 #include <cctype>
 #include <fstream>
+#include <map>
+#include <set>
 #include <sstream>
 
 namespace rfsim {
@@ -139,12 +141,48 @@ public:
             if (lines[0].line == 1) start = 1;
         }
 
+        std::vector<std::string> topLevelBlockStack;  // C1：顶层 .lib NAME 块栈
         for (size_t idx = start; idx < lines.size(); ++idx) {
             std::string line = lines[idx].text;
             uint32_t ln = lines[idx].line;
             stripInlineComment(line);
             line = trim(line);
             if (line.empty()) continue;
+
+            // C1：顶层也支持 .lib NAME...endl 块记录（与 parseBodyInto 一致）。
+            // 块定义行不直接 parseDotLine（会误入 parseLibSelect）；块内行归档。
+            std::string low = line;
+            for (auto& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            bool isLibStart = (low.size() > 5 && low.substr(0, 5) == ".lib ");
+            bool isEndl = (low.size() > 5 && low.substr(0, 5) == ".endl");
+            if (isLibStart) {
+                auto toks = tokenizeLine(line, filename_, ln);
+                std::string firstArg; bool isPath = false;
+                for (size_t ti = 2; ti < toks.size(); ++ti) {
+                    if (toks[ti].kind == TokenKind::String) { firstArg = toks[ti].text; isPath = true; break; }
+                    if (toks[ti].kind == TokenKind::Word) { firstArg = toks[ti].text; break; }
+                }
+                if (!isPath && !firstArg.empty() &&
+                    (firstArg.find('.') != std::string::npos || firstArg.find('/') != std::string::npos ||
+                     firstArg.find('\\') != std::string::npos)) isPath = true;
+                if (isPath) {
+                    parseDotLine(line, ln, out);  // 跨文件 .lib "path" CORNER
+                } else if (!firstArg.empty()) {
+                    std::string blkName = firstArg;
+                    for (auto& c : blkName) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    topLevelBlockStack.push_back(blkName);
+                    libBlocks_[blkName];
+                }
+                continue;
+            }
+            if (isEndl) {
+                if (!topLevelBlockStack.empty()) topLevelBlockStack.pop_back();
+                continue;
+            }
+            if (!topLevelBlockStack.empty()) {
+                libBlocks_[topLevelBlockStack.back()].emplace_back(line, ln);
+                continue;
+            }
 
             if (line[0] == '.') {
                 parseDotLine(line, ln, out);
@@ -155,6 +193,15 @@ public:
 
         if (!substack_.empty()) {
             diags_.error({filename_, 0, 0}, "unterminated .subckt: " + substack_.back().name);
+        }
+        // 展开顶层被选择的本地块（顶层 .lib NAME 块若被注入 libSelectSet_）
+        for (const auto& selName : libSelectSet_) {
+            auto it = libBlocks_.find(selName);
+            if (it == libBlocks_.end()) continue;
+            for (auto& [text, lno] : it->second) {
+                if (text[0] == '.') parseDotLine(text, lno, out);
+                else parseCardLine(text, lno, out);
+            }
         }
     }
 
@@ -169,6 +216,28 @@ private:
     // 子电路定义栈
     struct Frame { std::shared_ptr<SubcktDef> def; std::string name; };
     std::vector<Frame> substack_;
+
+    // C1：.lib NAME ... .endl NAME 命名块记录。
+    // libBlocks_[name] = 块内的逻辑行序列（已 strip 注释/trim）。
+    // activeLibBlock_：当前正在记录的块名（空表示不在记录态，正常处理）。
+    // libSelectSet_：本 Parser 实例应激活的 corner 名集合（由 .lib "path" CORNER 注入）。
+    // libLoadingFiles_：当前正在加载的 .lib 文件绝对路径集合（防递归 .lib 自引用）。
+    std::map<std::string, std::vector<std::pair<std::string, uint32_t>>> libBlocks_;
+    std::string activeLibBlock_;
+    std::set<std::string> libSelectSet_;
+    std::set<std::string> libLoadingFiles_;
+
+    // C1：.lib 文件缓存。key = 规范化文件路径，value = 该文件解析后的
+    // {outOfBlockLines（块外行）, blocks（块名→块内行）}。同文件只解析一次，
+    // 后续 .lib 引用（含自引用）从缓存取块。这是 HSPICE PDK 自引用嵌套的关键。
+    struct LibFileCache {
+        std::vector<std::pair<std::string, uint32_t>> outOfBlockLines;
+        std::map<std::string, std::vector<std::pair<std::string, uint32_t>>> blocks;
+    };
+    static std::map<std::string, LibFileCache>& libFileCache() {
+        static std::map<std::string, LibFileCache> cache;
+        return cache;
+    }
 
     SourceLoc at(uint32_t line) const { return {filename_, line, 1}; }
 
@@ -196,7 +265,8 @@ private:
             c.params = parseParamPairs(rest);
             currentTarget(netlist)->push_back(c); return;
         }
-        if (cmd == "include" || cmd == "lib") { parseInclude(rest, ln, netlist); return; }
+        if (cmd == "include") { parseInclude(rest, ln, netlist); return; }
+        if (cmd == "lib")     { parseLibSelect(rest, ln, netlist); return; }
 
         // 通用控制卡: .tran/.ac/.dc/.hb/.print/.measure/.nodeset/.ic/...
         ControlCard c;
@@ -272,6 +342,24 @@ private:
         (void)ln;
     }
 
+    // C1：解析路径——优先相对于当前文件所在目录（HSPICE 语义），再相对 CWD。
+    // 例如 toplevel.l 里的 `.lib './crn28.l' X`，'./crn28.l' 应相对 toplevel.l 的目录，
+    // 而非进程 CWD。返回能打开的绝对/相对路径；都打不开返回原始 path（让后续报错）。
+    std::string resolveLibPath(const std::string& path) const {
+        // 已是绝对路径或能直接打开 → 原样
+        std::ifstream testDirect(path);
+        if (testDirect) return path;
+        // 相对当前文件目录
+        if (!filename_.empty()) {
+            size_t slash = filename_.find_last_of("\\/");
+            std::string dir = (slash != std::string::npos) ? filename_.substr(0, slash) : ".";
+            std::string rel = dir + "/" + path;
+            std::ifstream testRel(rel);
+            if (testRel) return rel;
+        }
+        return path;  // 打不开，返回原样让 parseInclude/parseLibSelect 报错
+    }
+
     void parseInclude(const std::vector<Token>& rest, uint32_t ln, Netlist& netlist) {
         std::string path;
         for (const auto& t : rest) {
@@ -286,6 +374,7 @@ private:
             }
         }
         if (path.empty()) { diags_.error(at(ln), ".include/.lib missing path"); return; }
+        path = resolveLibPath(path);  // C1：相对当前文件目录解析
         std::ifstream f(path);
         if (!f) { diags_.error(at(ln), "cannot open included file: " + path); return; }
         std::stringstream ss; ss << f.rdbuf();
@@ -298,6 +387,121 @@ private:
         for (auto& it : subNet.items) currentTarget(netlist)->push_back(std::move(it));
         for (auto& p : subNet.globalParams) netlist.globalParams.push_back(p);
         // 合并子解析器的诊断
+        for (auto& e : sub.diags().errors) diags_.errors.push_back(e);
+        for (auto& w : sub.diags().warnings) diags_.warnings.push_back(w);
+    }
+
+    // 把一个 .lib 文件解析一次到缓存（块外行 + 各命名块）。同文件只解析一次。
+    // 解析用临时 Parser，复用 splitLogicalLines 的块边界识别逻辑，但不做块展开
+    // （只记录块定义）。返回缓存条目引用（若文件无法打开返回 nullptr）。
+    const LibFileCache* loadLibFileToCache(const std::string& path) {
+        std::string normPath = path;
+        for (auto& c : normPath) if (c == '\\') c = '/';
+        auto& cache = libFileCache();
+        auto it = cache.find(normPath);
+        if (it != cache.end()) return &it->second;
+        std::ifstream f(path);
+        if (!f) return nullptr;
+        std::stringstream ss; ss << f.rdbuf();
+        std::string src = ss.str();
+        // 临时解析器：仅做块边界识别，填充 cache 条目
+        LibFileCache entry;
+        auto lines = splitLogicalLines(src);
+        std::vector<std::string> blockStack;
+        for (auto& ll : lines) {
+            std::string line = ll.text;
+            stripInlineComment(line);
+            line = trim(line);
+            if (line.empty() || line[0] == '*') continue;
+            std::string low = line;
+            for (auto& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            bool isLibStart = (low.size() > 5 && low.substr(0, 5) == ".lib ");
+            bool isEndl = (low.size() > 5 && low.substr(0, 5) == ".endl");
+            if (isLibStart) {
+                auto toks = tokenizeLine(line, path, ll.line);
+                std::string firstArg; bool isPath = false;
+                for (size_t ti = 2; ti < toks.size(); ++ti) {
+                    if (toks[ti].kind == TokenKind::String) { firstArg = toks[ti].text; isPath = true; break; }
+                    if (toks[ti].kind == TokenKind::Word) { firstArg = toks[ti].text; break; }
+                }
+                if (!isPath && !firstArg.empty() &&
+                    (firstArg.find('.') != std::string::npos || firstArg.find('/') != std::string::npos ||
+                     firstArg.find('\\') != std::string::npos)) isPath = true;
+                if (isPath) {
+                    // 跨文件 .lib：作为块外行记录（展开时由调用方处理）
+                    if (blockStack.empty()) entry.outOfBlockLines.emplace_back(line, ll.line);
+                    else entry.blocks[blockStack.back()].emplace_back(line, ll.line);
+                } else if (!firstArg.empty()) {
+                    std::string blk = firstArg;
+                    for (auto& c : blk) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    blockStack.push_back(blk);
+                    entry.blocks[blk];
+                }
+                continue;
+            }
+            if (isEndl) {
+                if (!blockStack.empty()) blockStack.pop_back();
+                continue;
+            }
+            if (blockStack.empty()) entry.outOfBlockLines.emplace_back(line, ll.line);
+            else entry.blocks[blockStack.back()].emplace_back(line, ll.line);
+        }
+        auto inserted = cache.emplace(normPath, std::move(entry));
+        return &inserted.first->second;
+    }
+
+    // C1：.lib "path" CORNER —— 从文件缓存取 CORNER 块（或块外行）展开。
+    // 文件只解析一次（缓存）；自引用 .lib 'samefile' BLOCK 从已缓存块取，不重载。
+    void parseLibSelect(const std::vector<Token>& rest, uint32_t ln, Netlist& netlist) {
+        std::string path;
+        std::string corner;
+        bool gotPath = false;
+        for (const auto& t : rest) {
+            if (!gotPath) {
+                if (t.kind == TokenKind::String) { path = t.text; gotPath = true; continue; }
+                if (t.kind == TokenKind::Word) { path = t.text; gotPath = true; continue; }
+                if (t.kind == TokenKind::Dot) { path += "."; gotPath = true; continue; }
+            } else {
+                if (t.kind == TokenKind::Word) { corner = t.text; break; }
+                if (t.kind == TokenKind::String) { corner = t.text; break; }
+            }
+        }
+        if (path.find('.') == std::string::npos && !gotPath) {
+            for (const auto& t : rest) {
+                if (t.kind == TokenKind::Dot) { path += "."; gotPath = true; }
+                else if (t.kind == TokenKind::Word && path != t.text) { path += t.text; gotPath = true; }
+            }
+        }
+        if (path.empty()) { diags_.error(at(ln), ".lib missing path"); return; }
+        path = resolveLibPath(path);
+        const LibFileCache* cached = loadLibFileToCache(path);
+        if (!cached) { diags_.error(at(ln), "cannot open .lib file: " + path); return; }
+        // 选 corner（小写归一）；缺省则展开块外行
+        std::string cl = corner;
+        for (auto& c : cl) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const std::vector<std::pair<std::string, uint32_t>>* linesToExpand = nullptr;
+        if (!cl.empty()) {
+            auto bit = cached->blocks.find(cl);
+            if (bit != cached->blocks.end()) linesToExpand = &bit->second;
+            else diags_.warn(at(ln), ".lib corner '" + corner + "' not found in " + path);
+        } else {
+            linesToExpand = &cached->outOfBlockLines;
+        }
+        if (!linesToExpand) return;
+        // 展开选中行：用临时 Parser（filename=目标文件，便于其内部 .lib 路径解析）。
+        // 子 Parser 继承 libLoadingFiles_（防无限递归）+ substack_（子电路作用域）。
+        Parser sub("", path, opts_);
+        sub.libLoadingFiles_ = libLoadingFiles_;
+        sub.substack_ = substack_;
+        Netlist subNet;
+        // 把行直接喂给子 parser 的 dot/card 处理（不经 parseBodyInto 的块识别——
+        // 这些行已是选中块内容，不需要再分块）。
+        for (auto& [text, lno] : *linesToExpand) {
+            if (text[0] == '.') sub.parseDotLine(text, lno, subNet);
+            else sub.parseCardLine(text, lno, subNet);
+        }
+        for (auto& it : subNet.items) currentTarget(netlist)->push_back(std::move(it));
+        for (auto& p : subNet.globalParams) netlist.globalParams.push_back(p);
         for (auto& e : sub.diags().errors) diags_.errors.push_back(e);
         for (auto& w : sub.diags().warnings) diags_.warnings.push_back(w);
     }
@@ -320,17 +524,81 @@ private:
     }
 
     // .include 用——不跳第一行，所有行都解析
+    // C1：支持 .lib NAME ... .endl NAME 命名块（同文件定义）+ .lib "path" CORNER
+    //     选择性包含另一文件的命名块。实现：单遍扫描，块定义存入 libBlocks_，
+    //     .lib "path" CORNER 递归解析目标文件并展开其 CORNER 块。
     void parseBodyInto(Netlist& out, std::vector<Frame>& sharedStack) {
         substack_ = sharedStack;
         auto lines = splitLogicalLines(src_);
+        // 第一遍：识别 .lib/.endl 块边界，把块内行归档，块外行标记为正常解析。
+        // blockStack：嵌套的块名栈（.lib NAME 入栈，.endl NAME 出栈）。
+        std::vector<std::string> blockStack;
+        std::vector<std::pair<std::string, uint32_t>> inlineLines;  // 块外、需正常解析的行
         for (auto& ll : lines) {
             std::string line = ll.text;
             stripInlineComment(line);
             line = trim(line);
             if (line.empty()) continue;
             if (line[0] == '*') continue;
-            if (line[0] == '.') parseDotLine(line, ll.line, out);
-            else parseCardLine(line, ll.line, out);
+            // 判断是否 .lib/.endl 控制（不区分大小写）
+            std::string low = line;
+            for (auto& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            bool isLibStart = (low.size() > 5 && low.substr(0, 5) == ".lib ");
+            bool isEndl = (low.size() > 5 && low.substr(0, 5) == ".endl");
+            if (isLibStart) {
+                // .lib 的两种语义：
+                //   (a) .lib NAME  —— NAME 是标识符（非路径）→ 定义命名块开始
+                //   (b) .lib "path" CORNER 或 .lib path CORNER —— 跨文件块选择
+                // 区分：若第一个参数含 '.' 或 '/' 或被引号包裹 → 路径（语义 b）。
+                auto toks = tokenizeLine(line, filename_, ll.line);
+                // toks[0]='.', toks[1]='lib', 后续是参数
+                std::string firstArg;
+                bool isPath = false;
+                for (size_t ti = 2; ti < toks.size(); ++ti) {
+                    if (toks[ti].kind == TokenKind::String) { firstArg = toks[ti].text; isPath = true; break; }
+                    if (toks[ti].kind == TokenKind::Word) { firstArg = toks[ti].text; break; }
+                }
+                if (!isPath && !firstArg.empty()) {
+                    if (firstArg.find('.') != std::string::npos || firstArg.find('/') != std::string::npos ||
+                        firstArg.find('\\') != std::string::npos) isPath = true;
+                }
+                if (isPath) {
+                    // 语义 b：跨文件块选择——作为普通行交给 parseDotLine 处理（块外）
+                    inlineLines.emplace_back(line, ll.line);
+                } else if (!firstArg.empty()) {
+                    // 语义 a：命名块开始（块名小写归一，与 libSelectSet_ 匹配）
+                    std::string blkName = firstArg;
+                    for (auto& c : blkName) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    blockStack.push_back(blkName);
+                    libBlocks_[blkName];  // 创建空条目
+                }
+                continue;
+            }
+            if (isEndl) {
+                if (!blockStack.empty()) blockStack.pop_back();
+                continue;
+            }
+            // 普通行：若在块内则归档到最内层块，否则标记正常解析
+            if (!blockStack.empty()) {
+                libBlocks_[blockStack.back()].emplace_back(line, ll.line);
+            } else {
+                inlineLines.emplace_back(line, ll.line);
+            }
+        }
+        // 第二遍：解析块外行。.lib "path" CORNER 由 parseDotLine 触发块展开。
+        for (auto& [text, lno] : inlineLines) {
+            if (text[0] == '.') parseDotLine(text, lno, out);
+            else parseCardLine(text, lno, out);
+        }
+        // 第三遍：展开本文件内被选择的本地块（libSelectSet_ 由 .lib "path" CORNER
+        // 跨文件注入；本地 .lib NAME 块若在 libSelectSet_ 中也展开）。
+        for (const auto& selName : libSelectSet_) {
+            auto it = libBlocks_.find(selName);
+            if (it == libBlocks_.end()) continue;
+            for (auto& [text, lno] : it->second) {
+                if (text[0] == '.') parseDotLine(text, lno, out);
+                else parseCardLine(text, lno, out);
+            }
         }
         sharedStack = substack_;
     }

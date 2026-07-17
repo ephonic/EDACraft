@@ -6,6 +6,12 @@
 //
 // 接口与 LuSolver 对齐（factorize / solve / dim）以便就地替换。
 //
+// Phase A1：继承 LinearSolver。关键性能特性——supportsRefactor()=true：
+//   连续 factorize 同结构矩阵时复用 sym_（klu_analyze 只首次做一次），
+//   后续走 klu_refactor（仅数值更新）。但此特性**要求求解器对象在
+//   Newton 循环外构造**——循环内每轮 new 一个 KluSolver 会让 analyzed_
+//   永远为 false，复用路径成为死代码。调用方应把 KluSolver 提到循环外。
+//
 // 注意：rfsim 的 SparseMatrix 内部是 CSR；KLU 的 API 输入必须是 CSC。
 // factorize() 内部完成 CSR→CSC 转置（对一般非对称矩阵 CSR 转 CSC = CSR(A^T)）。
 // 因此我们调用 klu_solve 时使用 SOLVE 模式（A x = b），而非 TSOLVE。
@@ -14,6 +20,7 @@
 #ifndef RFSIM_ASSEMBLY_KLU_SOLVER_HPP
 #define RFSIM_ASSEMBLY_KLU_SOLVER_HPP
 
+#include "linear_solver.hpp"
 #include "matrix.hpp"
 #include "../util/bench.hpp"
 #include <cstdint>
@@ -21,7 +28,7 @@
 
 namespace rfsim {
 
-class KluSolver {
+class KluSolver : public LinearSolver {
 public:
     KluSolver();
     ~KluSolver();
@@ -33,17 +40,22 @@ public:
     KluSolver& operator=(KluSolver&&) noexcept;
 
     // 分解稀疏矩阵 A（n x n，CSR 输入）。返回 false 若奇异/分析失败。
-    // 内部：CSR → CSC 转置 → klu_analyze（首次或模式变化时）→ klu_factor。
-    bool factorize(const SparseMatrix& A);
+    // 内部：CSR → CSC 转置 → klu_analyze（首次或模式变化时）→ klu_factor
+    // （或连续同结构时 klu_refactor）。覆盖自 LinearSolver。
+    bool factorize(const SparseMatrix& A) override;
 
     // 求解 A·x = b（需先 factorize）。
-    void solve(const Vector& b, Vector& x) const;
+    void solve(const Vector& b, Vector& x) const override;
 
-    [[nodiscard]] uint32_t dim() const noexcept { return n_; }
+    [[nodiscard]] uint32_t dim() const noexcept override { return n_; }
 
     // V2-γ C3: bench 计时（仅 RFSIM_BENCH_JSON=1 时累加，否则保持 0）
-    [[nodiscard]] double factorMs() const noexcept { return factorMs_; }
-    [[nodiscard]] double solveMs()  const noexcept { return solveMs_; }
+    [[nodiscard]] double factorMs() const noexcept override { return factorMs_; }
+    [[nodiscard]] double solveMs()  const noexcept override { return solveMs_; }
+
+    // KLU 支持符号分解复用 + klu_refactor。激活前提：对象在 Newton 循环外构造。
+    [[nodiscard]] bool supportsRefactor() const override { return true; }
+    [[nodiscard]] const char* name() const override { return "klu"; }
 
 private:
     void freeFactors() noexcept;
@@ -54,6 +66,9 @@ private:
     std::vector<int>    Ap_;   // size n+1
     std::vector<int>    Ai_;   // size nnz
     std::vector<double> Ax_;   // size nnz
+    // A1-4：上一次 analyze 时的结构指纹，供连续 factorize 比对以安全复用 sym_。
+    std::vector<int>    prevAp_;  // size n+1
+    std::vector<int>    prevAi_;  // size nnz
 
     // KLU 不透明句柄。用 void* 是为了把 klu.h 完全挡在 .cpp 内：
     // klu.h 把 klu_symbolic / klu_numeric / klu_common 都用 typedef struct{...}

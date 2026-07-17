@@ -6,6 +6,7 @@
 #define RFSIM_SOLVER_DC_OP_HPP
 
 #include "../assembly/mna.hpp"
+#include "../assembly/linear_solver_factory.hpp"
 #include "../model/device_model.hpp"
 #include "../util/bench.hpp"
 #include "gmin_options.hpp"
@@ -54,6 +55,10 @@ struct DcOpOptions {
     // 源步进同伦的中间步数（0 表示禁用，>=1 表示先以 ε<1 做若干步，
     // 再以 ε=1 做最终一步）。仅当存在非线性器件时启用。
     uint32_t sourceStepCount = 0;
+
+    // A1-7：线性求解方法（默认 Auto）。从 .options method=<name> 解析。
+    // Auto 按规模/稀疏度选 KLU / DenseLu；显式可指定 klu/dense/bicgstab。
+    SolverMethod solver = SolverMethod::Auto;
 };
 
 // 求解 DC 工作点。

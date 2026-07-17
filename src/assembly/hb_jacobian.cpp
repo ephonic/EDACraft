@@ -29,9 +29,12 @@ std::vector<Complex> conductanceFft(const std::vector<double>& t, uint32_t NH) {
     return h;
 }
 
-// IFFT：谐波复电压 -> 时域实采样（2*(NH+1) 点）
-std::vector<double> ifftWaveform(const std::vector<Complex>& harmonics, uint32_t NH) {
-    uint32_t N = 2 * (NH + 1);
+// IFFT：谐波复电压 -> 时域实采样（N 点，N >= 2*(NH+1)）。
+// A2-1：N 现可大于 2*(NH+1)（过采样）。多余的采样点由三角恒等式自然填充
+// （谐波数固定为 0..NH，更高次谐波为 0），等效于对周期信号做更密的采样。
+// 调用方按 config.oversample 决定 N，卷积混叠由此降低。
+std::vector<double> ifftWaveform(const std::vector<Complex>& harmonics, uint32_t NH, uint32_t N) {
+    if (N < 2 * (NH + 1)) N = 2 * (NH + 1);  // 安全下限
     std::vector<double> t(N, 0.0);
     for (uint32_t n = 0; n < N; ++n) {
         double sum = 0;
@@ -243,13 +246,17 @@ bool assembleHarmonicBalanceReal(
     sys.F.assign(dim, 0.0);
     sys.J.assign(size_t(dim) * dim, 0.0);
 
-    const uint32_t N = 2 * (NH + 1);
+    // A2-1：FFT 过采样。N = 2*oversample*(NH+1)（oversample 来自 config，默认 2）。
+    // 提升采样数吸收高次谐波混叠，改善非线性 HB 收敛（KI-1 根因之二）。
+    // oversample 下限保护：至少 1（N=2(NH+1)，原行为）。
+    const uint32_t os = std::max<uint32_t>(1u, config.oversample);
+    const uint32_t N = 2u * os * (NH + 1);
     const double w0 = 2.0 * PI * config.fundamental;
 
     // IFFT：节点电压 -> 时域波形（包含地）
     std::vector<std::vector<double>> timeV(numNodes + 1);
     for (uint32_t i = 1; i <= numNodes; ++i) {
-        timeV[i] = ifftWaveform(X[i], NH);
+        timeV[i] = ifftWaveform(X[i], NH, N);
     }
     timeV[0].assign(N, 0.0);
 
@@ -359,42 +366,72 @@ bool assembleHarmonicBalanceReal(
     }
 
     // ---- 非线性 OSDI 器件：IFFT -> eval -> FFT，雅可比卷积 ----
+    // 优化项3（OpenMP）：per-device eval 并行（每器件独立 OsdiClient，线程安全），
+    // FFT + 装配串行（写共享 sys.F/sys.J）。RFSIM_USE_OPENMP=ON 时启用。
+    // 先收集所有 OSDI 器件及其输入（timeVoltages），并行 eval 到 per-device 缓冲，
+    // 再串行做 FFT + 装配。
+    struct OsdiEvalInputs {
+        OsdiModel* osdi;
+        const OsdiDescriptor* desc;
+        std::vector<NodeId> dnodes;
+        std::vector<uint32_t> nodeMap;
+        std::vector<std::vector<double>> timeVoltages;
+    };
+    std::vector<OsdiEvalInputs> osdiDevs;
     for (const auto& d : devices) {
         auto* osdi = dynamic_cast<OsdiModel*>(d.get());
         if (!osdi || !osdi->ready()) continue;
         const OsdiDescriptor* desc = osdi->descriptor();
         uint32_t dn = desc->num_nodes;
         const auto& dnodes = d->nodes();
-
-        std::vector<uint32_t> nodeMap(dn, 0);
-        for (uint32_t i = 0; i < dn && i < dnodes.size(); ++i) nodeMap[i] = dnodes[i];
-
-        // 构造本地节点电压时域采样
-        std::vector<std::vector<double>> timeVoltages(N, std::vector<double>(dn, 0.0));
+        OsdiEvalInputs inp;
+        inp.osdi = osdi;
+        inp.desc = desc;
+        inp.dnodes = dnodes;
+        inp.nodeMap.assign(dn, 0);
+        for (uint32_t i = 0; i < dn && i < dnodes.size(); ++i) inp.nodeMap[i] = dnodes[i];
+        inp.timeVoltages.assign(N, std::vector<double>(dn, 0.0));
         for (uint32_t s = 0; s < N; ++s) {
             for (uint32_t i = 0; i < dn; ++i) {
                 NodeId g = (i < dnodes.size()) ? dnodes[i] : 0;
-                timeVoltages[s][i] = (g != 0 && g <= numNodes) ? timeV[g][s] : 0.0;
+                inp.timeVoltages[s][i] = (g != 0 && g <= numNodes) ? timeV[g][s] : 0.0;
             }
         }
+        osdiDevs.push_back(std::move(inp));
+    }
+    // per-device 输出缓冲
+    std::vector<std::vector<std::vector<double>>> devCurrents(osdiDevs.size());
+    std::vector<std::vector<std::vector<double>>> devCharges(osdiDevs.size());
+    std::vector<std::vector<std::vector<double>>> devJac(osdiDevs.size());
+    std::vector<std::vector<std::vector<double>>> devJacReact(osdiDevs.size());
 
-        // 时域电流 + 电荷采样（阻性 I + 电抗 Q）
-        std::vector<std::vector<double>> timeCurrents;
-        std::vector<std::vector<double>> timeCharges;   // S5 路径 B2: 节点电荷 Q(t)
-        osdi->evalTimeSamples(timeVoltages, nodeMap, timeCurrents, timeCharges);
+    const size_t nOsdi = osdiDevs.size();
+#ifdef RFSIM_USE_OPENMP
+    #pragma omp parallel for schedule(dynamic, 1) if(nOsdi >= 2)
+#endif
+    for (ptrdiff_t dip = 0; dip < static_cast<ptrdiff_t>(nOsdi); ++dip) {
+        size_t di = static_cast<size_t>(dip);
+        osdiDevs[di].osdi->evalTimeSamples(osdiDevs[di].timeVoltages, osdiDevs[di].nodeMap,
+                                           devCurrents[di], devCharges[di]);
+        osdiDevs[di].osdi->evalTimeJacobiansReact(osdiDevs[di].timeVoltages, osdiDevs[di].nodeMap,
+                                                  devJacReact[di]);
+        osdiDevs[di].osdi->evalTimeJacobians(osdiDevs[di].timeVoltages, osdiDevs[di].nodeMap,
+                                             devJac[di]);
+    }
 
-        // 电荷 Jacobian 采样（∂Q/∂V），用于频域电纳 Jacobian 块。
-        // S5 路径 B2: 残差侧现也补 j·ω_k·qHarm[k] 项，与雅可比 addSusceptanceBlock
-        // 对齐，实现 F/J 一致（原 TODO 已完成）。
+    // 串行 FFT + 装配（写 sys.F/sys.J）
+    for (size_t di = 0; di < nOsdi; ++di) {
+        const auto& inp = osdiDevs[di];
+        const OsdiDescriptor* desc = inp.desc;
+        uint32_t dn = desc->num_nodes;
+        const auto& dnodes = inp.dnodes;
+        const auto& timeCurrents = devCurrents[di];
+        const auto& timeCharges = devCharges[di];
+        const auto& timeJac = devJac[di];
+        const auto& timeJacReact = devJacReact[di];
         uint32_t nE = desc->num_jacobian_entries;
-        std::vector<std::vector<double>> timeJacReact;
-        osdi->evalTimeJacobiansReact(timeVoltages, nodeMap, timeJacReact);
 
         // 时域电流 + 电荷 -> 频域残差（F = -(I + j·ω·Q) for 非线性器件）
-        // 符号约定与雅可比 addSusceptanceBlock(sign=-1) 严格对齐：
-        //   雅可比侧贡献 -j·ω·Q（addConductanceBlock(Y, sign=-1)）
-        //   残差侧同样 -j·ω·Q（与 -I 同号，KCL: Y·V - I_nonlin = 0）
-        //   Re(-jωQ) = +ω·Im(Q), Im(-jωQ) = -ω·Re(Q)
         for (uint32_t i = 0; i < dn; ++i) {
             NodeId g = (i < dnodes.size()) ? dnodes[i] : 0;
             if (g == 0 || g > numNodes) continue;
@@ -409,17 +446,14 @@ bool assembleHarmonicBalanceReal(
             std::vector<Complex> qHarm = currentFft(qTime, NH);
             uint32_t ent = nodeEntity(g);
             for (uint32_t k = 0; k <= NH; ++k) {
-                // F_k = -I_k - j·ω_k·Q_k  (sign 与雅可比 addSusceptanceBlock 一致)
                 Complex contrib;
-                contrib.real(-iHarm[k].real() + k * w0 * qHarm[k].imag());   // Re(-I) + ω·Im(Q)
-                contrib.imag(-iHarm[k].imag() - k * w0 * qHarm[k].real());  // Im(-I) - ω·Re(Q)
+                contrib.real(-iHarm[k].real() + k * w0 * qHarm[k].imag());
+                contrib.imag(-iHarm[k].imag() - k * w0 * qHarm[k].real());
                 addComplexResidual(sys.F, perEntity, ent, k, contrib);
             }
         }
 
         // 时域雅可比 -> 频域卷积块（阻性）
-        std::vector<std::vector<double>> timeJac;
-        osdi->evalTimeJacobians(timeVoltages, nodeMap, timeJac);
         for (uint32_t e = 0; e < nE; ++e) {
             const OsdiJacobianEntry& je = desc->jacobian_entries[e];
             uint32_t localA = std::min(je.nodes.node_1, dn - 1);
@@ -427,7 +461,6 @@ bool assembleHarmonicBalanceReal(
             NodeId gA = (localA < dnodes.size()) ? dnodes[localA] : 0;
             NodeId gB = (localB < dnodes.size()) ? dnodes[localB] : 0;
             if (gA == 0 || gA > numNodes || gB == 0 || gB > numNodes) continue;
-
             std::vector<double> gTime(N, 0.0);
             for (uint32_t s = 0; s < N; ++s) gTime[s] = timeJac[s][e];
             std::vector<Complex> G = conductanceFft(gTime, NH);
@@ -445,7 +478,6 @@ bool assembleHarmonicBalanceReal(
             NodeId gA = (localA < dnodes.size()) ? dnodes[localA] : 0;
             NodeId gB = (localB < dnodes.size()) ? dnodes[localB] : 0;
             if (gA == 0 || gA > numNodes || gB == 0 || gB > numNodes) continue;
-
             std::vector<double> gQTime(N, 0.0);
             for (uint32_t s = 0; s < N; ++s) gQTime[s] = timeJacReact[s][e];
             std::vector<Complex> GQ = conductanceFft(gQTime, NH);

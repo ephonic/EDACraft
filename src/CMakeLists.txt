@@ -26,30 +26,48 @@ set(RFSIM_MODEL_SOURCES
 )
 set(RFSIM_ASSEMBLY_SOURCES
     assembly/matrix.cpp
+    assembly/linear_solver_factory.cpp
+    assembly/solver_benchmark.cpp
+    assembly/iterative_solver.cpp
     assembly/lu_solver.cpp
-    assembly/klu_solver.cpp
-    assembly/klu_z_solver.cpp
     assembly/mna.cpp
     assembly/hb_jacobian.cpp
     assembly/gmres.cpp
     assembly/transient_assembly.cpp
 )
+# Phase A1-5：KLU 求解器源仅在 RFSIM_USE_KLU=ON 时编译。
+# KluZSolver（AC 分析用）同样依赖 KLU，一并门控。
+if(RFSIM_USE_KLU)
+    list(APPEND RFSIM_ASSEMBLY_SOURCES
+        assembly/klu_solver.cpp
+        assembly/klu_z_solver.cpp)
+endif()
+# UMFPACK 求解器（经验性求解器选择候选）。需 BLAS（用户通过 RFSIM_BLAS_LIB 提供）。
+if(RFSIM_USE_UMFPACK)
+    list(APPEND RFSIM_ASSEMBLY_SOURCES assembly/umfpack_solver.cpp)
+endif()
 set(RFSIM_SOLVER_SOURCES
     solver/dc_op.cpp
     solver/dc_sweep.cpp
     solver/ac_analysis.cpp
     solver/hb_solver.cpp
     solver/hb_nonlinear.cpp
+    solver/nonlinear_damping.cpp
     solver/time_stepper.cpp
     solver/shooting.cpp
+    solver/noise_analysis.cpp
 )
 set(RFSIM_OUTPUT_SOURCES
     output/hspice_out.cpp
+    output/waveform_export.cpp
+    output/measure.cpp
 )
 
 # S 参数工具
 set(RFSIM_SPARAM_SOURCES
     sparam/touchstone.cpp
+    sparam/vector_fit.cpp
+    sparam/stability.cpp
 )
 
 # V2-γ C3: 性能计数器（RFSIM_BENCH_JSON=1 启用；Windows 用 Psapi 取 RSS）
@@ -76,7 +94,29 @@ target_include_directories(rfsim_core
 
 # Shooting 内层 Newton + 外层 monodromy 用 KLU 稀疏直接求解器（详见
 # cmake/SuiteSparseKLU.cmake）。HB 走 GMRES + 预条件子，不依赖 KLU。
-target_link_libraries(rfsim_core PUBLIC SuiteSparse::KLU)
+# Phase A1-5：RFSIM_USE_KLU=ON 时链接 KLU 并定义宏；OFF 时整库退化为稠密 LU。
+if(RFSIM_USE_KLU)
+    target_link_libraries(rfsim_core PUBLIC SuiteSparse::KLU)
+    target_compile_definitions(rfsim_core PUBLIC RFSIM_USE_KLU)
+endif()
+# UMFPACK 链接 + 宏。UMFPACK 需要 BLAS（用户提供的 RFSIM_BLAS_LIB 已在
+# cmake/SuiteSparseKLU.cmake 内设为 BLAS_LIBRARIES）。
+# BLAS 作为 PUBLIC 链接：UMFPACK_static 引用 BLAS 符号，rfsim_tests/rfsim_cli
+# 链接 rfsim_core 时需传递 BLAS（SuiteSparse::UMFPACK 的 BLAS 依赖不自动透传）。
+if(RFSIM_USE_UMFPACK)
+    target_link_libraries(rfsim_core PUBLIC SuiteSparse::UMFPACK)
+    target_compile_definitions(rfsim_core PUBLIC RFSIM_USE_UMFPACK)
+    if(DEFINED BLAS_LIBRARIES AND NOT "${BLAS_LIBRARIES}" STREQUAL "")
+        target_link_libraries(rfsim_core PUBLIC ${BLAS_LIBRARIES})
+    endif()
+endif()
+
+# 优化项3：OpenMP 并行器件 eval。RFSIM_USE_OPENMP=ON 时启用。
+if(RFSIM_USE_OPENMP)
+    find_package(OpenMP REQUIRED)
+    target_link_libraries(rfsim_core PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_definitions(rfsim_core PUBLIC RFSIM_USE_OPENMP)
+endif()
 
 # V2-γ C3: bench.cpp 在 Windows 用 Psapi 取 RSS
 if(MSVC)
