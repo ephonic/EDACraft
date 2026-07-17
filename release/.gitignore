@@ -1,0 +1,29 @@
+# Build outputs
+/build/
+/build_asan/
+/out/
+
+# Object / intermediate files
+*.o
+*.obj
+*.a
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# Generated / downloaded SuiteSparse & GoogleTest sources (FetchContent)
+build/_deps/
+
+# IDE
+/.vscode/
+/.idea/
+/.vs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated listing / CSV outputs (rfsim CLI 产物)
+*.lis
+*_pss.csv

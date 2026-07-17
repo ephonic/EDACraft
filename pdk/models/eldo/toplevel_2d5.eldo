@@ -1,0 +1,27 @@
+*  **************************************************************
+*  *  TSMC SPICE MODEL --- Security B - TSMC Restricted Secret  *
+*  **************************************************************
+*
+*    PROCESS :  0.028um Mixed Signal RF LC Tank HIGH PERFORMANCE COMPACT MOBILE COMPUTING PLUS (0.9V/2.5V)(CRN28HT LCT)
+*    MODEL   :  BSIM4 ( V4.5 )   
+*    DOC. NO.:  T-N28-CR-SP-023
+*    VERSION :  v1.0_2p1
+*    DATE    :  02:00PM, Feb. 02, 2016
+*    ELDO VERSION : v15.1
+*
+************************************************************************************
+*       THIS INCLUDE HEADER CONTAINS :                                             *
+*                                                                              	   *
+*    Total Corner :                                                            	   *
+*	TOP_TT   totalflag_xx=1 globalflag_xx=1 mismatchflag_xx=1              	   *
+*                                                                              	   *
+************************************************************************************
+
+.lib TOP_TT
+.lib './crn28hpcp_lct_2d5_elk_v1d0_2p1_shrink0d9_embedded_usage.eldo' TTMacro_MOS_MOSCAP
+.lib './crn28hpcp_lct_2d5_elk_v1d0_2p1_shrink0d9_embedded_usage.eldo' TT_RES_BIP_DIO_DISRES
+.lib './crn28hpcp_lct_2d5_elk_v1d0_2p1_shrink0d9_embedded_usage.eldo' TT_MOM
+.lib './crn28hpcp_lct_2d5_elk_v1d0_2p1_shrink0d9_embedded_usage.eldo' TT_R_METAL
+.endl TOP_TT
+
+
