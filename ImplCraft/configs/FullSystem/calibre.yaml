@@ -1,0 +1,39 @@
+# =============================================================================
+# Calibre Physical Verification Configuration
+# =============================================================================
+# Mentor Calibre DRC/LVS options.
+# =============================================================================
+
+calibre:
+  # ---- DRC ----
+  drc:
+    enabled: true
+    rule_deck: "drc/calibre_drc.rule"
+    results_db: "results/drc_results.db"
+    summary_file: "results/drc_summary.txt"
+    hierarchical: true
+    threads: 8
+    # exclude_layers: []
+
+  # ---- LVS ----
+  lvs:
+    enabled: true
+    rule_deck: "lvs/calibre_lvs.rule"
+    results_db: "results/lvs_results.db"
+    summary_file: "results/lvs_summary.txt"
+    compare_property: true
+    reduce_parallel: true
+    # source_netlist: ""
+    # layout_gds: ""
+
+  # ---- Antenna Check ----
+  antenna:
+    enabled: false
+    rule_deck: "antenna/calibre_antenna.rule"
+    # results_file: ""
+
+  # ---- Fill ----
+  fill:
+    enabled: false
+    rule_deck: "fill/calibre_fill.rule"
+    # output_gds: ""

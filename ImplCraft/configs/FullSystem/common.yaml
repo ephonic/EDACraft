@@ -1,0 +1,96 @@
+# =============================================================================
+# Common Design Configuration — TSMC 28nm HPC+, 150MHz
+# =============================================================================
+# Shared settings used by all tools in the flow.
+# =============================================================================
+
+design_name: "FullSystem"
+top_module: "FullSystem_wrapper"
+scenario: "func.tt0p9v.wc.cmax_25c.setup"
+
+# ---- Die size ----
+die:
+  width_um: 3200.0
+  height_um: 2200.0
+  core_offset_um: [200, 200, 200, 200]
+  target_utilization: 0.7
+
+target_utilization: 0.7
+
+# ---- RTL sources ----
+rtl:
+  dir: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/rtl"
+
+# ---- SDC constraints ----
+# Generated inline by the DC adapter; written out after synthesis for ICC2.
+sdc_file: ""
+
+# ---- Libraries ----
+libraries:
+  std_cell:
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/syn_libs/tcbn28hpcplusbwp30p140uhvttt0p9v25c.db"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/syn_libs/tcbn28hpcplusbwp30p140ffg0p88v0c.db"
+  io:
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/syn_libs/tphn28hpcpgv18tt0p9v1p8v25c.db"
+  macro:
+    # Only PLL is needed for DC link; SRAMs are instantiated structurally.
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/syn_libs/PLLTS28HPMFRAC_BC.db"
+  ndm_libs:
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/STDCELL.ndm"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/PORT.ndm"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/PORT_merge_db_physical_only.ndm"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/PLL.ndm"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/ndm/RAMNEW.ndm"
+  main_lib_name: "tcbn28hpcplusbwp30p140"
+  driver_cell: "INVD1BWP30P140UHVT"
+  tap_cell: "TAPCELLBWP30P140"
+  endcap_cell: "ENDCAPBWP30P140"
+  decap_cells:
+    - "DCAP4BWP30P140"
+    - "DCAP8BWP30P140"
+    - "DCAP16BWP30P140"
+  filler_cells:
+    - "FILL1BWP30P140"
+    - "FILL2BWP30P140"
+    - "FILL4BWP30P140"
+    - "FILL8BWP30P140"
+
+# ---- PDK ----
+pdk:
+  name: "tsmc28hpcp"
+  tech_file: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/tf/tsmcn28_10lm7X2ZUTRDL_HVH.tf"
+  metal_stack: ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "AP"]
+  min_routing_layer: "M2"
+  max_routing_layer: "M9"
+  # Innovus requires LEF + Liberty (not Synopsys .db / ICC2 NDM).
+  lef_files:
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tsmcn28_10lm5X2Y2ZUTRDL.tlef"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tcbn28hpcplusbwp30p140hvt.lef"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tcbn28hpcplusbwp30p140.lef"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tcbn28hpcplusbwp30p140lvt.lef"
+    - "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/lef/tcbn28hpcplusbwp30p140ulvt.lef"
+  calibre_drc_runset: "/share/home/yangfan/bp_to/CLN28HP_10M_7X2Z_002.23a.encrypt"
+  calibre_lvs_runset: "/share/home/yangfan/bp_to/CLN28HP_10M_7X2Z_002.23a.encrypt"
+
+# ---- EDA tool environment paths ----
+eda:
+  synopsys: "/share/apps/EDAs/syn22.bash"
+  primetime: "/share/apps/EDAs/syn22.bash"
+  mentor: "/share/apps/EDAs/mg.bash"
+  cadence: "/share/home/yangfan/backend_scripts/ImplCraft/bp_work/cadence_env.bash"
+
+# ---- Clocks ----
+# Target: 150 MHz => period = 6.667 ns
+clocks:
+  - name: "sys_clk"
+    period_ns: 6.667
+    pin_or_port: "pad_sys_clk"
+    setup_uncertainty_ns: 0.1
+    hold_uncertainty_ns: 0.05
+    transition_ns: 0.08
+    clock_type: "CTS"
+
+# ---- Timing derate (OCV) ----
+timing_derate:
+  late: 1.05
+  early: 0.95

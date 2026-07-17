@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImplCraft — IC 后端设计管理平台</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h1>ImplCraft</h1>
+            <span class="version">v1.0</span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="#" data-page="dashboard" class="active">
+                <span class="icon">📊</span> 仪表盘
+            </a></li>
+            <li><a href="#" data-page="designs">
+                <span class="icon">🎨</span> 设计管理
+            </a></li>
+            <li><a href="#" data-page="config">
+                <span class="icon">⚙️</span> 项目配置
+            </a></li>
+            <li><a href="#" data-page="execution">
+                <span class="icon">▶️</span> 执行流程
+            </a></li>
+            <li><a href="#" data-page="stages">
+                <span class="icon">📋</span> 阶段详情
+            </a></li>
+            <li><a href="#" data-page="metrics">
+                <span class="icon">📈</span> 指标分析
+            </a></li>
+            <li><a href="#" data-page="scripts">
+                <span class="icon">📝</span> 脚本管理
+            </a></li>
+            <li><a href="#" data-page="risk">
+                <span class="icon">⚠️</span> 风险分析
+            </a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <div class="server-status" id="server-status">
+                <span class="status-dot online"></span> 服务器在线
+            </div>
+        </div>
+    </nav>
+
+    <main class="content">
+        <!-- Dashboard -->
+        <div id="page-dashboard" class="page active">
+            <header class="page-header">
+                <h2>仪表盘</h2>
+                <button class="btn btn-sm" onclick="App.refresh()">刷新</button>
+            </header>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-designs">0</div>
+                    <div class="stat-label">设计项目</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-active">0</div>
+                    <div class="stat-label">活跃设计</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-stages">0</div>
+                    <div class="stat-label">运行阶段</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-success" id="stat-passing">0</div>
+                    <div class="stat-label">通过</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-danger" id="stat-failing">0</div>
+                    <div class="stat-label">失败</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-scripts">0</div>
+                    <div class="stat-label">脚本数</div>
+                </div>
+            </div>
+
+            <div class="section" id="risk-panel">
+                <h3>⚠️ 风险与不确定性分析</h3>
+                <div class="risk-summary-bar" id="risk-summary-bar">
+                    <div class="risk-stat" id="risk-critical">
+                        <span class="risk-count">0</span>
+                        <span class="risk-label">严重</span>
+                    </div>
+                    <div class="risk-stat" id="risk-high">
+                        <span class="risk-count">0</span>
+                        <span class="risk-label">高</span>
+                    </div>
+                    <div class="risk-stat" id="risk-medium">
+                        <span class="risk-count">0</span>
+                        <span class="risk-label">中</span>
+                    </div>
+                    <div class="risk-stat" id="risk-low">
+                        <span class="risk-count">0</span>
+                        <span class="risk-label">低</span>
+                    </div>
+                    <div class="risk-stat" id="risk-decisions">
+                        <span class="risk-count">0</span>
+                        <span class="risk-label">待决策</span>
+                    </div>
+                </div>
+                <div id="risk-top-list" class="risk-list">
+                    <p class="empty">选择设计以查看风险分析</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>设计概览</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>设计名称</th>
+                                <th>状态</th>
+                                <th>PDK</th>
+                                <th>时钟 (ns)</th>
+                                <th>WNS</th>
+                                <th>TNS</th>
+                                <th>DRC 错误</th>
+                                <th>更新时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="designs-table-body">
+                            <tr><td colspan="8" class="empty">暂无设计项目</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Designs -->
+        <div id="page-designs" class="page">
+            <header class="page-header">
+                <h2>设计管理</h2>
+                <button class="btn btn-primary" onclick="App.showCreateDesign()">+ 新建设计</button>
+            </header>
+            <div class="section">
+                <div id="designs-list" class="cards-grid"></div>
+            </div>
+        </div>
+
+        <!-- Config -->
+        <div id="page-config" class="page">
+            <header class="page-header">
+                <h2>项目配置</h2>
+                <div class="header-actions">
+                    <button class="btn" onclick="App.loadConfig()">刷新</button>
+                    <button class="btn btn-primary" onclick="App.saveConfig()">保存配置</button>
+                </div>
+            </header>
+
+            <div class="config-tabs">
+                <button class="tab-btn active" onclick="App.switchConfigTab('project')">项目</button>
+                <button class="tab-btn" onclick="App.switchConfigTab('tools')">EDA 工具</button>
+                <button class="tab-btn" onclick="App.switchConfigTab('flow')">流程</button>
+                <button class="tab-btn" onclick="App.switchConfigTab('designs')">设计文件</button>
+            </div>
+
+            <div id="config-project" class="config-panel active">
+                <div class="section">
+                    <div class="form-group">
+                        <label>项目名称</label>
+                        <input type="text" id="config-project-name" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>工作目录</label>
+                        <input type="text" id="config-working-dir" class="form-input">
+                    </div>
+                </div>
+            </div>
+
+            <div id="config-tools" class="config-panel">
+                <div class="section">
+                    <div class="form-group">
+                        <label>ICC2 路径</label>
+                        <input type="text" id="config-icc2-path" class="form-input" placeholder="/tools/icc2">
+                    </div>
+                    <div class="form-group">
+                        <label>PT 路径</label>
+                        <input type="text" id="config-pt-path" class="form-input" placeholder="/tools/pt">
+                    </div>
+                    <div class="form-group">
+                        <label>Calibre 路径</label>
+                        <input type="text" id="config-calibre-path" class="form-input" placeholder="/tools/calibre">
+                    </div>
+                    <div class="form-group">
+                        <label>StarRC 路径</label>
+                        <input type="text" id="config-starrc-path" class="form-input" placeholder="/tools/starrc">
+                    </div>
+                </div>
+            </div>
+
+            <div id="config-flow" class="config-panel">
+                <div class="section">
+                    <div class="form-group">
+                        <label><input type="checkbox" id="config-parallel"> 允许并行执行独立阶段</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="config-auto-continue"> 阶段通过后自动继续</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="config-checkpoint"> 启用检查点恢复</label>
+                    </div>
+                    <div id="config-flow-stages" class="stage-list"></div>
+                </div>
+            </div>
+
+            <div id="config-designs" class="config-panel">
+                <div class="section">
+                    <div class="section-header">
+                        <h3>设计文件配置</h3>
+                        <button class="btn btn-sm btn-primary" onclick="App.showCreateDesignConfig()">+ 新建设计配置</button>
+                    </div>
+                    <div id="config-designs-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Execution -->
+        <div id="page-execution" class="page">
+            <header class="page-header">
+                <h2>执行流程</h2>
+                <div class="header-actions">
+                    <select id="exec-design-select" class="form-input" onchange="App.switchExecDesign()" style="width:200px">
+                        <option value="">选择设计...</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="App.startExecution()">▶ 开始</button>
+                    <button class="btn" onclick="App.pauseExecution()">⏸ 暂停</button>
+                    <button class="btn" onclick="App.resumeExecution()">⏵ 继续</button>
+                    <button class="btn btn-danger" onclick="App.stopExecution()">⏹ 停止</button>
+                    <button class="btn" onclick="App.showPartitionModal()">📦 模块划分</button>
+                </div>
+            </header>
+
+            <!-- Overall execution status bar -->
+            <div class="execution-status-bar" id="exec-status-bar">
+                <div class="status-indicator" id="exec-status">
+                    <span class="status-dot idle"></span>
+                    <span class="status-text">空闲</span>
+                </div>
+                <div class="execution-timer">
+                    <span>开始: <span id="exec-started">-</span></span>
+                    <span>当前: <span id="exec-current">-</span></span>
+                </div>
+            </div>
+
+            <!-- Module progress matrix (new) -->
+            <div class="section" id="module-progress-section" style="display:none">
+                <div class="section-header">
+                    <h3>模块执行进度</h3>
+                    <button class="btn btn-sm" onclick="App.refreshModuleProgress()">刷新</button>
+                </div>
+                <div id="module-progress-summary" class="module-summary-bar"></div>
+                <div class="table-container">
+                    <table class="data-table module-matrix" id="module-matrix-table">
+                        <thead><tr><th>模块</th><th>层级</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Top-level flow stages -->
+            <div class="section">
+                <h3>流程阶段</h3>
+                <div id="execution-flow" class="flow-stages"></div>
+            </div>
+
+            <!-- Execution logs -->
+            <div class="section">
+                <h3>执行日志</h3>
+                <pre class="log-container" id="execution-logs"></pre>
+            </div>
+        </div>
+
+        <!-- Stages -->
+        <div id="page-stages" class="page">
+            <header class="page-header">
+                <h2>阶段详情</h2>
+                <button class="btn" onclick="App.loadStages()">刷新</button>
+            </header>
+            <div class="section">
+                <div id="stages-list" class="stage-cards"></div>
+            </div>
+        </div>
+
+        <!-- Metrics -->
+        <div id="page-metrics" class="page">
+            <header class="page-header">
+                <h2>指标分析</h2>
+                <div class="header-actions">
+                    <select id="metrics-design-select" class="form-input" onchange="App.switchMetricsDesign()" style="width:200px">
+                        <option value="">选择设计...</option>
+                    </select>
+                    <button class="btn" onclick="App.loadMetrics()">刷新</button>
+                </div>
+            </header>
+
+            <div id="metrics-content">
+                <div class="empty" style="text-align:center;padding:60px 0;color:var(--text-muted)">请选择一个设计以查看指标分析</div>
+            </div>
+
+            <!-- Metrics tabs -->
+            <div id="metrics-tabs" style="display:none">
+                <div class="config-tabs" style="margin-bottom:16px">
+                    <button class="tab-btn active" onclick="App.switchMetricsTab('timing')">时序</button>
+                    <button class="tab-btn" onclick="App.switchMetricsTab('area')">面积 / 利用率</button>
+                    <button class="tab-btn" onclick="App.switchMetricsTab('power')">功耗</button>
+                    <button class="tab-btn" onclick="App.switchMetricsTab('drc')">DRC</button>
+                    <button class="tab-btn" onclick="App.switchMetricsTab('table')">数据表</button>
+                </div>
+
+                <div id="metrics-tab-timing" class="config-panel active">
+                    <div class="section">
+                        <h3>WNS / TNS 趋势</h3>
+                        <div id="chart-timing" class="chart-container"></div>
+                    </div>
+                </div>
+                <div id="metrics-tab-area" class="config-panel">
+                    <div class="section">
+                        <h3>利用率趋势</h3>
+                        <div id="chart-area" class="chart-container"></div>
+                    </div>
+                </div>
+                <div id="metrics-tab-power" class="config-panel">
+                    <div class="section">
+                        <h3>功耗趋势</h3>
+                        <div id="chart-power" class="chart-container"></div>
+                    </div>
+                </div>
+                <div id="metrics-tab-drc" class="config-panel">
+                    <div class="section">
+                        <h3>DRC 错误趋势</h3>
+                        <div id="chart-drc" class="chart-container"></div>
+                    </div>
+                </div>
+                <div id="metrics-tab-table" class="config-panel">
+                    <div class="section">
+                        <h3>指标历史数据</h3>
+                        <div class="table-container" id="metrics-table-container"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Risk Analysis -->
+        <div id="page-risk" class="page">
+            <header class="page-header">
+                <h2>风险分析与决策中心</h2>
+                <div class="header-actions">
+                    <select id="risk-design-select" class="form-input" onchange="App.loadRiskAnalysis()">
+                        <option value="">-- 选择设计 --</option>
+                    </select>
+                    <button class="btn" onclick="App.loadRiskAnalysis()">刷新</button>
+                    <button class="btn btn-primary" onclick="App.runFullPreflight()">全流程预检</button>
+                </div>
+            </header>
+
+            <div id="risk-overview" class="section">
+                <div class="risk-overview-card" id="risk-overview-card">
+                    <div class="risk-meter" id="risk-meter">
+                        <div class="risk-meter-fill" id="risk-meter-fill" style="width:0%"></div>
+                        <span class="risk-meter-label" id="risk-meter-label">未分析</span>
+                    </div>
+                    <div class="risk-confidence" id="risk-confidence">
+                        <span class="confidence-value">-</span>
+                        <span class="confidence-label">置信度</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="risk-stage-list" class="section">
+                <h3>阶段风险评估</h3>
+                <div id="stage-risk-cards" class="cards-grid"></div>
+            </div>
+
+            <div id="risk-decisions-section" class="section">
+                <h3>待决策项</h3>
+                <div id="risk-decision-list" class="decision-list">
+                    <p class="empty">暂无待决策项</p>
+                </div>
+            </div>
+
+            <div id="risk-preflight-results" class="section hidden">
+                <h3>预检结果</h3>
+                <div id="preflight-content"></div>
+            </div>
+        </div>
+
+        <!-- Scripts -->
+        <div id="page-scripts" class="page">
+            <header class="page-header">
+                <h2>脚本管理</h2>
+                <div class="header-actions">
+                    <select id="scripts-design-select" class="form-input" onchange="App.switchScriptsDesign()" style="width:200px">
+                        <option value="">选择设计...</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="App.showGenerateScript()">+ 生成脚本</button>
+                </div>
+            </header>
+
+            <!-- Script stats -->
+            <div class="stats-grid" id="scripts-stats" style="margin-bottom:16px">
+                <div class="stat-card"><div class="stat-value" id="script-stat-total">0</div><div class="stat-label">总计</div></div>
+                <div class="stat-card"><div class="stat-value" id="script-stat-generated">0</div><div class="stat-label">已生成</div></div>
+                <div class="stat-card"><div class="stat-value text-success" id="script-stat-completed">0</div><div class="stat-label">已完成</div></div>
+                <div class="stat-card"><div class="stat-value text-danger" id="script-stat-failed">0</div><div class="stat-label">失败</div></div>
+            </div>
+
+            <!-- Scripts filter -->
+            <div class="section" style="padding:12px 20px;margin-bottom:16px">
+                <div style="display:flex;gap:12px;align-items:center">
+                    <label style="color:var(--text-secondary);font-size:13px">筛选:</label>
+                    <select id="scripts-filter-status" class="form-input" style="width:120px" onchange="App.filterScripts()">
+                        <option value="">全部状态</option>
+                        <option value="generated">已生成</option>
+                        <option value="running">运行中</option>
+                        <option value="completed">已完成</option>
+                        <option value="failed">失败</option>
+                    </select>
+                    <input type="text" id="scripts-filter-search" class="form-input" style="width:200px" placeholder="搜索文件名..." oninput="App.filterScripts()">
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>文件名</th>
+                                <th>阶段</th>
+                                <th>类型</th>
+                                <th>状态</th>
+                                <th>生成时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scripts-table-body">
+                            <tr><td colspan="7" class="empty">请选择设计以查看脚本</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div id="modal-create-design" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>新建设计</h3>
+                <button class="modal-close" onclick="App.closeModal('modal-create-design')">×</button>
+            </div>
+            <form onsubmit="App.createDesign(event)">
+                <div class="form-group">
+                    <label>设计名称</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>顶层模块</label>
+                    <input type="text" name="top_module" required>
+                </div>
+                <div class="form-group">
+                    <label>时钟周期 (ns)</label>
+                    <input type="number" name="clock_period_ns" step="0.1" value="2.0">
+                </div>
+                <div class="form-group">
+                    <label>目标利用率</label>
+                    <input type="number" name="target_utilization" step="0.01" value="0.7">
+                </div>
+                <div class="form-group">
+                    <label>PDK 名称</label>
+                    <input type="text" name="pdk_name" value="smic28nm">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="App.closeModal('modal-create-design')">取消</button>
+                    <button type="submit" class="btn btn-primary">创建</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="modal-generate-script" class="modal hidden">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>生成脚本</h3>
+                <button class="modal-close" onclick="App.closeModal('modal-generate-script')">×</button>
+            </div>
+            <form onsubmit="App.generateScript(event)">
+                <div class="form-group">
+                    <label>阶段名称</label>
+                    <select name="stage_name" required>
+                        <option value="synthesis">综合</option>
+                        <option value="floorplan">布局规划</option>
+                        <option value="placement">布局</option>
+                        <option value="cts">时钟树综合</option>
+                        <option value="routing">布线</option>
+                        <option value="drc">DRC</option>
+                        <option value="lvs">LVS</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>脚本内容</label>
+                    <textarea name="content" rows="15" class="code-editor"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="App.closeModal('modal-generate-script')">取消</button>
+                    <button type="submit" class="btn btn-primary">生成</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Script Preview Modal -->
+    <div id="modal-script-preview" class="modal hidden">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="preview-modal-title">脚本预览</h3>
+                <button class="modal-close" onclick="App.closeModal('modal-script-preview')">×</button>
+            </div>
+            <div class="script-preview-info" style="margin-bottom:12px">
+                <span id="preview-meta" style="color:var(--text-secondary);font-size:13px"></span>
+            </div>
+            <pre class="log-container" id="preview-content" style="max-height:500px;font-family:var(--font-mono);font-size:13px;line-height:1.6"></pre>
+            <div class="form-actions" style="margin-top:16px">
+                <button class="btn" onclick="App.closeModal('modal-script-preview')">关闭</button>
+                <button class="btn btn-primary" id="preview-execute-btn" onclick="App.executeFromPreview()">确认执行</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Log Modal -->
+    <div id="modal-script-log" class="modal hidden">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="log-modal-title">执行日志</h3>
+                <button class="modal-close" onclick="App.closeModal('modal-script-log')">×</button>
+            </div>
+            <div id="log-modal-meta" style="margin-bottom:12px;color:var(--text-secondary);font-size:13px"></div>
+            <pre class="log-container" id="log-content" style="max-height:500px"></pre>
+            <div class="form-actions" style="margin-top:16px">
+                <button class="btn" onclick="App.closeModal('modal-script-log')">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Module Partition Modal -->
+    <div id="modal-partition" class="modal hidden">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>模块划分</h3>
+                <button class="modal-close" onclick="App.closeModal('modal-partition')">×</button>
+            </div>
+            <p style="color:var(--text-secondary);margin-bottom:12px">为当前设计添加模块划分，支持分模块独立执行和进度跟踪。</p>
+            <div id="partition-modules-list">
+                <div class="form-group">
+                    <label>模块 1</label>
+                    <div style="display:flex;gap:8px">
+                        <input type="text" class="form-input partition-module-name" placeholder="模块名称" value="top">
+                        <select class="form-input partition-module-level" style="width:100px">
+                            <option value="0">顶层</option>
+                            <option value="1">子模块</option>
+                            <option value="2">子子模块</option>
+                        </select>
+                        <button class="btn btn-sm btn-danger" onclick="this.parentElement.parentElement.parentElement.remove()">删除</button>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-sm" onclick="App.addPartitionRow()" style="margin:12px 0">+ 添加模块</button>
+            <div class="form-actions">
+                <button class="btn" onclick="App.closeModal('modal-partition')">取消</button>
+                <button class="btn btn-primary" onclick="App.submitPartition()">保存划分</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Risk Decision Modal -->
+    <div id="modal-risk-decision" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>风险决策</h3>
+                <button class="modal-close" onclick="App.closeModal('modal-risk-decision')">×</button>
+            </div>
+            <div id="decision-risk-info" class="decision-info">
+                <div class="decision-risk-level" id="decision-risk-level"></div>
+                <div class="decision-title" id="decision-title"></div>
+                <div class="decision-desc" id="decision-desc"></div>
+                <div class="decision-confidence" id="decision-confidence"></div>
+            </div>
+            <div class="decision-options" id="decision-options"></div>
+            <div class="form-group">
+                <label>决策理由（可选）</label>
+                <textarea id="decision-reason" rows="3" class="form-input" placeholder="说明决策理由..."></textarea>
+            </div>
+            <div class="form-actions">
+                <button class="btn" onclick="App.closeModal('modal-risk-decision')">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

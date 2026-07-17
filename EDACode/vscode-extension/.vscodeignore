@@ -1,0 +1,42 @@
+# Build artifacts
+out/test/**
+out/**/*.map
+out/test-*
+
+# Source files
+src/**
+tsconfig.json
+
+# Development
+.vscode/**
+.vscode-test/**
+.eslintrc.json
+.eslintignore
+
+# Node modules (dev only, ws is bundled by VSCode)
+node_modules/**
+
+# Git
+.git/**
+.gitignore
+
+# CI/CD
+.github/**
+
+# Documentation
+CHANGELOG.md
+PUBLISH.md
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+tests/**
+
+# Python cache (keep source, exclude __pycache__)
+python/**/__pycache__
+python/**/*.pyc
+
+# Misc
+*.vsix
+*.log
+.DS_Store

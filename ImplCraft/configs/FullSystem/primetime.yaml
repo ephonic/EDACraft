@@ -1,0 +1,44 @@
+# =============================================================================
+# PrimeTime STA Configuration
+# =============================================================================
+# Static timing analysis and signoff options.
+# =============================================================================
+
+primetime:
+  num_cores: 8
+  significant_digits: 4
+
+  # ---- Analysis settings ----
+  analysis:
+    enable_cppr: true                    # Common Path Pessimism Removal
+    enable_si: true                      # Signal integrity analysis
+    cppr_credit_threshold: 0.01
+    timing_derate_late: 1.0
+    timing_derate_early: 1.0
+
+  # ---- Path reporting ----
+  reporting:
+    max_paths: 100
+    nworst: 10
+    slack_lesser_than: 0.0
+    sort_by: "slack"                     # slack, endpoint, group
+
+  # ---- Power analysis ----
+  power:
+    enabled: false
+    # vcd_file: ""
+    # saif_file: ""
+    # activity_file: ""
+
+  # ---- MCMM scenarios ----
+  mcmm:
+    enabled: false
+    # scenarios:
+    #   - name: "func_ss"
+    #     corner: "ss"
+    #     mode: "func"
+    #     sdc_file: "constraints/func_ss.sdc"
+    #   - name: "func_ff"
+    #     corner: "ff"
+    #     mode: "func"
+    #     sdc_file: "constraints/func_ff.sdc"

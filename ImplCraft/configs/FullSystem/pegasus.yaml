@@ -1,0 +1,61 @@
+# =============================================================================
+# Cadence Pegasus Physical Verification Configuration
+# =============================================================================
+# Industrial-grade DRC/LVS for signoff.
+# =============================================================================
+
+pegasus:
+  num_cores: 8
+  license_timeout: 300
+
+  # ---- DRC (Design Rule Check) ----
+  drc:
+    enabled: true
+    rule_deck: "drc/pegasus_drc.rule"
+    results_db: "results/pegasus_drc.db"
+    summary_file: "results/pegasus_drc_summary.txt"
+    hierarchical: true
+    threads: 8
+    # signoff_mode: true                 # Signoff-quality DRC
+    # exclude_layers: []
+    # severity_filter: "error"           # error, warning, all
+
+  # ---- LVS (Layout vs Schematic) ----
+  lvs:
+    enabled: true
+    rule_deck: "lvs/pegasus_lvs.rule"
+    results_db: "results/pegasus_lvs.db"
+    summary_file: "results/pegasus_lvs_summary.txt"
+    compare_property: true
+    reduce_parallel: true
+    # source_netlist: ""                 # Auto-detected
+    # layout_gds: ""                     # Auto-detected
+    # device_matching: true
+    # parameter_tolerance: 0.01
+
+  # ---- Antenna Check ----
+  antenna:
+    enabled: false
+    rule_deck: "antenna/pegasus_antenna.rule"
+    # results_file: ""
+    # ratio_threshold: 400
+
+  # ---- ERC (Electrical Rule Check) ----
+  erc:
+    enabled: false
+    rule_deck: "erc/pegasus_erc.rule"
+    # results_file: ""
+
+  # ---- Density Check ----
+  density:
+    enabled: false
+    # window_size: [100, 100]            # Density check window (um)
+    # min_density: 0.5
+    # max_density: 0.9
+
+  # ---- Fill Generation ----
+  fill:
+    enabled: false
+    rule_deck: "fill/pegasus_fill.rule"
+    # output_gds: ""
+    # density_target: 0.7

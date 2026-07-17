@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61", "wheel", "Cython>=3.0", "numpy>=1.24"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tcad"
+version = "0.1.0"
+description = "3D Quantum-Corrected Semiconductor Device Simulator with Extended Precision"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "TCAD Contributors"},
+]
+keywords = ["tcad", "semiconductor", "device-simulation", "quantum", "spice"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: C++",
+    "Programming Language :: Cython",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "meshio>=5.3",
+    "trimesh>=4.0",
+    "shapely>=2.0",
+]
+
+[project.optional-dependencies]
+viz = ["pyvista>=0.43", "vtk>=9.3"]
+gmsh = ["gmsh>=4.12"]
+dev = ["pytest>=7.0", "pytest-cov", "black", "mypy"]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/tcad"
+Repository = "https://github.com/yourusername/tcad"
+Issues = "https://github.com/yourusername/tcad/issues"
+
+[tool.setuptools.packages.find]
+include = ["tcad", "tcad.*"]
+
+[tool.setuptools.package-data]
+tcad = ["*.pyx", "*.pxd", "*.json"]

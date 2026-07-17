@@ -1,0 +1,42 @@
+# =============================================================================
+# ICC2 Physical Implementation Configuration
+# Synopsys ICC2 place and route options for FullSystem @ 150MHz.
+# =============================================================================
+
+icc2:
+  num_cores: 16
+
+  # ---- Floorplan ----
+  floorplan:
+    utilization: 0.7
+    aspect_ratio: 1.0
+    core_offset: [200, 200, 200, 200]
+
+  # ---- Placement ----
+  placement:
+    timing_driven: true
+    congestion_driven: true
+    power_driven: false
+    effort: "high"
+
+  # ---- CTS ----
+  cts:
+    target_skew: 0.15
+    insertion_delay: 0.0
+    balance_between_clocks: true
+    useful_skew: false
+
+  # ---- Routing ----
+  routing:
+    timing_driven: true
+    si_driven: true
+    antenna_fixing: true
+    redundant_via: true
+    effort: "high"
+
+  # ---- Optimization ----
+  optimization:
+    setup_fixing: true
+    hold_fixing: true
+    power_optimization: false
+    incremental: true
