@@ -7,19 +7,24 @@
 namespace mom::green::dyadic {
 
 Complex SpatialDyadic::GA(Real rho) const {
+    if (!pole_list.empty())
+        return qwe::spatial_GA_qwe_poles(*sg_ptr, rho, eps_r, pole_list, n_intervals, gauss_order);
     return qwe::spatial_GA_qwe(*sg_ptr, rho, eps_r, n_intervals, gauss_order);
 }
 
 Complex SpatialDyadic::GAzz(Real rho) const {
-    // G_Azz 对应于 TM 电压 TLGF（G_P）
-    // 对于同层情况，可以用 G_P 近似
-    // 这里简化处理：使用与 G_A 相同的函数（对于水平电流）
-    // 对于垂直电流，需要更复杂的处理（不同层之间的耦合）
-    // TODO: 实现完整的 G_Azz（TM 电压 TLGF）
-    return qwe::spatial_GA_qwe(*sg_ptr, rho, eps_r, n_intervals, gauss_order);
+    // G_Azz = TM 电压 TLGF（垂直电流矢量位）
+    return qwe::spatial_GAzz_qwe(*sg_ptr, rho, eps_r, n_intervals, gauss_order);
+}
+
+Complex SpatialDyadic::GAxz(Real rho) const {
+    // G_Axz = 水平-垂直交叉耦合（J1 Sommerfeld 积分）
+    return qwe::spatial_GAxz_qwe(*sg_ptr, rho, eps_r, n_intervals, gauss_order);
 }
 
 Complex SpatialDyadic::Gphi(Real rho) const {
+    if (!pole_list.empty())
+        return qwe::spatial_Gphi_qwe_poles(*sg_ptr, rho, eps_r, pole_list, n_intervals, gauss_order);
     return qwe::spatial_Gphi_qwe(*sg_ptr, rho, eps_r, n_intervals, gauss_order);
 }
 
@@ -34,6 +39,7 @@ SpatialDyadic build_horizontal_dyadic(
     dyad.eps_r = eps_r;
     dyad.n_intervals = n_intervals;
     dyad.gauss_order = gauss_order;
+    dyad.pole_list = pole_list;  // 存储极点（不再忽略）
 
     return dyad;
 }

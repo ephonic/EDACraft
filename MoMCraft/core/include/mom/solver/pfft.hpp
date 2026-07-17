@@ -23,24 +23,37 @@
 namespace mom::solver {
 
 // 格林函数查找表（简化版，供快速装配用）
+// 使用对数采样：近场（rho→0，格林函数变化剧烈）密集采样，
+// 远场（rho 大，变化缓慢）稀疏采样。克服均匀网格近场插值不准的问题。
 class GreenLookupTable {
 public:
     GreenLookupTable(std::function<Complex(Real)> eval, Real rho_min, Real rho_max,
                       Size n_grid = 2000)
-        : rho_min_(rho_min), rho_max_(rho_max), n_grid_(n_grid) {
+        : rho_min_(rho_min), rho_max_(rho_max), n_grid_(n_grid), eval_(eval) {
         if (rho_max <= rho_min) rho_max = rho_min + 1.0;
-        drho_ = (rho_max - rho_min) / Real(n_grid - 1);
+        rho_min_ = rho_min;
+        rho_max_ = rho_max;
+        if (rho_min <= 0) rho_min = 1e-12;  // 对数采样要求正数
+        // 对数采样：logspace(rho_min, rho_max, n_grid)
+        rho_min_ = rho_min;
+        rho_max_ = rho_max;
+        log_min_ = std::log10(rho_min);
+        log_max_ = std::log10(rho_max);
+        dlog_ = (log_max_ - log_min_) / Real(n_grid - 1);
         table_.resize(n_grid);
         for (Size i = 0; i < n_grid; ++i) {
-            Real rho = rho_min + Real(i) * drho_;
+            Real rho = std::pow(10.0, log_min_ + Real(i) * dlog_);
             table_[i] = eval(rho);
         }
     }
 
     Complex operator()(Real rho) const {
-        if (rho <= rho_min_) return table_.front();
-        if (rho >= rho_max_) return Complex(0, 0);
-        Real t = (rho - rho_min_) / drho_;
+        if (rho <= rho_min_) return eval_(rho);
+        // 截断修正：超出 rho_max 时直接求值（不返回零）
+        if (rho >= rho_max_) return eval_(rho);
+        // 对数空间线性插值
+        Real lr = std::log10(rho);
+        Real t = (lr - log_min_) / dlog_;
         Index i = Index(t);
         if (i < 0) i = 0;
         if (i >= Index(n_grid_) - 1) i = Index(n_grid_) - 2;
@@ -51,9 +64,11 @@ public:
     Size grid_size() const { return n_grid_; }
 
 private:
-    Real rho_min_, rho_max_, drho_;
+    Real rho_min_, rho_max_;
+    Real log_min_, log_max_, dlog_;
     Size n_grid_;
     std::vector<Complex> table_;
+    std::function<Complex(Real)> eval_;
 };
 
 // pFFT 配置

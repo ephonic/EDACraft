@@ -1,5 +1,5 @@
 // =====================================================================
-// mom/solver/dense.cpp —— 稠密直接求解 + 端口 + S 参数
+// mom/solver/dense.cpp - dense direct solve + reduced port extraction
 // =====================================================================
 #include "mom/solver/dense.hpp"
 
@@ -8,8 +8,9 @@
 #include <Eigen/LU>
 #endif
 
-#include <vector>
+#include <cmath>
 #include <stdexcept>
+#include <vector>
 
 namespace mom::solver {
 
@@ -20,20 +21,23 @@ std::vector<Complex> solve_dense(const std::vector<Complex>& Z,
 #ifdef MOM_USE_EIGEN
     using M = Eigen::MatrixXcd;
     using Vc = Eigen::VectorXcd;
-    // Eigen 默认列主序；Z 给的是行主序，转成列主序矩阵。
+
     M A(nb, nb);
     for (Index i = 0; i < nb; ++i)
         for (Index j = 0; j < nb; ++j)
-            A(i, j) = Z[Index(i) * nb + j];
+            A(i, j) = Z[i * nb + j];
+
     Vc b(nb);
     for (Index i = 0; i < nb; ++i) b(i) = V[i];
+
     Vc x = A.partialPivLu().solve(b);
     std::vector<Complex> out(nb);
     for (Index i = 0; i < nb; ++i) out[i] = x(i);
     return out;
 #else
-    (void)Z; (void)V;
-    throw std::runtime_error("solve_dense 需要 Eigen（MOM_USE_EIGEN）");
+    (void)Z;
+    (void)V;
+    throw std::runtime_error("solve_dense requires Eigen (MOM_USE_EIGEN)");
 #endif
 }
 
@@ -42,33 +46,68 @@ std::vector<Complex> port_impedance_matrix(const std::vector<Index>& port_basis,
                                            Index nb) {
     const Index np = Index(port_basis.size());
     std::vector<Complex> Zport(np * np, Complex(0.0, 0.0));
-    if (np == 0) return Zport;
+    if (np == 0 || nb <= 0) return Zport;
 
+#ifdef MOM_USE_EIGEN
+    using M = Eigen::MatrixXcd;
+
+    std::vector<unsigned char> is_port(Size(nb), 0);
     for (Index p = 0; p < np; ++p) {
-        // delta-gap：在第 p 个端口基函数上施加 1V
-        std::vector<Complex> V(nb, Complex(0.0, 0.0));
-        V[port_basis[p]] = Complex(1.0, 0.0);
-        const auto I = solve_dense(Z, V, nb);
+        const Index bi = port_basis[p];
+        if (bi < 0 || bi >= nb)
+            throw std::runtime_error("port_impedance_matrix: port basis index out of range");
+        if (is_port[Size(bi)] != 0)
+            throw std::runtime_error("port_impedance_matrix: duplicate port basis index");
+        is_port[Size(bi)] = 1;
+    }
 
-        // 端口电压 = 激励电压（delta-gap 端口处）；电流 = 该基函数电流。
-        // 端口 q 的电压由其基函数处的电位定义：这里取激励端口 V=1，
-        // 其余端口电压 = Z 对应基函数的电压降 = Σ Z(q,j) I(j)。
-        // 简化（参考面在基函数上）：V_q = δ_{q,p}（端口 q 开路电压）。
-        for (Index q = 0; q < np; ++q) {
-            // 端口 q 的电压 = 该端口基函数上的电压（=端口处电位差）
-            // 用阻抗矩阵关系 V_q = Σ_j Z(q_basis, j) I_j
-            Complex Vq(0.0, 0.0);
-            for (Index j = 0; j < nb; ++j)
-                Vq += Z[port_basis[q] * nb + j] * I[j];
-            // 端口电流（流入）取端口 q 基函数的电流（带符号）
-            const Complex Iq = I[port_basis[q]];
-            // Z_port[p,q]：以 p 激励、q 观测；这里存为 Zport[q,p]=V_q/I_p
-            // 约定行主序，行=观测 q，列=激励 p
-            if (std::abs(I[port_basis[p]]) > 0.0)
-                Zport[q * np + p] = Vq / I[port_basis[p]];
+    std::vector<Index> int_idx;
+    int_idx.reserve(Size(nb - np));
+    for (Index j = 0; j < nb; ++j) {
+        if (!is_port[Size(j)]) int_idx.push_back(j);
+    }
+
+    const Index ni = Index(int_idx.size());
+    if (ni == 0) {
+        for (Index q = 0; q < np; ++q)
+            for (Index r = 0; r < np; ++r)
+                Zport[q * np + r] = Z[port_basis[q] * nb + port_basis[r]];
+        return Zport;
+    }
+
+    M Zii(ni, ni);
+    for (Index a = 0; a < ni; ++a)
+        for (Index b = 0; b < ni; ++b)
+            Zii(a, b) = Z[int_idx[a] * nb + int_idx[b]];
+
+    M Zpi(np, ni), Zip(ni, np), Zpp(np, np);
+    for (Index q = 0; q < np; ++q) {
+        for (Index b = 0; b < ni; ++b)
+            Zpi(q, b) = Z[port_basis[q] * nb + int_idx[b]];
+        for (Index r = 0; r < np; ++r)
+            Zpp(q, r) = Z[port_basis[q] * nb + port_basis[r]];
+    }
+    for (Index a = 0; a < ni; ++a)
+        for (Index q = 0; q < np; ++q)
+            Zip(a, q) = Z[int_idx[a] * nb + port_basis[q]];
+
+    M X = Zii.partialPivLu().solve(Zip);
+    M Zport_e = Zpp - Zpi * X;
+    for (Index q = 0; q < np; ++q) {
+        for (Index r = 0; r < np; ++r) {
+            Complex v = Zport_e(q, r);
+            if (!std::isfinite(v.real()) || !std::isfinite(v.imag()))
+                v = Zpp(q, r);
+            Zport[q * np + r] = v;
         }
     }
     return Zport;
+#else
+    (void)port_basis;
+    (void)Z;
+    (void)nb;
+    throw std::runtime_error("port_impedance_matrix requires Eigen (MOM_USE_EIGEN)");
+#endif
 }
 
 std::vector<Complex> zport_to_sparam(const std::vector<Complex>& Zport,
@@ -76,22 +115,28 @@ std::vector<Complex> zport_to_sparam(const std::vector<Complex>& Zport,
 #ifdef MOM_USE_EIGEN
     using M = Eigen::MatrixXcd;
     const Complex z0c(z0, 0.0);
+    if (nport <= 0) return {};
+
     M Zp(nport, nport);
     for (Index i = 0; i < nport; ++i)
         for (Index j = 0; j < nport; ++j)
             Zp(i, j) = Zport[i * nport + j];
-    // S = (Z - Z0 I)(Z + Z0 I)^{-1}
+
+    M I = M::Identity(nport, nport);
     M A = (Zp - z0c * M::Identity(nport, nport));
     M B = (Zp + z0c * M::Identity(nport, nport));
-    M S = A * B.inverse();
+    M S = A * B.partialPivLu().solve(I);
+
     std::vector<Complex> out(nport * nport);
     for (Index i = 0; i < nport; ++i)
         for (Index j = 0; j < nport; ++j)
             out[i * nport + j] = S(i, j);
     return out;
 #else
-    (void)Zport; (void)z0; (void)nport;
-    throw std::runtime_error("zport_to_sparam 需要 Eigen（MOM_USE_EIGEN）");
+    (void)Zport;
+    (void)z0;
+    (void)nport;
+    throw std::runtime_error("zport_to_sparam requires Eigen (MOM_USE_EIGEN)");
 #endif
 }
 

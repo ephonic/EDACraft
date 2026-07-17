@@ -12,6 +12,7 @@
 #include <vector>
 #include <stdexcept>
 #include <algorithm>
+#include <limits>
 
 namespace mom::green::qwe {
 
@@ -65,6 +66,69 @@ Complex bessel_Y0_complex(Complex z) {
 // H0^(2)(z) = J0(z) - j·Y0(z)
 Complex hankel0_2(Complex z) {
     return bessel_J0_complex(z) - Iunit * bessel_Y0_complex(z);
+}
+
+bool can_use_simple_qs_tail(const spectral::SpectralGreensFunction& sg) {
+    const auto& med = sg.medium();
+    if (med.layers.size() != 1) return false;
+    if (!groundz_is_real(med.ground_z)) return false;
+    if (std::abs(sg.z_src() - sg.z_obs()) > 1e-12) return false;
+    return true;
+}
+
+Real simple_qs_height(const spectral::SpectralGreensFunction& sg) {
+    return sg.z_src();
+}
+
+Real spectral_tiny_shift(const spectral::SpectralGreensFunction& sg) {
+    const Real mag = 1e-8 * sg.k0();
+    return can_use_simple_qs_tail(sg) ? mag : -mag;
+}
+
+std::vector<Real> spectral_branch_points(const spectral::SpectralGreensFunction& sg) {
+    std::vector<Real> out;
+    out.reserve(sg.layer_wave_numbers().size() + 1);
+
+    const Real k0 = sg.k0();
+    if (std::isfinite(k0) && k0 > 0.0) out.push_back(k0);
+
+    for (const Complex& k_layer : sg.layer_wave_numbers()) {
+        const Real bp = std::abs(k_layer);
+        if (std::isfinite(bp) && bp > 0.0) out.push_back(bp);
+    }
+
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end(),
+                          [](Real a, Real b) {
+                              return std::abs(a - b) <= 1e-9 * std::max({Real(1.0), std::abs(a), std::abs(b)});
+                          }),
+              out.end());
+    return out;
+}
+
+bool can_extract_tem_cavity_mode(const spectral::SpectralGreensFunction& sg) {
+    const auto& med = sg.medium();
+    if (med.layers.size() != 1) return false;
+    if (!groundz_is_real(med.ground_z) || !groundz_is_real(med.cover_z)) return false;
+    if (std::abs(sg.z_src() - sg.z_obs()) > 1e-12) return false;
+    return med.cover_z > med.ground_z;
+}
+
+Complex cavity_tem_spectral_GA(const spectral::SpectralGreensFunction& sg, Complex k_rho) {
+    const auto& med = sg.medium();
+    const Complex k_layer = sg.layer_wave_numbers().front();
+    const Real H = med.cover_z - med.ground_z;
+    const Complex den = Complex(H, 0.0) * (k_rho * k_rho - k_layer * k_layer);
+    if (std::abs(den) < 1e-30) return Complex(0.0, 0.0);
+    return Complex(1.0, 0.0) / den;
+}
+
+Complex cavity_tem_spatial_GA(const spectral::SpectralGreensFunction& sg, Real rho) {
+    if (rho < 1e-15) return Complex(0.0, 0.0);
+    const auto& med = sg.medium();
+    const Complex k_layer = sg.layer_wave_numbers().front();
+    const Real H = med.cover_z - med.ground_z;
+    return Complex(0.0, -0.25 / H) * hankel0_2(k_layer * rho);
 }
 
 // 一阶贝塞尔 J1(x)（级数）。
@@ -217,6 +281,60 @@ Complex qwe_hankel(const std::function<Complex(Real)>& f, Real r,
     return shanks_wynn(partial_sums);
 }
 
+// J1 版 QWE：∫₀^∞ f(λ)·J1(λr)·λ dλ（用于 G_Axz 交叉耦合）。
+Complex qwe_hankel_J1(const std::function<Complex(Real)>& f, Real r,
+                       int n_intervals, int gauss_order,
+                       Real rtol, Real atol,
+                       const std::vector<Real>& branch_points) {
+    if (r < 1e-4) r = 1e-4;
+    // 用 J1 零点分段（近似，严格应用 J2 零点但收敛性差异小）
+    auto zeros = j1_zeros(n_intervals + 1);
+    const GaussRule g = gauss_legendre(gauss_order);
+
+    std::vector<Complex> partial_sums;
+    partial_sums.reserve(n_intervals + 1);
+    Complex S(0, 0);
+    Complex prev_extrap(0, 0);
+    bool have_prev = false;
+
+    Real a = 0.0;
+    for (int i = 0; i <= n_intervals; ++i) {
+        Real b = zeros[i] / r;
+        std::vector<Real> sub;
+        sub.push_back(a);
+        for (Real bp : branch_points) {
+            if (bp > a + 1e-9 && bp < b - 1e-9) sub.push_back(bp);
+        }
+        sub.push_back(b);
+        Complex Fi(0, 0);
+        for (size_t s = 0; s + 1 < sub.size(); ++s) {
+            Real sa = sub[s], sb = sub[s+1];
+            Real half = 0.5 * (sb - sa);
+            for (Size j = 0; j < g.nodes.size(); ++j) {
+                Real lam = 0.5 * (sa + sb) + half * g.nodes[j];
+                Complex fv = f(lam);
+                Fi += fv * bessel_J1(lam * r) * lam * (g.weights[j] * half);
+            }
+        }
+        S += Fi;
+        partial_sums.push_back(S);
+        a = b;
+
+        if (i >= 8) {
+            Complex extrap = shanks_wynn(partial_sums);
+            if (have_prev) {
+                Real delta = std::abs(extrap - prev_extrap);
+                if (delta <= rtol * std::abs(extrap) + atol) {
+                    return extrap;
+                }
+            }
+            prev_extrap = extrap;
+            have_prev = true;
+        }
+    }
+    return shanks_wynn(partial_sums);
+}
+
 Complex spatial_GA_qwe(const spectral::SpectralGreensFunction& sg,
                        Real rho, Real eps_r,
                        int n_intervals, int gauss_order) {
@@ -230,13 +348,36 @@ Complex spatial_GA_qwe(const spectral::SpectralGreensFunction& sg,
     //   rho=0 时 1/0=inf，但装配极少传 rho=0（dxr=0→rho=0 同点，singular_at(0)=0，
     //   此时 inf-0=inf 会导致问题）→ 用 r_safe 防 inf，但 singular_at 也对 rho<1e-15 返回 0，
     //   故对 rho<1e-15 返回有限平滑极限（singular_at 不减，解析自势补偿）。
+    const bool simple_qs = can_use_simple_qs_tail(sg);
+    const Real h_eff = simple_qs ? simple_qs_height(sg) : 0.0;
+    const Real contour_tiny = spectral_tiny_shift(sg);
+    const std::vector<Real> branch_points = spectral_branch_points(sg);
+    if (!simple_qs) {
+        if (rho < 1e-15) return Complex(0, 0);
+        const bool use_tem_mode = can_extract_tem_cavity_mode(sg);
+        const Complex G_direct = std::exp(-Iunit * k1 * rho) / (4 * phys::pi * rho);
+        auto resid_spec = [&](Real lam) -> Complex {
+            Complex lam_c(lam, contour_tiny);
+            Complex r = sg(lam_c).G_A;
+            Complex kz = sg.source_k_z(lam_c);
+            r -= Iunit / (2.0 * kz);
+            if (use_tem_mode) r -= cavity_tem_spectral_GA(sg, lam_c);
+            if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
+            return r;
+        };
+        Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
+        Complex out = G_direct + F / (2 * phys::pi);
+        if (use_tem_mode) out += cavity_tem_spatial_GA(sg, rho);
+        return out;
+    }
+
     if (rho < 1e-5) {
         if (rho < 1e-15) {
             // rho→0：模仿 green_direct 的自点抑制（直接项 1/(4πρ) 置 0），
             //   仅返回镜像/交叉项（有限）。装配的奇异提取 + 解析自势会补回直接项。
             //   与 solve_freespace_single_z0 的 green_direct(R<1e-30)=0 行为一致。
             if (std::abs(eps_r - 1.0) < 1e-12) {
-                const Real R2 = 2*h;
+                const Real R2 = 2*h_eff;
                 return std::exp(-Iunit*k1*R2) / (4*phys::pi*R2);   // 仅 PEC 镜像项
             }
             // ε≠1：近场主项 C_tail/(4πρ) 置 0，返回 0（残差在 rho→0 也→0）
@@ -244,7 +385,7 @@ Complex spatial_GA_qwe(const spectral::SpectralGreensFunction& sg,
         }
         // 1e-15 ≤ rho < 1e-5：完整尾部（含 1/(4πρ)，与 singular_at 抵消）
         if (std::abs(eps_r - 1.0) < 1e-12) {
-            const Real R2 = std::sqrt(rho*rho + (2*h)*(2*h));
+            const Real R2 = std::sqrt(rho*rho + (2*h_eff)*(2*h_eff));
             return (std::exp(-Iunit*k1*rho)/rho + std::exp(-Iunit*k1*R2)/R2) / (4*phys::pi);
         }
         // ε≠1 近场主项：修正后渐近系数 (1+R∞)（正），不再是旧的 -(1+R∞)/R∞（负且 ε→1 发散）。
@@ -262,15 +403,15 @@ Complex spatial_GA_qwe(const spectral::SpectralGreensFunction& sg,
         //   ε=1 谱域 G_A = j·(1+e^{+j k_z·2h})/(2 k_z)（Ru=0, Rd=+1, dz=0），
         //   逆变换 = [e^{-jk1 ρ}/ρ + e^{-jk1 R2}/R2]/2 → 除 2π 后与下方 G_tail 一致。
         const Real R1 = rho;
-        const Real R2 = std::sqrt(rho * rho + (2 * h) * (2 * h));
+        const Real R2 = std::sqrt(rho * rho + (2 * h_eff) * (2 * h_eff));
         G_tail = (std::exp(-Iunit * k1 * R1) / R1
                   + std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
         resid_spec = [&](Real lam) -> Complex {
-            Complex lam_c(lam, tiny);
+            Complex lam_c(lam, contour_tiny);
             Complex g = sg(lam_c).G_A;
             Complex kz = sg.source_k_z(lam_c);
             // 谱域尾部（与修正后 G_A 同约定）：j·(1+e^{+j k_z·2h})/(2 k_z)
-            Complex qs = Iunit * (Complex(1, 0) + std::exp(Iunit * kz * 2.0 * h)) / (2.0 * kz);
+            Complex qs = Iunit * (Complex(1, 0) + std::exp(Iunit * kz * 2.0 * h_eff)) / (2.0 * kz);
             Complex r = g - qs;
             if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
             return r;
@@ -285,7 +426,7 @@ Complex spatial_GA_qwe(const spectral::SpectralGreensFunction& sg,
         const Real C_tail_re = (1.0 + Rinf);
         G_tail = C_tail_re * std::exp(-Iunit*k1*rho) / (4*phys::pi*rho);
         resid_spec = [&](Real lam) -> Complex {
-            Complex lam_c(lam, tiny);
+            Complex lam_c(lam, contour_tiny);
             Complex g = sg(lam_c).G_A;
             Complex kz = sg.source_k_z(lam_c);
             // 谱域尾部（含 j）：j·C_tail_re/(2 k_z1)
@@ -296,7 +437,7 @@ Complex spatial_GA_qwe(const spectral::SpectralGreensFunction& sg,
         };
     }
 
-    Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, {k0, k1});
+    Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
     return G_tail + F / (2 * phys::pi);
 }
 
@@ -310,17 +451,41 @@ Complex spatial_GA_qwe_poles(const spectral::SpectralGreensFunction& sg,
     const Real h = sg.z_src();
     const Real tiny = 1e-8 * k0;
 
+    const bool simple_qs = can_use_simple_qs_tail(sg);
+    const Real h_eff = simple_qs ? simple_qs_height(sg) : 0.0;
+    const Real contour_tiny = spectral_tiny_shift(sg);
+    const std::vector<Real> branch_points = spectral_branch_points(sg);
+    if (!simple_qs) {
+        if (rho < 1e-15) return Complex(0, 0);
+        const bool use_tem_mode = can_extract_tem_cavity_mode(sg);
+        const Complex G_direct = std::exp(-Iunit * k1 * rho) / (4 * phys::pi * rho);
+        auto resid_spec = [&](Real lam) -> Complex {
+            Complex lam_c(lam, contour_tiny);
+            Complex r = sg(lam_c).G_A - branch::pole_terms(pole_list, lam_c);
+            Complex kz = sg.source_k_z(lam_c);
+            r -= Iunit / (2.0 * kz);
+            if (use_tem_mode) r -= cavity_tem_spectral_GA(sg, lam_c);
+            if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
+            return r;
+        };
+        Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
+        Complex result = G_direct + F / (2 * phys::pi);
+        if (use_tem_mode) result += cavity_tem_spatial_GA(sg, rho);
+        for (const auto& p : pole_list) result += surface_wave_spatial(p.residue, p.k_rho, rho);
+        return result;
+    }
+
     // 小 rho 处理（同 spatial_GA_qwe）
     if (rho < 1e-5) {
         if (rho < 1e-15) {
             if (std::abs(eps_r - 1.0) < 1e-12) {
-                const Real R2 = 2*h;
+                const Real R2 = 2*h_eff;
                 return std::exp(-Iunit*k1*R2) / (4*phys::pi*R2);
             }
             return Complex(0, 0);
         }
         if (std::abs(eps_r - 1.0) < 1e-12) {
-            const Real R2 = std::sqrt(rho*rho + (2*h)*(2*h));
+            const Real R2 = std::sqrt(rho*rho + (2*h_eff)*(2*h_eff));
             return (std::exp(-Iunit*k1*rho)/rho + std::exp(-Iunit*k1*R2)/R2) / (4*phys::pi);
         }
         // ε≠1 近场主项（修正后正系数）
@@ -334,15 +499,15 @@ Complex spatial_GA_qwe_poles(const spectral::SpectralGreensFunction& sg,
 
     if (std::abs(eps_r - 1.0) < 1e-12) {
         const Real R1 = rho;
-        const Real R2 = std::sqrt(rho * rho + (2 * h) * (2 * h));
+        const Real R2 = std::sqrt(rho * rho + (2 * h_eff) * (2 * h_eff));
         G_tail = (std::exp(-Iunit * k1 * R1) / R1
                   + std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
         resid_spec = [&](Real lam) -> Complex {
-            Complex lam_c(lam, tiny);
+            Complex lam_c(lam, contour_tiny);
             Complex g = sg(lam_c).G_A;
             Complex kz = sg.source_k_z(lam_c);
             // 修正后谱域尾部：j·(1+e^{+j k_z·2h})/(2 k_z)
-            Complex qs = Iunit * (Complex(1, 0) + std::exp(Iunit * kz * 2.0 * h)) / (2.0 * kz);
+            Complex qs = Iunit * (Complex(1, 0) + std::exp(Iunit * kz * 2.0 * h_eff)) / (2.0 * kz);
             Complex r = g - qs - branch::pole_terms(pole_list, lam_c);
             if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
             return r;
@@ -353,7 +518,7 @@ Complex spatial_GA_qwe_poles(const spectral::SpectralGreensFunction& sg,
         const Real C_tail_re = (1.0 + Rinf);
         G_tail = C_tail_re * std::exp(-Iunit*k1*rho) / (4*phys::pi*rho);
         resid_spec = [&](Real lam) -> Complex {
-            Complex lam_c(lam, tiny);
+            Complex lam_c(lam, contour_tiny);
             Complex g = sg(lam_c).G_A;
             Complex kz = sg.source_k_z(lam_c);
             Complex qs = Iunit * C_tail_re / (2.0 * kz);
@@ -363,7 +528,7 @@ Complex spatial_GA_qwe_poles(const spectral::SpectralGreensFunction& sg,
         };
     }
 
-    Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, {k0, k1});
+    Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
     Complex result = G_tail + F / (2 * phys::pi);
 
     // 加表面波极点空域贡献
@@ -380,6 +545,24 @@ Complex spatial_Gphi_qwe(const spectral::SpectralGreensFunction& sg,
     const Real k1 = k0 * std::sqrt(eps_r);
     const Real h = sg.z_src();
     const Real tiny = 1e-8 * k0;
+    const bool simple_qs = can_use_simple_qs_tail(sg);
+    const Real h_eff = simple_qs ? simple_qs_height(sg) : 0.0;
+    const Real contour_tiny = spectral_tiny_shift(sg);
+    const std::vector<Real> branch_points = spectral_branch_points(sg);
+    if (!simple_qs) {
+        if (rho < 1e-15) return Complex(0, 0);
+        const Complex G_direct = std::exp(-Iunit * k1 * rho) / (4 * phys::pi * eps_r * rho);
+        auto resid_spec = [&](Real lam) -> Complex {
+            Complex lam_c(lam, contour_tiny);
+            Complex r = sg(lam_c).G_phi;
+            Complex kz = sg.source_k_z(lam_c);
+            r -= Iunit / (2.0 * kz * eps_r);
+            if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
+            return r;
+        };
+        Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
+        return G_direct + F / (2 * phys::pi);
+    }
     // rho 过小：同 G_A 处理（rho<1e-15 平滑极限，否则完整尾部）。
     // G_phi 现用 TM 反射（电荷），与 G_A 同结构（PEC 电荷镜像反号 + 1/ε）。
     // ε=1：G_phi = G_A，尾部 = direct - PEC image（精确，残差~0）。
@@ -387,27 +570,27 @@ Complex spatial_Gphi_qwe(const spectral::SpectralGreensFunction& sg,
     if (std::abs(eps_r - 1.0) < 1e-12) {
         if (rho < 1e-5) {
             if (rho < 1e-15) {
-                const Real R2 = 2*h;
+                const Real R2 = 2*h_eff;
                 return -std::exp(-Iunit*k1*R2) / (4*phys::pi*R2);
             }
-            const Real R2 = std::sqrt(rho*rho + (2*h)*(2*h));
+            const Real R2 = std::sqrt(rho*rho + (2*h_eff)*(2*h_eff));
             return (std::exp(-Iunit*k1*rho)/rho - std::exp(-Iunit*k1*R2)/R2) / (4*phys::pi);
         }
         const Real R1 = rho;
-        const Real R2 = std::sqrt(rho * rho + (2 * h) * (2 * h));
+        const Real R2 = std::sqrt(rho * rho + (2 * h_eff) * (2 * h_eff));
         Complex G_tail = (std::exp(-Iunit * k1 * R1) / R1
                           - std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
         std::function<Complex(Real)> resid_spec = [&](Real lam) -> Complex {
-            Complex lam_c(lam, tiny);
+            Complex lam_c(lam, contour_tiny);
             Complex g = sg(lam_c).G_phi;
             Complex kz = sg.source_k_z(lam_c);
             // 修正后谱域尾部：j·(1 - e^{+j k_z·2h})/(2 k_z)（电荷镜像反号）
-            Complex qs = Iunit * (Complex(1, 0) - std::exp(Iunit * kz * 2.0 * h)) / (2.0 * kz);
+            Complex qs = Iunit * (Complex(1, 0) - std::exp(Iunit * kz * 2.0 * h_eff)) / (2.0 * kz);
             Complex r = g - qs;
             if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
             return r;
         };
-        Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, {k0, k1});
+        Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
         return G_tail + F / (2 * phys::pi);
     }
 
@@ -420,32 +603,226 @@ Complex spatial_Gphi_qwe(const spectral::SpectralGreensFunction& sg,
     if (rho < 1e-5) {
         if (rho < 1e-15) {
             // rho→0：仅镜像项（有限，反号）
-            const Real R2 = 2*h;
+            const Real R2 = 2*h_eff;
             return -C_tail_re * eps_inv * std::exp(-Iunit*k1*R2) / (4*phys::pi*R2);
         }
-        const Real R2 = std::sqrt(rho*rho + (2*h)*(2*h));
+        const Real R2 = std::sqrt(rho*rho + (2*h_eff)*(2*h_eff));
         return C_tail_re * eps_inv *
                (std::exp(-Iunit*k1*rho)/rho - std::exp(-Iunit*k1*R2)/R2) / (4*phys::pi);
     }
 
     const Real R1 = rho;
-    const Real R2 = std::sqrt(rho * rho + (2 * h) * (2 * h));
+    const Real R2 = std::sqrt(rho * rho + (2 * h_eff) * (2 * h_eff));
     Complex G_tail = C_tail_re * eps_inv *
                      (std::exp(-Iunit*k1*R1)/R1 - std::exp(-Iunit*k1*R2)/R2) / (4*phys::pi);
     std::function<Complex(Real)> resid_spec = [&](Real lam) -> Complex {
-        Complex lam_c(lam, tiny);
+        Complex lam_c(lam, contour_tiny);
         Complex g = sg(lam_c).G_phi;
         Complex kz = sg.source_k_z(lam_c);
         // 谱域尾部（含 j，镜像反号）：j·C_tail_re·eps_inv·(1 - e^{+j k_z·2h})/(2 k_z)
         Complex qs = Iunit * C_tail_re * eps_inv *
-                     (Complex(1, 0) - std::exp(Iunit * kz * 2.0 * h)) / (2.0 * kz);
+                     (Complex(1, 0) - std::exp(Iunit * kz * 2.0 * h_eff)) / (2.0 * kz);
         Complex r = g - qs;
         if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
         return r;
     };
 
+    Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
+    return G_tail + F / (2 * phys::pi);
+}
+
+// 垂直矢量位 G_Azz（TM 电压 TLGF）。与 G_A 结构相同，但用 G_Azz 谱域核。
+Complex spatial_GAzz_qwe(const spectral::SpectralGreensFunction& sg,
+                          Real rho, Real eps_r,
+                          int n_intervals, int gauss_order) {
+    const Real k0 = sg.k0();
+    const Real k1 = k0 * std::sqrt(eps_r);
+    const Real h = sg.z_src();
+    const Real tiny = 1e-8 * k0;
+
+    if (rho < 1e-5) {
+        if (std::abs(eps_r - 1.0) < 1e-12) {
+            if (rho < 1e-15) {
+                const Real R2 = 2 * h;
+                return std::exp(-Iunit * k1 * R2) / (4 * phys::pi * R2);
+            }
+            const Real R2 = std::sqrt(rho * rho + (2 * h) * (2 * h));
+            return (std::exp(-Iunit * k1 * rho) / rho
+                    + std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
+        }
+        const Real Rinf = (eps_r - 1) / (eps_r + 1);
+        if (rho < 1e-15) {
+            const Real R2 = 2 * h;
+            return (1.0 + Rinf) * std::exp(-Iunit * k1 * R2) / (4 * phys::pi * R2);
+        }
+        const Real R2 = std::sqrt(rho * rho + (2 * h) * (2 * h));
+        return (1.0 + Rinf) *
+               (std::exp(-Iunit * k1 * rho) / rho
+                + std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
+    }
+
+    Complex G_tail(0, 0);
+    std::function<Complex(Real)> resid_spec;
+
+    if (std::abs(eps_r - 1.0) < 1e-12) {
+        const Real R1 = rho;
+        const Real R2 = std::sqrt(rho * rho + (2 * h) * (2 * h));
+        G_tail = (std::exp(-Iunit * k1 * R1) / R1
+                  + std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
+        resid_spec = [&](Real lam) -> Complex {
+            Complex lam_c(lam, tiny);
+            Complex g = sg(lam_c).G_Azz;
+            Complex kz = sg.source_k_z(lam_c);
+            Complex qs = Iunit * (Complex(1, 0) + std::exp(Iunit * kz * 2.0 * h)) / (2.0 * kz);
+            Complex r = g - qs;
+            if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
+            return r;
+        };
+    } else {
+        const Real Rinf = (eps_r - 1) / (eps_r + 1);
+        const Real R1 = rho;
+        const Real R2 = std::sqrt(rho * rho + (2 * h) * (2 * h));
+        G_tail = (1.0 + Rinf) *
+                 (std::exp(-Iunit * k1 * R1) / R1
+                  + std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
+        resid_spec = [&](Real lam) -> Complex {
+            Complex lam_c(lam, tiny);
+            Complex g = sg(lam_c).G_Azz;
+            Complex kz = sg.source_k_z(lam_c);
+            Complex qs = Iunit * (1.0 + Rinf) *
+                         (Complex(1, 0) + std::exp(Iunit * kz * 2.0 * h)) / (2.0 * kz);
+            Complex r = g - qs;
+            if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
+            return r;
+        };
+    }
+
     Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, {k0, k1});
     return G_tail + F / (2 * phys::pi);
+}
+
+// 水平-垂直交叉耦合 G_Axz 空域格林（J1 Sommerfeld 积分）。
+Complex spatial_GAxz_qwe(const spectral::SpectralGreensFunction& sg,
+                          Real rho, Real eps_r,
+                          int n_intervals, int gauss_order) {
+    const Real k0 = sg.k0();
+    const Real k1 = k0 * std::sqrt(eps_r);
+    const Real tiny = 1e-8 * k0;
+    if (rho < 1e-6) rho = 1e-6;  // G_Axz 在 rho→0 趋于 0，但 J1(0)=0 需保护
+
+    // G_Axz 直接用 J0 QWE 积分（无尾部提取）。
+    // J0 积分自然收敛（QWE 的 J0 零点分段匹配振荡周期）。
+    auto spec = [&](Real lam) -> Complex {
+        Complex lam_c(lam, tiny);
+        Complex g = sg(lam_c).G_Axz;
+        if (!std::isfinite(g.real()) || !std::isfinite(g.imag())) return Complex(0, 0);
+        return g;
+    };
+    Complex F = qwe_hankel(spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, {k0, k1});
+    return F / (2 * phys::pi);
+}
+
+// 带表面波极点提取的 G_phi（仿 spatial_GA_qwe_poles，镜像反号 + 1/ε）。
+Complex spatial_Gphi_qwe_poles(const spectral::SpectralGreensFunction& sg,
+                                Real rho, Real eps_r,
+                                const std::vector<poles::Pole>& pole_list,
+                                int n_intervals, int gauss_order) {
+    const Real k0 = sg.k0();
+    const Real k1 = k0 * std::sqrt(eps_r);
+    const Real h = sg.z_src();
+    const Real tiny = 1e-8 * k0;
+
+    const bool simple_qs = can_use_simple_qs_tail(sg);
+    const Real h_eff = simple_qs ? simple_qs_height(sg) : 0.0;
+    const Real contour_tiny = spectral_tiny_shift(sg);
+    const std::vector<Real> branch_points = spectral_branch_points(sg);
+    if (!simple_qs) {
+        if (rho < 1e-15) return Complex(0, 0);
+        const Complex G_direct = std::exp(-Iunit * k1 * rho) / (4 * phys::pi * eps_r * rho);
+        auto resid_spec = [&](Real lam) -> Complex {
+            Complex lam_c(lam, contour_tiny);
+            Complex r = sg(lam_c).G_phi - branch::pole_terms(pole_list, lam_c);
+            Complex kz = sg.source_k_z(lam_c);
+            r -= Iunit / (2.0 * kz * eps_r);
+            if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
+            return r;
+        };
+        Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
+        Complex result = G_direct + F / (2 * phys::pi);
+        for (const auto& p : pole_list) result += surface_wave_spatial(p.residue, p.k_rho, rho);
+        return result;
+    }
+
+    // 小 rho 处理（同 spatial_Gphi_qwe）
+    if (rho < 1e-5) {
+        if (std::abs(eps_r - 1.0) < 1e-12) {
+            if (rho < 1e-15) {
+                const Real R2 = 2 * h_eff;
+                return -std::exp(-Iunit * k1 * R2) / (4 * phys::pi * R2);
+            }
+            const Real R2 = std::sqrt(rho * rho + (2 * h_eff) * (2 * h_eff));
+            return (std::exp(-Iunit * k1 * rho) / rho
+                    - std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
+        }
+        const Real Rinf = (eps_r - 1) / (eps_r + 1);
+        const Real C_tail_re = (1.0 + Rinf);
+        const Real eps_inv = 1.0 / eps_r;
+        if (rho < 1e-15) {
+            const Real R2 = 2 * h_eff;
+            return -C_tail_re * eps_inv * std::exp(-Iunit * k1 * R2) / (4 * phys::pi * R2);
+        }
+        const Real R2 = std::sqrt(rho * rho + (2 * h_eff) * (2 * h_eff));
+        return C_tail_re * eps_inv *
+               (std::exp(-Iunit * k1 * rho) / rho
+                - std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
+    }
+
+    Complex G_tail(0, 0);
+    std::function<Complex(Real)> resid_spec;
+
+    if (std::abs(eps_r - 1.0) < 1e-12) {
+        const Real R1 = rho;
+        const Real R2 = std::sqrt(rho * rho + (2 * h_eff) * (2 * h_eff));
+        G_tail = (std::exp(-Iunit * k1 * R1) / R1
+                  - std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
+        resid_spec = [&](Real lam) -> Complex {
+            Complex lam_c(lam, contour_tiny);
+            Complex g = sg(lam_c).G_phi;
+            Complex kz = sg.source_k_z(lam_c);
+            Complex qs = Iunit * (Complex(1, 0) - std::exp(Iunit * kz * 2.0 * h_eff)) / (2.0 * kz);
+            Complex r = g - qs - branch::pole_terms(pole_list, lam_c);
+            if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
+            return r;
+        };
+    } else {
+        const Real Rinf = (eps_r - 1) / (eps_r + 1);
+        const Real C_tail_re = (1.0 + Rinf);
+        const Real eps_inv = 1.0 / eps_r;
+        const Real R1 = rho;
+        const Real R2 = std::sqrt(rho * rho + (2 * h_eff) * (2 * h_eff));
+        G_tail = C_tail_re * eps_inv *
+                 (std::exp(-Iunit * k1 * R1) / R1
+                  - std::exp(-Iunit * k1 * R2) / R2) / (4 * phys::pi);
+        resid_spec = [&](Real lam) -> Complex {
+            Complex lam_c(lam, contour_tiny);
+            Complex g = sg(lam_c).G_phi;
+            Complex kz = sg.source_k_z(lam_c);
+            Complex qs = Iunit * C_tail_re * eps_inv *
+                         (Complex(1, 0) - std::exp(Iunit * kz * 2.0 * h_eff)) / (2.0 * kz);
+            Complex r = g - qs - branch::pole_terms(pole_list, lam_c);
+            if (!std::isfinite(r.real()) || !std::isfinite(r.imag())) return Complex(0, 0);
+            return r;
+        };
+    }
+
+    Complex F = qwe_hankel(resid_spec, rho, n_intervals, gauss_order, 1e-9, 1e-14, branch_points);
+    Complex result = G_tail + F / (2 * phys::pi);
+
+    // 加表面波极点空域贡献
+    for (const auto& p : pole_list) {
+        result += surface_wave_spatial(p.residue, p.k_rho, rho);
+    }
+    return result;
 }
 
 // =====================================================================

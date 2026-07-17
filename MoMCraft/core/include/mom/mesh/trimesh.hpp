@@ -75,7 +75,8 @@ struct TriMesh {
     // 从顶点+三角形列表构造（外部网格导入，如 gmsh）
     static TriMesh from_triangle_list(const std::vector<Vec3>& verts,
                                       const std::vector<std::array<Index, 3>>& tris,
-                                      Index layer = 0);
+                                      Index layer = 0,
+                                      bool include_boundary = false);
 
     // 获取三角形顶点坐标
     Vec3 tri_vertex(Index ti, Index vi) const {
@@ -86,7 +87,8 @@ struct TriMesh {
     static Real compute_area(const Vec3& v0, const Vec3& v1, const Vec3& v2);
 
     // 从三角形列表构建 RWG 基函数（内边检测）
-    void build_rwg_bases();
+    // include_boundary: 若 true，则边界边也生成半 RWG 基（t_minus=-1）
+    void build_rwg_bases(bool include_boundary = false);
 
     // 诊断信息
     Index num_interior_edges() const;

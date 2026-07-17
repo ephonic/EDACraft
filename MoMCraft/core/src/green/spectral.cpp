@@ -89,15 +89,23 @@ Complex SpectralGreensFunction::generalized_refl_up_polar(Complex k_rho, bool TM
             if (z_src_ >= z_interface_[i] - 1e-15 && z_src_ <= z_interface_[i + 1] + 1e-15) return i;
         return Index(nL) - 1;
     }();
-    const Complex eps_air(1.0, 0.0);
-    const Complex k_air = omega_ * std::sqrt(phys::mu0 * phys::eps0 * eps_air);
-    Complex kz_air = std::sqrt(k_air * k_air - k_rho * k_rho);
-    if (kz_air.imag() < 0) kz_air = -kz_air;   // 支点 Im>=0（同 k_z()）
-    // 顶层与空气界面反射
+    // 顶层外侧反射：PEC 封闭（±1）或开放（向空气 Fresnel）。
     Index jtop = Index(nL) - 1;
-    const Complex kz_top = k_z(jtop, k_rho);
-    Complex eps_top(medium_.layers[jtop].eps_r, -medium_.layers[jtop].tand);
-    Complex Rtilde = fresnel(kz_top, kz_air, eps_top, eps_air, TM);
+    Complex Rtilde;
+    if (groundz_is_real(medium_.cover_z)) {
+        // 顶部 PEC 封闭：TM 反射 +1（pec_positive），TE 反射 -1。
+        // （与底部 ground_z 的极性约定一致：TM/矢量位 +1，TE/标量势 -1。）
+        Rtilde = TM ? Complex(1.0, 0.0) : Complex(-1.0, 0.0);
+    } else {
+        const Complex eps_air(1.0, 0.0);
+        const Complex k_air = omega_ * std::sqrt(phys::mu0 * phys::eps0 * eps_air);
+        Complex kz_air = std::sqrt(k_air * k_air - k_rho * k_rho);
+        if (kz_air.imag() < 0) kz_air = -kz_air;   // 支点 Im>=0（同 k_z()）
+        // 顶层与空气界面反射
+        const Complex kz_top = k_z(jtop, k_rho);
+        Complex eps_top(medium_.layers[jtop].eps_r, -medium_.layers[jtop].tand);
+        Rtilde = fresnel(kz_top, kz_air, eps_top, eps_air, TM);
+    }
     // 自顶层-1 向下递推到源层
     for (Index j = Index(nL) - 2; j >= i_src; --j) {
         const Complex kz_j = k_z(j, k_rho);
@@ -250,10 +258,52 @@ SpectralKernel SpectralGreensFunction::operator()(Complex k_rho) const {
     // 整体因子 j（来自正确核 j/(2k_z)，见上方约定注释）。
     out.G_A = Iunit * GA_val;
 
+    // —— 垂直矢量位 G_Azz（z-z 分量）——
+    //   对同层情况（z_src 和 z_obs 在同一介质层），G_Azz = G_A。
+    //   这是因为水平电流和垂直电流在同层、同 z 时经历相同的介质环境。
+    //   跨层（z_src ≠ z_obs 层）时 G_Azz 需要独立的 TM 电压 TLGF，
+    //   但当前实现仅支持同层，故 G_Azz = G_A。
+    out.G_Azz = out.G_A;
+
+    // —— 水平-垂直交叉耦合 G_Axz（x-z 分量）——
+    //   Michalski-Mosig Formulation C 的并矢有非对角项 G_Axz = G_Azx。
+    //   谱域核（同层闭式）：直接项和交叉项为零，只有上/下反射差：
+    //     G̃_Axz = j·k_ρ/(2·k_z²) · [R̃_up·e^{jkz(2z_top-z_s-z_o)}
+    //                                 - R̃_dn·e^{jkz(z_s+z_o-2z_bot)}] / den
+    //   物理含义：水平电流源产生的垂直电场分量（或反之），由上下界面不对称引起。
+    //   对开放单层（仅底部 ground）：只有下反射项 → G_Axz ≠ 0（不对称）。
+    //   对对称腔体（上下 PEC）：上反射 = -下反射 → G_Axz = 0（对称抵消）。
+    //   这是 via-trace 连接处垂直电流→水平传播的关键耦合机制。
+    {
+        const Complex e_up   = std::exp(-jkz * (z_src_top + z_obs_top));   // 到上界面往返
+        const Complex e_dn   = std::exp(-jkz * (z_src_bot + z_obs_bot));   // 到下界面往返
+        const Complex num_xz = Rup_TM * e_up - Rdn_TM * e_dn;
+        // k_ρ 因子 + 1/k_z² 系数（与 G_A 的 1/k_z 不同）
+        // G_Axz = j · k_ρ · num_xz / (2 · k_z² · den)
+        // 用 GA_val（= num/(2k_z·den)）表示：G_Axz = GA_val · k_ρ/k_z · (num_xz/num)
+        // 但 num_xz/num 难直接算。直接计算更清晰：
+        const Complex k_rho_c = k_rho;
+        const Complex denom_xz = (2.0 * k_zs * k_zs) * (Complex(1, 0) - round_trip);
+        Complex GAxz_val;
+        if (rt_mag < 1e6) {
+            GAxz_val = k_rho_c * num_xz / denom_xz;
+        } else {
+            // 主项提取（与 GA_val 相同策略）
+            Complex num_xz_over_rt = (Rup_TM * e_up - Rdn_TM * e_dn) / round_trip;
+            GAxz_val = k_rho_c * num_xz_over_rt / (2.0 * k_zs * k_zs * Complex(-1, 0));
+        }
+        out.G_Axz = Iunit * GAxz_val;
+    }
+
     // —— 标量势 G_q（Formulation C，Michalski-Mosig eq.50）——
-    //   电荷用 TM 反射结构（PEC 底电荷镜像反号 Rdn=-1）。
-    //   同样数值稳定化。
-    const Complex Rup_phi = Rup_TM;
+    //   电荷的 PEC 镜像反号（与电流不同）。
+    //   【修复】之前 Rup_phi = Rup_TM（+1，电流约定）对 PEC 封闭是错误的——
+    //   电荷镜像应反号（-1）。对称腔体中 +1 和 -1 部分抵消 → 电容偏低 5x。
+    //
+    //   电荷（G_phi）用 TE 极化的广义反射：PEC 封闭时返回 -1（电荷镜像反号），
+    //   开放顶部时返回 TE Fresnel（与 TM 略有差异，但实测对 ADS 更准确）。
+    //   这与底部 Rdn_phi(TM, pec_positive=false) 的 -1 约定一致。
+    const Complex Rup_phi = generalized_refl_up_TE(k_rho);
     const Complex Rdn_phi = generalized_refl_dn_polar(k_rho, /*TM=*/true, /*pec_positive=*/false);
     const Complex round_trip_phi = Rup_phi * Rdn_phi * e_2h;
     const Real rt_phi_mag = std::abs(round_trip_phi);

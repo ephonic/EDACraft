@@ -1,11 +1,7 @@
 // =====================================================================
-// mom/tl_extract.cpp —— 开路-短路法传输线参数提取
-//
-// 正确的 2 端口阻抗矩阵通过【电流激励 + Schur 降阶】得到（修复旧实现的
-// 数学退化：旧式 Vport(q,p)=V_q/I_p 中 V_q=(Z·I)[q]=δ(q,p) → Zport 恒对角）。
+// mom/tl_extract.cpp - transmission-line parameter extraction helpers
 // =====================================================================
 #include "mom/tl_extract.hpp"
-#include "mom/solver/dense.hpp"
 
 #ifdef MOM_USE_EIGEN
 #include <Eigen/Dense>
@@ -18,74 +14,100 @@
 
 namespace mom {
 
-// —— 2 端口阻抗矩阵：电流激励 + Schur 降阶 ——
-//
-// MPIE 系统 Z·I = V（I 为基函数电流，V 为外加切向场）。
-// 物理边界：内部 PEC 导体上外加场为零 → V_int = 0；端口注入已知电流 I_port。
-//
-// 分块：[端口 (2) | 内部 (nb-2)]
-//   V_port = Z_pp·I_port + Z_pi·I_int
-//   0      = Z_ip·I_port + Z_ii·I_int   →  I_int = -Z_ii⁻¹·Z_ip·I_port
-// 代入得 V_port = (Z_pp - Z_pi·Z_ii⁻¹·Z_ip)·I_port
-//   2 端口阻抗矩阵 Zport_2x2 = Z_pp - Z_pi·Z_ii⁻¹·Z_ip   （Schur 补）
-//
-// 这个 2×2 矩阵才是真正的传输线 2 端口阻抗矩阵：
-//   Z_oc = Zport2[0,0]                          （远端开路：I_out=0）
-//   Z_sc = Zport2[0,0] - Zport2[0,1]²/Zport2[1,1]（远端短路：V_out=0）
-//   Z0   = sqrt(Z_oc·Z_sc)
+namespace {
+
+#ifdef MOM_USE_EIGEN
+static Eigen::MatrixXcd build_port_projection_matrix(
+    Index nb,
+    const std::vector<std::vector<Index>>& edge_sets,
+    const std::vector<std::vector<Real>>& signs) {
+    using M = Eigen::MatrixXcd;
+
+    const Index np = Index(edge_sets.size());
+    M P = M::Zero(nb, np);
+    for (Index p = 0; p < np; ++p) {
+        const auto& set_p = edge_sets[p];
+        if (set_p.empty()) continue;
+        const std::vector<Real>& sp = (p < Index(signs.size()) && !signs[p].empty())
+            ? signs[p] : std::vector<Real>(set_p.size(), Real(1.0));
+        if (sp.size() != set_p.size())
+            throw std::runtime_error("port signs size mismatch");
+        for (Size k = 0; k < set_p.size(); ++k) {
+            const Index bi = set_p[k];
+            if (bi < 0 || bi >= nb)
+                throw std::runtime_error("port basis index out of range");
+            P(bi, p) += Complex(sp[k], 0.0);
+        }
+    }
+    return P;
+}
+#endif
+
 static bool schur_2port(const std::vector<Complex>& Z, Index nb,
                         Index p0, Index p1,
                         Complex Zport2[4]) {
 #ifdef MOM_USE_EIGEN
     using M = Eigen::MatrixXcd;
+
+    if (nb <= 0)
+        throw std::runtime_error("schur_2port: nb must be positive");
+    if (p0 < 0 || p0 >= nb || p1 < 0 || p1 >= nb || p0 == p1)
+        throw std::runtime_error("schur_2port: invalid port basis indices");
+
     const Index ni = nb - 2;
     if (ni <= 0) {
-        // 退化为纯 2×2：直接取 Z 子矩阵
-        Zport2[0] = Z[p0*nb+p0]; Zport2[1] = Z[p0*nb+p1];
-        Zport2[2] = Z[p1*nb+p0]; Zport2[3] = Z[p1*nb+p1];
+        Zport2[0] = Z[p0 * nb + p0];
+        Zport2[1] = Z[p0 * nb + p1];
+        Zport2[2] = Z[p1 * nb + p0];
+        Zport2[3] = Z[p1 * nb + p1];
         return true;
     }
-    // 建立内部索引列表（排除两个端口）
-    std::vector<Index> int_idx; int_idx.reserve(ni);
-    for (Index j = 0; j < nb; ++j)
+
+    std::vector<Index> int_idx;
+    int_idx.reserve(Size(ni));
+    for (Index j = 0; j < nb; ++j) {
         if (j != p0 && j != p1) int_idx.push_back(j);
-    // Z_ii (ni×ni)
+    }
+
     M Zii(ni, ni);
     for (Index a = 0; a < ni; ++a)
         for (Index b = 0; b < ni; ++b)
-            Zii(a, b) = Z[int_idx[a]*nb + int_idx[b]];
-    // Z_pi (2×ni): 行=端口[p0,p1]，列=内部
-    M Zpi(2, ni);
+            Zii(a, b) = Z[int_idx[a] * nb + int_idx[b]];
+
     Index port_rows[2] = {p0, p1};
-    for (Index q = 0; q < 2; ++q)
+    M Zpi(2, ni), Zip(ni, 2), Zpp(2, 2);
+    for (Index q = 0; q < 2; ++q) {
         for (Index b = 0; b < ni; ++b)
-            Zpi(q, b) = Z[port_rows[q]*nb + int_idx[b]];
-    // Z_ip (ni×2) = Z_pi 转置的 Hermitian（阻抗矩阵对称：Z[i,j]=Z[j,i]）
-    M Zip = Zpi.transpose();
-    // Z_pp (2×2)
-    M Zpp(2, 2);
-    for (Index q = 0; q < 2; ++q)
+            Zpi(q, b) = Z[port_rows[q] * nb + int_idx[b]];
         for (Index r = 0; r < 2; ++r)
-            Zpp(q, r) = Z[port_rows[q]*nb + port_rows[r]];
-    // Schur 补：Zpp - Zpi·Zii⁻¹·Zip。用 LU 解（比 .inverse() 稳健）。
-    // Zpi·Zii⁻¹·Zip = Zpi·(Zii⁻¹·Zip)，令 X = Zii⁻¹·Zip（解 Zii·X=Zip），则 Schur=Zpp-Zpi·X。
+            Zpp(q, r) = Z[port_rows[q] * nb + port_rows[r]];
+    }
+    for (Index a = 0; a < ni; ++a)
+        for (Index q = 0; q < 2; ++q)
+            Zip(a, q) = Z[int_idx[a] * nb + port_rows[q]];
+
     M X = Zii.partialPivLu().solve(Zip);
     M Zport2_e = Zpp - Zpi * X;
-    for (Index q = 0; q < 2; ++q)
+    for (Index q = 0; q < 2; ++q) {
         for (Index r = 0; r < 2; ++r) {
             Complex v = Zport2_e(q, r);
-            // NaN/inf 防护：若 LU 失败，退化为只用 Zpp（忽略内部耦合）
             if (!std::isfinite(v.real()) || !std::isfinite(v.imag()))
                 v = Zpp(q, r);
-            Zport2[q*2 + r] = v;
+            Zport2[q * 2 + r] = v;
         }
+    }
     return true;
 #else
-    (void)Z; (void)nb; (void)p0; (void)p1;
-    for (int i = 0; i < 4; ++i) Zport2[i] = Complex(0,0);
+    (void)Z;
+    (void)nb;
+    (void)p0;
+    (void)p1;
+    for (int i = 0; i < 4; ++i) Zport2[i] = Complex(0.0, 0.0);
     return false;
 #endif
 }
+
+} // namespace
 
 TLParams extract_tl_open_short(const std::vector<Complex>& Z, Index nb,
                                Index port_in, Index port_out) {
@@ -93,22 +115,18 @@ TLParams extract_tl_open_short(const std::vector<Complex>& Z, Index nb,
 
     Complex Zport2[4];
     if (!schur_2port(Z, nb, port_in, port_out, Zport2))
-        throw std::runtime_error("extract_tl_open_short 需要 Eigen");
+        throw std::runtime_error("extract_tl_open_short requires Eigen");
 
-    // 2 端口阻抗矩阵（行主序）：Zport2[q*2+r]，q=观测端口、r=激励端口
-    //   开路（I_out=0）：Z_oc = Zport2[0,0]
-    //   短路（V_out=0）：Z_sc = Zport2[0,0] - Zport2[0,1]²/Zport2[1,1]
-    const Complex z_oc = Zport2[0];  // (in,in)
+    const Complex z_oc = Zport2[0];
     const Complex z_sc = (std::abs(Zport2[3]) > 0.0)
-        ? Zport2[0] - Zport2[1] * Zport2[1] / Zport2[3]
+        ? Zport2[0] - Zport2[1] * Zport2[2] / Zport2[3]
         : Zport2[0];
 
-    // 无损传输线：Z0 = sqrt(Z_oc·Z_sc)；βl = atan(sqrt(Z_sc/Z_oc))
     TLParams r;
     r.z_oc = z_oc;
     r.z_sc = z_sc;
     r.z0 = std::sqrt(z_oc * z_sc);
-    const Complex ratio = (std::abs(z_oc) > 0.0) ? z_sc / z_oc : Complex(0,0);
+    const Complex ratio = (std::abs(z_oc) > 0.0) ? z_sc / z_oc : Complex(0.0, 0.0);
     r.beta_l = std::real(std::atan(std::sqrt(ratio)));
     return r;
 }
@@ -117,7 +135,7 @@ std::vector<Complex> schur_2port_export(const std::vector<Complex>& Z, Index nb,
                                         Index port_in, Index port_out) {
     Complex Zport2[4];
     if (!schur_2port(Z, nb, port_in, port_out, Zport2))
-        throw std::runtime_error("schur_2port_export 需要 Eigen");
+        throw std::runtime_error("schur_2port_export requires Eigen");
     return {Zport2[0], Zport2[1], Zport2[2], Zport2[3]};
 }
 
@@ -125,117 +143,223 @@ std::vector<Complex> schur_nport_export(const std::vector<Complex>& Z, Index nb,
                                         const std::vector<Index>& ports) {
 #ifdef MOM_USE_EIGEN
     using M = Eigen::MatrixXcd;
+
     const Index np = Index(ports.size());
     if (np == 0) return {};
-    if (np == nb) {
-        // 全端口：直接返回 Z
-        return Z;
+    if (nb <= 0)
+        throw std::runtime_error("schur_nport_export: nb must be positive");
+
+    std::vector<unsigned char> is_port(Size(nb), 0);
+    for (Index p = 0; p < np; ++p) {
+        const Index bi = ports[p];
+        if (bi < 0 || bi >= nb)
+            throw std::runtime_error("schur_nport_export: port basis index out of range");
+        if (is_port[Size(bi)] != 0)
+            throw std::runtime_error("schur_nport_export: duplicate port basis index");
+        is_port[Size(bi)] = 1;
     }
-    // 内部索引（排除端口）
+
     std::vector<Index> int_idx;
+    int_idx.reserve(Size(nb - np));
     for (Index j = 0; j < nb; ++j) {
-        bool is_port = false;
-        for (Index p : ports) if (p == j) { is_port = true; break; }
-        if (!is_port) int_idx.push_back(j);
+        if (!is_port[Size(j)]) int_idx.push_back(j);
     }
+
     const Index ni = Index(int_idx.size());
+    std::vector<Complex> out(np * np, Complex(0.0, 0.0));
     if (ni == 0) {
-        // 无内部自由度：返回 Z 的端口子矩阵
-        std::vector<Complex> out(np * np);
         for (Index q = 0; q < np; ++q)
             for (Index r = 0; r < np; ++r)
-                out[q*np + r] = Z[ports[q]*nb + ports[r]];
+                out[q * np + r] = Z[ports[q] * nb + ports[r]];
         return out;
     }
+
     M Zii(ni, ni);
     for (Index a = 0; a < ni; ++a)
         for (Index b = 0; b < ni; ++b)
-            Zii(a, b) = Z[int_idx[a]*nb + int_idx[b]];
+            Zii(a, b) = Z[int_idx[a] * nb + int_idx[b]];
+
     M Zpi(np, ni), Zip(ni, np), Zpp(np, np);
     for (Index q = 0; q < np; ++q) {
         for (Index b = 0; b < ni; ++b)
-            Zpi(q, b) = Z[ports[q]*nb + int_idx[b]];
+            Zpi(q, b) = Z[ports[q] * nb + int_idx[b]];
         for (Index r = 0; r < np; ++r)
-            Zpp(q, r) = Z[ports[q]*nb + ports[r]];
+            Zpp(q, r) = Z[ports[q] * nb + ports[r]];
     }
     for (Index a = 0; a < ni; ++a)
         for (Index q = 0; q < np; ++q)
-            Zip(a, q) = Z[int_idx[a]*nb + ports[q]];
-    // Schur 补：Zpp - Zpi·Zii⁻¹·Zip（用 LU 解）
+            Zip(a, q) = Z[int_idx[a] * nb + ports[q]];
+
     M X = Zii.partialPivLu().solve(Zip);
     M Zport = Zpp - Zpi * X;
-    // NaN 防护
-    std::vector<Complex> out(np * np);
-    for (Index q = 0; q < np; ++q)
+    for (Index q = 0; q < np; ++q) {
         for (Index r = 0; r < np; ++r) {
             Complex v = Zport(q, r);
             if (!std::isfinite(v.real()) || !std::isfinite(v.imag()))
                 v = Zpp(q, r);
-            out[q*np + r] = v;
+            out[q * np + r] = v;
         }
+    }
     return out;
 #else
-    (void)Z; (void)nb; (void)ports;
-    throw std::runtime_error("schur_nport_export 需要 Eigen");
+    (void)Z;
+    (void)nb;
+    (void)ports;
+    throw std::runtime_error("schur_nport_export requires Eigen");
 #endif
 }
 
 std::vector<Complex> zport_n_to_sparam(const std::vector<Complex>& Zport, Index np, Real z0) {
 #ifdef MOM_USE_EIGEN
     using M = Eigen::MatrixXcd;
+
     if (np == 0) return {};
     if (np == 1) {
         Complex s = (Zport[0] - z0) / (Zport[0] + z0);
         return {s};
     }
-    M A = Eigen::Map<const M>(Zport.data(), np, np);
-    M Zmat = A;
+
+    M A(np, np);
+    for (Index q = 0; q < np; ++q)
+        for (Index r = 0; r < np; ++r)
+            A(q, r) = Zport[q * np + r];
+
     M I = M::Identity(np, np);
-    M Am = A - z0 * I;       // Z - z0·I
-    M Bp = A + z0 * I;       // Z + z0·I
-    M S = Am * Bp.inverse();
+    M Am = A - z0 * I;
+    M Bp = A + z0 * I;
+    M S = Am * Bp.partialPivLu().solve(I);
+
     std::vector<Complex> out(np * np);
     for (Index q = 0; q < np; ++q)
         for (Index r = 0; r < np; ++r)
-            out[q*np + r] = S(q, r);
+            out[q * np + r] = S(q, r);
     return out;
 #else
-    (void)Zport; (void)np; (void)z0;
-    throw std::runtime_error("zport_n_to_sparam 需要 Eigen");
+    (void)Zport;
+    (void)np;
+    (void)z0;
+    throw std::runtime_error("zport_n_to_sparam requires Eigen");
 #endif
 }
 
-// —— 本征模法：从电流分布提取 β 与 Z0，避免 open-short 的电抗病态 ——
-//
-// 对均匀传输线，在中心节点注入单位电流源（delta-gap V=1），解 Z·I=V 得
-// 电流分布 I(x)。沿线（远离端口反射的中间区）电流为传播+反射波叠加：
-//   I_n = I+·e^{-jβ·n·dx} + I-·e^{+jβ·n·dx}
-// 相邻样点比 r_n = I_{n+1}/I_n 满足：取中间段多个 r_n 平均得 e^{-jβ·dx}。
-// 电压 V_n = Σ_j Z[n,j]·I_j，沿线模态阻抗 Z0 = V_n/I_n（中间段平均）。
-TLParams extract_tl_eigenmode(const std::vector<Complex>& Z, Index nb, Real dx) {
-    TLParams r;
-    r.z_oc = Complex(0,0); r.z_sc = Complex(0,0);
-    r.z0 = Complex(0,0); r.beta_l = 0.0;
-    if (nb < 8) return r;
+std::vector<Complex> schur_nport_multiedge_export(
+    const std::vector<Complex>& Z, Index nb,
+    const std::vector<std::vector<Index>>& edge_sets,
+    const std::vector<std::vector<Real>>& signs) {
 #ifdef MOM_USE_EIGEN
     using M = Eigen::MatrixXcd;
-    using Vc = Eigen::VectorXcd;
+
+    const Index np = Index(edge_sets.size());
+    std::vector<Complex> out(np * np, Complex(0.0, 0.0));
+    if (np == 0 || nb == 0) return out;
+
     M A(nb, nb);
     for (Index i = 0; i < nb; ++i)
         for (Index j = 0; j < nb; ++j)
             A(i, j) = Z[i * nb + j];
-    // 中心节点注入 V=1
+
+    M G = build_port_projection_matrix(nb, edge_sets, signs);
+
+    auto lu = A.partialPivLu();
+    M X = lu.solve(G);
+    M Yport = G.transpose() * X;
+    M Zport = Yport.partialPivLu().solve(M::Identity(np, np));
+
+    for (Index q = 0; q < np; ++q) {
+        for (Index p = 0; p < np; ++p) {
+            Complex v = Zport(q, p);
+            if (!std::isfinite(v.real()) || !std::isfinite(v.imag()))
+                throw std::runtime_error("multiedge port reduction produced NaN/Inf");
+            out[q * np + p] = v;
+        }
+    }
+    return out;
+#else
+    (void)Z;
+    (void)nb;
+    (void)edge_sets;
+    (void)signs;
+    throw std::runtime_error("schur_nport_multiedge_export requires Eigen");
+#endif
+}
+
+std::vector<Complex> schur_nport_multiedge_dual_export(
+    const std::vector<Complex>& Z, Index nb,
+    const std::vector<std::vector<Index>>& test_edge_sets,
+    const std::vector<std::vector<Real>>& test_signs,
+    const std::vector<std::vector<Index>>& source_edge_sets,
+    const std::vector<std::vector<Real>>& source_signs) {
+#ifdef MOM_USE_EIGEN
+    using M = Eigen::MatrixXcd;
+
+    const Index np = Index(test_edge_sets.size());
+    if (np == 0 || nb == 0) return {};
+    if (Index(source_edge_sets.size()) != np)
+        throw std::runtime_error("dual multiedge port count mismatch");
+
+    std::vector<Complex> out(np * np, Complex(0.0, 0.0));
+
+    M A(nb, nb);
+    for (Index i = 0; i < nb; ++i)
+        for (Index j = 0; j < nb; ++j)
+            A(i, j) = Z[i * nb + j];
+
+    M H = build_port_projection_matrix(nb, test_edge_sets, test_signs);
+    M G = build_port_projection_matrix(nb, source_edge_sets, source_signs);
+
+    auto lu = A.partialPivLu();
+    M X = lu.solve(G);
+    M Yport = H.transpose() * X;
+    M Zport = Yport.partialPivLu().solve(M::Identity(np, np));
+
+    for (Index q = 0; q < np; ++q) {
+        for (Index p = 0; p < np; ++p) {
+            Complex v = Zport(q, p);
+            if (!std::isfinite(v.real()) || !std::isfinite(v.imag()))
+                throw std::runtime_error("dual multiedge port reduction produced NaN/Inf");
+            out[q * np + p] = v;
+        }
+    }
+    return out;
+#else
+    (void)Z;
+    (void)nb;
+    (void)test_edge_sets;
+    (void)test_signs;
+    (void)source_edge_sets;
+    (void)source_signs;
+    throw std::runtime_error("schur_nport_multiedge_dual_export requires Eigen");
+#endif
+}
+
+TLParams extract_tl_eigenmode(const std::vector<Complex>& Z, Index nb, Real dx) {
+    TLParams r;
+    r.z_oc = Complex(0.0, 0.0);
+    r.z_sc = Complex(0.0, 0.0);
+    r.z0 = Complex(0.0, 0.0);
+    r.beta_l = 0.0;
+    if (nb < 8) return r;
+
+#ifdef MOM_USE_EIGEN
+    using M = Eigen::MatrixXcd;
+    using Vc = Eigen::VectorXcd;
+
+    M A(nb, nb);
+    for (Index i = 0; i < nb; ++i)
+        for (Index j = 0; j < nb; ++j)
+            A(i, j) = Z[i * nb + j];
+
     Vc Vsrc = Vc::Zero(nb);
     const Index ic = nb / 2;
     Vsrc(ic) = Complex(1.0, 0.0);
     Vc I = A.partialPivLu().solve(Vsrc);
 
-    // —— 提取 β：相邻电流比 r_n = I_{n+1}/I_n 的对数平均 ——
-    // 中间段（避开端口反射，取 [nb/4, 3nb/4]）。
-    const Index i0 = nb / 4, i1 = (3 * nb) / 4;
+    const Index i0 = nb / 4;
+    const Index i1 = (3 * nb) / 4;
     Complex sum_log_r(0.0, 0.0);
     int cnt = 0;
     for (Index n = i0; n + 1 <= i1; ++n) {
+        if (std::abs(I(n)) <= 1e-30) continue;
         Complex r_n = I(n + 1) / I(n);
         if (std::abs(r_n) > 1e-30) {
             sum_log_r += std::log(r_n);
@@ -243,15 +367,13 @@ TLParams extract_tl_eigenmode(const std::vector<Complex>& Z, Index nb, Real dx) 
         }
     }
     if (cnt == 0) return r;
+
     Complex log_r_mean = sum_log_r / Complex(double(cnt), 0.0);
-    // r = e^{-jβ·dx}（约定 e^{-jβx} 传播）；γ = -log(r)/dx = jβ（无损）
-    Complex gamma_per_dx = -log_r_mean;          // γ·dx
+    Complex gamma_per_dx = -log_r_mean;
     Real beta = std::real(gamma_per_dx / Complex(dx, 0.0));
     if (beta < 0) beta = -beta;
-    r.beta_l = beta * (nb - 1) * dx;             // β·L
+    r.beta_l = beta * (nb - 1) * dx;
 
-    // —— 提取 Z0：中间段模态阻抗 V_n/I_n 平均 ——
-    // V_n = (Z·I)_n（沿线电压）。在传播区 V_n/I_n → Z0。
     Vc Vline = A * I;
     Complex sum_z0(0.0, 0.0);
     int cz = 0;
@@ -265,6 +387,7 @@ TLParams extract_tl_eigenmode(const std::vector<Complex>& Z, Index nb, Real dx) 
 #else
     (void)dx;
 #endif
+
     return r;
 }
 

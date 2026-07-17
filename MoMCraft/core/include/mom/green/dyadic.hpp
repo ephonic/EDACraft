@@ -46,6 +46,7 @@ struct SpatialDyadic {
     Real eps_r;
     int n_intervals;
     int gauss_order;
+    std::vector<poles::Pole> pole_list;  // 表面波极点（非空时 GA/Gphi 用极点提取版）
 
     // 矢量位格林函数（x/y 共用）
     Complex GA(Real rho) const;
@@ -53,13 +54,18 @@ struct SpatialDyadic {
     // 垂直矢量位格林函数（z 方向，用于过孔/TSV）
     Complex GAzz(Real rho) const;
 
+    // 水平-垂直交叉耦合格林函数（x-z 分量，用于 via-trace 过渡）
+    Complex GAxz(Real rho) const;
+
     // 标量势格林函数
     Complex Gphi(Real rho) const;
 
     // 矢量位点积：f̄(r) · Ḡ_A · f̄'(r')
-    //   = G_A(ρ) · (fx·fx' + fy·fy') + G_P(ρ) · fz·fz'
+    //   = G_A·(fx·fx'+fy·fy') + G_Azz·fz·fz' + G_Axz·(fx·fz'+fz·fx'+fy·fz'+fz·fy')
     Complex vector_dot(Real rho, Real fx, Real fy, Real fz, Real fxp, Real fyp, Real fzp) const {
-        return GA(rho) * (fx * fxp + fy * fyp) + GAzz(rho) * fz * fzp;
+        return GA(rho) * (fx * fxp + fy * fyp)
+             + GAzz(rho) * fz * fzp
+             + GAxz(rho) * (fx * fzp + fz * fxp + fy * fzp + fz * fyp);
     }
 
     // 标量势乘积：∇·f · G_phi · ∇·f'

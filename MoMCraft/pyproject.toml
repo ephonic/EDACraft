@@ -6,7 +6,7 @@ build-backend = "scikit-build-core.build"
 
 [project]
 name = "mom"
-version = "0.1.0"
+version = "0.1.1"
 description = "MoMCraft — 互连线 S 参数提取（MoM + 多层介质格林函数）"
 readme = "README.md"
 requires-python = ">=3.9"

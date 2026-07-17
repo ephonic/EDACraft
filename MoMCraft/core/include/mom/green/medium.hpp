@@ -7,6 +7,7 @@
 
 #include "mom/common/types.hpp"
 #include <vector>
+#include <limits>
 
 namespace mom::green {
 
@@ -22,10 +23,11 @@ struct DielectricLayer {
 // 多层介质叠层描述（自底向上）。
 struct Stackup {
     std::vector<DielectricLayer> layers;
-    Real ground_z = 0.0;   // 接地平面 z（镜像参考）；无接地则置 NaN
+    Real ground_z = 0.0;   // 底部接地平面 z（镜像参考）；无接地则置 NaN
+    Real cover_z  = std::numeric_limits<Real>::quiet_NaN();  // 顶部 PEC 封闭 z；NaN=开放（上侧半空间）
 };
 
-// 判断 ground_z 是否为有效接地平面（NaN 表示无）。
-inline bool groundz_is_real(Real ground_z) { return ground_z == ground_z; /* NaN!=NaN */ }
+// 判断 ground_z / cover_z 是否为有效 PEC 平面（NaN 表示无）。
+inline bool groundz_is_real(Real z) { return z == z; /* NaN!=NaN */ }
 
 } // namespace mom::green

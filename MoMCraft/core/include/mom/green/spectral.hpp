@@ -18,6 +18,7 @@
 #include "mom/green/medium.hpp"   // DielectricLayer, Stackup（避免与 green.hpp 循环）
 #include <vector>
 #include <complex>
+#include <limits>
 
 namespace mom::green::spectral {
 
@@ -28,14 +29,17 @@ Complex fresnel(Complex kz_a, Complex kz_b, Complex eps_a, Complex eps_b, bool T
 // 仅返回 MPIE 所需的标量核：矢量位 G_A（z 方向）、标量势 G_phi。
 // 这是 k_rho 的函数；空域格林函数需对其做 Sommerfeld 积分。
 struct SpectralKernel {
-    Complex G_A{0.0, 0.0};    // 矢量位（z 分量）谱域核
-    Complex G_phi{0.0, 0.0};  // 标量势谱域核
+    Complex G_A{0.0, 0.0};     // 矢量位（水平分量）谱域核
+    Complex G_phi{0.0, 0.0};   // 标量势谱域核
+    Complex G_Azz{0.0, 0.0};   // 矢量位（z 分量 / TM 电压 TLGF）谱域核
+    Complex G_Axz{0.0, 0.0};   // 矢量位（x-z 交叉耦合）谱域核
 };
 
-// 分层介质描述（自底向上）：底层可为半空间或 PEC 接地。
+// 分层介质描述（自底向上）：底层可为半空间或 PEC 接地，顶层可为开放或 PEC 封闭。
 struct LayeredMedium {
     std::vector<DielectricLayer> layers;   // 自底向上
     Real ground_z = 0.0;                    // 底面 z（PEC 接地）；NaN=无接地（底半空间）
+    Real cover_z  = std::numeric_limits<Real>::quiet_NaN();  // 顶面 z（PEC 封闭）；NaN=开放（上侧半空间）
     // 源/场点 z 由调用方传入。
 };
 
@@ -66,6 +70,7 @@ public:
     Real k0() const { return omega_ / phys::c0; }   // 真空波数
     Real z_src() const { return z_src_; }
     Real z_obs() const { return z_obs_; }
+    const LayeredMedium& medium() const { return medium_; }
 
 private:
     void compute_recursion();

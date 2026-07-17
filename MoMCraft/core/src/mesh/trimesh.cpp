@@ -112,7 +112,8 @@ TriMesh TriMesh::rectangle_strip(Real x0, Real x1, Real y0, Real y1,
 // =====================================================================
 TriMesh TriMesh::from_triangle_list(const std::vector<Vec3>& verts,
                                     const std::vector<std::array<Index, 3>>& tris,
-                                    Index layer) {
+                                    Index layer,
+                                    bool include_boundary) {
     TriMesh mesh;
     mesh.vertices.resize(verts.size());
     for (Index i = 0; i < Index(verts.size()); ++i)
@@ -135,14 +136,14 @@ TriMesh TriMesh::from_triangle_list(const std::vector<Vec3>& verts,
         tri.centroid = (p0 + p1 + p2) * (1.0 / 3.0);
     }
 
-    mesh.build_rwg_bases();
+    mesh.build_rwg_bases(include_boundary);
     return mesh;
 }
 
 // =====================================================================
 // 内边检测 + RWG 基函数生成
 // =====================================================================
-void TriMesh::build_rwg_bases() {
+void TriMesh::build_rwg_bases(bool include_boundary) {
     // 建立边 → 三角形对的映射
     // 每条边由规范化顶点对 (min, max) 标识
     struct EdgeInfo {
@@ -182,14 +183,15 @@ void TriMesh::build_rwg_bases() {
         }
     }
 
-    // 生成 RWG 基函数（仅内边，即 tri2 >= 0 的边）
+    // 生成 RWG 基函数（内边 + 边界边半基）
+    // 内边：标准 RWG 基（t_plus + t_minus）
+    // 边界边：半 RWG 基（仅 t_plus，t_minus = -1）—— 用于 delta-gap 端口激励
     bases.clear();
     for (const auto& [key, info] : edge_map) {
-        if (info.tri2 < 0) continue;   // 边界边，跳过
-
+        if (info.tri2 < 0 && !include_boundary) continue;  // 跳过边界边（除非显式要求）
         RwgBasis basis;
         basis.t_plus = info.tri1;
-        basis.t_minus = info.tri2;
+        basis.t_minus = info.tri2;   // -1 表示边界边（半基）
 
         // 共享边的两个全局顶点
         const auto& t1 = triangles[info.tri1];
@@ -202,13 +204,12 @@ void TriMesh::build_rwg_bases() {
         basis.edge_length = dist(ep0, ep1);
 
         // 检测是否为垂直边（z 方向）
-        // 如果边的 z 分量变化显著，则标记为垂直边
         Real dz = std::abs(ep1.z - ep0.z);
-        Real dxy = std::sqrt((ep1.x - ep0.x)*(ep1.x - ep0.x) + 
+        Real dxy = std::sqrt((ep1.x - ep0.x)*(ep1.x - ep0.x) +
                              (ep1.y - ep0.y)*(ep1.y - ep0.y));
-        basis.is_vertical = (dz > 0.5 * basis.edge_length);  // z 分量占主导
+        basis.is_vertical = (dz > 0.5 * basis.edge_length);
 
-        // 找各三角形的自由顶点（不在共享边上的那个）
+        // 找 t_plus 的自由顶点
         for (int vi = 0; vi < 3; ++vi) {
             Index gv = t1.v[vi];
             if (gv != basis.v_edge[0] && gv != basis.v_edge[1]) {
@@ -216,13 +217,18 @@ void TriMesh::build_rwg_bases() {
                 break;
             }
         }
-        const auto& t2 = triangles[info.tri2];
-        for (int vi = 0; vi < 3; ++vi) {
-            Index gv = t2.v[vi];
-            if (gv != basis.v_edge[0] && gv != basis.v_edge[1]) {
-                basis.v_free_minus = gv;
-                break;
+        // 找 t_minus 的自由顶点（仅内边）
+        if (info.tri2 >= 0) {
+            const auto& t2 = triangles[info.tri2];
+            for (int vi = 0; vi < 3; ++vi) {
+                Index gv = t2.v[vi];
+                if (gv != basis.v_edge[0] && gv != basis.v_edge[1]) {
+                    basis.v_free_minus = gv;
+                    break;
+                }
             }
+        } else {
+            basis.v_free_minus = -1;
         }
 
         bases.push_back(basis);
@@ -249,10 +255,13 @@ Vec3 rwg_shape(const RwgBasis& b, const TriMesh& mesh, const Vec3& r, Index tri)
 }
 
 Real rwg_div(const RwgBasis& b, const TriMesh& mesh, Index tri) {
+    // RWG 散度（每三角形常数）：
+    //   ∇·f_m = ±l_m / (2·A±)   （与 rwg_shape 的系数 1/(2A) 一致，
+    //   满足 ∫_{T+} ∇·f_m dS = +l_m, ∫_{T-} ∇·f_m dS = -l_m，即边法向跃变 = l_m）
     if (tri == b.t_plus)
-        return b.edge_length / mesh.triangles[b.t_plus].area;     // +l/A⁺
+        return b.edge_length / (2.0 * mesh.triangles[b.t_plus].area);     // +l/(2A⁺)
     if (tri == b.t_minus)
-        return -b.edge_length / mesh.triangles[b.t_minus].area;   // -l/A⁻
+        return -b.edge_length / (2.0 * mesh.triangles[b.t_minus].area);   // -l/(2A⁻)
     return 0;
 }
 

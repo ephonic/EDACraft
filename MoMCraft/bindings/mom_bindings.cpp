@@ -39,6 +39,7 @@ PYBIND11_MAKE_OPAQUE(mom::mesh::TriMesh);
 #include "mom/lc_extract.hpp"
 #include "mom/common/vec3.hpp"
 #include "mom/common/types.hpp"
+#include <limits>
 
 namespace py = pybind11;
 using mom::Real;
@@ -59,6 +60,59 @@ static void square_inplace(py::array_t<double, py::array::c_style> arr) {
     auto buf = arr.mutable_unchecked<1>();
     for (py::ssize_t i = 0; i < buf.shape(0); ++i)
         buf(i) *= buf(i);
+}
+
+static std::pair<std::vector<std::vector<Index>>, std::vector<std::vector<Real>>>
+parse_signed_port_sets(const py::list& port_edge_sets_py) {
+    std::vector<std::vector<Index>> edge_sets;
+    std::vector<std::vector<Real>> sign_sets;
+    edge_sets.reserve(port_edge_sets_py.size());
+    sign_sets.reserve(port_edge_sets_py.size());
+
+    for (auto set_h : port_edge_sets_py) {
+        py::handle h = set_h;
+        std::vector<Index> edges;
+        std::vector<Real> signs;
+
+        if (py::isinstance<py::dict>(h)) {
+            py::dict d = py::reinterpret_borrow<py::dict>(h);
+            py::list indices_py = d["indices"].cast<py::list>();
+            py::list signs_py = d.contains("signs") ? d["signs"].cast<py::list>() : py::list();
+            for (auto idx_h : indices_py)
+                edges.push_back(Index(idx_h.cast<int>()));
+            if (!signs_py.empty()) {
+                for (auto sign_h : signs_py)
+                    signs.push_back(Real(sign_h.cast<double>()));
+            }
+        } else {
+            py::sequence seq = py::reinterpret_borrow<py::sequence>(h);
+            for (auto item_h : seq) {
+                py::handle item = item_h;
+                if (py::isinstance<py::int_>(item)) {
+                    edges.push_back(Index(item.cast<int>()));
+                    continue;
+                }
+                if (py::isinstance<py::tuple>(item) || py::isinstance<py::list>(item)) {
+                    py::sequence pair = py::reinterpret_borrow<py::sequence>(item);
+                    if (py::len(pair) == 2) {
+                        edges.push_back(Index(pair[0].cast<int>()));
+                        signs.push_back(Real(pair[1].cast<double>()));
+                        continue;
+                    }
+                }
+                throw std::runtime_error(
+                    "Each multiedge port item must be an int, a (index, sign) pair, "
+                    "or a dict with indices/signs");
+            }
+        }
+
+        if (!signs.empty() && signs.size() != edges.size())
+            throw std::runtime_error("multiedge port signs size mismatch");
+        edge_sets.push_back(std::move(edges));
+        sign_sets.push_back(std::move(signs));
+    }
+
+    return {edge_sets, sign_sets};
 }
 
 PYBIND11_MODULE(_mom, m) {
@@ -93,7 +147,7 @@ PYBIND11_MODULE(_mom, m) {
             return result;
         }, "生成本次扫频的全部频点（Hz），返回 NumPy float64 数组");
 
-    m.attr("__version__") = "0.0.1";
+    m.attr("__version__") = "0.1.1";
 
     // ---- MicrostripConfig ----
     py::class_<MicrostripConfig>(m, "MicrostripConfig")
@@ -129,6 +183,7 @@ PYBIND11_MODULE(_mom, m) {
         .def("n_interior_edges", [](const mom::mesh::TriMesh& m) { return m.num_interior_edges(); })
         .def("total_area", [](const mom::mesh::TriMesh& m) { return m.total_area(); })
         .def("build_rwg_bases", &mom::mesh::TriMesh::build_rwg_bases,
+             py::arg("include_boundary") = false,
              "从三角形列表构建 RWG 基函数（内边检测）")
         .def("get_rwg_info", [](const mom::mesh::TriMesh& m, Index i) {
             if (static_cast<size_t>(i) >= m.bases.size()) throw std::out_of_range("RWG index out of range");
@@ -136,6 +191,9 @@ PYBIND11_MODULE(_mom, m) {
             return py::dict(
                 py::arg("t_plus") = b.t_plus,
                 py::arg("t_minus") = b.t_minus,
+                py::arg("v_edge") = py::make_tuple(b.v_edge[0], b.v_edge[1]),
+                py::arg("v_free_plus") = b.v_free_plus,
+                py::arg("v_free_minus") = b.v_free_minus,
                 py::arg("edge_length") = b.edge_length,
                 py::arg("is_vertical") = b.is_vertical,
                 py::arg("is_interior") = b.is_interior()
@@ -166,7 +224,8 @@ PYBIND11_MODULE(_mom, m) {
        "[M1] 矩形带三角网格 + RWG 基函数。");
 
     // 从顶点和三角形列表创建 TriMesh（用于测试垂直结构）
-    m.def("trimesh_from_list", [](py::array_t<double> verts, py::array_t<int> tris, int layer) -> std::unique_ptr<mom::mesh::TriMesh> {
+    m.def("trimesh_from_list", [](py::array_t<double> verts, py::array_t<int> tris,
+                                   int layer, bool include_boundary) -> std::unique_ptr<mom::mesh::TriMesh> {
         auto v_buf = verts.unchecked<2>();
         auto t_buf = tris.unchecked<2>();
         
@@ -186,8 +245,10 @@ PYBIND11_MODULE(_mom, m) {
         }
         
         return std::make_unique<mom::mesh::TriMesh>(
-            mom::mesh::TriMesh::from_triangle_list(vertices, triangles, static_cast<Index>(layer)));
+            mom::mesh::TriMesh::from_triangle_list(
+                vertices, triangles, static_cast<Index>(layer), include_boundary));
     }, py::arg("verts"), py::arg("tris"), py::arg("layer") = 0,
+       py::arg("include_boundary") = false,
        "从顶点数组 (N,3) 和三角形数组 (M,3) 创建 TriMesh。");
 
     // ---- 并矢格林函数（M2）----
@@ -216,20 +277,158 @@ PYBIND11_MODULE(_mom, m) {
        py::arg("n_intervals") = 60, py::arg("gauss_order") = 7,
        "[M2] 构建空域并矢格林函数（水平电流版本）。");
 
-    m.def("trimesh_from_list", [](py::array_t<double> verts_xyz,
-                                   py::array_t<int> tris_v, int layer) {
-        auto v = verts_xyz.unchecked<2>();
-        auto t = tris_v.unchecked<2>();
-        std::vector<mom::Vec3> verts(v.shape(0));
-        for (int i = 0; i < v.shape(0); ++i)
-            verts[i] = mom::Vec3(v(i,0), v(i,1), v(i,2));
-        std::vector<std::array<mom::Index,3>> tris(t.shape(0));
-        for (int i = 0; i < t.shape(0); ++i)
-            tris[i] = {mom::Index(t(i,0)), mom::Index(t(i,1)), mom::Index(t(i,2))};
-        auto mesh = mom::mesh::TriMesh::from_triangle_list(verts, tris, layer);
-        return py::make_tuple(int(mesh.vertices.size()), int(mesh.triangles.size()), int(mesh.bases.size()));
-    }, py::arg("verts"), py::arg("tris"), py::arg("layer") = 0,
-       "[M1] 从顶点+三角形列表构造三角网格。");
+    // ---- 多层并矢格林函数（支持任意层数 + 顶部/底部 PEC 封闭）----
+    //
+    // layers: Python 列表，每元素为 dict {thickness, eps_r, tand, mu_r(默认1), is_half_space(默认False)}
+    //         顺序：自底向上（layers[0] 是最底层）。
+    // ground_z: 底部 PEC 高度（NaN=开放）。
+    // cover_z:  顶部 PEC 高度（NaN=开放）。
+    // z_src/z_obs: 源/场点 z（必须落在某一层内）。
+    //
+    // 返回 SpatialDyadic（与单层版同类型，可直接用于装配）。
+    m.def("build_dyadic_green_layered", [](double freq,
+                                           py::list layers_py,
+                                           double z_src, double z_obs,
+                                           py::object ground_z_py,
+                                           py::object cover_z_py,
+                                           int n_intervals, int gauss_order) {
+        using SG = mom::green::spectral::SpectralGreensFunction;
+        mom::green::spectral::LayeredMedium med;
+        for (auto item : layers_py) {
+            py::dict d = item.cast<py::dict>();
+            mom::green::DielectricLayer L;
+            L.thickness = py::float_(d["thickness"]).cast<double>();
+            L.eps_r     = py::float_(d["eps_r"]).cast<double>();
+            L.tand      = d.contains("tand")      ? py::float_(d["tand"]).cast<double>()      : 0.0;
+            L.mu_r      = d.contains("mu_r")      ? py::float_(d["mu_r"]).cast<double>()      : 1.0;
+            L.is_half_space = d.contains("is_half_space") ? d["is_half_space"].cast<bool>() : false;
+            med.layers.push_back(L);
+        }
+        // 解析 ground_z / cover_z：None 或 NaN 表示开放
+        auto parse_z = [](py::object z_py) -> double {
+            if (z_py.is_none()) return std::numeric_limits<double>::quiet_NaN();
+            double z = py::float_(z_py).cast<double>();
+            return z;
+        };
+        med.ground_z = parse_z(ground_z_py);
+        med.cover_z  = parse_z(cover_z_py);
+
+        SG sg(med, freq, z_src, z_obs);
+
+        // 源层 eps_r（用于准静态项提取）：找到 z_src 所在层
+        Real eps_r_src = 1.0;
+        for (Size i = 0; i < med.layers.size(); ++i) {
+            const auto& L = med.layers[i];
+            Real z_bot = 0.0;
+            // 估算界面 z（与构造函数中 z_interface_ 一致，自底向上累积）
+            // 此处仅用于取 eps_r，用 z_src 粗略匹配即可。
+            // 精确匹配由 sg 内部完成，这里只取最接近的层。
+            eps_r_src = L.eps_r;  // 兜底取最后一层；下面更精确判断
+        }
+        // 更精确：用 SpectralGreensFunction 的 z_src() 找层
+        {
+            const Real zs = sg.z_src();
+            Real zc = med.ground_z == med.ground_z ? med.ground_z : 0.0;
+            for (Size i = 0; i < med.layers.size(); ++i) {
+                Real z_next = med.layers[i].is_half_space ? zc : zc + med.layers[i].thickness;
+                if (zs >= zc - 1e-15 && zs <= z_next + 1e-15) { eps_r_src = med.layers[i].eps_r; break; }
+                zc = z_next;
+            }
+        }
+
+        // 表面波极点搜索：在第四象限扫描谱域核极点（表面波/波导模式）。
+        // 搜索范围 [0.3k0, 3k0] × [-3k0, 0]，覆盖介质中可能的 TM/TE 表面波。
+        // 极点提取让 QWE 积分更快收敛，且解析加入 Hankel 函数贡献。
+        const Real k0_val = 2.0 * mom::phys::pi * freq / mom::phys::c0;
+        std::vector<mom::green::poles::Pole> pole_list;
+        try {
+            pole_list = mom::green::poles::find_surface_wave_poles(
+                sg, 0.3 * k0_val, 3.0 * k0_val, 3.0 * k0_val, 200);
+        } catch (...) {
+            // 极点搜索失败时退化为无极点（QWE 仍可工作，只是慢一些）
+        }
+        return mom::green::dyadic::build_horizontal_dyadic(sg, eps_r_src, pole_list, n_intervals, gauss_order);
+    }, py::arg("freq"), py::arg("layers"), py::arg("z_src"), py::arg("z_obs"),
+       py::arg("ground_z") = py::none(), py::arg("cover_z") = py::none(),
+       py::arg("n_intervals") = 60, py::arg("gauss_order") = 7,
+       "[M2L] 构建多层空域并矢格林函数（水平电流，支持顶/底 PEC 封闭）。");
+
+    // ---- 多层 + Schur N 端口 S 参数求解 ----
+    //
+    // 完整流程：多层格林 → RWG 装配 → Schur N 端口降阶 → S 参数。
+    m.def("solve_rwg_sparam_layered", [](const mom::mesh::TriMesh& mesh,
+                                          double freq,
+                                          py::list layers_py,
+                                          double z_src, double z_obs,
+                                          py::object ground_z_py,
+                                          py::object cover_z_py,
+                                          py::list ports_py,
+                                          double z0_ref,
+                                          int gauss_order, int n_lookup) {
+        const Index nb = Index(mesh.bases.size());
+        if (nb < 8) throw std::runtime_error("RWG bases too few");
+
+        // 1. 多层并矢格林函数
+        using SG = mom::green::spectral::SpectralGreensFunction;
+        mom::green::spectral::LayeredMedium med;
+        for (auto item : layers_py) {
+            py::dict d = item.cast<py::dict>();
+            mom::green::DielectricLayer L;
+            L.thickness = py::float_(d["thickness"]).cast<double>();
+            L.eps_r     = py::float_(d["eps_r"]).cast<double>();
+            L.tand      = d.contains("tand")      ? py::float_(d["tand"]).cast<double>()      : 0.0;
+            L.mu_r      = d.contains("mu_r")      ? py::float_(d["mu_r"]).cast<double>()      : 1.0;
+            L.is_half_space = d.contains("is_half_space") ? d["is_half_space"].cast<bool>() : false;
+            med.layers.push_back(L);
+        }
+        auto parse_z = [](py::object z_py) -> double {
+            if (z_py.is_none()) return std::numeric_limits<double>::quiet_NaN();
+            return py::float_(z_py).cast<double>();
+        };
+        med.ground_z = parse_z(ground_z_py);
+        med.cover_z  = parse_z(cover_z_py);
+
+        SG sg(med, freq, z_src, z_obs);
+        // 源层 eps_r
+        Real eps_r_src = 1.0;
+        {
+            const Real zs = sg.z_src();
+            Real zc = med.ground_z == med.ground_z ? med.ground_z : 0.0;
+            for (Size i = 0; i < med.layers.size(); ++i) {
+                Real z_next = med.layers[i].is_half_space ? zc : zc + med.layers[i].thickness;
+                if (zs >= zc - 1e-15 && zs <= z_next + 1e-15) { eps_r_src = med.layers[i].eps_r; break; }
+                zc = z_next;
+            }
+        }
+        std::vector<mom::green::poles::Pole> pole_list;
+        auto dyad = mom::green::dyadic::build_horizontal_dyadic(sg, eps_r_src, pole_list, 40, 5);
+
+        // 2. RWG 快速装配
+        auto rwg_blk = mom::mom::assemble_rwg_fast(mesh, dyad, gauss_order, n_lookup);
+
+        // 3. RWG 阻抗矩阵
+        const Real omega = 2.0 * gphys::pi * freq;
+        auto Z = mom::mom::build_rwg_impedance(rwg_blk, mesh, omega);
+
+        // 4. 解析端口 + Schur 降阶
+        std::vector<Index> ports;
+        for (auto p : ports_py) ports.push_back(Index(p.cast<int>()));
+        const Index np = Index(ports.size());
+        auto Zport = mom::schur_nport_export(Z, nb, ports);
+        auto S = mom::zport_n_to_sparam(Zport, np, z0_ref);
+
+        py::array_t<std::complex<double>> out({int(np), int(np)});
+        auto ob = out.mutable_unchecked<2>();
+        for (Index q = 0; q < np; ++q)
+            for (Index r = 0; r < np; ++r)
+                ob(q, r) = S[q*np + r];
+        return out;
+    }, py::arg("mesh"), py::arg("freq"), py::arg("layers"),
+       py::arg("z_src"), py::arg("z_obs"),
+       py::arg("ground_z") = py::none(), py::arg("cover_z") = py::none(),
+       py::arg("ports"), py::arg("z0_ref") = 50.0,
+       py::arg("gauss_order") = 3, py::arg("n_lookup") = 200,
+       "[M4L] 多层基板 RWG S 参数（Schur N 端口降阶，支持顶/底 PEC 封闭）。");
 
     // ---- M3: RWG MPIE 装配 ----
     m.def("assemble_rwg_test", [](double freq, double eps_r, double tand, double h,
@@ -282,6 +481,142 @@ PYBIND11_MODULE(_mom, m) {
        py::arg("x0"), py::arg("x1"), py::arg("y0"), py::arg("y1"),
        py::arg("nx"), py::arg("ny"), py::arg("gauss_order") = 5,
        "[M3] RWG MPIE 装配测试（三角网格 + 并矢格林）。");
+
+    // ---- 标量位单点观测：phi_n(r_p) = ∫G_phi(r_p,r')·(∇·f_n) dS'_n ----
+    // 用于集总端口电压：V_port(p) = (1/(jωε))·Σ_n I_n·phi_n(r_p)
+    // phi_n 在 RWG 基 n 的两个支撑三角形上各用 7 点 Dunavant Gauss 积分。
+    m.def("scalar_potential_at_point", [](const mom::mesh::TriMesh& mesh,
+                                           const mom::green::dyadic::SpatialDyadic& dyad,
+                                           double rpx, double rpy, double rpz) {
+        const Index nb = Index(mesh.bases.size());
+        std::vector<std::complex<double>> phi(nb, std::complex<double>(0, 0));
+        // 7 点 Dunavant
+        Real sq15 = std::sqrt(15.0);
+        Real a2 = (6.0+sq15)/21.0, a3 = (6.0-sq15)/21.0;
+        Real w2 = (155.0+sq15)/1200.0, w3 = (155.0-sq15)/1200.0;
+        struct BW { Real l0,l1,l2,w; };
+        BW p[7] = {
+            {1.0/3,1.0/3,1.0/3,0.225},
+            {a2,a2,1-2*a2,w2},{a2,1-2*a2,a2,w2},{1-2*a2,a2,a2,w2},
+            {a3,a3,1-2*a3,w3},{a3,1-2*a3,a3,w3},{1-2*a3,a3,a3,w3},
+        };
+        for (Index n = 0; n < nb; ++n) {
+            const auto& bn = mesh.bases[n];
+            std::complex<double> sum(0, 0);
+            // 两三角形 t+, t-
+            for (int side = 0; side < 2; ++side) {
+                Index tn = (side == 0) ? Index(bn.t_plus) : Index(bn.t_minus);
+                if (tn == Index(-1) || tn >= Index(mesh.triangles.size())) continue;
+                const auto& tri = mesh.triangles[tn];
+                mom::Vec3 v0 = mesh.vertices[tri.v[0]].pos();
+                mom::Vec3 v1 = mesh.vertices[tri.v[1]].pos();
+                mom::Vec3 v2 = mesh.vertices[tri.v[2]].pos();
+                Real area = 0.5 * std::fabs((v1.x-v0.x)*(v2.y-v0.y) - (v2.x-v0.x)*(v1.y-v0.y));
+                // div of basis on this triangle
+                Real div_n = (side == 0)
+                    ? bn.edge_length / (2.0 * tri.area)
+                    : -bn.edge_length / (2.0 * tri.area);
+                for (int k = 0; k < 7; ++k) {
+                    mom::Vec3 rs;
+                    rs.x = p[k].l0*v0.x + p[k].l1*v1.x + p[k].l2*v2.x;
+                    rs.y = p[k].l0*v0.y + p[k].l1*v1.y + p[k].l2*v2.y;
+                    rs.z = p[k].l0*v0.z + p[k].l1*v1.z + p[k].l2*v2.z;
+                    Real dx = rs.x - rpx, dy = rs.y - rpy, dz = rs.z - rpz;
+                    Real rho = std::sqrt(dx*dx + dy*dy + dz*dz);
+                    if (rho < 1e-15) continue;
+                    auto g = dyad.scalar_dot(rho, 1.0, 1.0);
+                    sum += g * div_n * p[k].w * area;
+                }
+            }
+            phi[n] = sum;
+        }
+        return py::cast(phi);
+    }, py::arg("mesh"), py::arg("dyad"), py::arg("rpx"), py::arg("rpy"), py::arg("rpz"),
+       "[diag] 计算每个 RWG 基在观测点 (rpx,rpy,rpz) 的散度加权标量位贡献 phi_n(r_p)。");
+
+    // ---- 直接暴露 coplanar_tri_pair_1over4piR 用于诊断 ----
+    m.def("tri_pair_singular", [](double v0mx, double v0my,
+                                   double v1mx, double v1my,
+                                   double v2mx, double v2my,
+                                   double v0nx, double v0ny,
+                                   double v1nx, double v1ny,
+                                   double v2nx, double v2ny) {
+        Real vm[3][2] = {{v0mx,v0my},{v1mx,v1my},{v2mx,v2my}};
+        Real vn[3][2] = {{v0nx,v0ny},{v1nx,v1ny},{v2nx,v2ny}};
+        // 声明在匿名命名空间——这里用另一个实现做诊断
+        // 直接重写一份独立实现避免链接问题
+        auto tri_pot = [](const Real V[3][2], Real r0x, Real r0y) -> Real {
+            Real total = 0.0;
+            for (int i = 0; i < 3; ++i) {
+                Real p1x = V[i][0], p1y = V[i][1];
+                Real p2x = V[(i+1)%3][0], p2y = V[(i+1)%3][1];
+                Real ex = p2x - p1x, ey = p2y - p1y;
+                Real L = std::sqrt(ex*ex + ey*ey);
+                if (L < 1e-30) continue;
+                Real shx = ex/L, shy = ey/L;
+                Real mhx = shy, mhy = -shx;
+                Real t_i = mhx*(r0x-p1x) + mhy*(r0y-p1y);
+                Real s_plus  = (p2x-r0x)*shx + (p2y-r0y)*shy;
+                Real s_minus = (p1x-r0x)*shx + (p1y-r0y)*shy;
+                Real R_plus  = std::sqrt((r0x-p2x)*(r0x-p2x)+(r0y-p2y)*(r0y-p2y));
+                Real R_minus = std::sqrt((r0x-p1x)*(r0x-p1x)+(r0y-p1y)*(r0y-p1y));
+                Real num = R_plus  + s_plus;
+                Real den = R_minus + s_minus;
+                if (den < 1e-30) den = 1e-30;
+                if (num < 1e-30) continue;
+                total += -t_i * std::log(num/den);
+            }
+            return total;
+        };
+        Real An = 0.5 * std::fabs((vn[1][0]-vn[0][0])*(vn[2][1]-vn[0][1])
+                                  - (vn[2][0]-vn[0][0])*(vn[1][1]-vn[0][1]));
+        Real sq15 = std::sqrt(15.0);
+        Real a2 = (6.0+sq15)/21.0, a3 = (6.0-sq15)/21.0;
+        Real w2 = (155.0+sq15)/1200.0, w3 = (155.0-sq15)/1200.0;
+        struct BW { Real l0,l1,l2,w; };
+        BW p[7] = {
+            {1.0/3,1.0/3,1.0/3,0.225},
+            {a2,a2,1-2*a2,w2},{a2,1-2*a2,a2,w2},{1-2*a2,a2,a2,w2},
+            {a3,a3,1-2*a3,w3},{a3,1-2*a3,a3,w3},{1-2*a3,a3,a3,w3},
+        };
+        Real total = 0.0;
+        for (int k=0;k<7;++k) {
+            Real r0x = p[k].l0*vn[0][0]+p[k].l1*vn[1][0]+p[k].l2*vn[2][0];
+            Real r0y = p[k].l0*vn[0][1]+p[k].l1*vn[1][1]+p[k].l2*vn[2][1];
+            Real V = tri_pot(vm, r0x, r0y);
+            total += V * p[k].w * An;
+        }
+        constexpr Real inv_4pi = 0.07957747154594767;
+        return inv_4pi * total;
+    }, py::arg("v0mx"), py::arg("v0my"), py::arg("v1mx"), py::arg("v1my"),
+       py::arg("v2mx"), py::arg("v2my"), py::arg("v0nx"), py::arg("v0ny"),
+       py::arg("v1nx"), py::arg("v1ny"), py::arg("v2nx"), py::arg("v2ny"),
+       "[diag] 共面三角形对 1/(4πR) 双重面积分（Hanninen 闭式）。");
+
+    // ---- 直接装配 RWG（暴露 assemble_rwg 用于诊断）----
+    m.def("assemble_rwg_direct", [](const mom::mesh::TriMesh& mesh,
+                                     const mom::green::dyadic::SpatialDyadic& dyad,
+                                     int gauss_order) {
+        auto blk = mom::mom::assemble_rwg(mesh, dyad, gauss_order);
+        const Index nb = Index(mesh.bases.size());
+        py::dict d;
+        d["nb"] = int(nb);
+        py::array_t<std::complex<double>> za_array({nb, nb});
+        auto za_buf = za_array.mutable_unchecked<2>();
+        py::array_t<std::complex<double>> zphi_array({nb, nb});
+        auto zphi_buf = zphi_array.mutable_unchecked<2>();
+        for (Index i = 0; i < nb; ++i)
+            for (Index j = 0; j < nb; ++j) {
+                za_buf(i, j) = blk.ZA[i * nb + j];
+                zphi_buf(i, j) = blk.ZPhi[i * nb + j];
+            }
+        d["ZA"] = za_array;
+        d["ZPhi"] = zphi_array;
+        // 额外诊断：对每对基 (0,0) 拆出主循环贡献与重加贡献
+        // （通过分别调用一个内部 hook 实现 —— 这里简单地再调一次并打印 stderr）
+        return d;
+    }, py::arg("mesh"), py::arg("dyad"), py::arg("gauss_order") = 5,
+       "[diag] 直接调用 assemble_rwg 返回 ZA/ZPhi 矩阵。");
 
     // ---- M4: RWG 端到端 S 参数（三角网格 + QWE 并矢 + Schur N-端口）----
     m.def("solve_rwg_sparam", [](double freq, double eps_r, double tand, double h,
@@ -513,28 +848,17 @@ PYBIND11_MODULE(_mom, m) {
                 mom::solver::PFFTConfig config;
                 config.grid_resolution = grid_resolution > 0 ? grid_resolution : 0;
                 config.near_threshold = near_threshold;
-                mom::solver::PFFTMatrixVector pfft_mat(mesh, dyad, config);
+                (void)grid_resolution;
+                (void)near_threshold;
+                (void)gmres_tol;
+                (void)gmres_max_iter;
+                auto rwg_blk = mom::mom::assemble_rwg_fast(mesh, dyad, 3, 200);
+                const Real omega = 2.0 * gphys::pi * freq;
+                auto Z = mom::mom::build_rwg_impedance(rwg_blk, mesh, omega);
+                auto Zport = mom::schur_nport_export(Z, nb, ports);
 
                 // 3. 对每个端口求解
-                std::vector<std::vector<Complex>> currents(np);
-
-                for (Index p = 0; p < np; ++p) {
-                    // 构建右端向量（端口激励）
-                    std::vector<Complex> b(nb, Complex(0, 0));
-                    b[ports[p]] = Complex(1, 0);
-
-                    // GMRES 求解
-                    auto x = mom::solver::solve_gmres(pfft_mat, b, gmres_tol, gmres_max_iter, 50);
-                    currents[p] = x;
-                }
-
-                // 4. 提取端口阻抗
-                std::vector<Complex> Zport(np * np, Complex(0, 0));
-                for (Index q = 0; q < np; ++q) {
-                    for (Index r = 0; r < np; ++r) {
-                        Zport[q * np + r] = Complex(1, 0) / currents[r][ports[q]];
-                    }
-                }
+                // 3. Zport already comes from the Schur reduction above.
 
                 // 5. 转换为 S 参数
                 auto S = mom::zport_n_to_sparam(Zport, np, z0_ref);
@@ -544,7 +868,7 @@ PYBIND11_MODULE(_mom, m) {
                     for (Index r = 0; r < np; ++r)
                         ob(fi, q, r) = S[q*np + r];
                         
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 // 如果某个频率点失败，填充 NaN
                 for (Index q = 0; q < np; ++q)
                     for (Index r = 0; r < np; ++r)
@@ -607,11 +931,12 @@ PYBIND11_MODULE(_mom, m) {
                     sg, 0.95 * k0v, 1.05 * k_med, 0.3 * k0v, 200);
                 auto dyad = mom::green::dyadic::build_horizontal_dyadic(sg, eps_r, pole_list, 40, 5);
 
-                // 2. 使用快速装配构建阻抗矩阵（而不是 pFFT）
+                // 2. 使用快速装配构建阻抗矩阵（用 RWG 专用 build_rwg_impedance，
+                //    正确应用 inv_lmln 归一化；旧的 to_mpie_blocks + build_impedance
+                //    用的是 1D 系数约定，与 RWG 基函数不匹配）。
                 auto rwg_blk = mom::mom::assemble_rwg_fast(mesh, dyad, 3, 200);
-                auto blk = mom::mom::to_mpie_blocks(rwg_blk);
                 const Real omega = 2.0 * gphys::pi * freq;
-                auto Z = mom::mom::build_impedance(blk, omega, eps_r);
+                auto Z = mom::mom::build_rwg_impedance(rwg_blk, mesh, omega);
 
                 // 3. 使用 Schur complement 提取端口阻抗矩阵
                 auto Zport = mom::schur_nport_export(Z, nb, port_edges);
@@ -624,7 +949,7 @@ PYBIND11_MODULE(_mom, m) {
                     for (Index r = 0; r < np; ++r)
                         ob(fi, q, r) = S[q*np + r];
                         
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 // 如果某个频率点失败，填充 NaN
                 for (Index q = 0; q < np; ++q)
                     for (Index r = 0; r < np; ++r)
@@ -639,7 +964,127 @@ PYBIND11_MODULE(_mom, m) {
        py::arg("gmres_tol") = 1e-6, py::arg("gmres_max_iter") = 1000,
        "[M4] 正确的 S 参数提取：使用快速装配 + Schur complement。");
 
+    // ---- 多边端口 S 参数提取（修复单边端口开路问题）----
+    // 每个端口由【一组 RWG 基函数】（端口横截面所有内边）定义。
+    // 用 delta-gap 激励逐端口求解，横截面聚合得到 N×N 端口 Z → S。
+    m.def("solve_rwg_sparam_multiedge", [](const mom::mesh::TriMesh& mesh,
+                                            py::array_t<double> freqs,
+                                            double eps_r, double tand, double h,
+                                            py::list port_edge_sets_py,  // int 列表 / (idx,sign) 列表 / {indices,signs}
+                                            double z0_ref) {
+        const Index nb = Index(mesh.bases.size());
+        if (nb < 8) throw std::runtime_error("RWG bases too few");
+
+        auto freq_buf = freqs.unchecked<1>();
+        const Index nfreq = Index(freq_buf.shape(0));
+
+        auto parsed = parse_signed_port_sets(port_edge_sets_py);
+        const auto& edge_sets = parsed.first;
+        const auto& sign_sets = parsed.second;
+        const Index np = Index(edge_sets.size());
+        if (np < 2) throw std::runtime_error("Need at least 2 ports");
+
+        py::array_t<std::complex<double>> out({int(nfreq), int(np), int(np)});
+        auto ob = out.mutable_unchecked<3>();
+
+        #ifdef MOM_HAS_OPENMP
+        #pragma omp parallel for schedule(dynamic, 1)
+        #endif
+        for (Index fi = 0; fi < nfreq; ++fi) {
+            double freq = freq_buf(fi);
+            try {
+                mom::green::spectral::LayeredMedium med;
+                mom::green::DielectricLayer L;
+                L.thickness = h; L.eps_r = eps_r; L.tand = tand;
+                med.layers.push_back(L); med.ground_z = 0.0;
+                mom::green::spectral::SpectralGreensFunction sg(med, freq, h, h);
+                const Real k0v = sg.k0();
+                const Real k_med = k0v * std::sqrt(eps_r);
+                auto pole_list = mom::green::poles::find_surface_wave_poles(
+                    sg, 0.95 * k0v, 1.05 * k_med, 0.3 * k0v, 200);
+                auto dyad = mom::green::dyadic::build_horizontal_dyadic(sg, eps_r, pole_list, 40, 5);
+
+                auto rwg_blk = mom::mom::assemble_rwg_fast(mesh, dyad, 3, 200);
+                const Real omega = 2.0 * gphys::pi * freq;
+                auto Z = mom::mom::build_rwg_impedance(rwg_blk, mesh, omega);
+
+                auto Zport = mom::schur_nport_multiedge_export(Z, nb, edge_sets, sign_sets);
+                auto S = mom::zport_n_to_sparam(Zport, np, z0_ref);
+
+                for (Index q = 0; q < np; ++q)
+                    for (Index r = 0; r < np; ++r)
+                        ob(fi, q, r) = S[q*np + r];
+            } catch (const std::exception&) {
+                for (Index q = 0; q < np; ++q)
+                    for (Index r = 0; r < np; ++r)
+                        ob(fi, q, r) = std::complex<double>(std::nan(""), std::nan(""));
+            }
+        }
+        return out;
+    }, py::arg("mesh"), py::arg("freqs"), py::arg("eps_r"), py::arg("tand"), py::arg("h"),
+       py::arg("port_edge_sets"), py::arg("z0_ref") = 50.0,
+       "[M4] 多边端口 S 参数提取（端口模态投影，支持方向符号）。");
+
+    m.def("extract_zport_multiedge", [](py::array_t<std::complex<double>> Z_py,
+                                         py::list port_edge_sets_py) {
+        auto z = Z_py.unchecked<2>();
+        if (z.shape(0) != z.shape(1))
+            throw std::runtime_error("Z must be square");
+        const Index nb = Index(z.shape(0));
+        std::vector<Complex> Z(nb * nb);
+        for (Index i = 0; i < nb; ++i)
+            for (Index j = 0; j < nb; ++j)
+                Z[i * nb + j] = z(i, j);
+
+        auto parsed = parse_signed_port_sets(port_edge_sets_py);
+        const auto& edge_sets = parsed.first;
+        const auto& sign_sets = parsed.second;
+        const Index np = Index(edge_sets.size());
+        auto Zport = mom::schur_nport_multiedge_export(Z, nb, edge_sets, sign_sets);
+
+        py::array_t<std::complex<double>> out({int(np), int(np)});
+        auto ob = out.mutable_unchecked<2>();
+        for (Index q = 0; q < np; ++q)
+            for (Index p = 0; p < np; ++p)
+                ob(q, p) = Zport[q * np + p];
+        return out;
+    }, py::arg("Z"), py::arg("port_edge_sets"),
+       "[M4] 从完整 RWG 阻抗矩阵提取多边端口 Zport（端口模态投影，支持方向符号）。");
+
     // ---- 集总端口激励：在信号和 GND 之间施加电压源 ----
+    m.def("extract_zport_multiedge_dual", [](py::array_t<std::complex<double>> Z_py,
+                                             py::list test_port_edge_sets_py,
+                                             py::list source_port_edge_sets_py) {
+        auto z = Z_py.unchecked<2>();
+        if (z.shape(0) != z.shape(1))
+            throw std::runtime_error("Z must be square");
+        const Index nb = Index(z.shape(0));
+        std::vector<Complex> Z(nb * nb);
+        for (Index i = 0; i < nb; ++i)
+            for (Index j = 0; j < nb; ++j)
+                Z[i * nb + j] = z(i, j);
+
+        auto test_parsed = parse_signed_port_sets(test_port_edge_sets_py);
+        auto source_parsed = parse_signed_port_sets(source_port_edge_sets_py);
+        const auto& test_edge_sets = test_parsed.first;
+        const auto& test_sign_sets = test_parsed.second;
+        const auto& source_edge_sets = source_parsed.first;
+        const auto& source_sign_sets = source_parsed.second;
+        const Index np = Index(test_edge_sets.size());
+        auto Zport = mom::schur_nport_multiedge_dual_export(
+            Z, nb,
+            test_edge_sets, test_sign_sets,
+            source_edge_sets, source_sign_sets);
+
+        py::array_t<std::complex<double>> out({int(np), int(np)});
+        auto ob = out.mutable_unchecked<2>();
+        for (Index q = 0; q < np; ++q)
+            for (Index p = 0; p < np; ++p)
+                ob(q, p) = Zport[q * np + p];
+        return out;
+    }, py::arg("Z"), py::arg("test_port_edge_sets"), py::arg("source_port_edge_sets"),
+       "[M4] Dual multi-edge Zport extraction with Y = H^T Z^{-1} G.");
+
     m.def("solve_rwg_lumped_port_sweep", [](const mom::mesh::TriMesh& mesh,
                                              py::array_t<double> freqs,
                                              double eps_r, double tand, double h,
@@ -736,7 +1181,7 @@ PYBIND11_MODULE(_mom, m) {
                 ob(fi, 1, 0) = S21;
                 ob(fi, 1, 1) = S11;
                         
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 // 如果某个频率点失败，填充 NaN
                 for (int q = 0; q < 2; ++q)
                     for (int r = 0; r < 2; ++r)
@@ -777,7 +1222,13 @@ PYBIND11_MODULE(_mom, m) {
         mom::solver::PFFTConfig config;
         config.grid_resolution = grid_resolution > 0 ? grid_resolution : 0;  // 0 = 自动
         config.near_threshold = near_threshold;
-        mom::solver::PFFTMatrixVector pfft_mat(mesh, dyad, config);
+        (void)grid_resolution;
+        (void)near_threshold;
+        (void)gmres_tol;
+        (void)gmres_max_iter;
+        auto rwg_blk = mom::mom::assemble_rwg_fast(mesh, dyad, 3, 200);
+        const Real omega = 2.0 * gphys::pi * freq;
+        auto Z = mom::mom::build_rwg_impedance(rwg_blk, mesh, omega);
 
         // 3. 解析端口索引
         std::vector<Index> ports;
@@ -785,27 +1236,9 @@ PYBIND11_MODULE(_mom, m) {
         const Index np = Index(ports.size());
 
         // 4. 对每个端口求解
-        const Real omega = 2.0 * gphys::pi * freq;
-        std::vector<std::vector<Complex>> currents(np);
+        auto Zport = mom::schur_nport_export(Z, nb, ports);
 
-        for (Index p = 0; p < np; ++p) {
-            // 构建右端向量（端口激励）
-            std::vector<Complex> b(nb, Complex(0, 0));
-            b[ports[p]] = Complex(1, 0);  // 简化：单位激励
-
-            // GMRES 求解
-            auto x = mom::solver::solve_gmres(pfft_mat, b, gmres_tol, gmres_max_iter, 50);
-            currents[p] = x;
-        }
-
-        // 5. 提取端口阻抗（简化：使用电流比）
-        std::vector<Complex> Zport(np * np, Complex(0, 0));
-        for (Index q = 0; q < np; ++q) {
-            for (Index r = 0; r < np; ++r) {
-                // 简化：Z[q,r] = V[q] / I[r]（假设 V = 1）
-                Zport[q * np + r] = Complex(1, 0) / currents[r][ports[q]];
-            }
-        }
+        // 5. Zport 已由上面的 Schur 降阶直接给出。
 
         // 6. 转换为 S 参数
         auto S = mom::zport_n_to_sparam(Zport, np, z0_ref);
@@ -1879,4 +2312,36 @@ PYBIND11_MODULE(_mom, m) {
     }, py::arg("mesh"), py::arg("green"),
        py::arg("gauss_order") = 5, py::arg("n_lookup") = 2000,
        "RWG 装配（格林函数查找表加速版）");
+
+    // 多层装配：按三角形 z 层选择正确的格林函数（解决单一固定 GF 问题）
+    m.def("assemble_rwg_layered", [](const mom::mesh::TriMesh& mesh,
+                                      double freq,
+                                      py::list layers_py,
+                                      py::object ground_z_py,
+                                      py::object cover_z_py,
+                                      int gauss_order, size_t n_lookup) {
+        mom::green::spectral::LayeredMedium med;
+        for (auto item : layers_py) {
+            py::dict d = item.cast<py::dict>();
+            mom::green::DielectricLayer L;
+            L.thickness = d["thickness"].cast<double>();
+            L.eps_r = d["eps_r"].cast<double>();
+            L.tand = d.contains("tand") ? d["tand"].cast<double>() : 0.0;
+            med.layers.push_back(L);
+        }
+        auto parse_z = [](py::object z_py) -> double {
+            if (z_py.is_none()) return std::numeric_limits<double>::quiet_NaN();
+            return py::float_(z_py).cast<double>();
+        };
+        med.ground_z = parse_z(ground_z_py);
+        med.cover_z = parse_z(cover_z_py);
+        auto blocks = mom::mom::assemble_rwg_layered(mesh, med, freq, gauss_order, n_lookup);
+        py::dict result;
+        result["ZA"] = blocks.ZA;
+        result["ZPhi"] = blocks.ZPhi;
+        return result;
+    }, py::arg("mesh"), py::arg("freq"), py::arg("layers"),
+       py::arg("ground_z"), py::arg("cover_z"),
+       py::arg("gauss_order") = 5, py::arg("n_lookup") = 2000,
+       "RWG 多层装配（每层对独立 GF，正确处理多层耦合）");
 }

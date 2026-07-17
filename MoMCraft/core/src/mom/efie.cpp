@@ -18,6 +18,7 @@
 #include "mom/common/analytic.hpp"
 #include "mom/common/vec3.hpp"
 #include "mom/common/types.hpp"
+#include "mom/tl_extract.hpp"
 
 #ifdef MOM_USE_EIGEN
 #include <Eigen/Dense>
@@ -305,34 +306,8 @@ AEFIESystem build_aefie(const MPIEBlocks& blk, Real omega, Real eps_r,
 std::vector<Complex> solve_aefie_zport(const MPIEBlocks& blk, Real omega, Real eps_r,
                                        Real dx, Index nb, Index port_in, Index port_out) {
 #ifdef MOM_USE_EIGEN
-    auto sys = build_aefie(blk, omega, eps_r, dx, nb);
-    const Index n2b = 2 * nb;
-    Eigen::MatrixXcd A_eig = Eigen::Map<Eigen::MatrixXcd>(sys.A.data(), n2b, n2b);
-    Eigen::VectorXcd b0 = Eigen::VectorXcd::Zero(n2b);
-    b0(port_in) = Complex(1, 0);
-    Eigen::VectorXcd b1 = Eigen::VectorXcd::Zero(n2b);
-    b1(port_out) = Complex(1, 0);
-    auto lu = A_eig.partialPivLu();
-    Eigen::VectorXcd x0 = lu.solve(b0);
-    Eigen::VectorXcd x1 = lu.solve(b1);
-    // 标准 Z（用于从 J 重建端口电压）
     auto Z_std = build_impedance(blk, omega, eps_r);
-    std::vector<Complex> J0(nb), J1(nb);
-    for (Index i = 0; i < nb; ++i) { J0[i] = x0(i); J1[i] = x1(i); }
-    Complex Zport[4];
-    Index ports[2] = {port_in, port_out};
-    for (int q = 0; q < 2; ++q) {
-        const std::vector<Complex>& Jq = (q == 0) ? J0 : J1;
-        Complex Iq = Jq[ports[q]];
-        for (int p = 0; p < 2; ++p) {
-            Index pp = ports[p];
-            Complex Vp(0, 0);
-            for (Index j = 0; j < nb; ++j)
-                Vp += Z_std[pp * nb + j] * Jq[j];
-            Zport[p * 2 + q] = (std::abs(Iq) > 1e-30) ? Vp / Iq : Complex(1e30, 0);
-        }
-    }
-    return {Zport[0], Zport[1], Zport[2], Zport[3]};
+    return ::mom::schur_2port_export(Z_std, nb, port_in, port_out);
 #else
     (void)blk; (void)omega; (void)eps_r; (void)dx; (void)nb; (void)port_in; (void)port_out;
     throw std::runtime_error("solve_aefie_zport 需要 Eigen");

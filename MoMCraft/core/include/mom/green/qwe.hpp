@@ -35,6 +35,12 @@ Complex qwe_hankel(const std::function<Complex(Real)>& f, Real r,
                    Real rtol = 1e-9, Real atol = 1e-14,
                    const std::vector<Real>& branch_points = {});
 
+// J1 版 QWE：∫₀^∞ f(λ)·J1(λr)·λ dλ（用于 G_Axz 交叉耦合项）。
+Complex qwe_hankel_J1(const std::function<Complex(Real)>& f, Real r,
+                       int n_intervals = 60, int gauss_order = 7,
+                       Real rtol = 1e-9, Real atol = 1e-14,
+                       const std::vector<Real>& branch_points = {});
+
 // 表面波极点项空域贡献：residue·(-j·k_p/2)·H_0^{(2)}(k_p·ρ)
 //   用于从 QWE 残差积分中提取的极点，解析加上其空域贡献。
 Complex surface_wave_spatial(Complex residue, Complex k_pole, Real rho);
@@ -55,6 +61,22 @@ Complex spatial_GA_qwe_poles(const spectral::SpectralGreensFunction& sg,
 Complex spatial_Gphi_qwe(const spectral::SpectralGreensFunction& sg,
                          Real rho, Real eps_r,
                          int n_intervals = 60, int gauss_order = 7);
+
+// 带表面波极点提取的 QWE 标量势空域格林。
+Complex spatial_Gphi_qwe_poles(const spectral::SpectralGreensFunction& sg,
+                                Real rho, Real eps_r,
+                                const std::vector<poles::Pole>& pole_list,
+                                int n_intervals = 60, int gauss_order = 7);
+
+// 垂直矢量位 G_Azz 空域格林（TM 电压 TLGF）。
+Complex spatial_GAzz_qwe(const spectral::SpectralGreensFunction& sg,
+                          Real rho, Real eps_r,
+                          int n_intervals = 60, int gauss_order = 7);
+
+// 水平-垂直交叉耦合 G_Axz 空域格林（含 k_rho·J1 积分核）。
+Complex spatial_GAxz_qwe(const spectral::SpectralGreensFunction& sg,
+                          Real rho, Real eps_r,
+                          int n_intervals = 60, int gauss_order = 7);
 
 // —— 加速版：谱核缓存 + 插值（empymod 风格）——
 //
