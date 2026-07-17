@@ -265,7 +265,7 @@ private:
             c.params = parseParamPairs(rest);
             currentTarget(netlist)->push_back(c); return;
         }
-        if (cmd == "include") { parseInclude(rest, ln, netlist); return; }
+        if (cmd == "include" || cmd == "inc") { parseInclude(rest, ln, netlist); return; }
         if (cmd == "lib")     { parseLibSelect(rest, ln, netlist); return; }
 
         // 通用控制卡: .tran/.ac/.dc/.hb/.print/.measure/.nodeset/.ic/...
@@ -362,9 +362,17 @@ private:
 
     void parseInclude(const std::vector<Token>& rest, uint32_t ln, Netlist& netlist) {
         std::string path;
+        // 引号字符串优先
         for (const auto& t : rest) {
-            if (t.kind == TokenKind::String) { path = t.text; break; }  // 引号路径优先
-            if (t.kind == TokenKind::Word) { path = t.text; break; }
+            if (t.kind == TokenKind::String) { path = t.text; break; }
+        }
+        // 无引号：拼接所有 Word/Dot token 组成路径（tokenizer 把 .inc 拆成 . + inc）
+        if (path.empty()) {
+            for (const auto& t : rest) {
+                if (t.kind == TokenKind::String) { path = t.text; break; }
+                if (t.kind == TokenKind::Word) { path += t.text; }
+                else if (t.kind == TokenKind::Dot) { path += "."; }
+            }
         }
         // 若 path 不含 '.'（tokenizer 把 .inc 拆开了），拼接后续 token
         if (path.find('.') == std::string::npos) {
