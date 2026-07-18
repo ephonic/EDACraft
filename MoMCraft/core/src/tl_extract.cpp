@@ -28,8 +28,15 @@ static Eigen::MatrixXcd build_port_projection_matrix(
     for (Index p = 0; p < np; ++p) {
         const auto& set_p = edge_sets[p];
         if (set_p.empty()) continue;
-        const std::vector<Real>& sp = (p < Index(signs.size()) && !signs[p].empty())
-            ? signs[p] : std::vector<Real>(set_p.size(), Real(1.0));
+        std::vector<Real> unit_signs;
+        const std::vector<Real>* sp_ptr = nullptr;
+        if (p < Index(signs.size()) && !signs[p].empty()) {
+            sp_ptr = &signs[p];
+        } else {
+            unit_signs.assign(set_p.size(), Real(1.0));
+            sp_ptr = &unit_signs;
+        }
+        const std::vector<Real>& sp = *sp_ptr;
         if (sp.size() != set_p.size())
             throw std::runtime_error("port signs size mismatch");
         for (Size k = 0; k < set_p.size(); ++k) {

@@ -39,6 +39,7 @@ PYBIND11_MAKE_OPAQUE(mom::mesh::TriMesh);
 #include "mom/lc_extract.hpp"
 #include "mom/common/vec3.hpp"
 #include "mom/common/types.hpp"
+#include <complex>
 #include <limits>
 
 namespace py = pybind11;
@@ -147,7 +148,7 @@ PYBIND11_MODULE(_mom, m) {
             return result;
         }, "生成本次扫频的全部频点（Hz），返回 NumPy float64 数组");
 
-    m.attr("__version__") = "0.1.1";
+    m.attr("__version__") = "0.1.2";
 
     // ---- MicrostripConfig ----
     py::class_<MicrostripConfig>(m, "MicrostripConfig")
@@ -719,9 +720,22 @@ PYBIND11_MODULE(_mom, m) {
        "[M4] 从预构建 TriMesh 求解 RWG S 参数。");
 
     // ---- 构建 RWG 阻抗矩阵（专用量纲归一化）----
+    m.def("conductor_surface_impedance", [](double omega,
+                                             double sigma_s_per_m,
+                                             double thickness_m,
+                                             double mu_r) {
+        return mom::mom::conductor_surface_impedance(
+            omega, sigma_s_per_m, thickness_m, mu_r);
+    }, py::arg("omega"),
+       py::arg("sigma_s_per_m"),
+       py::arg("thickness_m"),
+       py::arg("mu_r") = 1.0,
+       "Compute finite-thickness conductor surface impedance.");
+
     m.def("build_rwg_impedance", [](py::dict rwg_blk_dict,
                                      const mom::mesh::TriMesh& mesh,
-                                     double omega) {
+                                     double omega,
+                                     std::complex<double> surface_impedance) {
         // Convert Python dict to RwgMPIEBlocks
         mom::mom::RwgMPIEBlocks rwg_blk;
         
@@ -740,7 +754,11 @@ PYBIND11_MODULE(_mom, m) {
             rwg_blk.ZPhi[i] = ZPhi_unchecked(i);
         }
         
-        auto Z = mom::mom::build_rwg_impedance(rwg_blk, mesh, omega);
+        auto Z = mom::mom::build_rwg_impedance(
+            rwg_blk,
+            mesh,
+            omega,
+            Complex(surface_impedance.real(), surface_impedance.imag()));
         const Index nb = Index(mesh.bases.size());
         py::array_t<std::complex<double>> out({int(nb), int(nb)});
         auto ob = out.mutable_unchecked<2>();
@@ -749,6 +767,7 @@ PYBIND11_MODULE(_mom, m) {
                 ob(m, n) = Z[m * nb + n];
         return out;
     }, py::arg("rwg_blk"), py::arg("mesh"), py::arg("omega"),
+       py::arg("surface_impedance") = std::complex<double>(0.0, 0.0),
        "构建 RWG 阻抗矩阵（专用量纲归一化）。");
 
     // ---- 从预构建 TriMesh 求解 S 参数（快速版本，使用查找表）----

@@ -40,6 +40,28 @@ Eigen and OpenMP; Python bindings are generated with pybind11.
 - **OpenMP parallelization** for matrix assembly and frequency sweeps.
 - **Wideband S-parameter extraction** (validated 1–64 GHz).
 
+## Routed-net ADS alignment
+
+This release includes the routed-case raw solver utilities used during ADS
+alignment:
+
+- `routed_case_solver.py` - routed strip mesh construction, port selection,
+  layered-cavity solve, raw/TEM phase reference, and finite-thickness copper
+  loss.
+- `route_geometry.py`, `routed_strip_mesh.py`, `phase_deembed.py` - geometry,
+  meshing, and explicit phase/magnitude helper models.
+- `compare_all.py` - batch comparison against local ADS Touchstone references.
+
+The current local validation set covers 6 routed testcase families and 576
+S21 traces. Against ADS, the latest aligned raw result is:
+
+- `|S21|` error: mean 3.7%, median 3.5%, max 10.3%.
+- raw phase error: mean -0.9 deg, median -0.9 deg, max abs 4.1 deg.
+
+Large ADS testcase assets are intentionally not bundled in this release. To
+rerun the batch comparison, place the testcase tree beside the release as
+`mom_testcases/` and run `python compare_all.py`.
+
 ## Supported structures
 
 - Single / coupled microstrip transmission lines

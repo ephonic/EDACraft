@@ -55,7 +55,15 @@ inline MPIEBlocks to_mpie_blocks(const RwgMPIEBlocks& rwg) {
 std::vector<Complex> build_rwg_impedance(
     const RwgMPIEBlocks& rwg,
     const mesh::TriMesh& mesh,
-    Real omega
+    Real omega,
+    Complex surface_impedance = Complex(0.0, 0.0)
+);
+
+Complex conductor_surface_impedance(
+    Real omega,
+    Real sigma_s_per_m,
+    Real thickness_m,
+    Real mu_r = 1.0
 );
 
 std::vector<Complex> build_rwg_lambda(const mesh::TriMesh& mesh);

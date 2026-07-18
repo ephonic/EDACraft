@@ -5,6 +5,26 @@ All notable changes to MoMCraft will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-07-18
+
+### Fixed
+- Aligned the routed raw S21 solver with ADS reference cases using physical
+  TEM raw-phase referencing, endpoint/modal port selection, and finite-thickness
+  copper surface impedance.
+- Added geometry-aware conductor-loss scaling from routed metal width and
+  substrate metal thickness instead of relying on a fixed empirical loss scale.
+- Added guarded full-route retry logic for terminal solves and high-|S21|
+  long-line port clustering.
+- Fixed the core TL port projection lifetime bug that could destabilize Schur
+  reductions.
+
+### Added
+- Published the routed-case validation utilities:
+  `routed_case_solver.py`, `route_geometry.py`, `routed_strip_mesh.py`,
+  `phase_deembed.py`, and `compare_all.py`.
+- Added self-contained raw-solver conductor-loss and port-selection regression
+  tests.
+
 ## [0.1.1] - 2026-07-17
 
 ### Fixed

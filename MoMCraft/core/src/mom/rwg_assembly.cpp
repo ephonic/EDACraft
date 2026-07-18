@@ -26,6 +26,7 @@
 #include <set>
 #include <memory>
 #include <algorithm>
+#include <complex>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -149,6 +150,54 @@ Vec3 rwg_at(const mesh::RwgBasis& b, const mesh::TriMesh& mesh,
 // RWG 散度在三角形 tri 上（常数）
 Real rwg_div_at(const mesh::RwgBasis& b, const mesh::TriMesh& mesh, Index tri) {
     return mesh::rwg_div(b, mesh, tri);
+}
+
+void add_surface_impedance_mass(std::vector<Complex>& Z,
+                                const mesh::TriMesh& mesh,
+                                Complex surface_impedance) {
+    if (std::abs(surface_impedance) <= 0.0) return;
+
+    const Index nb = Index(mesh.bases.size());
+    const Index nt = Index(mesh.triangles.size());
+    if (nb == 0 || nt == 0) return;
+
+    std::vector<std::vector<Index>> tri_to_bases(nt);
+    for (Index bi = 0; bi < nb; ++bi) {
+        const auto& b = mesh.bases[bi];
+        if (b.t_plus >= 0 && b.t_plus < nt) tri_to_bases[b.t_plus].push_back(bi);
+        if (b.t_minus >= 0 && b.t_minus < nt) tri_to_bases[b.t_minus].push_back(bi);
+    }
+
+    const TriQuad tq = tri_gauss(5);
+    for (Index ti = 0; ti < nt; ++ti) {
+        const auto& basis_ids = tri_to_bases[ti];
+        if (basis_ids.empty()) continue;
+
+        const auto& tri = mesh.triangles[ti];
+        const Vec3 v0 = mesh.vertices[tri.v[0]].pos();
+        const Vec3 v1 = mesh.vertices[tri.v[1]].pos();
+        const Vec3 v2 = mesh.vertices[tri.v[2]].pos();
+
+        for (Index mi : basis_ids) {
+            const Real lm = mesh.bases[mi].edge_length > 1e-30
+                ? mesh.bases[mi].edge_length
+                : 1.0;
+            for (Index ni : basis_ids) {
+                const Real ln = mesh.bases[ni].edge_length > 1e-30
+                    ? mesh.bases[ni].edge_length
+                    : 1.0;
+                Real mass = 0.0;
+                for (Size k = 0; k < tq.lambda.size(); ++k) {
+                    const Vec3 r = bary_to_cart(tq.lambda[k], v0, v1, v2);
+                    const Vec3 fm = rwg_at(mesh.bases[mi], mesh, r, ti);
+                    const Vec3 fn = rwg_at(mesh.bases[ni], mesh, r, ti);
+                    mass += tq.weights[k] * tri.area *
+                        (fm.x * fn.x + fm.y * fn.y + fm.z * fn.z);
+                }
+                Z[mi * nb + ni] += surface_impedance * mass / (lm * ln);
+            }
+        }
+    }
 }
 
 // 判断两个三角形是否需要解析奇异提取。
@@ -1157,9 +1206,32 @@ AEFIESystem build_rwg_aefie(const RwgMPIEBlocks& blk, Real omega, Real eps_r,
 // =====================================================================
 // 专门为 RWG 基函数设计的阻抗构建函数
 // =====================================================================
+Complex conductor_surface_impedance(Real omega,
+                                    Real sigma_s_per_m,
+                                    Real thickness_m,
+                                    Real mu_r) {
+    if (omega <= 0.0 || sigma_s_per_m <= 0.0 || mu_r <= 0.0) {
+        return Complex(0.0, 0.0);
+    }
+
+    const Real mu = phys::mu0 * mu_r;
+    const Complex gamma = std::sqrt(Complex(0.0, omega * mu * sigma_s_per_m));
+    const Complex z_thick = gamma / sigma_s_per_m;
+    if (thickness_m <= 0.0) {
+        return z_thick;
+    }
+
+    const Complex gt = gamma * thickness_m;
+    if (std::abs(gt) < 1e-8) {
+        return Complex(1.0 / (sigma_s_per_m * thickness_m), 0.0);
+    }
+    return z_thick / std::tanh(gt);
+}
+
 std::vector<Complex> build_rwg_impedance(const RwgMPIEBlocks& rwg,
                                           const mesh::TriMesh& mesh,
-                                          Real omega) {
+                                          Real omega,
+                                          Complex surface_impedance) {
     const Index nb = Index(mesh.bases.size());
     std::vector<Complex> Z(nb * nb, Complex(0, 0));
     if (nb == 0) return Z;
@@ -1277,6 +1349,7 @@ std::vector<Complex> build_rwg_impedance(const RwgMPIEBlocks& rwg,
             Z[idx] = (coefA * rwg.ZA[idx] + coefPhi * rwg.ZPhi[idx]) * inv_4pi * inv_lmln;
         }
     }
+    add_surface_impedance_mass(Z, mesh, surface_impedance);
     return Z;
 }
 
