@@ -11,8 +11,22 @@ def extract_transfer_characteristics(
     sweep_results: List[Dict],
     drain_contact: str = "drain",
     gate_contact: str = "gate",
+    allow_density_proxy: bool = False,
 ) -> Dict[str, np.ndarray]:
     """Extract Id-Vg transfer characteristics from a voltage sweep.
+
+    .. warning::
+        This legacy function uses ``n.max()`` (peak carrier density) as a
+        stand-in for the drain current.  It is NOT a current: subthreshold
+        swings extracted from it are unphysically small (the density at the
+        channel bottleneck responds exponentially even when the terminal
+        current is contact-limited) and absolute Ion/Ioff values cannot be
+        interpreted in amperes (issues0719 P0-4).  Use
+        ``extract_transfer_characteristics_current`` for quantitative work.
+        The proxy path now requires the explicit opt-in
+        ``allow_density_proxy=True`` (issues0719 §5.4: degradation must be a
+        conscious choice); the result is then marked with
+        ``"current_kind": "density_proxy"``.
 
     Parameters
     ----------
@@ -22,14 +36,28 @@ def extract_transfer_characteristics(
         Name of the drain contact.
     gate_contact : str
         Name of the gate contact.
+    allow_density_proxy : bool
+        Explicitly accept the n.max() density proxy instead of a real
+        terminal current.  Default False -> raise.
 
     Returns
     -------
     dict
         Keys: ``Vg`` (gate voltages), ``Ion`` (peak carrier density proxy),
         ``Vth`` (threshold voltage), ``SS`` (subthreshold swing in mV/dec),
-        ``Ion_Ioff`` (on/off ratio).
+        ``Ion_Ioff`` (on/off ratio), ``current_kind``.
     """
+    if not allow_density_proxy:
+        raise RuntimeError(
+            "extract_transfer_characteristics uses the n.max() density proxy, "
+            "not a real terminal current (issues0719 P0-4). Use "
+            "extract_transfer_characteristics_current instead, or pass "
+            "allow_density_proxy=True to explicitly opt into the degraded "
+            "metric (recorded as current_kind='density_proxy').")
+    import warnings
+    warnings.warn(
+        "Using n.max() density proxy as 'current' — results are not "
+        "quantitative (issues0719 P0-4).", RuntimeWarning, stacklevel=2)
     Vg = np.array([r["_voltages"][gate_contact] for r in sweep_results])
     n_max = np.array([r["n"].max() for r in sweep_results])
     p_max = np.array([r["p"].max() for r in sweep_results])
@@ -69,6 +97,8 @@ def extract_transfer_characteristics(
         "Vth": Vth,
         "SS": SS,
         "Ion_Ioff": Ion_Ioff,
+        # issues0719 P0-4: the unit/kind of the 'current' must be explicit.
+        "current_kind": "density_proxy",
     }
 
 
@@ -117,6 +147,11 @@ def _transfer_metrics_from_current(
         "Vth": Vth,
         "SS": SS,
         "Ion_Ioff": Ion_Ioff,
+        # issues0719 P0-4: contact_current_1d returns the SG edge flux on a
+        # unit-area cutline — a current DENSITY [A/m^2], not an area-
+        # integrated terminal current [A].  Record the kind explicitly so
+        # the two are never conflated under the shared name 'Ion'.
+        "current_kind": "current_density_a_per_m2",
     }
 
 

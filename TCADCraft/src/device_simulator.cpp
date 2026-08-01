@@ -255,6 +255,13 @@ void DeviceSimulator::set_ferroelectric_nls(real_t tau0, real_t E0, real_t dt) {
     fe_nls_dt_ = dt;
 }
 
+void DeviceSimulator::set_ferroelectric_polar_axis(int axis) {
+    // P0-1: polar axis 0 = x, 1 = y, 2 = z; clamped to the valid range.
+    if (axis < 0) axis = 0;
+    if (axis > 2) axis = 2;
+    fe_polar_axis_ = axis;
+}
+
 void DeviceSimulator::set_leakage(const std::vector<char>& mask,
                                   real_t C_pf, real_t B_pf, real_t phi_t,
                                   real_t C_fn, real_t B_fn, real_t phi_b,
@@ -459,6 +466,7 @@ SimulationResult DeviceSimulator::solve() {
     opt.ferro.nls_tau0 = fe_nls_tau0_;   // P3: NLS Merz parameters
     opt.ferro.nls_E0 = fe_nls_E0_;
     opt.ferro.nls_dt = fe_nls_dt_;
+    opt.ferro.polar_axis = fe_polar_axis_;   // P0-1: FE polar axis (0=x,1=y,2=z)
     // Leakage current (PF/FN) parameters (P2.2)
     opt.leakage.enabled = leak_enabled_;
     opt.leakage.mask = leak_mask_;
@@ -478,8 +486,16 @@ SimulationResult DeviceSimulator::solve() {
     }
 
     if (use_newton_) {
-        // Hybrid: Gummel first for robust initial guess, then Newton for fast convergence
-        gummel_ = GummelSolver(g_, opt);
+        // Hybrid: Gummel first for robust initial guess, then Newton for fast
+        // convergence.  The warm-up runs to convergence normally, but exits
+        // EARLY at the first detected limit cycle: a cycle means the
+        // fixed-point map has an unstable fixed point (Newton's job), and
+        // grinding retries scrubs the state back and forth, damaging the
+        // initial guess.  Normal contracting warm-up progress is never
+        // interrupted.  (issues0719 P0-3 follow-up.)
+        GummelOptions warm_opt = opt;
+        warm_opt.exit_on_limit_cycle = true;
+        gummel_ = GummelSolver(g_, warm_opt);
         gummel_.set_mobility(mu_n_eff, mu_p_eff);
         gummel_.set_doping(Nd_minus_Na_);
         gummel_.set_recombination(tau_n_, tau_p_);
@@ -522,8 +538,18 @@ SimulationResult DeviceSimulator::solve() {
             if (fe_model_ == 1) fe_play_state_ = gummel_.fe_play_state();
         }
         size_t gummel_iters = gummel_.poisson_residuals().size();
+        // Convergence-honesty diagnostics from the Gummel warm-up (P0-3).
+        res.poisson_residual = gummel_.poisson_residual_final();
+        res.phi_frozen = gummel_.phi_was_frozen();
 
-        if (gummel_ok) {
+        // issues0719 P0-3 follow-up: ALWAYS attempt the Newton polish, even
+        // when the Gummel warm-up stalled in a limit cycle.  A limit cycle
+        // is precisely the failure mode a line-searched Newton finishes —
+        // requiring full Gummel convergence first defeated the purpose of
+        // the Gummel->Newton cascade (the MoS2 FeFET template cycles at the
+        // inversion onset and never reached Newton).  The verdict stays
+        // honest: res.converged reflects ONLY Newton's true residual test.
+        {
             // Use Gummel solution as initial guess for Newton
             NewtonOptions nopt;
             nopt.max_iter = max_iter_;
@@ -576,13 +602,39 @@ SimulationResult DeviceSimulator::solve() {
             if (!trap_mask_.empty()) {
                 newton_.set_trap_charge(trap_mask_, trap_D_it_, trap_E_t_, Q_ot_);
             }
-            res.converged = newton_.solve(res.phi, res.n, res.p);
+            // Skip the Newton polish when the warm-up already converged:
+            // the state is earned, and a stalled Newton's write-back could
+            // only degrade it (observed: Newton stalls even on a Gummel-
+            // converged equilibrium — the Jacobian/residual inconsistency of
+            // fix0719_report.md open issue #2).
+            bool newton_ok = gummel_ok ? true : newton_.solve(res.phi, res.n, res.p);
+            // Newton path (P0-3): no phi freezing applies; score the final
+            // state against the Gummel Poisson operator (one re-assembly,
+            // cheap) instead of the warm-up residual.
+            res.phi_frozen = false;
+            res.poisson_residual = gummel_.compute_poisson_residual(res.phi, res.n, res.p);
             // Report total iterations (Gummel + Newton) for transparency
             res.iterations = gummel_iters + newton_.residuals().size();
-        } else {
-            // Gummel failed, report that
-            res.converged = false;
-            res.iterations = gummel_iters;
+            // Convergence verdict: a point is converged if ANY stage met
+            // the true-residual criteria.  A converged Gummel warm-up earned
+            // its verdict on the honest update-norm + polish path; a failed
+            // warm-up (limit cycle) is rescued only by a genuinely converged
+            // Newton polish.
+            res.converged = gummel_ok || newton_ok;
+            // NOTE: no second Gummel fallback pass — a fresh solve() would
+            // advance the FE memory state (Preisach/NLS) a SECOND time for
+            // the same bias point, breaking the one-state-advance-per-bias-
+            // step semantics of the P0-2 fix.
+            if (!gummel_ok) {
+                if (res.converged) {
+                    std::cout << "Gummel warm-up stalled (limit cycle); "
+                              << "Newton polish converged (true residual="
+                              << (double)res.poisson_residual << ")\n";
+                } else {
+                    std::cerr << "Gummel warm-up stalled AND Newton polish "
+                              << "failed; point is non-converged\n";
+                }
+            }
         }
     } else {
         // Rebuild gummel solver with options (simplified)
@@ -623,6 +675,9 @@ SimulationResult DeviceSimulator::solve() {
             fe_polarization_ = gummel_.fe_polarization();
             if (fe_model_ == 1) fe_play_state_ = gummel_.fe_play_state();
         }
+        // Convergence-honesty diagnostics (P0-3).
+        res.poisson_residual = gummel_.poisson_residual_final();
+        res.phi_frozen = gummel_.phi_was_frozen();
         res.iterations = gummel_.poisson_residuals().size();
     }
 

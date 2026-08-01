@@ -141,23 +141,34 @@ class TestAlScNMaterial:
 class TestImprintField:
     """P2.1: the internal field offset breaks +/- loop symmetry."""
 
-    def test_ebi_changes_loop_asymmetry(self):
-        """E_bi setter should be accepted and not crash the solver.
+    @staticmethod
+    def _first_coercive(V, P):
+        """First voltage at which the mid-node P crosses zero (switching onset)."""
+        for k in range(1, len(V)):
+            if P[k - 1] == 0.0 or np.sign(P[k]) != np.sign(P[k - 1]):
+                return 0.5 * (V[k - 1] + V[k])
+        return float("nan")
 
-        Note: in a pure FE slab with the correct div(P) stencil (comments2.docx),
-        P saturates to +/-Ps at modest voltage, so the imprint field's small
-        offset is invisible in the loop extrema. The E_bi effect is only
-        observable in a full MFIS device with partial screening. Here we
-        verify the setter runs and produces a valid loop.
+    def test_ebi_shifts_coercive_voltage(self):
+        """The imprint field must shift the coercive voltage by ~E_bi*L.
+
+        (issues0719 P0-5: restored behavioral assertion.)  With the correct
+        div(P) stencil the loop EXTREMA saturate at +/-Ps regardless of E_bi,
+        so an extrema-asymmetry check is not sensitive.  The physical imprint
+        signature is a rigid shift of the switching point: E_bi = 1e8 V/m
+        across L = 40 nm shifts Vc by E_bi*L = 4 V.  Measured shift is
+        3.79 V; we assert > 2 V for robust margin.
         """
         sim0, N = _build_alscn_slab(E_bi=0.0)
         V0, P0 = _sweep(sim0, N)
         sim1, N = _build_alscn_slab(E_bi=1.0e8)
         V1, P1 = _sweep(sim1, N)
-        # Verify both sweeps produced valid finite results
-        assert np.all(np.isfinite(P0)), "E_bi=0 sweep produced non-finite P"
-        assert np.all(np.isfinite(P1)), "E_bi=1e8 sweep produced non-finite P"
-        assert len(P0) == len(V0), "Sweep length mismatch"
+        assert np.all(np.isfinite(P0)) and np.all(np.isfinite(P1))
+        vc0 = self._first_coercive(V0, P0)
+        vc1 = self._first_coercive(V1, P1)
+        assert abs(vc1 - vc0) > 2.0, (
+            f"Imprint field did not shift coercive voltage: "
+            f"Vc {vc0:.2f} -> {vc1:.2f} (expected ~4 V shift from E_bi*L)")
 
 
 # ---------------------------------------------------------------------------
@@ -176,18 +187,25 @@ class TestLeakageNonClosure:
         assert not np.allclose(P0, P1, atol=1e-3), (
             "Leakage had no effect on the P-V loop (0V non-closure missing)")
 
-    def test_leakage_reduces_saturation_magnitude(self):
-        """Leakage setter should be accepted and produce a valid loop.
+    def test_leakage_changes_zero_bias_end_state(self):
+        """Leakage must change the remanent end-of-loop state at 0V.
 
-        Note: in a pure FE slab (comments2.docx), P saturates so leakage's
-        effect on the extrema is negligible. Verified in full MFIS devices.
+        (issues0719 P0-5: restored behavioral assertion.)  With the correct
+        div(P) stencil the saturated extrema are pinned at +/-Ps and are
+        legitimately unchanged by leakage — that is NOT the observable.  The
+        physical leakage signature is relaxation of the bound charge during
+        the loop, which changes the remanent state at the final V=0 point
+        (the '0V non-closure' of comments.docx).  Measured: -1.066 (no leak)
+        vs +1.066 (leak) C/m^2.
         """
         sim0, N = _build_alscn_slab(leak=False)
         V0, P0 = _sweep(sim0, N)
         sim1, N = _build_alscn_slab(leak=True)
         V1, P1 = _sweep(sim1, N)
-        assert np.all(np.isfinite(P0)), "No-leak sweep produced non-finite P"
-        assert np.all(np.isfinite(P1)), "Leak sweep produced non-finite P"
+        assert np.all(np.isfinite(P0)) and np.all(np.isfinite(P1))
+        assert abs(P0[-1] - P1[-1]) > 0.1, (
+            f"Leakage did not change the 0V end-of-loop state: "
+            f"{P0[-1]:.4f} vs {P1[-1]:.4f}")
 
 
 # ---------------------------------------------------------------------------
@@ -195,29 +213,62 @@ class TestLeakageNonClosure:
 # ---------------------------------------------------------------------------
 
 class TestNLSModel:
-    """P3: NLS model basic functionality.
+    """P3: NLS produces a finite-slope, hysteretic, bounded loop.
 
-    Note: with the correct div(P) stencil (comments2.docx), the self-consistent
-    internal field in a pure FE slab is much smaller than the applied field
-    (strong depolarization screening). These tests verify the NLS model runs
-    without crashing and produces finite output, rather than checking specific
-    P magnitudes which depend on the full device structure.
+    (issues0719 P0-5: behavioral assertions restored, thresholds calibrated
+    against the corrected div(P) stencil — depolarization screening limits
+    the pure-slab switching to partial values, measured below.)
     """
 
-    def test_nls_runs_without_error(self):
-        """NLS model should run and produce a result (not crash)."""
-        sim, N = _build_alscn_slab(model=2)
-        V, P = _sweep(sim, N, Vmax=20.0, n_pts=40)
-        # Just verify it ran and produced arrays of the right shape
-        assert len(P) == len(V), "NLS sweep produced mismatched arrays"
-        assert np.all(np.isfinite(P)), "NLS produced non-finite P values"
+    def test_nls_switches_and_bounded(self):
+        """NLS must respond to the field AND stay bounded by [-Ps, +Ps].
 
-    def test_nls_bounded_by_ps(self):
-        """NLS output should be bounded by [-Ps, +Ps]."""
+        Measured P.max() = 0.31 (0.22*Ps) at Vmax=20V: full saturation is
+        not reached in a pure slab because the depolarization field screens
+        the applied field (series-capacitor physics, issues0719 §4.1), but
+        a clear switching response well above noise is required.
+        """
         sim, N = _build_alscn_slab(model=2)
         V, P = _sweep(sim, N, Vmax=20.0, n_pts=40)
+        assert len(P) == len(V) and np.all(np.isfinite(P))
+        assert P.max() > 0.1 * ALSCN_PS, (
+            f"NLS did not switch: Pmax={P.max():.3f} <= {0.1*ALSCN_PS:.3f}")
         assert P.max() <= ALSCN_PS * 1.01, f"NLS P exceeded Ps: {P.max():.3f}"
         assert P.min() >= -ALSCN_PS * 1.01, f"NLS P below -Ps: {P.min():.3f}"
+
+    def test_nls_has_hysteresis(self):
+        """NLS must produce path-dependent memory: opposite-sign remanence
+        at the two 0V crossings after the positive and negative branches.
+
+        Measured P at the three V=0 crossings: [0.0, +0.309, -0.068] C/m^2.
+        """
+        sim, N = _build_alscn_slab(model=2)
+        V, P = _sweep(sim, N, Vmax=20.0, n_pts=40)
+        zc = [k for k in range(len(V)) if abs(V[k]) < 1e-9]
+        assert len(zc) >= 3, "bipolar sweep should cross V=0 three times"
+        p_after_pos, p_after_neg = P[zc[1]], P[zc[2]]
+        assert abs(p_after_pos - P[zc[0]]) > 1e-3, (
+            "NLS loop has no remanence memory at 0V")
+        assert np.sign(p_after_pos) != np.sign(p_after_neg), (
+            f"NLS remanence did not flip sign between branches: "
+            f"{p_after_pos:+.4f} vs {p_after_neg:+.4f}")
+        assert min(abs(p_after_pos), abs(p_after_neg)) > 0.01 * ALSCN_PS, (
+            "NLS remanence magnitude too small to be memory")
+
+    def test_nls_finite_slope(self):
+        """NLS switching must be gradual (Merz-law kinetics), not a jump.
+
+        Measured: 20 of 79 steps exceed 0.01*Ps; max single-step change is
+        0.028 (0.02*Ps) — far from a vertical jump.
+        """
+        sim, N = _build_alscn_slab(model=2)
+        V, P = _sweep(sim, N, Vmax=20.0, n_pts=40)
+        dP = np.abs(np.diff(P))
+        n_steps = np.sum(dP > 0.005 * ALSCN_PS)
+        assert n_steps >= 5, (
+            f"NLS switching too abrupt ({n_steps} incremental steps)")
+        assert dP.max() < 0.5 * ALSCN_PS, (
+            f"NLS switched in a single vertical jump (dPmax={dP.max():.3f})")
 
     def test_nls_model_selectable(self):
         """NLS model (model=2) should be selectable alongside LK and Preisach."""
@@ -226,6 +277,7 @@ class TestNLSModel:
         sim.set_dirichlet_potential({0: 1.0, N - 1: 0.0})
         r = sim.solve()
         assert r is not None, "NLS solve returned None"
+        assert np.all(np.isfinite(np.asarray(r["P"])))
 
 
 # ---------------------------------------------------------------------------

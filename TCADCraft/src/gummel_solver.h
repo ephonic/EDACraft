@@ -39,6 +39,7 @@ struct BTBTParams {
 enum class FerroelectricModel {
     LANDAU_KHALATNIKOV = 0,
     PREISACH = 1,
+    NLS = 2,   // Nucleation-Limited Switching, Merz-law tau(E) (P3)
 };
 
 struct FerroelectricParams {
@@ -61,6 +62,12 @@ struct FerroelectricParams {
     real_t nls_tau0 = 1.0e-6Q;   // characteristic switching time [s]
     real_t nls_E0 = 2.0e9Q;      // Merz activation field [V/m]
     real_t nls_dt = 1.0e-6Q;     // effective dwell time per bias step [s]
+    // Polar axis for the scalar FE models (Preisach / NLS) and for the LK
+    // built-in field + depolarization drive: 0 = x, 1 = y, 2 = z. The
+    // built-in FeFET template stacks gate/FE/oxide/channel along Z, so
+    // axis 2 is required there; default 0 reproduces the legacy x-only
+    // behavior bit-for-bit (1D x-directed tests).
+    int polar_axis = 0;
 };
 
 // Leakage current through the ferroelectric/insulator stack (P2.2).
@@ -132,6 +139,19 @@ struct GummelOptions {
     // Inner continuity iterations: fix phi, solve n/p multiple times before next Poisson
     size_t inner_iterations = 1;
     bool enable_phi_freezing = true;
+    // Warm-up mode (Gummel->Newton cascade): break out of the iteration at
+    // the FIRST detected limit cycle instead of burning damping retries to
+    // max_iter — a cycle means the fixed-point map has an unstable fixed
+    // point, which is precisely what the Newton polish is for.  Normal
+    // (contracting) warm-up progress is never interrupted.
+    bool exit_on_limit_cycle = false;
+    // P0-3: acceptance gate on the TRUE relative Poisson residual
+    // ||A*phi - rhs||/||rhs|| of a permanently phi-frozen (limit-cycle) exit
+    // state.  A frozen state is only reported converged below this gate;
+    // otherwise it is honestly rejected as non-converged.  Converged sweeps
+    // typically reach O(1e-6); 1e-3 is a deliberately strict-yet-attainable
+    // gate for the cycle-mean state.
+    real_t frozen_residual_gate = 1e-3Q;
     // Band-to-band tunneling
     BTBTParams btbt;
     // Avalanche impact ionization
@@ -143,6 +163,10 @@ struct GummelOptions {
     // Cryo-CMOS models
     StatisticsType statistics_type = StatisticsType::BOLTZMANN;
     MobilityModelType mobility_model_type = MobilityModelType::CONSTANT;
+    // Stabilized Gummel (plan0728 §1.2): semi-implicit Boltzmann charge
+    // linearization in the Poisson solve (fixed point unchanged, iteration
+    // damped against depletion-edge overshoot cycles).
+    bool boltzmann_lin = true;
     // Transient solve: backward Euler time stepping
     bool transient_enabled = false;
     real_t transient_dt = 1.0e-12Q;
@@ -206,6 +230,22 @@ public:
     const std::vector<real_t>& poisson_residuals() const { return poisson_res_; }
     const std::vector<real_t>& continuity_residuals() const { return cont_res_; }
 
+    // Convergence-honesty diagnostics (P0-3 fix).
+    // True relative Poisson equation residual ||A*phi - rhs|| / ||rhs|| at the
+    // returned state, computed after the Gummel loop exits (converged or not);
+    // -1 means "not computed" (early failure return).
+    real_t poisson_residual_final() const { return poisson_residual_final_; }
+    // True if the limit-cycle stabiliser permanently pinned phi during the
+    // last solve() (such a state only reports converged when the true update
+    // norm at freeze time was already below poisson_tol).
+    bool phi_was_frozen() const { return phi_was_frozen_; }
+    // On-demand true Poisson residual at an externally supplied state (used by
+    // the hybrid Gummel->Newton path to score the Newton result against the
+    // Gummel Poisson operator).
+    real_t compute_poisson_residual(const std::vector<real_t>& phi,
+                                    const std::vector<real_t>& n,
+                                    const std::vector<real_t>& p);
+
 private:
     Grid3D g_;
     GummelOptions opt_;
@@ -221,6 +261,10 @@ private:
 
     std::vector<real_t> poisson_res_;
     std::vector<real_t> cont_res_;
+
+    // Convergence-honesty state (P0-3 fix), reset at the top of each solve().
+    real_t poisson_residual_final_ = -1.0Q;  // -1 = not computed
+    bool phi_was_frozen_ = false;
 
     bool solve_continuity(const std::vector<real_t>& phi,
                           std::vector<real_t>& n,

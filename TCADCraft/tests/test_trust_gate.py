@@ -173,14 +173,31 @@ class TestTrustKclResidual:
         assert spread >= 0.0
 
     def test_trust_false_when_kcl_exceeds_tight_threshold(self):
-        """A converged raw-Newton solve has KCL spread ~1e-3.  With a threshold
-        below that, it must be flagged untrusted even though ``converged=True``
-        — proving the KCL signal is independent of the solver flag."""
+        """The KCL trust signal must be independent of the solver flag.
+
+        With the solver's __float128 edge fluxes (Audit §20) a converged
+        raw-Newton solve now has KCL spread ~1e-16 (essentially exact);
+        the legacy premise of ~1e-3 (double-precision recompute) is gone.
+        We therefore (a) assert the genuine spread is small, and (b) inject
+        a continuity-violating perturbation and verify the KCL gate still
+        flags it even though ``converged=True``.
+        """
         sim, r = _raw_pn_solve(vbias=0.05, nx=41, use_newton=True)
         assert r["converged"]
         spread = kcl_residual_1d(sim, r)
-        # Threshold below the actual spread -> must be untrusted.
-        rep = assess_trust(sim, r, kcl_rel_spread_threshold=max(spread * 0.5, 1e-6))
+        assert spread < 1e-10, f"converged solve KCL spread too large: {spread:.2e}"
+        # Inject a continuity violation: +1% electrons on half the device.
+        # Drop the solver's quad edge fluxes (they were computed from the
+        # UNPERTURBED state) so the KCL check recomputes currents from the
+        # perturbed fields.
+        r_bad = {k: v for k, v in r.items()
+                 if k not in ("Jn_x", "Jn_y", "Jn_z", "Jp_x", "Jp_y", "Jp_z")}
+        n_bad = np.asarray(r["n"]).copy()
+        n_bad[: len(n_bad) // 2] *= 1.01
+        r_bad["n"] = n_bad
+        spread_bad = kcl_residual_1d(sim, r_bad)
+        rep = assess_trust(sim, r_bad,
+                           kcl_rel_spread_threshold=max(spread_bad * 0.5, 1e-12))
         assert not rep.trust
         assert any("KCL residual" in s for s in rep.reasons)
 

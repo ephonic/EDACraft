@@ -138,6 +138,29 @@ public:
 
     const std::vector<real_t>& residuals() const { return residuals_; }
 
+    // Debug utility (issues0719 follow-up / plan0728 §1.1): finite-difference
+    // verification of assemble_jacobian against assemble_residual at the
+    // given state (phi,n,p in linear space; the log-space conversion is
+    // applied internally exactly as in solve()).  Prints the worst
+    // mismatched J entries with block/node mapping.  Returns the count of
+    // entries whose relative error exceeds rel_tol.
+    size_t debug_fd_jacobian_check(const std::vector<real_t>& phi,
+                                   const std::vector<real_t>& n,
+                                   const std::vector<real_t>& p,
+                                   double rel_tol = 5e-2,
+                                   size_t max_report = 40);
+
+    // Debug probe for the Newton line-search stall (plan0728 §1.1): at the
+    // given state, assembles F and J, solves J dx = -F with the configured
+    // linear solver, then prints ||J*dx + F||/||F|| (solve accuracy) and
+    // ||F(x + a*dx)|| for a range of step fractions a.  An exact Jacobian +
+    // accurate solve must show the residual decreasing for small a; if the
+    // solve is accurate but no a decreases ||F||, the Jacobian is
+    // inconsistent with the residual.
+    void debug_solve_probe(const std::vector<real_t>& phi,
+                           const std::vector<real_t>& n,
+                           const std::vector<real_t>& p);
+
 private:
     Grid3D g_;
     NewtonOptions opt_;

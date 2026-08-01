@@ -157,6 +157,118 @@ class TestRetentionEndurance:
         assert np.all(Ps_arr > 0), "Cycling should produce nonzero Ps"
 
 
+class TestPolarAxis:
+    """issues0719 P0-1: the ferroelectric polar axis must follow the gate
+    stack normal, not a hard-coded x."""
+
+    def test_auto_detect_z_film(self):
+        """The z-stacked MFIS FeFET template must auto-select axis z."""
+        from tcad.geometry.device_builder import Device
+        from tcad.mesh.generator import structured_mesh_from_device
+        from tcad.simulator import Simulator
+        dev = Device.alscn_mos2_fefet(Lg=50e-9, t_fe=20e-9, t_ox=2e-9, t_ch=5e-9)
+        mesh = structured_mesh_from_device(dev, resolution=(20e-9, 1e-9, 10e-9))
+        sim = Simulator(mesh)
+        fe_mask = (np.abs(mesh.fields["fe_alpha"].ravel()) > 0).astype(np.int8)
+        axis = sim._resolve_polar_axis(None, fe_mask)
+        assert axis == 2, (
+            f"z-stacked MFIS template auto-detected polar axis {axis}, expected 2 (z)")
+
+    def test_auto_detect_x_slab(self):
+        """A 1-D x-directed slab must auto-select axis x."""
+        from tcad.mesh.structured_grid import StructuredGrid
+        from tcad.simulator import Simulator
+        grid = StructuredGrid(((0.0, 40e-9), (0.0, 1e-9), (0.0, 1e-9)), 5, 1, 1)
+        grid.add_field("fe_alpha", np.ones(grid.npts()))
+        sim = Simulator(grid)
+        fe_mask = np.ones(grid.npts(), dtype=np.int8)
+        assert sim._resolve_polar_axis(None, fe_mask) == 0
+
+    def test_explicit_axis_and_validation(self):
+        """Explicit axis names/indices work; invalid ones fail fast."""
+        from tcad.mesh.structured_grid import StructuredGrid
+        from tcad.simulator import Simulator
+        grid = StructuredGrid(((0.0, 40e-9), (0.0, 1e-9), (0.0, 1e-9)), 5, 1, 1)
+        sim = Simulator(grid)
+        mask = np.ones(grid.npts(), dtype=np.int8)
+        assert sim._resolve_polar_axis("z", mask) == 2
+        assert sim._resolve_polar_axis(1, mask) == 1
+        with pytest.raises(ValueError):
+            sim._resolve_polar_axis("w", mask)
+        with pytest.raises(ValueError):
+            sim._resolve_polar_axis(3, mask)
+        sim.set_ferroelectric_polar_axis("z")  # must not raise
+
+    def test_unknown_model_fails_fast(self):
+        """issues0719 §5.4: a misspelled FE model must raise, not silently
+        map to Landau-Khalatnikov."""
+        from tcad.mesh.structured_grid import StructuredGrid
+        from tcad.simulator import Simulator
+        grid = StructuredGrid(((0.0, 40e-9), (0.0, 1e-9), (0.0, 1e-9)), 5, 1, 1)
+        sim = Simulator(grid)
+        with pytest.raises(ValueError):
+            sim.set_ferroelectric(model="preisach_typo")
+        with pytest.raises(ValueError):
+            sim.set_ferroelectric_model(model="nls_typo")
+
+
+class TestFeFETPolarAxisEndToEnd:
+    """issues0719 P0-1: z-stacked FeFET gate sweep must drive Pz (and only
+    Pz) with every bias point honestly converged.
+
+    Before the fix the scalar NLS model was driven by Ex (~0 in this
+    z-stacked MFIS geometry) and the ferroelectric stayed at P=0 for every
+    gate voltage.  Verified: with polar_axis='z' the converged Pz mean
+    switches to +7.3e-3 C/m^2 on the -3 V branch (partial switching — the
+    20 nm film's coercive voltage is ~7 V) and Px=Py=0 identically, with
+    remanence retained on the way back to 0 V.
+    """
+
+    def test_z_gate_sweep_drives_pz(self):
+        from tcad.geometry.device_builder import Device
+        from tcad.mesh.generator import structured_mesh_from_device
+        from tcad.simulator import Simulator
+
+        dev = Device.alscn_mos2_fefet(Lg=50e-9, t_fe=20e-9, t_ox=2e-9, t_ch=5e-9)
+        mesh = structured_mesh_from_device(dev, resolution=(20e-9, 1e-9, 10e-9))
+        sim = Simulator(mesh)
+        sim.set_material_from_mesh()
+        sim.set_ferroelectric(enabled=True, model="nls", Ps=1.4, Ec=3.5e8,
+                              nls_dt=1e-2, polar_axis="z")
+        sim.set_interface_traps(E_t=0.0)
+        sim.set_quantum(False)
+        sim.set_use_newton(True)
+        sim.set_newton_log_space(True)
+        sim.set_contact("source", 0.0)
+        sim.set_contact("drain", 0.05)
+        sim.set_contact("gate", 0.0)
+
+        import warnings
+        pz_means = []
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            r = sim.run(max_iter=300, tol=1e-6)
+            assert r["converged"], "equilibrium solve did not converge"
+            assert r.get("valid") is True
+            pz_means.append(0.0)
+            for Vg in (1.0, 2.0, 3.0, -1.0, -3.0):
+                sim.update_contact("gate", Vg)
+                r = sim.run(max_iter=300, tol=1e-6)
+                # P0-3: every bias point must honestly converge.
+                assert r["converged"], f"Vg={Vg} did not converge"
+                P = np.asarray(r["P"])
+                # Scalar NLS writes ONLY the axial component.
+                assert np.abs(P[:, 0]).max() < 1e-12, "Px must be identically 0"
+                assert np.abs(P[:, 1]).max() < 1e-12, "Py must be identically 0"
+                fe = np.abs(P[:, 2]) > 1e-30
+                pz_means.append(float(np.mean(P[fe, 2])) if np.any(fe) else 0.0)
+
+        pz_range = max(pz_means) - min(pz_means)
+        assert pz_range > 1e-3, (
+            f"Gate sweep did not drive Pz (range={pz_range:.2e} C/m^2) — "
+            f"the polar-axis wiring of issues0719 P0-1 is broken")
+
+
 class TestFeFETTemplate:
     """P8: AlScN+MoS₂ FeFET device template exists and builds."""
 

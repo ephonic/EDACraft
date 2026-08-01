@@ -126,7 +126,16 @@ def kcl_residual_1d(
     mu_p = np.asarray(
         mesh.fields.get("mu_p", np.full(mesh.npts(), 450e-4)), dtype=float
     )[line]
-    Jn, Jp = sg_current_density_1d(phi, n, p, mesh.dx, mu_n, mu_p, simulator.VT)
+    if "Jn_x" in result and "Jp_x" in result:
+        # Prefer the solver's __float128 edge fluxes (Audit §20): the
+        # double-precision SG recompute below suffers catastrophic
+        # cancellation at equilibrium (terms ~1e19 cancelling to ~1e-19),
+        # producing cancellation noise ABOVE the 1e-6 on-current floor and
+        # misclassifying a clean equilibrium as non-negligible current.
+        Jn = np.asarray(result["Jn_x"], dtype=float)[line[:-1]]
+        Jp = np.asarray(result["Jp_x"], dtype=float)[line[:-1]]
+    else:
+        Jn, Jp = sg_current_density_1d(phi, n, p, mesh.dx, mu_n, mu_p, simulator.VT)
     J = Jn + Jp
     J_max_abs = float(np.max(np.abs(J))) if J.size else 0.0
     floor = (1e-4 * on_current_scale) if on_current_scale else KCL_ZERO_CURRENT_FLOOR

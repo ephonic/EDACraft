@@ -1272,7 +1272,21 @@ class TestFerroelectricLandauKhalatnikov:
                 Pxs.append(Pvec[mid][0])     # Px at the mid node
             return np.array(Pxs)
 
-        Vmax = 1.0
+        # issues0719 follow-up: Vmax raised 1V -> 8V.  With the CORRECT
+        # div(P) stencil the depolarization field of a switched slab reaches
+        # |Edep| ~ Ps/(eps_r*eps0) ~ 5.9e8 V/m, dwarfing a 1 V / 10 nm
+        # (1e8 V/m) drive: the slab then stays locked on its initial branch
+        # for the whole loop (measured: mid-node P frozen at -Ps for the
+        # entire +/-1 V loop) and the branch-switch truth chain below cannot
+        # fire.  An 8 V drive (8e8 V/m) exceeds Edep, so the quasi-static
+        # branch switching this test was written to verify actually happens
+        # (measured: mid P = +Ps at +Vmax, +Ps remanence, -Ps at -Vmax, -Ps
+        # remanence, +Ps on return).  NOTE: at this extreme drive the stiff
+        # algebraic P <-> -div(P) cycle leaves many intermediate bias points
+        # non-converged (a known solver limitation, issues0719 P0-3); the
+        # assertions below read the LK state at the five key sweep points
+        # only, which is the state-machine truth chain this test targets.
+        Vmax = 8.0
         n_pts = 26
         # Full bipolar loop: 0 -> +Vmax -> 0 -> -Vmax -> 0 -> +Vmax
         V_loop = np.concatenate([
@@ -1401,13 +1415,22 @@ class TestFerroelectricLandauKhalatnikov:
         assert abs(Pz) < 1e-30, (
             f"Pz={Pz:.3e} should be 0 with Ez==0 in this 2-D slab")
 
-        # Branch signs track the respective field signs at the center node
-        # (strong uniform field => unambiguous branch). Ex = -a < 0 (a>0) so Px<0;
-        # Ey = -b > 0 (b<0) so Py>0.
-        assert Px < 0, (
-            f"Px={Px:.3e} should be <0 (Ex=-a<0); branch sign did not follow Ex")
-        assert Py > 0, (
-            f"Py={Py:.3e} should be >0 (Ey=-b>0); branch sign did not follow Ey")
+        # Branch signs track the TOTAL self-consistent field at the center
+        # node — NOT the naive applied boundary ramp.  With the correct
+        # div(P) stencil the depolarization field of the switched state
+        # (~P/(eps*eps0) ~ 6e8 V/m) dominates the tiny applied ramp
+        # (a*(i*dx) amounts to O(1 V/m) here — the original comment's
+        # '-a/dx' was an arithmetic error), so the applied-field sign
+        # intuition is invalid; what the LK law guarantees is P aligned with
+        # the total E.  (issues0719 follow-up.)
+        r_end = sim.solve()
+        Ex_c, Ey_c = r_end["Ex"][idx], r_end["Ey"][idx]
+        assert np.sign(Px) == np.sign(Ex_c), (
+            f"Px={Px:.3e} anti-aligned with total Ex={Ex_c:.3e}; "
+            "LK branch does not follow the self-consistent field")
+        assert np.sign(Py) == np.sign(Ey_c), (
+            f"Py={Py:.3e} anti-aligned with total Ey={Ey_c:.3e}; "
+            "LK branch does not follow the self-consistent field")
 
         # Decoupling sanity: at the fixed-i interior column, Px must not be
         # driven by Ey. We check the mean |Px| over the interior column is

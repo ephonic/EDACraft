@@ -118,7 +118,7 @@ def main():
     sim_gaa, results_gaa = simulate_single_device(
         device_gaa, resolution, gate_voltages,
     )
-    metrics_gaa = extract_transfer_characteristics(results_gaa)
+    metrics_gaa = extract_transfer_characteristics(results_gaa, allow_density_proxy=True)
     all_metrics["GAA (SiO2)"] = metrics_gaa
     print(f"  SS={metrics_gaa['SS']:.1f} mV/dec, "
           f"Ion/Ioff={metrics_gaa['Ion_Ioff']:.2e}, "
@@ -137,7 +137,7 @@ def main():
     sim_highk, results_highk = simulate_single_device(
         device_highk, resolution, gate_voltages,
     )
-    metrics_highk = extract_transfer_characteristics(results_highk)
+    metrics_highk = extract_transfer_characteristics(results_highk, allow_density_proxy=True)
     all_metrics["GAA (HfO2)"] = metrics_highk
     print(f"  SS={metrics_highk['SS']:.1f} mV/dec, "
           f"Ion/Ioff={metrics_highk['Ion_Ioff']:.2e}, "
@@ -158,7 +158,7 @@ def main():
         device_jl, resolution, gate_voltages,
         btbt=True,  # Enable BTBT for junctionless
     )
-    metrics_jl = extract_transfer_characteristics(results_jl)
+    metrics_jl = extract_transfer_characteristics(results_jl, allow_density_proxy=True)
     all_metrics["Junctionless FET"] = metrics_jl
     print(f"  SS={metrics_jl['SS']:.1f} mV/dec, "
           f"Ion/Ioff={metrics_jl['Ion_Ioff']:.2e}, "
@@ -178,7 +178,7 @@ def main():
         device_fefet, resolution, gate_voltages,
         ferroelectric=True,
     )
-    metrics_fefet = extract_transfer_characteristics(results_fefet)
+    metrics_fefet = extract_transfer_characteristics(results_fefet, allow_density_proxy=True)
     all_metrics["FeFET (HfZrO)"] = metrics_fefet
     print(f"  SS={metrics_fefet['SS']:.1f} mV/dec, "
           f"Ion/Ioff={metrics_fefet['Ion_Ioff']:.2e}, "

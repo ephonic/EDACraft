@@ -152,12 +152,27 @@ def extract_logic_metrics_with_dibl(
 # ---------------------------------------------------------------------------
 # Storage metrics: memory window + ±Pr hysteresis (Loop A vector P)
 # ---------------------------------------------------------------------------
+def _polar_component(P: np.ndarray) -> np.ndarray:
+    """Signed polarization along the dominant (polar) axis.  (P0-1.)
+
+    Scalar Preisach/NLS models only write the axial component, and the
+    built-in FeFET template is z-stacked, so reading a hard-coded ``Px``
+    returns identically zero even when ``Pz`` has switched.  We therefore
+    select the component with the largest mean magnitude — for scalar
+    models this is exactly the driven axis; for the vector LK model it is
+    the principal polarization direction.
+    """
+    comp = int(np.argmax(np.mean(np.abs(P), axis=0)))
+    return P[:, comp]
+
+
 def _px_at_vg0(sweep_results: List[Dict], gate_contact: str) -> float:
-    """Representative remanent Px (P[:,0]) at the Vg=0 end-of-loop point.
+    """Representative remanent P along the polar axis at the Vg=0 end-of-loop point.
 
     Reads the vector ferroelectric polarization ``result["P"]`` (shape (N,3),
-    interleaved [Px,Py,Pz] per node — Loop A A4).  Px is the in-plane component
-    aligned with the channel; its sign distinguishes the two FE branches.
+    interleaved [Px,Py,Pz] per node — Loop A A4) and takes the component along
+    the dominant polar axis (NOT a hard-coded Px — issues0719 P0-1); its sign
+    distinguishes the two FE branches.
 
     A bipolar sweep visits Vg=0 twice: once at the *start* (pristine, zero-field
     Px~0) and once at the *end* after cycling to the extreme and back (remanent
@@ -165,11 +180,11 @@ def _px_at_vg0(sweep_results: List[Dict], gate_contact: str) -> float:
     remanent polarization lives.  Reading the first would return the pristine
     state and miss the hysteresis entirely.
 
-    Uses the *median* Px over FE nodes rather than the mean: at the coercive
+    Uses the *median* P over FE nodes rather than the mean: at the coercive
     crossing a few nodes may sit on the opposite branch (spatial domain
     switching), which would cancel the mean toward zero and mask a real branch
     flip.  The median tracks the majority branch sign robustly, matching the
-    Loop-A truth-chain test which asserts the mid-node Px sign.
+    Loop-A truth-chain test which asserts the mid-node P sign.
     """
     cands = [r for r in sweep_results
              if abs(float(r["_voltages"][gate_contact])) < 1e-9]
@@ -180,11 +195,11 @@ def _px_at_vg0(sweep_results: List[Dict], gate_contact: str) -> float:
     P = np.asarray(r.get("P", np.zeros((0, 3))))
     if P.size == 0 or P.shape[1] < 1:
         return float("nan")
-    px = P[:, 0]
-    fe_nodes = np.abs(px) > 1e-30
+    pa = _polar_component(P)
+    fe_nodes = np.abs(pa) > 1e-30
     if not np.any(fe_nodes):
         return 0.0
-    return float(np.median(px[fe_nodes]))
+    return float(np.median(pa[fe_nodes]))
 
 
 def extract_storage_metrics(

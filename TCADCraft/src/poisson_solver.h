@@ -89,11 +89,30 @@ public:
     // effective dwell time dt [s] per bias step (controls loop slope).
     void set_ferroelectric_nls(real_t tau0, real_t E0, real_t dt);
 
+    // Polar axis for the scalar FE models (Preisach / NLS) and for the LK
+    // built-in field + depolarization drive: 0 = x, 1 = y, 2 = z (clamped).
+    // The built-in FeFET template stacks gate/FE/oxide/channel along Z, so
+    // axis 2 is required there; default 0 = legacy x-only behavior.
+    void set_ferroelectric_polar_axis(int axis);
+
     // Leakage current (Poole-Frenkel / Fowler-Nordheim) (P2.2). Sets the leaky
     // node mask and PF/FN coefficients. During assemble(), a field-dependent
     // conductance sigma_leak(|E|) is added to the Poisson diagonal of masked
     // nodes, modelling a residual leakage path that prevents P-V loop closure
     // at V=0. Empty mask or zero coefficients disable the term.
+    // Stabilized-Gummel Boltzmann linearization (plan0728 §1.2): when
+    // enabled, assemble() adds the carrier-charge linearization
+    // -(q/VT)(n+p) to the Poisson diagonal and -(q/VT)(n+p)*phi_old to the
+    // RHS (phi_old from set_leakage_field).  The fixed point is IDENTICAL
+    // (the terms cancel at convergence), but the iteration becomes
+    // semi-implicit: nodes whose carriers overshoot (depletion-edge
+    // Boltzmann swing, p ~ 1e6x Na on the Na=1e24 junction) get a huge
+    // diagonal and stop moving instead of ratcheting into a limit cycle.
+    void set_boltzmann_linearization(bool enable, real_t VT) {
+        boltzmann_lin_ = enable;
+        VT_ = VT;
+    }
+
     void set_leakage(const std::vector<char>& mask,
                      real_t C_pf, real_t B_pf, real_t phi_t,
                      real_t C_fn, real_t B_fn, real_t phi_b,
@@ -175,8 +194,19 @@ public:
                                 std::vector<real_t>& Ey,
                                 std::vector<real_t>& Ez) const;
 
+    // True Poisson equation residual (P0-3 fix): reassembles A_ and rhs_ for
+    // the given carrier densities (WITHOUT solving) and returns the relative
+    // residual ||A_*phi - rhs_||_2 / (||rhs_||_2 + tiny). Callers that use the
+    // trap/leakage terms should call set_leakage_field(phi) first so the
+    // occupancy / field-dependent conductance use this phi.
+    real_t residual_norm(const std::vector<real_t>& phi,
+                         const std::vector<real_t>& n,
+                         const std::vector<real_t>& p);
+
 private:
     Grid3D g_;
+    bool boltzmann_lin_ = true;     // stabilized-Gummel charge linearization
+    real_t VT_ = 0.02585Q;          // thermal voltage for the linearization
     std::vector<real_t> eps_;       // Permittivity at each grid point
     std::vector<real_t> edge_eps_x_plus_;
     std::vector<real_t> edge_eps_x_minus_;
@@ -250,6 +280,28 @@ private:
     real_t leak_sigma_cap_ = 0.05Q;
     std::vector<real_t> leak_phi_;     // cached potential for |E| (set before assemble)
     std::vector<real_t> leak_E_mag_;   // cached |E| per node (computed in set_leakage_field)
+
+    // Polar axis for the scalar FE models (0 = x, 1 = y, 2 = z). The Preisach
+    // and NLS updates drive ONLY fe_polarization_[3*idx + fe_axis_]; the LK
+    // path stays vector but applies the built-in field E_bi and the
+    // depolarization term to the fe_axis_ component. Default 0 reproduces the
+    // legacy x-only behavior bit-for-bit.
+    int fe_axis_ = 0;
+
+    // Trap layer thickness cache (P0-6 fix): extent of trap_mask_ along its
+    // thinnest axis (the interface normal) [m], used to convert the surface
+    // charge Q_it [C/m^2] into a mesh-invariant volume charge [C/m^3].
+    // Computed in set_interface_traps(); 0 => not computed (falls back to dx).
+    real_t trap_layer_thickness_ = 0.0Q;
+
+    // Electric field component E_axis = -d(phi)/d(axis) at grid node (i,j,k):
+    // central differences interior, one-sided at the domain boundary (the same
+    // differencing template as compute_electric_field).
+    real_t e_field_component(const std::vector<real_t>& phi,
+                             size_t i, size_t j, size_t k, int axis) const;
+
+    // Extent of trap_mask_ along its thinnest axis [m] (P0-6 helper).
+    real_t compute_trap_layer_thickness() const;
 
     // Stencil coefficients for finite difference/volume
     real_t cx_plus(size_t idx) const;

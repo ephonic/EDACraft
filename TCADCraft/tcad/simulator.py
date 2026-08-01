@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
+import warnings
 import numpy as np
 
 from tcad.geometry.device_builder import Device
@@ -182,8 +183,29 @@ class Simulator:
         Newton uses a hybrid strategy: Gummel first for a robust initial guess,
         then Newton for rapid quadratic convergence. Useful for high-injection
         or strongly coupled problems.
+
+        The Newton polish is attempted even when the Gummel warm-up stalls in
+        a limit cycle (issues0719 P0-3 follow-up) — a limit cycle is exactly
+        the failure mode a line-searched Newton finishes.  The reported
+        ``converged`` flag reflects ONLY the true residual test of the final
+        state, so a failed polish is honestly reported as non-converged.
         """
         self._sim.set_use_newton(enable)
+
+    def set_newton_log_space(self, enable: bool = True) -> None:
+        """Solve the Newton carrier blocks in log-space (u=ln n, v=ln p).
+
+        Strongly recommended together with ``set_use_newton(True)`` for
+        devices driven into strong inversion/accumulation: the linear-space
+        carrier variables span >20 orders of magnitude and the Newton update
+        stalls, while the log-space variables keep the update well-scaled.
+        Verified on the AlScN/MoS2 FeFET template: bias points that
+        limit-cycle in linear space (Vg >= 4 V) converge in ~200 iterations
+        in log-space under the honest per-block residual test (issues0719
+        P0-3).  Also enables log-space update damping.
+        """
+        self._sim.set_newton_use_log_space(enable)
+        self._sim.set_newton_use_log_damping(enable)
 
     def set_freeze_phi(self, enable: bool = True):
         """Freeze the Poisson block (phi) during the Newton solve (C档).
@@ -440,6 +462,75 @@ class Simulator:
                     "call set_material_from_mesh() with materials that define E_bd.",
                     RuntimeWarning, stacklevel=2)
 
+    _POLAR_AXIS_NAMES = {"x": 0, "y": 1, "z": 2}
+
+    def _resolve_polar_axis(self, polar_axis, fe_mask: np.ndarray) -> int:
+        """Resolve the ferroelectric polar axis (P0-1).
+
+        ``polar_axis`` may be None (auto-detect), "x"/"y"/"z", or 0/1/2.
+        Auto-detection uses a thin-film-normal heuristic: a ferroelectric
+        film is polar along its normal, i.e. the axis along which the FE
+        region is a SLAB bounded by other materials.  Concretely, among the
+        axes with nonzero FE span we pick the one minimizing
+        ``FE_span / mesh_span`` (a film fills the device in-plane but only
+        a fraction through-thickness).  A degenerate quasi-2D axis (thin in
+        y simply because the device is 2-D) fills the whole mesh along that
+        axis and is therefore NOT mistaken for the film normal.  For a 1-D
+        slab only one axis has nonzero span, so the heuristic reduces to
+        that axis.  Pass an explicit axis for non-film geometries (pillars,
+        multi-domain, etc.).
+        """
+        if polar_axis is None:
+            if not np.any(fe_mask):
+                return 0
+            all_coords = getattr(self.mesh, "node_coords", None)
+            if all_coords is None:
+                return 0
+            all_coords = np.asarray(all_coords, dtype=float)
+            coords = all_coords[fe_mask.astype(bool)]
+            if coords.ndim != 2 or coords.shape[1] < 3 or coords.shape[0] == 0:
+                return 0
+            spans = coords.max(axis=0) - coords.min(axis=0)
+            nonzero = np.where(spans > 0.0)[0]
+            if nonzero.size == 0:
+                return 0
+            if nonzero.size == 1:
+                return int(nonzero[0])
+            mesh_spans = all_coords.max(axis=0) - all_coords.min(axis=0)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                fill = np.where(mesh_spans > 0.0,
+                                spans / np.maximum(mesh_spans, 1e-300), 1.0)
+            # Film normal = axis where the FE region fills the smallest
+            # fraction of the device (strictly a slab).  If the FE fills the
+            # device along every axis (uniform FE block) fall back to the
+            # smallest absolute span.
+            cand = fill[nonzero]
+            if cand.min() < 1.0 - 1e-12:
+                return int(nonzero[np.argmin(cand)])
+            return int(nonzero[np.argmin(spans[nonzero])])
+        if isinstance(polar_axis, str):
+            key = polar_axis.lower()
+            if key not in self._POLAR_AXIS_NAMES:
+                raise ValueError(
+                    f"Invalid polar_axis '{polar_axis}'; expected 'x'/'y'/'z' or 0/1/2")
+            return self._POLAR_AXIS_NAMES[key]
+        axis = int(polar_axis)
+        if axis not in (0, 1, 2):
+            raise ValueError(f"Invalid polar_axis {polar_axis}; expected 0, 1 or 2")
+        return axis
+
+    def set_ferroelectric_polar_axis(self, polar_axis="x") -> None:
+        """Set the ferroelectric polar axis explicitly (P0-1).
+
+        The scalar Preisach/NLS models drive ``E_parallel = E·axis`` and write
+        ``P = P_scalar*axis``; the LK model applies the built-in field and
+        depolarization drive along this axis.  A z-stacked MFIS gate stack
+        therefore needs ``polar_axis="z"`` — the historical hard-coded x
+        axis left the built-in FeFET template with zero polarization.
+        """
+        axis = self._resolve_polar_axis(polar_axis, np.zeros(0, dtype=np.int8))
+        self._sim.set_ferroelectric_polar_axis(axis)
+
     def set_ferroelectric(self, enabled: bool = True,
                           alpha: float = -5.0e8,
                           beta: float = 1.5e10,
@@ -450,6 +541,7 @@ class Simulator:
                           nls_tau0: float = 1.0e-6,
                           nls_E0: float = 2.0e9,
                           nls_dt: float = 1.0e-6,
+                          polar_axis=None,
                           fe_mask_override: Optional[np.ndarray] = None) -> None:
         """Enable ferroelectric polarization.
 
@@ -495,13 +587,24 @@ class Simulator:
             play-operator loop correctly shaped with a nonzero remanence window).
             A smaller ``Escale`` (e.g. ``Ec/3``) lets |P| approach the named
             saturation Ps on a monotonic ramp, but too small collapses the loop.
+        polar_axis : None, str or int
+            Ferroelectric polar axis (P0-1): "x"/"y"/"z" or 0/1/2.
+            Default None auto-detects the thin-film normal from the FE
+            region geometry (smallest nonzero span), so a z-stacked MFIS
+            template drives Pz rather than the historical hard-coded Px.
         fe_mask_override : np.ndarray, optional
             Explicit int8 node mask (1 = ferroelectric). Bypasses material
             auto-detection when provided.
         """
         self._sim.set_ferroelectric_enabled(enabled)
         model_map = {"landau_khalatnikov": 0, "preisach": 1, "nls": 2}
-        model_int = model_map.get(model.lower(), 0)
+        # issues0719 §5.4: fail fast on a misspelled model instead of
+        # silently mapping it to Landau-Khalatnikov.
+        if model.lower() not in model_map:
+            raise ValueError(
+                f"Unknown ferroelectric model '{model}'; "
+                f"expected one of {sorted(model_map)}")
+        model_int = model_map[model.lower()]
         self._sim.set_ferroelectric_model(model_int)
 
         # --- Determine the FE node mask (P1.1: material-driven) ---
@@ -540,6 +643,11 @@ class Simulator:
                 # NLS Merz-law parameters (P3).
                 self._sim.set_ferroelectric_nls(nls_tau0, nls_E0, nls_dt)
         self._sim.set_ferroelectric_params(fe_mask, alpha, beta)
+        # P0-1: wire the polar axis — scalar Preisach/NLS drive E·axis and
+        # write P along axis; without this the z-stacked FeFET template was
+        # driven by Ex~0 and stayed at P=0 (issues0719 P0-1).
+        self._sim.set_ferroelectric_polar_axis(
+            self._resolve_polar_axis(polar_axis, fe_mask))
         # Internal field / Imprint offset (P2.1): read from material field.
         if "fe_E_bi" in self.mesh.fields and np.any(fe_mask):
             ebi = self.mesh.fields["fe_E_bi"].ravel()[fe_mask.astype(bool)]
@@ -578,7 +686,11 @@ class Simulator:
             slope (larger => faster, more vertical switching).
         """
         model_map = {"landau_khalatnikov": 0, "preisach": 1, "nls": 2}
-        model_int = model_map.get(model.lower(), 0)
+        if model.lower() not in model_map:
+            raise ValueError(
+                f"Unknown ferroelectric model '{model}'; "
+                f"expected one of {sorted(model_map)}")
+        model_int = model_map[model.lower()]
         self._sim.set_ferroelectric_model(model_int)
         if model_int == 1:
             self._sim.set_ferroelectric_preisach(Ps, Ec, Escale)
@@ -849,6 +961,14 @@ class Simulator:
         self._sim.set_tolerance(tol)
         self._apply_cut_cell()
         self.results = self._sim.solve()
+        # P0-3: every result carries an explicit validity flag; callers must
+        # not silently consume a non-converged state as physical data.
+        self.results["valid"] = bool(self.results.get("converged", False))
+        if not self.results["valid"]:
+            warnings.warn(
+                "Solver did not converge; result marked valid=False. Do NOT "
+                "use this point for physical conclusions (issues0719 P0-3).",
+                RuntimeWarning, stacklevel=2)
         return self.results
 
     def to_mesh_fields(self) -> Dict[str, np.ndarray]:
@@ -1050,6 +1170,8 @@ def simulate_sweep(
     poisson_solver: SolverType = SolverType.DENSE_DIRECT,
     continuity_solver: SolverType = SolverType.DENSE_DIRECT,
     ramp_steps: int = 1,
+    use_newton: bool = False,
+    newton_log_space: bool = True,
     verbose: bool = True,
     **sim_kwargs,
 ) -> Tuple[Simulator, List[Dict[str, np.ndarray]]]:
@@ -1082,6 +1204,13 @@ def simulate_sweep(
         Number of voltage ramp steps per bias point.  Values > 1
         enable gradual ramping from the previous bias to the next,
         improving convergence for MOSFETs at high gate/drain bias.
+    use_newton : bool
+        Enable the Gummel-warm-up + line-searched Newton polish cascade
+        (issues0719 P0-3): recommended for stiff sweeps (strong inversion,
+        high injection).  Default False (plain Gummel).
+    newton_log_space : bool
+        Solve the Newton carrier blocks in log-space (default True when
+        ``use_newton`` is set); strongly recommended in strong inversion.
     verbose : bool
         Print progress per sweep point.
     **sim_kwargs
@@ -1138,6 +1267,14 @@ def simulate_sweep(
         sim.set_optical_generation(optical_generation)
     sim.set_quantum(quantum)
     sim.set_solver_type(poisson_solver, continuity_solver)
+    if use_newton:
+        # Gummel warm-up + line-searched Newton polish cascade
+        # (issues0719 P0-3): far more robust on stiff sweeps; log-space
+        # carrier variables keep the Newton update well-scaled in strong
+        # inversion/accumulation.
+        sim.set_use_newton(True)
+        if newton_log_space:
+            sim.set_newton_log_space(True)
 
     # Fixed contacts: those NOT being swept take their value from base_device
     all_contact_targets = {

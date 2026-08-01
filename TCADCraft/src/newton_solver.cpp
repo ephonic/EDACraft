@@ -1,6 +1,7 @@
 #include "newton_solver.h"
 #include "statistics.h"
 #include <iostream>
+#include <cstdio>
 #include <cmath>
 #include <algorithm>
 
@@ -692,6 +693,8 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
     std::vector<real_t> eq_scale;
 
     real_t norm_F0 = -1.0Q;  // initial residual norm (set on iter 0)
+    real_t blk0[3] = {-1.0Q, -1.0Q, -1.0Q};  // per-block initial residuals
+    size_t stall_count = 0;    // consecutive line-search stalls (alpha=0)
 
     // Write the Newton state x back to the output (phi, n, p).  In log-space
     // the carrier blocks hold u=log(n), v=log(p) and must be exponentiated on
@@ -714,15 +717,14 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
 
         assemble_jacobian(x, J);
 
-        // Row-equilibration: scale each Jacobian row (and the corresponding
-        // RHS entry) by the inverse of its diagonal magnitude.  The carrier
-        // residual spans a wide dynamic range (diffusion diagonal ~1e5, SRH
-        // source rows ~1e9, Poisson<>carrier cross-coupling ~1e29), and the
-        // BE term adds a +dx/dt diagonal.  Equilibration brings every row to
-        // O(1) diagonal so DENSE_DIRECT/BICGSTAB are well-conditioned.
-        // The Newton step dx is invariant under row scaling
-        // (J dx = -F  <=>  (DJ) dx = -D F), so this changes only conditioning,
-        // not the solution.
+        // Row-equilibration (transient only): scale each Jacobian row (and
+        // the corresponding RHS entry) by the inverse of its diagonal
+        // magnitude.  The BE +dx/dt diagonal guarantees a nonzero scale on
+        // every row; in DC some depleted-region continuity rows have
+        // near-zero diagonals, where 1/diag equilibration explodes the
+        // scaled residual (observed: |F_eq| ~ 1e29 on a plain PN junction).
+        // The Newton step dx is invariant under row scaling, so this changes
+        // only conditioning, not the solution.
         if (opt_.transient_enabled) {
             const auto& rp = J.row_offsets();
             const auto& cols = J.col_indices();
@@ -741,8 +743,6 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
                 }
                 F[i] *= inv;
             }
-            // Re-evaluate the convergence metric on the EQUILIBRATED residual,
-            // so the line-search baseline matches what the line search sees.
         }
 
         // Convergence metric.  For transient problems we use the EQUILIBRATED
@@ -761,7 +761,35 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
             norm_F = norm_l2(F);
         }
         if (norm_F0 < 0.0Q) norm_F0 = (norm_F > EPSILON) ? norm_F : 1.0Q;
-        real_t rel_res = norm_F / norm_F0;
+        // Per-BLOCK residual norms and per-block solution scales (issues0719
+        // P0-3).  A single GLOBAL convergence test lets the largest-scale
+        // block mask an unconverged block: the legacy |F|/(|x|+1) test used
+        // |x|~n~1e25, so Newton "converged" while the re-assembled Poisson
+        // residual was 0.158.  Convergence now requires EVERY block (phi, n,
+        // p) to satisfy a criterion measured against ITS OWN scale.
+        real_t blk[3] = {0.0Q, 0.0Q, 0.0Q};
+        real_t xsc[3] = {0.0Q, 0.0Q, 0.0Q};
+        if (opt_.transient_enabled) {
+            for (size_t i = 0; i < 3 * N; ++i) {
+                size_t b = (i < N) ? 0 : ((i < 2 * N) ? 1 : 2);
+                blk[b] = std::max(blk[b], abs_q(F[i]));
+                xsc[b] = std::max(xsc[b], abs_q(x[i]));
+            }
+        } else {
+            for (size_t i = 0; i < 3 * N; ++i) {
+                size_t b = (i < N) ? 0 : ((i < 2 * N) ? 1 : 2);
+                blk[b] += F[i] * F[i];
+                xsc[b] = std::max(xsc[b], abs_q(x[i]));
+            }
+            for (int b = 0; b < 3; ++b) blk[b] = sqrt_q(blk[b]);
+        }
+        if (blk0[0] < 0.0Q) {
+            for (int b = 0; b < 3; ++b)
+                blk0[b] = (blk[b] > EPSILON) ? blk[b] : norm_F0;
+        }
+        real_t rel_res = 0.0Q;
+        for (int b = 0; b < 3; ++b)
+            rel_res = std::max(rel_res, blk[b] / blk0[b]);
         residuals_.push_back((double)rel_res);
 
         if (opt_.verbose) {
@@ -770,25 +798,25 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
                       << "  |F|/|F0|=" << (double)rel_res << std::endl;
         }
 
-        // Convergence test.  For transient we use |F|/|F0| (scale-invariant,
-        // avoids the |F|/(|x|+1) unit mismatch that false-converged at iter 0
-        // when |x|~n~1e22).  For non-transient (DC) we ALSO accept the
-        // step-relative test |F|/(|x|+1) < tol, which is a valid convergence
-        // metric for the steady-state problem where the solution magnitude
-        // sets the natural scale.  This preserves the original DC behaviour.
-        // See audit §17.
-        real_t norm_x = 0.0Q;
-        if (!opt_.transient_enabled && !opt_.use_log_space) {
-            // |F|/(|x|+1) step-relative test.  Skipped in log-space: there the
-            // carrier blocks hold log(n) (~-690..+60), a totally different scale
-            // from the linear densities (~1e22), so |x| is meaningless.  The
-            // scale-invariant conv_rel (|F|/|F0|) covers log-space instead.
-            for (size_t i = 0; i < 3 * N; ++i) norm_x = std::max(norm_x, abs_q(x[i]));
+        // Convergence test (issues0719 P0-3): EVERY block must satisfy one
+        // of the true-residual criteria measured against ITS OWN scale:
+        //   conv_abs  : ||F_b|| < abs_tol;
+        //   conv_rel  : ||F_b|| < tol * ||F_b,0|| (improvement from start);
+        //   conv_step : ||F_b|| < tol * (max|x_b| + 1) (residual small
+        //               relative to the block's own solution scale).
+        // The legacy GLOBAL |F|/(|x|+1) test was killed by the n~1e25
+        // carrier scale: it passed with an O(0.1) relative Poisson residual
+        // — "iteration stopped changing" masquerading as "equations
+        // satisfied".  Per block, the phi rows are tested against the
+        // voltage scale and the carrier rows against the carrier scale, so
+        // no block can hide behind another.
+        bool all_abs = true, all_rel = true, all_step = true;
+        for (int b = 0; b < 3; ++b) {
+            if (!(blk[b] < opt_.abs_tol)) all_abs = false;
+            if (!(blk[b] < opt_.tol * blk0[b])) all_rel = false;
+            if (!(blk[b] < opt_.tol * (xsc[b] + 1.0Q))) all_step = false;
         }
-        bool conv_abs = norm_F < opt_.abs_tol;
-        bool conv_rel = rel_res < opt_.tol;
-        bool conv_step = (!opt_.transient_enabled && !opt_.use_log_space) && (norm_F / (norm_x + 1.0Q) < opt_.tol);
-        if (conv_abs || conv_rel || conv_step) {
+        if (all_abs || all_rel || all_step) {
             if (opt_.verbose) std::cout << "Newton converged in " << iter << " iterations.\n";
             write_back();
             return true;
@@ -803,6 +831,25 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
         } catch (const std::exception& e) {
             std::cerr << "Newton linear solve failed: " << e.what() << std::endl;
             return false;
+        }
+        // Bank-Rose style log-space step clamp (issues0719 follow-up,
+        // plan0728 §1.1): in log-space an unclamped carrier update du
+        // explodes the linearised densities (n = exp(u)).  Far from the
+        // solution the Newton direction can have |du| ~ 1e8, so EVERY
+        // backtracking fraction down to ~1e-3 still overflows/increases
+        // ||F|| and the line search stalls permanently at alpha=0 — even
+        // though the direction is a mathematically exact descent direction
+        // (verified by FD Jacobian checks).  Clamping the carrier update
+        // magnitude keeps exp(du) bounded so the direction becomes usable.
+        if (opt_.use_log_space) {
+            real_t du_max = 0.0Q;
+            for (size_t i = N; i < 3 * N; ++i)
+                du_max = std::max(du_max, abs_q(dx[i]));
+            const real_t U_MAX = 5.0Q;  // max per-iteration log-carrier change (~150x)
+            if (du_max > U_MAX) {
+                real_t s = U_MAX / du_max;
+                for (size_t i = 0; i < 3 * N; ++i) dx[i] *= s;
+            }
         }
         // Helper: apply update (linear or exponential for carriers).
         // In log-space the carrier blocks already hold u=log(n), so a plain
@@ -900,11 +947,178 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
 
         // Apply final update (alpha=0 => no change, Newton stalls cleanly)
         apply_update(alpha, x);
+        if (opt_.verbose) {
+            real_t dx_max = 0.0Q;
+            for (size_t i = 0; i < 3 * N; ++i) dx_max = std::max(dx_max, abs_q(dx[i]));
+            std::cout << "    [ls] alpha=" << (double)alpha
+                      << "  |dx|_max=" << (double)dx_max << std::endl;
+        }
+        // Stall watchdog: with alpha=0 the state cannot change, so further
+        // iterations only burn max_iter re-evaluating the same residual.
+        // Declare the honest failure early (issues0719 P0-3 follow-up — a
+        // stalled Newton previously ground through 1000 iterations per bias
+        // point).
+        stall_count = (alpha == 0.0Q) ? stall_count + 1 : 0;
+        if (stall_count >= 10) {
+            std::cerr << "Newton stalled (line search made no progress for "
+                      << stall_count << " consecutive iterations); "
+                      << "declaring non-convergence\n";
+            write_back();
+            return false;
+        }
     }
 
     std::cerr << "Newton did not converge within max_iter\n";
     write_back();
     return false;
+}
+
+void NewtonSolver::debug_solve_probe(const std::vector<real_t>& phi,
+                                     const std::vector<real_t>& n,
+                                     const std::vector<real_t>& p) {
+    const size_t N = g_.npts();
+    std::vector<real_t> x(3 * N);
+    for (size_t i = 0; i < N; ++i) {
+        x[phi_idx(i)] = phi[i];
+        if (opt_.use_log_space) {
+            real_t ni = (n[i] > 1e-300Q) ? n[i] : 1e-300Q;
+            real_t pi = (p[i] > 1e-300Q) ? p[i] : 1e-300Q;
+            x[n_idx(i)] = log_q(ni);
+            x[p_idx(i)] = log_q(pi);
+        } else {
+            x[n_idx(i)] = n[i];
+            x[p_idx(i)] = p[i];
+        }
+    }
+    std::vector<real_t> F(3 * N), F1(3 * N);
+    assemble_residual(x, F);
+    SparseMatrix J(3 * N);
+    assemble_jacobian(x, J);
+    LinearSolver lin_solver({opt_.linear_solver, 10000, opt_.linear_tol, 30, false});
+    Vector rhs(3 * N), dxv(3 * N);
+    for (size_t i = 0; i < 3 * N; ++i) rhs[i] = -F[i];
+    dxv.assign(3 * N, 0.0Q);
+    try {
+        lin_solver.solve(J, rhs, dxv);
+    } catch (const std::exception& e) {
+        std::printf("[probe] linear solve FAILED: %s\n", e.what());
+        return;
+    }
+    std::vector<real_t> dx(3 * N);
+    for (size_t i = 0; i < 3 * N; ++i) dx[i] = dxv[i];
+    // Solve accuracy: ||J dx + F|| / ||F||
+    std::vector<real_t> Jdx(3 * N, 0.0Q);
+    const auto& rp = J.row_offsets();
+    const auto& cols = J.col_indices();
+    const auto& vals = J.vals();
+    for (size_t i = 0; i < 3 * N; ++i)
+        for (size_t k = rp[i]; k < rp[i + 1]; ++k)
+            Jdx[i] += vals[k] * dx[cols[k]];
+    real_t num = 0.0Q, den = 0.0Q, dxmax = 0.0Q;
+    for (size_t i = 0; i < 3 * N; ++i) {
+        num += (Jdx[i] + F[i]) * (Jdx[i] + F[i]);
+        den += F[i] * F[i];
+        dxmax = std::max(dxmax, abs_q(dx[i]));
+    }
+    std::printf("[probe] |F|=%.6g  |J*dx+F|/|F|=%.6g  |dx|max=%.6g\n",
+                (double)sqrt_q(den), (double)sqrt_q(num / (den + 1e-300Q)),
+                (double)dxmax);
+    // Directional residual along the Newton step.
+    const double alphas[] = {1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125,
+                             0.015625, 0.0078125, 0.00390625};
+    for (double a : alphas) {
+        std::vector<real_t> xt(3 * N);
+        for (size_t i = 0; i < 3 * N; ++i) xt[i] = x[i] + (real_t)a * dx[i];
+        assemble_residual(xt, F1);
+        real_t n1 = 0.0Q;
+        for (size_t i = 0; i < 3 * N; ++i) n1 += F1[i] * F1[i];
+        std::printf("[probe] a=%.6g  |F(x+a*dx)|=%.10g\n", a, (double)sqrt_q(n1));
+    }
+}
+
+size_t NewtonSolver::debug_fd_jacobian_check(const std::vector<real_t>& phi,
+                                             const std::vector<real_t>& n,
+                                             const std::vector<real_t>& p,
+                                             double rel_tol,
+                                             size_t max_report) {
+    const size_t N = g_.npts();
+    // Build the Newton state x exactly as solve() does.
+    std::vector<real_t> x(3 * N);
+    for (size_t i = 0; i < N; ++i) {
+        x[phi_idx(i)] = phi[i];
+        if (opt_.use_log_space) {
+            real_t ni = (n[i] > 1e-300Q) ? n[i] : 1e-300Q;
+            real_t pi = (p[i] > 1e-300Q) ? p[i] : 1e-300Q;
+            x[n_idx(i)] = log_q(ni);
+            x[p_idx(i)] = log_q(pi);
+        } else {
+            x[n_idx(i)] = n[i];
+            x[p_idx(i)] = p[i];
+        }
+    }
+    std::vector<real_t> F0(3 * N), F1(3 * N);
+    assemble_residual(x, F0);
+    SparseMatrix J(3 * N);
+    assemble_jacobian(x, J);
+    const auto& rp = J.row_offsets();
+    const auto& cols = J.col_indices();
+    const auto& vals = J.vals();
+
+    struct Bad { double err; size_t row, col; double jan, fdm; };
+    std::vector<Bad> bad;
+    size_t n_bad = 0, n_checked = 0;
+
+    for (size_t j = 0; j < 3 * N; ++j) {
+        // Step: quad-precision arithmetic tolerates a tiny relative step.
+        real_t scale = std::max(abs_q(x[j]), real_t(1.0Q));
+        real_t h = 1e-10Q * scale;
+        std::vector<real_t> xp = x;
+        xp[j] += h;
+        assemble_residual(xp, F1);
+        // Compare every J entry in column j against the FD derivative.
+        for (size_t i = 0; i < 3 * N; ++i) {
+            real_t fd = (F1[i] - F0[i]) / h;
+            // Find J(i,j) in the CSR structure.
+            real_t jan = 0.0Q;
+            bool present = false;
+            for (size_t k = rp[i]; k < rp[i + 1]; ++k) {
+                if (cols[k] == j) { jan = vals[k]; present = true; break; }
+            }
+            if (!present && abs_q(fd) < 1e-12Q * (abs_q(F0[i]) + 1.0Q)) continue;
+            real_t denom = std::max(abs_q(fd), abs_q(jan));
+            if (denom < 1e-12Q * (abs_q(F0[i]) + 1.0Q)) continue;  // both ~0
+            real_t err = abs_q(jan - fd) / denom;
+            ++n_checked;
+            if ((double)err > rel_tol) {
+                ++n_bad;
+                bad.push_back({(double)err, i, j, (double)jan, (double)fd});
+            }
+        }
+    }
+    std::sort(bad.begin(), bad.end(),
+              [](const Bad& a, const Bad& b) { return a.err > b.err; });
+    auto name_of = [&](size_t v, size_t& node) -> const char* {
+        if (v < N) { node = v; return "phi"; }
+        if (v < 2 * N) { node = v - N; return "n"; }
+        node = v - 2 * N; return "p";
+    };
+    std::cout << "[fd-jac] state N=" << N
+              << " log_space=" << (opt_.use_log_space ? 1 : 0)
+              << " checked=" << n_checked << " mismatched=" << n_bad << "\n";
+    size_t shown = 0;
+    for (const auto& b : bad) {
+        if (shown++ >= max_report) break;
+        size_t rn, cn;
+        const char* rb = name_of(b.row, rn);
+        const char* cb = name_of(b.col, cn);
+        // Node -> (i,j,k) for geometry context.
+        size_t ri = rn % g_.nx, rj = (rn / g_.nx) % g_.ny, rk = rn / (g_.nx * g_.ny);
+        size_t ci = cn % g_.nx, cj = (cn / g_.nx) % g_.ny, ck = cn / (g_.nx * g_.ny);
+        std::printf("  err=%.3g  F[%s(%zu,%zu,%zu)] d/dx[%s(%zu,%zu,%zu)]"
+                    "  J=%.6g  FD=%.6g\n",
+                    b.err, rb, ri, rj, rk, cb, ci, cj, ck, b.jan, b.fdm);
+    }
+    return n_bad;
 }
 
 } // namespace tcad
