@@ -27,3 +27,22 @@ Thumbs.db
 # Generated listing / CSV outputs (rfsim CLI 产物)
 *.lis
 *_pss.csv
+
+# vaParser dev artifacts (preprocessor temp dumps / caches)
+vaTemp*.va
+semantic.cache*
+/tools/vaparser/test.zip
+/tools/vaparser/test/test.zip
+/amor/testcases/testcases.zip
+
+# convergence grid / transient waveform outputs (test artifacts)
+conv_grid_*.csv
+tests/netlists/*_tran.csv
+
+# 超大测试数据与 OSDI 历史二进制（保留本地，不入库）
+/amor/testcases/clk_rc.sp
+/amor/testcases/clkdriver/clk512.sp
+/amor/testcases/opfold/opafold_tran.csv
+/tools/openvaf.exe
+/tools/openvaf-reloaded.exe
+/tools/openvaf_new/

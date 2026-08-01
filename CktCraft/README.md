@@ -1,10 +1,14 @@
 # rfsim
 
-一个面向 RF / 模拟电路的小型 SPICE 风格仿真器，主打**大信号 MOSFET 周期稳态**
-（Shooting-Newton + FFT 提取谐波）和 **OSDI 0.3 紧凑模型集成**（BSIM4 / BSIM-SOI / EKV / 二极管等）。
+一个面向 RF / 模拟电路的小型 SPICE 风格仿真器，主打**非线性谐波平衡 (HB-NL)**
+与**大信号 MOSFET 周期稳态**（Shooting-Newton + FFT 提取谐波）。
+半导体器件统一走 **Verilog-A 生成模型**路径：仓库内置 vaParser 代码生成器
+（`tools/vaparser`），把 `.va` 紧凑模型编译为 C++ DeviceModel 并静态链接，
+覆盖 BSIM4 / BSIM-SOI / BSIM-CMG / BSIM3 / EKV / BJT / 二极管等。
+（历史 OSDI/OpenVAF DLL 路径已于 v0.2 移除。）
 
-当前版本 **v0.1.0**。全量 ctest：`100% tests passed, 0 tests failed out of 105`
-（15 个由 `RFSIM_FORCE_*` 门控的诊断 case 默认 skip）。
+当前版本 **v0.2.0**。全量 gtest：`155 passed, 0 failed`（25 个由 `RFSIM_FORCE_HEAVY=1`
+门控的 HEAVY case 与 15 个 `RFSIM_FORCE_*` 诊断 case 默认 skip）。
 
 ---
 
@@ -17,9 +21,9 @@
 | `.op`  | DC 工作点               | Newton + gmin homotopy + 源步进 (source-stepping) + 中轨种子 (resistor + nonlinear-device BFS) |
 | `.dc`  | DC 扫描               | 上面 DC OP 的连续扫描包装                                                                |
 | `.ac`  | 小信号 AC              | 复数线性化系统直接求解                                                                     |
-| `.hb`  | 谐波平衡 (Harmonic Balance) | 线性电路：复频解析；非线性电路：弱非线性 HB-NL（GMRES + 续延），不收敛时自动回退到 **Shooting-PSS → FFT 提取谐波** |
+| `.hb`  | 谐波平衡 (Harmonic Balance) | 线性电路：复频解析；非线性电路：**全非线性 HB-NL**（IFFT→eval→FFT 时域采样装配 + 精确 2NH 卷积雅可比 + LM 阻尼 + source/gmin 续延 + stall 接受；dim>200 走 GMRES+块预条件），不收敛时自动回退到 **Shooting-PSS → FFT** |
 | `.pss` | 周期稳态 (Shooting-Newton) | 时间步进 (Backward Euler / 梯形) + Newton-shooting；末尾 DFT 提取谐波                          |
-| `.tran` | 已识别为分析卡，但 CLI 暂未连线（瞬态求解器在库内可编程访问） |   |
+| `.tran` | 瞬态分析 | BE / 梯形积分 + Newton，输出 CSV 波形 |
 
 ### 数值核心
 
@@ -30,18 +34,20 @@
   - 源步进 (`vsScale=ε..1` linear schedule)
   - 中轨种子传播：VS 锚定 → 电阻图 BFS（`V_neigh = 0.5·V_anchor`）→ 非线性器件均值传播
   - `gmin floor accept`：到达 gmin 下限仍未收敛时返回"最佳已收敛"工作点
-- **限幅 (limiting)**：OSDI 的 `CALC_RESIST_LIM_RHS | ENABLE_LIM` 全程启用；BSIM4 自身未实现 `pnjlim`/`fetlim` 等 SPICE 限幅原语，仅依赖中轨种子 + 同伦避开 hostile 工作点。
-- **节点折叠 (collapse)**：OSDI 的 `collapsed[i]==1` 内部节点（如 BSIM4 在 RS/RD=0 时的 SP/DP）直接 alias-remap 到外部节点，残差 gather 去重 + 雅可比 4-entry 求和保证合并梯度数学正确。
+- **限幅 (limiting)**：生成模型内建 VA 限幅（pnjlim/fetlim 风格，`resetLimiting()` 跨 Newton 重置），并配合中轨种子 + 同伦避开 hostile 工作点。
+- **内部节点**：生成模型按 mod 参数动态折叠（如 BSIM4 rdsmod/rgatemod/rbodymod=0 时 di/si/gi/gm/bi 等 alias 到外部节点），`allocateInternalNodes()` 在器件构造后统一分配。
 
 ### 设备模型
 
 - 内建：`V`（电压源，DC + SIN/PULSE/AC）、`I`（电流源）、`R` / `C` / `L`、子电路 `.subckt` / `X`。
-- OSDI 0.3：`.model name kind file="*.dll"` 加载 OpenVAF 编译的紧凑模型，目前打包了 `models/`：
-  - `bsim4.dll`（PTM 130 nm 参数集）
-  - `bsim4soi.dll`、`bsimcmg.dll`、`bsimsoi.dll`、`ekv.dll`
-  - `diode.dll`、`simple_diode.dll`
-  - `nmos_sh.dll`（Shichman-Hodges level-1 替身）
-- 含 OSDI 设备时，HB-NL 失败会自动尝试 PSS；纯线性走解析 HB。
+- Verilog-A 生成模型：`.model name kind ...` 直接路由到静态链接的生成模型
+  （`file="*.dll"` 属性兼容解析但忽略）。`models/` 附 `.va` 源：
+  - `bsim4.va`（bsim4va，PTM 130 nm 参数集）、`bsimsoi.va`、`bsimcmg.va`、`bsim3.va`
+  - `ekv.va`、`bjt505.va`、`diode.va`/`diode_vt.va`、`simple_diode.va`
+  - `nmos_sh.va`（Shichman-Hodges level-1 替身）
+- 新增模型流程：`vaParser <model>.va src/model/generated/<name> --format=rfsim`
+  产出 `_gen.cpp/.h + _reg.inc`，再跑 `tools/regen_registry.sh` 汇总注册表。
+- 含非线性器件时，HB-NL 失败会自动尝试 PSS；纯线性走解析 HB。
 
 ### 解析器 (Parser)
 
@@ -58,17 +64,20 @@ src/
   cli/main.cpp           ← rfsim 命令行入口
   parser/                ← SPICE 词法 / 语法 / 表达式 / 扁平化
   circuit/               ← Circuit + 节点表 + 分析卡识别
-  model/                 ← 内建器件 + OSDI 加载器 (osdi_client + osdi_model)
+  model/                 ← 内建器件 + device_factory（生成模型路由）
+  model/generated/       ← vaParser 产出的生成模型 (*_gen.cpp/.h + 注册表)
   assembly/              ← 雅可比 stamp + KLU 包装 + HB 雅可比块
   solver/                ← dc_op / dc_sweep / ac_analysis / hb_solver / hb_nonlinear / shooting / time_stepper
   output/                ← HSpice 风格输出格式化
 tests/
   netlists/              ← SPICE 示例：rc_lowpass.sp / divider.sp / inverter.sp / bsim4_cs_pss.sp ...
-  test_*.cpp             ← 21 个测试源（DC / AC / HB / PSS / 多 MOSFET）
-models/                  ← 预编译 OSDI 紧凑模型 (*.dll + *.va 源)
-tools/openvaf.exe        ← OpenVAF 23.5 (可重新编译 .va → .osdi.dll)
+  test_*.cpp             ← 26 个测试源（DC / AC / HB / PSS / 多 MOSFET）
+models/                  ← 紧凑模型 Verilog-A 源 (*.va)
+tools/
+  vaparser/              ← Verilog-A → C++ 代码生成器（vaParser，含 lex/yacc 产出物）
+  regen_registry.sh      ← 生成模型注册表汇总脚本
 cmake/SuiteSparseKLU.cmake
-build.bat / build_model.bat / runtest.bat
+build.bat / runtest.bat
 ```
 
 ---
@@ -76,9 +85,11 @@ build.bat / build_model.bat / runtest.bat
 ## 构建
 
 ### 依赖
-- MSYS2 MinGW64 GCC ≥ 13（项目实测 15.2）、CMake ≥ 3.22、Ninja。
-- SuiteSparse-KLU 通过 `FetchContent` 自动拉取，无需手装。
-- 编译 OSDI 模型 (`*.va → *.dll`) 需要 MSVC 2022 + OpenVAF（已附 `tools/openvaf.exe`）。
+- MSVC 2022 (cl.exe)、CMake ≥ 3.22、Ninja。
+- SuiteSparse-KLU / GoogleTest 通过 `FetchContent` 拉取（离线环境用
+  `FETCHCONTENT_SOURCE_DIR_*` 指向本地源码包）。
+- vaParser 随主构建一起产出（`RFSIM_BUILD_VAPARSER=ON` 默认）；
+  lex/yacc 产出物已入库，无需 flex/bison。
 
 ### Windows 一键构建
 
@@ -99,25 +110,25 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target rfsim_cli rfsim_tests -j
 ```
 
-### 重新编译 OSDI 模型
+### 从 Verilog-A 新增 / 更新器件模型
 
 ```cmd
-build_model.bat models\bsim4.va  models\bsim4.dll
-build_model.bat models\diode.va  models\diode.dll
+build\bin\vaParser.exe models\bsim4.va src\model\generated\bsim4va --format=rfsim
+tools\regen_registry.sh
 ```
 
-> 注：`build_model.bat` 进入 MSVC vcvars64 环境（让 MSVC `link.exe` 优先于 mingw 的 ld），然后调用 `tools/openvaf.exe`。
+> 生成产物（`*_gen.cpp/.h` + `*_reg.inc`）入库并静态编译进 rfsim_core；
+> 修改 `.va` 模型后需重新生成并全量构建。
 
 ---
 
 ## CLI 用法
 
 ```
-rfsim [-L <osdi_lib_dir>] <netlist.sp>
+rfsim <netlist.sp>
 ```
 
-- `-L` 指定 OSDI 库 (`*.dll`) 搜索目录；当 `.model ... file="bare.dll"` 是相对路径时生效。
-  网表内写绝对路径（如 `file="models/bsim4.dll"`）则可省略。
+- `-L <dir>`：历史 OSDI 库搜索目录参数，已 deprecated（兼容保留、无实际作用）。
 - 输出走 stdout（节点电压 / 频域 / 谐波），错误与进度走 stderr。
 
 ### Windows 跑测试时的 DLL 注入
@@ -199,7 +210,7 @@ build\bin\rfsim_cli.exe -L models tests\netlists\bsim4_cs_pss.sp
 ```
 
 - `.pss` 走 Shooting-Newton → FFT，输出 drain 节点的 DC、基频幅相与高次谐波。
-- `.hb` 检测到 BSIM4 是非线性 OSDI 设备 → 先试弱非线性 HB-NL；不收敛时 stderr 提示 `"nonlinear HB did not converge; falling back to Shooting-PSS"`，再走与 `.pss` 同一路径。
+- `.hb` 检测到 BSIM4 是非线性设备 → 先走全非线性 HB-NL；不收敛时 stderr 提示 `"nonlinear HB did not converge; falling back to Shooting-PSS"`，再走与 `.pss` 同一路径。
 
 ---
 
@@ -244,7 +255,7 @@ runtest.bat "LargeScaleBsim4.*"                       :: 大规模 BSIM4 收敛
 - **大规模 BSIM4**：`LargeScaleBsim4.CascodeChain5` 等
 - **Shooting / HB**：`Shooting.RcSineSteadyState / DiodeRectifierRuns / Bsim4CommonSourcePssConverges / Bsim4LcTank1GHz`
 - **解析器 / 表达式 / 扁平化**：`Lexer.*`、`Parser.*`、`Expression.*`、`Flatten.*`
-- **设备建模 / OSDI**：`Bsim4.*`、`Osdi.*`、`OsdiModels.*`
+- **设备建模 / 生成模型**：`GeneratedModels.*`、`MultiDevice.*`、`LargeCircuitBsim4.*`
 
 `C3bis_*` / `EightFingerBalanced` / `SelfBiasedCascodeStack5` 等 15 个用例默认 `GTEST_SKIP`，需要设环境变量 `RFSIM_FORCE_C3BIS=1` 才会跑——它们是 V2-γ 在持续推进的多 finger / 自偏置 cascode 收敛诊断。
 
@@ -252,12 +263,13 @@ runtest.bat "LargeScaleBsim4.*"                       :: 大规模 BSIM4 收敛
 
 ## 当前状态与限制
 
-详见 `status0620_v3.md`。要点：
-
-- DC：BSIM4 多 MOSFET 网表（DiffPair / Cascode / Cascode 链 / 反相器链）已全部收敛，靠的是三段式中轨种子（v0620_v3 引入）。
+- DC：BSIM4 多 MOSFET 网表（DiffPair / Cascode / 反相器链 / 电流镜）全部收敛。
+- HB-NL：全非线性路径（生成模型通用时域采样装配）。生成模型目前为**纯阻性**
+  HB（无电荷/电抗卷积项），中低频下与 Shooting-PSS 一致；高频强动态场景建议
+  用 `.pss` 交叉验证。极端强非线性（如硬整流）下 Newton 可能停滞在小残差窄谷，
+  此时按 `stallAcceptRel`（默认 3e-2）放宽接受并在结果中标记 `relaxedConvergence`。
 - PSS：`Bsim4CommonSourcePssConverges` / `Bsim4LcTank1GHz` 稳定通过。
-- HB-NL：弱非线性快路径；强非线性下统一回退到 PSS。
-- 噪声分析、`.tran` CLI 连线、HB Krylov 复用的二次开发**仍在 backlog**。
+- 噪声分析、HB Krylov 复用的二次开发**仍在 backlog**。
 
 ## 许可
 

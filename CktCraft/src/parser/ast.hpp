@@ -78,12 +78,21 @@ struct SubcktDef {
     SourceLoc   loc;
 };
 
+// 用户自定义函数: .func name(arg1,arg2,...) 'body_expr'
+struct FuncDef {
+    std::string name;               // 函数名（小写）
+    std::vector<std::string> args;  // 形参名
+    std::string body;               // 函数体表达式（原始文本）
+};
+
 // 顶层网表：一个全局语句序列
 struct Netlist {
     std::string title;         // 第一行（注释/标题）
     std::vector<NetlistItem> items;
     // 全局 .param
     ParamList globalParams;
+    // 用户 .func 定义
+    std::vector<FuncDef> funcDefs;
 };
 
 } // namespace rfsim

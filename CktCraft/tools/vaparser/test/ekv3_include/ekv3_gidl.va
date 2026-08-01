@@ -1,0 +1,45 @@
+begin : GIDL
+	vgse 	= vfb + psi_p - 2.0 * qs;
+	tmp1 	= (vdp - vs - vgse)  * UT - EGIDL;
+	if (tmp1 < 1.0e-10)
+		IGIDL 	= 0.0;
+	else
+	begin
+		tmp2 	= vdp * vdp  * vdp * UT3;
+		IGIDL 	= AGIDL * WeffNF * (tmp1 / (3.0 * TOX)) * exp(-(3.0 * TOX * BGIDL) / tmp1) * tmp2 / (CGIDL + tmp2);
+	end
+end //  GIDL 	
+
+begin : GISL
+	vgde 	= vfb + psi_p - 2.0 * qdp;
+	tmp1 	= (vs - vdp - vgde)  * UT - EGIDL;
+	if (tmp1 < 1.0e-10)
+		IGISL 	= 0.0;
+	else
+	begin
+		tmp2 	= vs * vs  * vs * UT3;
+		IGISL 	= AGIDL * WeffNF * (tmp1 / (3.0 * TOX)) * exp(-(3.0 * TOX * BGIDL) / tmp1) * tmp2 / (CGIDL + tmp2);
+	end
+end //  GISL 	
+
+`ifdef DC_S
+	I(d ,b ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGIDL + (1 - d_gt_s_flag) * IGISL);
+	I(s ,b ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGISL + (1 - d_gt_s_flag) * IGIDL);
+`endif
+`ifdef DC
+	I(di,b ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGIDL + (1 - d_gt_s_flag) * IGISL);
+	I(si,b ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGISL + (1 - d_gt_s_flag) * IGIDL);
+`endif
+`ifdef RF_S
+	I(di,bi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGIDL + (1 - d_gt_s_flag) * IGISL);
+	I(si,bi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGISL + (1 - d_gt_s_flag) * IGIDL);
+`endif
+`ifdef RF
+	I(di,bi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGIDL + (1 - d_gt_s_flag) * IGISL);
+	I(si,bi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGISL + (1 - d_gt_s_flag) * IGIDL);
+`endif
+`ifdef NQS
+	I(di,bi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGIDL + (1 - d_gt_s_flag) * IGISL);
+	I(si,bi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * IGISL + (1 - d_gt_s_flag) * IGIDL);
+`endif
+

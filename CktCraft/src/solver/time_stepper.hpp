@@ -12,7 +12,7 @@ namespace rfsim {
 
 struct TimeStepperOptions {
     double tstop = 1e-6;               // 终止时间
-    double dt = 1e-9;                  // 固定步长
+    double dt = 1e-9;                  // 初始步长（自适应模式下的起始值）
     IntegrationMethod method = IntegrationMethod::BackwardEuler;
     // P1-8: 共享 gmin 配置。Transient 当前仅消费 gmin.gmin（同伦字段保留
     // 以备将来扩展，gminSteps 默认 0 即不启用）。
@@ -30,6 +30,16 @@ struct TimeStepperOptions {
     // 现有 setRateRatio/setMrAutoTune 机制已实现；此处仅提供统一开关。
     // 默认 false（与原 bit-identical）；大电路 transient/PSS 开启可省 eval。
     bool multiRate = false;
+
+    // ---- 自适应步长控制 ----
+    // 开启后 dt 不再固定，根据 LTE 估计动态调整。每步同时做 BE 和 Trap 求解，
+    // 两者差值作为 LTE 估计；按 tol/err 比例缩放 dt。
+    bool adaptiveStep = false;
+    double trtol = 1e-3;               // 自适应步长截断误差相对容差
+    double dtmin = 1e-15;              // 最小允许步长（防止步长坍缩到 0）
+    double dtmax = 0.0;                // 最大允许步长（0 = 不限制，默认 tstop/10）
+    // 步长缩放安全因子（<1 保守，>1 激进）。典型值 0.8~0.9。
+    double stepSafety = 0.9;
 };
 
 struct TimePoint {

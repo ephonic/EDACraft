@@ -1,48 +1,19 @@
 // test_newton.cpp - nonlinear DC Newton convergence tests
 #include "solver/dc_op.hpp"
 #include "model/builtin_devices.hpp"
-#include "model/osdi_model.hpp"
-#include "model/osdi/osdi_library.hpp"
+#include "model/generated/generated_registry.hpp"
 #include <gtest/gtest.h>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 using namespace rfsim;
 
-namespace {
-std::string projectRootFromTestData() {
-    std::string s = RFSIM_TEST_DATA_DIR;
-    auto pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    return s;
-}
-std::string diodeLibPath() {
-    if (const char* p = std::getenv("RFSIM_OSDI_TEST_LIB")) return p;
-    std::string root = projectRootFromTestData();
-#ifdef _WIN32
-    return root + "/models/simple_diode.dll";
-#else
-    return root + "/models/simple_diode.so";
-#endif
-}
-} // namespace
-
 // Voltage-driven diode: V=5V, R=1k, D forward biased -> V_anode ~0.7V
 TEST(NewtonDiag, DiodeVoltageDriven) {
-    OsdiLibrary lib;
-    std::string err;
-    ASSERT_TRUE(lib.load(diodeLibPath(), err));
-    auto libShared = std::make_shared<OsdiLibrary>(std::move(lib));
-    const OsdiDescriptor* d = libShared->descriptors();
-
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("v1", 2, 0, 5.0));
     devs.push_back(std::make_unique<Resistor>("r1", 2, 1, 1000.0));
-    auto diode = std::make_unique<OsdiModel>("d1", std::vector<NodeId>{1, 0}, libShared, d, ParamList{});
-    Diagnostics diags;
-    ASSERT_TRUE(diode->initialize(diags));
+    auto diode = createGeneratedModel("simple_diode", "d1", std::vector<NodeId>{1, 0}, ParamList{}, ParamList{});
     devs.push_back(std::move(diode));
 
     DcOpOptions opts;

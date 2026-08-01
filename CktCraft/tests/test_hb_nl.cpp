@@ -2,23 +2,12 @@
 #include "solver/hb_nonlinear.hpp"
 #include "solver/hb_solver.hpp"
 #include "model/builtin_devices.hpp"
-#include "model/osdi_model.hpp"
-#include "model/osdi/osdi_library.hpp"
+#include "model/generated/generated_registry.hpp"
 #include <gtest/gtest.h>
 #include <cmath>
-#include <cstdlib>
 using namespace rfsim;
 
 namespace {
-std::string projectRootFromTestData() {
-    std::string s = RFSIM_TEST_DATA_DIR;
-    auto pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    return s;
-}
-
 ParamList bsim4ModelParams() {
     ParamList p;
     auto add = [&](const char* n, double v) {
@@ -39,43 +28,16 @@ ParamList bsim4ModelParams() {
     return p;
 }
 
-std::string bsim4LibPath() {
-    if (const char* p = std::getenv("RFSIM_BSIM4_LIB")) return p;
-    std::string root = projectRootFromTestData();
-#ifdef _WIN32
-    return root + "/models/bsim4.dll";
-#else
-    return root + "/models/bsim4.so";
-#endif
-}
-
-std::string diodeLibPath() {
-    if (const char* p = std::getenv("RFSIM_OSDI_TEST_LIB")) return p;
-    std::string root = projectRootFromTestData();
-#ifdef _WIN32
-    return root + "/models/simple_diode.dll";
-#else
-    return root + "/models/simple_diode.so";
-#endif
-}
 } // namespace
 
 // Diode rectifier: sine drives diode, expect DC + harmonics
 TEST(HbNonlinear, DiodeRectifierRuns) {
-    OsdiLibrary lib;
-    std::string err;
-    ASSERT_TRUE(lib.load(diodeLibPath(), err));
-    auto libShared = std::make_shared<OsdiLibrary>(std::move(lib));
-    const OsdiDescriptor* d = libShared->descriptors();
-
     std::vector<std::unique_ptr<DeviceModel>> devs;
     auto v = std::make_unique<VoltageSource>("v1", 1, 0, 0.0);
     v->setAcMag(Complex(1.0, 0.0));
     devs.push_back(std::move(v));
     devs.push_back(std::make_unique<Resistor>("r1", 1, 2, 1000.0));
-    auto diode = std::make_unique<OsdiModel>("d1", std::vector<NodeId>{2, 0}, libShared, d, ParamList{});
-    Diagnostics diags;
-    ASSERT_TRUE(diode->initialize(diags));
+    auto diode = createGeneratedModel("simple_diode", "d1", std::vector<NodeId>{2, 0}, ParamList{}, ParamList{});
     devs.push_back(std::move(diode));
 
     HbConfig cfg; cfg.fundamental = 1e6; cfg.numHarmonics = 3;
@@ -87,20 +49,12 @@ TEST(HbNonlinear, DiodeRectifierRuns) {
 
 // Diode rectifier with source continuation (higher drive, fixed gmin)
 TEST(HbNonlinear, DiodeRectifierContinuation) {
-    OsdiLibrary lib;
-    std::string err;
-    ASSERT_TRUE(lib.load(diodeLibPath(), err));
-    auto libShared = std::make_shared<OsdiLibrary>(std::move(lib));
-    const OsdiDescriptor* d = libShared->descriptors();
-
     std::vector<std::unique_ptr<DeviceModel>> devs;
     auto v = std::make_unique<VoltageSource>("v1", 1, 0, 0.0);
     v->setAcMag(Complex(2.0, 0.0));
     devs.push_back(std::move(v));
     devs.push_back(std::make_unique<Resistor>("r1", 1, 2, 1000.0));
-    auto diode = std::make_unique<OsdiModel>("d1", std::vector<NodeId>{2, 0}, libShared, d, ParamList{});
-    Diagnostics diags;
-    ASSERT_TRUE(diode->initialize(diags));
+    auto diode = createGeneratedModel("simple_diode", "d1", std::vector<NodeId>{2, 0}, ParamList{}, ParamList{});
     devs.push_back(std::move(diode));
 
     HbConfig cfg; cfg.fundamental = 1e6; cfg.numHarmonics = 3;
@@ -133,48 +87,28 @@ TEST(HbNonlinear, LinearMatchesHbLinear) {
 
 // BSIM4 common-source amplifier: verify nonlinear HB converges with a MOSFET
 TEST(HbNonlinear, Bsim4EvalDcDoesNotCrash) {
-    OsdiLibrary lib;
-    std::string err;
-    if (!lib.load(bsim4LibPath(), err)) {
-        GTEST_SKIP() << "cannot load bsim4: " << err;
-    }
-    auto libShared = std::make_shared<OsdiLibrary>(std::move(lib));
-    const OsdiDescriptor* d = libShared->descriptors();
-
     ParamList instParams;
     instParams.push_back({"w", ParamValue{ParamValue::Kind::Number, 1e-6, "", SourceLoc{}}});
     instParams.push_back({"l", ParamValue{ParamValue::Kind::Number, 130e-9, "", SourceLoc{}}});
-    auto mos = std::make_unique<OsdiModel>("m1", std::vector<NodeId>{2, 3, 0, 0},
-        libShared, d, instParams, bsim4ModelParams());
-    Diagnostics diags;
-    NodeId internalBase = 4;
-    ASSERT_TRUE(mos->initialize(diags, internalBase));
+    ParamList allParams = instParams;
+    for (auto& p : bsim4ModelParams()) allParams.push_back(std::move(p));
+    auto mos = createGeneratedModel("bsim4va", "m1", std::vector<NodeId>{2, 3, 0, 0}, allParams, ParamList{});
 
     std::vector<double> v(20, 0.0);
     v[1] = 1.0; v[2] = 0.8; v[3] = 0.5;
     OperatingPoint op{v};
     DeviceContribution dc;
     mos->eval(op, dc);
-    EXPECT_EQ(dc.f.size(), d->num_nodes);
 
     // stress evalDC to check for state-dependent crash
     for (int i = 0; i < 200; ++i) {
         v[2] = 0.5 + 0.01 * (i % 10);
         OperatingPoint op2{v};
         mos->eval(op2, dc);
-        EXPECT_EQ(dc.f.size(), d->num_nodes);
     }
 }
 
 TEST(HbNonlinear, Bsim4CommonSourceConverges) {
-    OsdiLibrary lib;
-    std::string err;
-    if (!lib.load(bsim4LibPath(), err)) {
-        GTEST_SKIP() << "cannot load bsim4: " << err;
-    }
-    auto libShared = std::make_shared<OsdiLibrary>(std::move(lib));
-    const OsdiDescriptor* d = libShared->descriptors();
-
     std::vector<std::unique_ptr<DeviceModel>> devs;
 
     // VDD = 1V
@@ -190,11 +124,9 @@ TEST(HbNonlinear, Bsim4CommonSourceConverges) {
     ParamList instParams;
     instParams.push_back({"w", ParamValue{ParamValue::Kind::Number, 1e-6, "", SourceLoc{}}});
     instParams.push_back({"l", ParamValue{ParamValue::Kind::Number, 130e-9, "", SourceLoc{}}});
-    auto mos = std::make_unique<OsdiModel>("m1", std::vector<NodeId>{2, 3, 0, 0},
-        libShared, d, instParams, bsim4ModelParams());
-    Diagnostics diags;
-    NodeId internalBase = 4;
-    ASSERT_TRUE(mos->initialize(diags, internalBase));
+    ParamList allParams = instParams;
+    for (auto& p : bsim4ModelParams()) allParams.push_back(std::move(p));
+    auto mos = createGeneratedModel("bsim4va", "m1", std::vector<NodeId>{2, 3, 0, 0}, allParams, ParamList{});
     devs.push_back(std::move(mos));
 
     HbConfig cfg; cfg.fundamental = 1e6; cfg.numHarmonics = 1;

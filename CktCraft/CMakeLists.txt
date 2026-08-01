@@ -1,11 +1,11 @@
-# rfsim — 射频仿真器（Harmonic Balance + OpenVAF/OSDI）
-# 详见 plan.md。本顶层 CMake 仅做项目级配置与子目录聚合。
+# rfsim — 射频仿真器（非线性 Harmonic Balance + Shooting-PSS，生成 VA 模型）
+# 本顶层 CMake 仅做项目级配置与子目录聚合。
 cmake_minimum_required(VERSION 3.22)  # SuiteSparse 7.x 要求 >=3.22
 
 project(rfsim
-    VERSION 0.1.0
-    DESCRIPTION "RF circuit simulator: Harmonic Balance + OpenVAF/OSDI"
-    LANGUAGES CXX)
+    VERSION 0.2.0
+    DESCRIPTION "RF circuit simulator: nonlinear Harmonic Balance + Shooting-PSS (generated Verilog-A models)"
+    LANGUAGES C CXX)
 
 # ---- 全局编译选项 -----------------------------------------------------------
 # plan.md §2.2: C++17 及以上，MSVC/GCC/Clang 三套均需通过。
@@ -111,6 +111,12 @@ endif()
 
 # ---- 子目录 -----------------------------------------------------------------
 add_subdirectory(src)
+
+# vaParser：Verilog-A → C++ 器件模型代码生成器（开发工具，生成文件已入库）
+option(RFSIM_BUILD_VAPARSER "Build vaParser codegen tool" ON)
+if(RFSIM_BUILD_VAPARSER)
+    add_subdirectory(tools/vaparser)
+endif()
 
 if(RFSIM_BUILD_TESTS)
     enable_testing()

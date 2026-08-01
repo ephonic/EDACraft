@@ -22,7 +22,7 @@ void hdr(std::ostream& os, const std::string& title) {
 
 void writeBanner(std::ostream& os) {
     os << "****** rfsim RF simulator ******\n";
-    os << "****** harmonic balance + osdi ******\n";
+    os << "****** harmonic balance (generated VA models) ******\n";
     os << "****** version 0.2 ******\n\n";
 }
 

@@ -12,8 +12,7 @@
 //
 // HB-NL 严格收敛与 Shooting 性能优化 → V2-γ 阶段。
 #include "model/builtin_devices.hpp"
-#include "model/osdi_model.hpp"
-#include "model/osdi/osdi_library.hpp"
+#include "model/generated/generated_registry.hpp"
 #include "solver/dc_op.hpp"
 #include "solver/hb_solver.hpp"
 #include "solver/hb_nonlinear.hpp"
@@ -34,24 +33,6 @@ namespace rfsim {
 namespace {
 
 // ------------------------------- 共用助手 -------------------------------
-
-std::string projectRootFromTestData() {
-    std::string s = RFSIM_TEST_DATA_DIR;
-    auto pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    return s;
-}
-
-std::string bsim4LibPath() {
-    if (const char* p = std::getenv("RFSIM_BSIM4_LIB")) return p;
-#ifdef _WIN32
-    return projectRootFromTestData() + "/models/bsim4.dll";
-#else
-    return projectRootFromTestData() + "/models/bsim4.so";
-#endif
-}
 
 ParamList bsim4Model() {
     ParamList p;
@@ -80,64 +61,16 @@ ParamList instWL(double w = 1e-6, double l = 130e-9) {
     return p;
 }
 
-// 加载共享 bsim4 库（一次）。
-struct BsimLib {
-    std::shared_ptr<OsdiLibrary> lib;
-    const OsdiDescriptor* desc = nullptr;
-    // V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock。第一个 makeNmos() 完成
-    // initialize() 后，把 m->modelBlock() 登记到这里；后续 makeNmos() 在 initialize()
-    // 之前 useSharedModelBlock() 注入，OsdiClient::init 仅分配 instance 数据并跳过
-    // 重复的 setup_model（BSIM4 多实例 3rd-instance 串拥 bug 根因）。
-    std::shared_ptr<OsdiModelBlock> modelBlock;
-    // 幂等：已加载就直接返回。否则每次 ok() 都会触发 LoadLibrary →
-    // 旧 shared_ptr 析构 FreeLibrary → 重新 LoadLibrary，徒增 .dll 加载/卸载抖动，
-    // 在 BSIM4 OSDI 多实例场景下与堆 0xc0000374 间歇崩溃强相关。
-    bool ok(std::string& why) {
-        if (lib) return true;
-        OsdiLibrary tmp;
-        if (!tmp.load(bsim4LibPath(), why)) return false;
-        lib = std::make_shared<OsdiLibrary>(std::move(tmp));
-        if (lib->numDescriptors() < 1) {
-            why = "no descriptors";
-            lib.reset();
-            return false;
-        }
-        desc = lib->descriptors();
-        return true;
-    }
-    // 卸载并重新加载 bsim4.dll，清零 dll 内部全局状态；详见
-    // docs/flake_investigation_0621.md。
-    void reload() {
-        if (!lib) return;
-        std::string why;
-        modelBlock.reset();
-        desc = nullptr;
-        if (lib->reload(why)) {
-            desc = lib->descriptors();
-        } else {
-            lib.reset();
-        }
-    }
-};
-
-std::unique_ptr<OsdiModel> makeNmos(const std::string& name,
+std::unique_ptr<DeviceModel> makeNmos(const std::string& name,
                                     NodeId d, NodeId g, NodeId s, NodeId b,
-                                    BsimLib& L,
-                                    Diagnostics& diags,
-                                    NodeId& base,
-                                    double w = 1e-6, double l = 130e-9) {
-    auto m = std::make_unique<OsdiModel>(name, std::vector<NodeId>{d, g, s, b},
-                                         L.lib, L.desc, instWL(w, l), bsim4Model());
-    // V2-γ C3：复用同 L 的共享 modelBlock（若已存在）。
-    if (L.modelBlock) {
-        m->useSharedModelBlock(L.modelBlock);
+                                    double w = 1e-6, double l = 130e-9,
+                                    NodeId* internalBase = nullptr) {
+    auto dev = createGeneratedModel("bsim4va", name, std::vector<NodeId>{d, g, s, b},
+                                instWL(w, l), bsim4Model());
+    if (dev && internalBase) {
+        dev->allocateInternalNodes(*internalBase);
     }
-    if (!m->initialize(diags, base)) return nullptr;
-    // 首个实例 initialize() 后登记 block，后续实例 hit cache 路径。
-    if (!L.modelBlock) {
-        L.modelBlock = m->modelBlock();
-    }
-    return m;
+    return dev;
 }
 
 NodeId computeMaxNode(const std::vector<std::unique_ptr<DeviceModel>>& devs) {
@@ -146,6 +79,14 @@ NodeId computeMaxNode(const std::vector<std::unique_ptr<DeviceModel>>& devs) {
         for (NodeId n : dv->nodes()) if (n > mx) mx = n;
     }
     return mx;
+}
+
+// 生成模型使用前必须分配内部节点（branch/collapsed nodes），否则
+// nodes_[4..17]=0（地），漏极电流看不到栅压（模型退化、测试虚绿）。
+// 在全部器件建好后调用一次；之后需重新 computeMaxNode 获取含内部节点的总数。
+void allocateAllInternalNodes(std::vector<std::unique_ptr<DeviceModel>>& devs) {
+    NodeId base = computeMaxNode(devs) + 1;
+    for (auto& d : devs) d->allocateInternalNodes(base);
 }
 
 // 跑 DC + HB-NL（PSS via 频域 Newton）。
@@ -288,41 +229,8 @@ std::unique_ptr<VoltageSource> sineVS(const std::string& name, NodeId p, NodeId 
 } // namespace
 
 // ============================================================
-// MultiDevice 测试套件 fixture
-//
-// Why: BSIM4 OSDI 库（bsim4.dll）首次在进程内被某些"重"调用路径
-// （>5 个实例 + 共栅同伦）触发时存在一次性初始化副作用，会让 ctest
-// 单测试隔离进程下的 CurrentMirror / InverterChain 崩溃 (0xc0000374)。
-// 在 SetUpTestSuite 里跑一次 1-MOS DC 把库的内部状态预热到稳定路径。
-// 该现象不会影响 rfsim_tests.exe 整体运行（多测共享一个进程）。
-// 根因排查留给 V2-γ；此处用预热绕开。
+// MultiDevice 测试套件
 // ============================================================
-class MultiDevice : public ::testing::Test {
-public:
-    // Meyers singleton: bind BsimLib to function-local static; lifetime = process.
-    // bsim4.dll loads once on first call; FreeLibrary fires only at process exit
-    // (或在每用例 reload 时显式触发)。
-    // Function-local (not class-static member) 避免 -Wsubobject-linkage。
-    static BsimLib& warmLib() {
-        static BsimLib L;
-        return L;
-    }
-
-    // 旧 SetUpTestSuite 跑 1-MOS DC 预热会修改 BSIM4 内部全局状态，后续用例
-    // 继承该状态后部分场景崩溃。改为每用例 reload（见 SetUp）提供干净状态，
-    // 不再需要预热。详见 docs/flake_investigation_0621.md。
-
-    // 每用例前 reload bsim4.dll：OSDI v0.3 无 destroy hook → setup_instance 内部
-    // sub-alloc leak 累积 → 同进程多次 BSIM4 用例触发 use-of-stale-pointer AV。
-    // 详见 docs/flake_investigation_0621.md。Set RFSIM_NO_DLL_RELOAD=1 跳过。
-    void SetUp() override {
-        std::string why;
-        if (!warmLib().ok(why)) GTEST_SKIP() << why;
-        if (std::getenv("RFSIM_NO_DLL_RELOAD") == nullptr) {
-            warmLib().reload();
-        }
-    }
-};
 
 // ============================================================
 // Test 1: cascode 共源放大器（4 NMOS = 2 级共源-cascode 链）
@@ -339,10 +247,7 @@ public:
 // 偏置选取理由：Vov ≥ 0.3V 才能让 Newton 从 V=0 起步通过 gmin 同伦
 // 进入物理 OP，否则 floor accept 易锁死在 V_drain==Vdd 的零电流鞍点。
 // ============================================================
-TEST_F(MultiDevice, CascodeAmp) {
-    BsimLib& L = warmLib(); std::string why;
-    if (!L.ok(why)) GTEST_SKIP() << "bsim4: " << why;
-
+TEST(MultiDevice, CascodeAmp) {
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.5));
     devs.push_back(std::make_unique<VoltageSource>("vbias", 4, 0, 1.1));
@@ -351,23 +256,24 @@ TEST_F(MultiDevice, CascodeAmp) {
     devs.push_back(std::make_unique<Resistor>("rd1", 1, 2, 5e3));
     devs.push_back(std::make_unique<Resistor>("rd2", 1, 6, 5e3));
 
-    Diagnostics diags;
-    NodeId base = 8;
-    auto m1 = makeNmos("m1", 3, 5, 0, 0, L, diags, base);  // 输入级
+    auto m1 = makeNmos("m1", 3, 5, 0, 0);  // 输入级
     ASSERT_TRUE(m1) << "stage1 input init failed";
-    auto m2 = makeNmos("m2", 2, 4, 3, 0, L, diags, base);  // cascode
+    auto m2 = makeNmos("m2", 2, 4, 3, 0);  // cascode
     ASSERT_TRUE(m2) << "stage1 cascode init failed";
-    auto m3 = makeNmos("m3", 7, 2, 0, 0, L, diags, base);  // 第二级输入
+    auto m3 = makeNmos("m3", 7, 2, 0, 0);  // 第二级输入
     ASSERT_TRUE(m3) << "stage2 input init failed";
-    auto m4 = makeNmos("m4", 6, 4, 7, 0, L, diags, base);  // 第二级 cascode
+    auto m4 = makeNmos("m4", 6, 4, 7, 0);  // 第二级 cascode
     ASSERT_TRUE(m4) << "stage2 cascode init failed";
     devs.push_back(std::move(m1));
     devs.push_back(std::move(m2));
     devs.push_back(std::move(m3));
     devs.push_back(std::move(m4));
 
+    allocateAllInternalNodes(devs);
     NodeId nN = computeMaxNode(devs);
-    auto r = runDcHb(nN, devs, /*output=*/6, 1e6);
+    // 真实 BSIM4（内部节点已分配）下 DC 更起起：与 DiffPair 一致用 gminStart=1e-2
+    auto r = runDcHb(nN, devs, /*output=*/6, 1e6, /*acAmp=*/0.05,
+                     /*hbSourceSteps=*/0, /*gminStart=*/1e-2, /*gminSteps=*/15);
 
     // STRICT: DC 必须收敛
     EXPECT_TRUE(r.dcConverged) << "cascode DC OP failed to converge";
@@ -400,17 +306,12 @@ TEST_F(MultiDevice, CascodeAmp) {
 // 形成额外的 DC 拉低路径（之前 100kΩ rcouple→0V vac 让 V(2) 偏低
 // 导致 DC 无法收敛）。
 // ============================================================
-TEST_F(MultiDevice, CurrentMirror) {
-    BsimLib& L = warmLib(); std::string why;
-    if (!L.ok(why)) GTEST_SKIP() << "bsim4: " << why;
-
+TEST(MultiDevice, CurrentMirror) {
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(sineVS("vdd", 1, 0, 1.5, 0.05, 1e6));
     devs.push_back(std::make_unique<Resistor>("rref", 1, 2, 20e3));
 
-    Diagnostics diags;
-    NodeId base = 12;
-    auto mref = makeNmos("mref", 2, 2, 0, 0, L, diags, base);
+    auto mref = makeNmos("mref", 2, 2, 0, 0);
     ASSERT_TRUE(mref) << "ref MOS init failed";
     devs.push_back(std::move(mref));
 
@@ -419,14 +320,15 @@ TEST_F(MultiDevice, CurrentMirror) {
         std::string nm = "rl" + std::to_string(i);
         devs.push_back(std::make_unique<Resistor>(nm, 1, d, 20e3));
         std::string mn = "mm" + std::to_string(i);
-        auto mi = makeNmos(mn, d, 2, 0, 0, L, diags, base);
+        auto mi = makeNmos(mn, d, 2, 0, 0);
         ASSERT_TRUE(mi) << "mirror MOS " << i << " init failed";
         devs.push_back(std::move(mi));
     }
 
+    allocateAllInternalNodes(devs);
     NodeId nN = computeMaxNode(devs);
     auto r = runDcHb(nN, devs, /*output=*/3, 1e6, /*acAmp=*/0.05,
-                     /*hbSourceSteps=*/0, /*gminStart=*/1e-5, /*gminSteps=*/20);
+                     /*hbSourceSteps=*/0, /*gminStart=*/1e-2, /*gminSteps=*/20);
 
     EXPECT_TRUE(r.dcConverged) << "current_mirror DC OP failed";
     if (r.dcConverged) {
@@ -456,10 +358,7 @@ TEST_F(MultiDevice, CurrentMirror) {
 //   6 = vin-
 //   7 = vbias_tail
 // ============================================================
-TEST_F(MultiDevice, DiffPair) {
-    BsimLib& L = warmLib(); std::string why;
-    if (!L.ok(why)) GTEST_SKIP() << "bsim4: " << why;
-
+TEST(MultiDevice, DiffPair) {
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.5));
     // 共模 0.85V + 差模 ±0.02V at 1MHz（差模幅度从 0.05 调小至 0.02
@@ -471,11 +370,10 @@ TEST_F(MultiDevice, DiffPair) {
     devs.push_back(std::make_unique<Resistor>("rdp", 1, 2, 5e3));
     devs.push_back(std::make_unique<Resistor>("rdn", 1, 3, 5e3));
 
-    Diagnostics diags;
-    NodeId base = 8;
-    auto mp = makeNmos("mp",   2, 5, 4, 0, L, diags, base);
-    auto mn = makeNmos("mn",   3, 6, 4, 0, L, diags, base);
-    auto mt = makeNmos("mtail", 4, 7, 0, 0, L, diags, base, /*W=*/4e-6);
+    NodeId iBase = 8;  // 外部节点最大为 7，内部节点从 8 开始
+    auto mp = makeNmos("mp",   2, 5, 4, 0, 1e-6, 130e-9, &iBase);
+    auto mn = makeNmos("mn",   3, 6, 4, 0, 1e-6, 130e-9, &iBase);
+    auto mt = makeNmos("mtail", 4, 7, 0, 0, /*W=*/4e-6, 130e-9, &iBase);
     ASSERT_TRUE(mp);
     ASSERT_TRUE(mn);
     ASSERT_TRUE(mt);
@@ -484,7 +382,13 @@ TEST_F(MultiDevice, DiffPair) {
     devs.push_back(std::move(mt));
 
     NodeId nN = computeMaxNode(devs);
-    auto r = runDcHb(nN, devs, /*output=*/2, 1e6);
+    // allocateInternalNodes 可能分配了更高编号的内部节点
+    nN = std::max(nN, iBase - 1);
+    // 差分对拓扑：所有管子在低 vsScale 下同时截止，
+    // 需要更大的 gminStart 打破死锁
+    auto r = runDcHb(nN, devs, /*output=*/2, 1e6,
+                     /*acAmp=*/0.02, /*hbSourceSteps=*/0,
+                     /*gminStart=*/1e-2, /*gminSteps=*/10, /*dcSourceSteps=*/0);
 
     EXPECT_TRUE(r.dcConverged) << "diff_pair DC OP failed";
     if (r.dcConverged) {
@@ -512,28 +416,24 @@ TEST_F(MultiDevice, DiffPair) {
 // stage1.gate = vin (节点 7)
 // stage_k.gate = stage_(k-1).drain（节点 2..5）
 // ============================================================
-TEST_F(MultiDevice, InverterChain) {
-    BsimLib& L = warmLib(); std::string why;
-    if (!L.ok(why)) GTEST_SKIP() << "bsim4: " << why;
-
+TEST(MultiDevice, InverterChain) {
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.5));
     // 输入：DC 0.65V + AC 0.05V，避免完全开启把后级钳到轨上
     devs.push_back(sineVS("vin", 7, 0, 0.65, 0.05, 1e6));
 
-    Diagnostics diags;
-    NodeId base = 8;
     for (int k = 1; k <= 5; ++k) {
         NodeId drain = static_cast<NodeId>(1 + k);   // 2..6
         NodeId gate  = (k == 1) ? NodeId{7} : static_cast<NodeId>(drain - 1);
         std::string rn = "rp" + std::to_string(k);
         std::string mn = "mn" + std::to_string(k);
         devs.push_back(std::make_unique<Resistor>(rn, 1, drain, 20e3));
-        auto m = makeNmos(mn, drain, gate, 0, 0, L, diags, base);
+        auto m = makeNmos(mn, drain, gate, 0, 0);
         ASSERT_TRUE(m) << "stage " << k << " MOS init failed";
         devs.push_back(std::move(m));
     }
 
+    allocateAllInternalNodes(devs);
     NodeId nN = computeMaxNode(devs);
     // 反相器链路简洁、前向无反馈，时域 PSS 路径稳定 → 用真正的 Shooting 验证。
     auto r = runDcShoot(nN, devs, /*output=*/6, 1e6, 16, 2);
@@ -572,10 +472,7 @@ TEST_F(MultiDevice, InverterChain) {
 // 在 V2-γ C3 落地之前，本测试默认 SKIP；需要复现/调试时设置环境变量
 // RFSIM_FORCE_C14=1 即可强制运行（此时会以 EXPECT_LT 失败的形式留下证据）。
 // ============================================================
-TEST_F(MultiDevice, EightFingerBalanced) {
-    BsimLib& L = warmLib(); std::string why;
-    if (!L.ok(why)) GTEST_SKIP() << "bsim4: " << why;
-
+TEST(MultiDevice, EightFingerBalanced) {
     // KI-2 红线用例：8-finger BSIM4 多实例。Sprint S2 已把 host 切到 MSVC /MD
     // 与 bsim4.dll 的 UCRT 对齐，跨 CRT 堆腐败根因消除，不再 SKIP。
     // 历史背景：MinGW host 链 msvcrt.dll，dll 链 ucrtbase → 两堆共存，
@@ -587,20 +484,24 @@ TEST_F(MultiDevice, EightFingerBalanced) {
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.0));
     devs.push_back(std::make_unique<VoltageSource>("vg", 10, 0, 0.7));
 
-    Diagnostics diags;
-    NodeId base = 11;
     for (int i = 0; i < kFingers; ++i) {
         NodeId drain = static_cast<NodeId>(2 + i);   // 2..9
         std::string rn = "rd" + std::to_string(i);
         std::string mn = "mf" + std::to_string(i);
         devs.push_back(std::make_unique<Resistor>(rn, 1, drain, 10e3));
-        auto m = makeNmos(mn, drain, 10, 0, 0, L, diags, base);
+        auto m = makeNmos(mn, drain, 10, 0, 0);
         ASSERT_TRUE(m) << "finger " << i << " MOS init failed";
         devs.push_back(std::move(m));
     }
 
+    allocateAllInternalNodes(devs);
     NodeId nN = computeMaxNode(devs);
     DcOpOptions opts;
+    // 真实 BSIM4 多实例：gminStart=1e-2 软化同伦起跳（与 DiffPair 一致）
+    opts.gmin.gminStart = 1e-2;
+    opts.gmin.gminSteps = 15;
+    opts.maxIterations = 150;
+    opts.sourceStepCount = 6;
     auto dc = solveDcOp(nN, devs, opts);
     rfsim::test::recordBench("MultiDevice", "EightFingerBalanced", "DC", dc.bench);
     ASSERT_TRUE(dc.converged) << "8-finger DC OP failed to converge";
@@ -657,9 +558,6 @@ namespace c3bis_diag {
 void runDiagAssign(const std::vector<int>& drainAssign,
                    const std::vector<int>& constructOrder,
                    const char* tag) {
-    BsimLib& L = MultiDevice::warmLib(); std::string why;
-    if (!L.ok(why)) GTEST_SKIP() << "bsim4: " << why;
-
     int N = static_cast<int>(drainAssign.size());
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.0));
@@ -669,14 +567,12 @@ void runDiagAssign(const std::vector<int>& drainAssign,
         std::string rn = "rd" + std::to_string(k);
         devs.push_back(std::make_unique<Resistor>(rn, 1, drain, 10e3));
     }
-    Diagnostics diags;
-    NodeId base = 100; // 远离 drain 范围
     // 按 constructOrder 决定 init 顺序，但每个 M 仍映射到 drainAssign[k]。
     // 这里 constructOrder 给出的是 "add-order 索引 k"。
     for (int k : constructOrder) {
         NodeId drain = static_cast<NodeId>(drainAssign[k]);
         std::string mn = "mf" + std::to_string(k);
-        auto m = makeNmos(mn, drain, 10, 0, 0, L, diags, base);
+        auto m = makeNmos(mn, drain, 10, 0, 0);
         ASSERT_TRUE(m) << tag << ": pos k=" << k << " init failed";
         devs.push_back(std::move(m));
     }
@@ -706,9 +602,6 @@ void runDiagAssign(const std::vector<int>& drainAssign,
 
 void runDiagN(int N, const std::vector<int>& constructOrder,
               const char* tag) {
-    BsimLib& L = MultiDevice::warmLib(); std::string why;
-    if (!L.ok(why)) GTEST_SKIP() << "bsim4: " << why;
-
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.0));
     devs.push_back(std::make_unique<VoltageSource>("vg", 10, 0, 0.7));
@@ -720,12 +613,10 @@ void runDiagN(int N, const std::vector<int>& constructOrder,
         std::string rn = "rd" + std::to_string(i);
         devs.push_back(std::make_unique<Resistor>(rn, 1, drain, 10e3));
     }
-    Diagnostics diags;
-    NodeId base = 11;
     for (int phys : constructOrder) {
         NodeId drain = static_cast<NodeId>(2 + phys);
         std::string mn = "mf" + std::to_string(phys);
-        auto m = makeNmos(mn, drain, 10, 0, 0, L, diags, base);
+        auto m = makeNmos(mn, drain, 10, 0, 0);
         ASSERT_TRUE(m) << tag << ": finger phys=" << phys << " init failed";
         devs.push_back(std::move(m));
     }
@@ -750,21 +641,21 @@ void runDiagN(int N, const std::vector<int>& constructOrder,
 }
 } // namespace c3bis_diag
 
-TEST_F(MultiDevice, C3bis_TwoFingerBalanced) {
+TEST(MultiDevice, C3bis_TwoFingerBalanced) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
     c3bis_diag::runDiagN(2, {0, 1}, "C3bis.N2");
 }
 
-TEST_F(MultiDevice, C3bis_ThreeFingerForward) {
+TEST(MultiDevice, C3bis_ThreeFingerForward) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
     c3bis_diag::runDiagN(3, {0, 1, 2}, "C3bis.N3.fwd");
 }
 
-TEST_F(MultiDevice, C3bis_ThreeFingerReversed) {
+TEST(MultiDevice, C3bis_ThreeFingerReversed) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -776,7 +667,7 @@ TEST_F(MultiDevice, C3bis_ThreeFingerReversed) {
 // constructOrder=[0,1,2]：按 add-pos 顺序 init。
 // 若坏的还在 drain=4 → bug 与节点 ID 本身（最高 drain）强绑定。
 // 若坏的移到 drain=2 → bug 与 add-order/MNA stamp 序绑定。
-TEST_F(MultiDevice, C3bis_ThreeFingerReverseDrains) {
+TEST(MultiDevice, C3bis_ThreeFingerReverseDrains) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -784,7 +675,7 @@ TEST_F(MultiDevice, C3bis_ThreeFingerReverseDrains) {
 }
 
 // Step 2: drains 跳号 {2,3,5}，add/ctor 正向 → 区分 "max ID continuous" vs "max ID itself".
-TEST_F(MultiDevice, C3bis_ThreeFingerSkipDrain) {
+TEST(MultiDevice, C3bis_ThreeFingerSkipDrain) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -792,7 +683,7 @@ TEST_F(MultiDevice, C3bis_ThreeFingerSkipDrain) {
 }
 
 // Step 2: drains={5,3,2} 跳号 + 最大 ID 在 add-pos 0 → 双判别。
-TEST_F(MultiDevice, C3bis_ThreeFingerSkipMaxFirst) {
+TEST(MultiDevice, C3bis_ThreeFingerSkipMaxFirst) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -803,7 +694,7 @@ TEST_F(MultiDevice, C3bis_ThreeFingerSkipMaxFirst) {
 // 与 N3.fwd 的唯一差别：BSIM4 内部节点从 100 起。
 // 若仍坏 drain=4 → bug 与 BSIM4 内部节点紧邻无关，是 node-ID-4 本身。
 // 若变健康 → bug 是 "drain 与内部节点带宽相邻" 触发。
-TEST_F(MultiDevice, C3bis_ThreeFinger234_baseFar) {
+TEST(MultiDevice, C3bis_ThreeFinger234_baseFar) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -814,7 +705,7 @@ TEST_F(MultiDevice, C3bis_ThreeFinger234_baseFar) {
 // 若坏的是 drain=4 → bug 与节点 4 本身绑定（非 max ID）。
 // 若坏的是 drain=5 → bug 是 "max drain ID"。
 // 若两个都坏 → 第 3、4 个都受影响。
-TEST_F(MultiDevice, C3bis_FourFinger2345) {
+TEST(MultiDevice, C3bis_FourFinger2345) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -822,7 +713,7 @@ TEST_F(MultiDevice, C3bis_FourFinger2345) {
 }
 
 // Step 3: drains={3,4,5} → 跳掉 2，看 4 是否还会被针对（中间位）。
-TEST_F(MultiDevice, C3bis_ThreeFinger345) {
+TEST(MultiDevice, C3bis_ThreeFinger345) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -831,7 +722,7 @@ TEST_F(MultiDevice, C3bis_ThreeFinger345) {
 
 // Step 4 二分：node-ID 4 是否真的"被针对"，还是与 4 的近邻 ID 相关？
 // drains={3,4,6} : 同样含 4，但邻居 5 缺席。
-TEST_F(MultiDevice, C3bis_ThreeFinger346) {
+TEST(MultiDevice, C3bis_ThreeFinger346) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -839,7 +730,7 @@ TEST_F(MultiDevice, C3bis_ThreeFinger346) {
 }
 
 // drains={3,5,4} : 4 放到 add-pos 2（最后），node-ID 仍含 4。
-TEST_F(MultiDevice, C3bis_ThreeFinger354_4last) {
+TEST(MultiDevice, C3bis_ThreeFinger354_4last) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -847,7 +738,7 @@ TEST_F(MultiDevice, C3bis_ThreeFinger354_4last) {
 }
 
 // drains={6,7,8} : 不含 4，看是否完全对称。
-TEST_F(MultiDevice, C3bis_ThreeFinger678) {
+TEST(MultiDevice, C3bis_ThreeFinger678) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }
@@ -857,7 +748,7 @@ TEST_F(MultiDevice, C3bis_ThreeFinger678) {
 // Step 5 — 纯线性诊断：把 BSIM4 替换成 Resistor(10k)，仍走相同节点编号
 // (drains={3,4,5}, vdd@1, vg@10)。若仍坏 → MNA 装配本身在 NodeId=4 异常；
 // 若 PASS → 锁定 OSDI/BSIM4 路径。
-TEST_F(MultiDevice, C3bis_LinearOnly_n345) {
+TEST(MultiDevice, C3bis_LinearOnly_n345) {
     if (!std::getenv("RFSIM_FORCE_C3BIS")) {
         GTEST_SKIP() << "C3-bis diagnostic; set RFSIM_FORCE_C3BIS=1";
     }

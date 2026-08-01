@@ -2,13 +2,13 @@
 #include "dc_op.hpp"
 #include "../assembly/linear_solver_factory.hpp"
 #include "../model/builtin_devices.hpp"
-#include "../model/osdi_model.hpp"
 #include "../model/sparam_device.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 
 namespace rfsim {
 
@@ -39,7 +39,10 @@ void assemble(uint32_t numNodes,
     thread_local std::vector<uint32_t> tlNm;
     vsIdx.clear();
     for (uint32_t i = 0; i < devices.size(); ++i)
-        if (dynamic_cast<VoltageSource*>(devices[i].get())) vsIdx.push_back(i);
+        if (dynamic_cast<VoltageSource*>(devices[i].get()) ||
+            dynamic_cast<VCVS*>(devices[i].get()) ||
+            dynamic_cast<CCVS*>(devices[i].get()))
+            vsIdx.push_back(i);
     uint32_t numVS = static_cast<uint32_t>(vsIdx.size());
     uint32_t n = numNodes + numVS;
 
@@ -52,6 +55,27 @@ void assemble(uint32_t numNodes,
     for (uint32_t i = 0; i < numNodes; ++i) {
         G.addPattern(i, i); G.add(i, i, opts.gmin.gmin);
         F[i] += opts.gmin.gmin * nodeV[i + 1];
+    }
+
+    // Build VS name -> branch index map for F/H resolution
+    std::map<std::string, uint32_t> vsNameToBr;
+    for (uint32_t k = 0; k < vsIdx.size(); ++k) {
+        vsNameToBr[devices[vsIdx[k]]->name()] = numNodes + k;
+    }
+    // Resolve F/H control source names to branch indices
+    for (const auto& dev : devices) {
+        if (auto* f = dynamic_cast<CCCS*>(dev.get())) {
+            if (!f->vsName().empty()) {
+                auto it = vsNameToBr.find(f->vsName());
+                if (it != vsNameToBr.end()) f->setVsIndex(it->second);
+            }
+        }
+        if (auto* h = dynamic_cast<CCVS*>(dev.get())) {
+            if (!h->vsName().empty()) {
+                auto it = vsNameToBr.find(h->vsName());
+                if (it != vsNameToBr.end()) h->setVsIndex(it->second);
+            }
+        }
     }
 
     for (uint32_t di = 0; di < devices.size(); ++di) {
@@ -81,6 +105,19 @@ void assemble(uint32_t numNodes,
             if(n2!=0){G.addPattern(n2-1,br);G.add(n2-1,br,-1.0);G.addPattern(br,n2-1);G.add(br,n2-1,-1.0);}
             G.addPattern(br,br);
             F[br] = (getV(n1)-getV(n2)) - V;
+        } else if (auto* vcvs = dynamic_cast<VCVS*>(dev.get())) {
+            // VCVS: V(n1) - V(n2) = gain * (V(c1) - V(c2))
+            uint32_t br=0; for(uint32_t k=0;k<vsIdx.size();++k) if(vsIdx[k]==di){br=numNodes+k;break;}
+            vsOff.push_back(br);
+            uint32_t n1=nds.size()>0?nds[0]:0, n2=nds.size()>1?nds[1]:0;
+            uint32_t c1=nds.size()>2?nds[2]:0, c2=nds.size()>3?nds[3]:0;
+            double gain = vcvs->gain();
+            if(n1!=0){G.addPattern(n1-1,br);G.add(n1-1,br,1.0);G.addPattern(br,n1-1);G.add(br,n1-1,1.0);}
+            if(n2!=0){G.addPattern(n2-1,br);G.add(n2-1,br,-1.0);G.addPattern(br,n2-1);G.add(br,n2-1,-1.0);}
+            if(c1!=0){G.addPattern(br,c1-1);G.add(br,c1-1,-gain);}
+            if(c2!=0){G.addPattern(br,c2-1);G.add(br,c2-1,gain);}
+            G.addPattern(br,br);
+            F[br] = (getV(n1)-getV(n2)) - gain*(getV(c1)-getV(c2));
         } else if (dynamic_cast<Capacitor*>(dev.get())) {
         } else if (dynamic_cast<Inductor*>(dev.get())) {
             double g=1e6; uint32_t n1=nds.size()>0?nds[0]:0,n2=nds.size()>1?nds[1]:0;
@@ -124,52 +161,57 @@ void assemble(uint32_t numNodes,
                 }
                 F[ni - 1] += Ii;
             }
-        } else if (auto* osdi = dynamic_cast<OsdiModel*>(dev.get())) {
-            if (!osdi->ready()) continue;
-            const OsdiDescriptor* d = osdi->descriptor();
-            uint32_t nNodes = d->num_nodes;
+        } else if (auto* cccs = dynamic_cast<CCCS*>(dev.get())) {
+            // CCCS (F): I(n1->n2) = gain * I_vsense
+            // Direct MNA stamp: Jacobian coupling to VS branch current column
+            uint32_t n1=nds.size()>0?nds[0]:0, n2=nds.size()>1?nds[1]:0;
+            double gain = cccs->gain();
+            uint32_t vsBr = cccs->vsIndex();
+            if (vsBr > 0 && vsBr < n) {
+                // Residual: read branch current from fullSol (set by newtonSolve before assemble)
+                double i_vs = cccs->readBranchCurrent();
+                // CCCS injects gain*I_vs INTO n1 (from n2). Current LEAVING n1 = -gain*I_vs
+                if(n1!=0 && n1<=numNodes) { F[n1-1] -= gain * i_vs; G.addPattern(n1-1, vsBr); G.add(n1-1, vsBr, -gain); }
+                if(n2!=0 && n2<=numNodes) { F[n2-1] += gain * i_vs; G.addPattern(n2-1, vsBr); G.add(n2-1, vsBr, gain); }
+            }
+        } else if (auto* ccvs = dynamic_cast<CCVS*>(dev.get())) {
+            // CCVS (H): V(n1) - V(n2) = gain * I_vsense
+            // Needs branch current like VCVS
+            uint32_t br=0; for(uint32_t k=0;k<vsIdx.size();++k) if(vsIdx[k]==di){br=numNodes+k;break;}
+            vsOff.push_back(br);
+            uint32_t n1=nds.size()>0?nds[0]:0, n2=nds.size()>1?nds[1]:0;
+            double gain = ccvs->gain();
+            // Get control current from branch currents (previous iteration)
+            double iCtrl = ccvs->readBranchCurrent();
+            if (ccvs->vsIndex() < nodeV.size()) iCtrl = nodeV[ccvs->vsIndex()];
+            // MNA stamp: V(n1) - V(n2) = gain * I_vsense
+            if(n1!=0){G.addPattern(n1-1,br);G.add(n1-1,br,1.0);G.addPattern(br,n1-1);G.add(br,n1-1,1.0);}
+            if(n2!=0){G.addPattern(n2-1,br);G.add(n2-1,br,-1.0);G.addPattern(br,n2-1);G.add(br,n2-1,-1.0);}
+            // Coupling to control source branch current
+            uint32_t vsBr = ccvs->vsIndex();
+            if(vsBr > 0 && vsBr < n) { G.addPattern(br, vsBr); G.add(br, vsBr, -gain); }
+            G.addPattern(br,br);
+            F[br] = (getV(n1)-getV(n2)) - gain * iCtrl;
+        } else if (!dev->is_linear()) {
+            // 通用非线性 DeviceModel 路径（Verilog-A 生成模型等）：
+            // 上面 dynamic_cast 未命中的非线性器件，走 DeviceModel 虚接口
+            // eval/stamp_pattern 装配。符号约定与 OSDI 分支一致：
+            // f[k] = 流入器件端口 k 的电流（= 流出节点 k），F += f；G += df/dv。
             OperatingPoint op{nodeV};
             DeviceContribution dc;
-            osdi->eval(op, dc);
-            // OSDI 残差按 OpenVAF 约定为"流出节点的总电流"（与线性器件 stamp
-            // F[n]+=current_out 同向）。早期实现取负号导致线性/OSDI 器件叠加时
-            // 符号相反（diode 反偏化、cascode 漂浮），故 V2-γ 修正为 += 累加，
-            // 雅可比同向（见下方 G.add(...,v) 而非 -v）。
-            for (uint32_t k=0;k<nNodes&&k<nds.size()&&k<dc.f.size();++k) {
-                // 内部隐式节点（OSDI num_nodes > num_terminals 的部分）的残差是
-                // 器件内部 KCL，不应进入外部 MNA 残差向量 F。这些节点的 NodeId
-                // 可能远超 numNodes（host 在 OsdiModel::initialize 中递增分配），
-                // 写入会 heap-buffer-overflow。仅 stamp 外部可见节点（NodeId 在
-                // [1, numNodes] 范围）。详见 docs/ki3_internal_node_overflow.md。
+            dev->eval(op, dc);
+            for (size_t k = 0; k < nds.size() && k < dc.f.size(); ++k) {
                 NodeId nk = nds[k];
                 if (nk == 0 || nk > numNodes) continue;
                 F[nk - 1] += dc.f[k];
             }
-            // Jacobian stamp：fullDim 是 MNA 矩阵维度 = numNodes + numVS（电压源
-            // 分支）。旧实现用 max(nds)（含内部节点），会把器件内部隐式方程错误
-            // 装配进外部 MNA 矩阵，且对 G(F) 越界写。内部节点必须被 OSDI 在
-            // instance_data 内部自洽求解，host 不参与。这里 clamp 到 fullMnaDim。
-            uint32_t fullMnaDim = numNodes + numVS;
-            uint32_t fullDim = fullMnaDim + 1;  // +1 for 1-based NodeId 偏移
-            tlJacMat.assign(static_cast<size_t>(fullDim)*fullDim, 0.0);
-            uint32_t nE=d->num_jacobian_entries;
-            tlTgt.assign(nE, nullptr);
-            for(uint32_t e=0;e<nE;++e){
-                const OsdiJacobianEntry& je=d->jacobian_entries[e];
-                uint32_t lr=std::min(je.nodes.node_1,nNodes-1), lc=std::min(je.nodes.node_2,nNodes-1);
-                NodeId gr=(lr<nds.size())?nds[lr]:0, gc=(lc<nds.size())?nds[lc]:0;
-                // 内部节点跳过（与上面 F 装配一致）：NodeId > numNodes 的不装配到外部 MNA
-                bool grOk = (gr == 0) || (gr <= numNodes);
-                bool gcOk = (gc == 0) || (gc <= numNodes);
-                tlTgt[e] = (grOk && gcOk && gr<fullDim && gc<fullDim)
-                           ? &tlJacMat[gr*fullDim+gc] : &tlJacMat[0];
-            }
-            tlNm.assign(nds.size(), 0);
-            for(uint32_t k=0;k<nds.size();++k) tlNm[k]=nds[k];
-            osdi->loadJacobianInto(tlTgt.data(),fullDim,tlNm);
-            for(uint32_t rr=1;rr<fullDim;++rr) for(uint32_t cc=1;cc<fullDim;++cc){
-                double v=tlJacMat[rr*fullDim+cc];
-                if(v!=0.0){G.addPattern(rr-1,cc-1);G.add(rr-1,cc-1,v);}
+            StampPattern sp;
+            dev->stamp_pattern(sp);
+            for (size_t e = 0; e < sp.entries.size() && e < dc.jac.size(); ++e) {
+                NodeId gr = sp.entries[e].first, gc = sp.entries[e].second;
+                if (gr == 0 || gc == 0 || gr > numNodes || gc > numNodes) continue;
+                G.addPattern(gr - 1, gc - 1);
+                G.add(gr - 1, gc - 1, dc.jac[e]);
             }
         }
     }
@@ -189,7 +231,32 @@ bool newtonSolve(uint32_t numNodes,
     // 内部自动释放 num_/sym_ 重新 analyze（见 klu_solver.cpp 结构指纹逻辑）。
     const SolverMethod method = opts.solver;
     std::unique_ptr<LinearSolver> solver;
+    std::vector<double> prevBranchCurrents_;  // branch currents from previous Newton iter
+    std::vector<double> fullSol;  // nodeV + branch currents for F/H eval
+    // Initialize branch currents to 0 for first iteration
+    {
+        uint32_t cnt = 0;
+        for (const auto& d : devices)
+            if (dynamic_cast<VoltageSource*>(d.get()) || dynamic_cast<VCVS*>(d.get()) || dynamic_cast<CCVS*>(d.get()))
+                ++cnt;
+        prevBranchCurrents_.assign(cnt, 0.0);
+    }
     for (uint32_t iter = 0; iter < opts.maxIterations; ++iter) {
+        // Set branch currents on F/H devices (from previous iteration's solution)
+        // Build fullSol = nodeV + branch currents for F/H eval
+        // fullSol is 0-based: [V0(gnd), V1, V2, ..., VnumNodes, Ibr0, Ibr1, ...]
+        // vsIdx_ = numNodes + k (0-based matrix index) maps to fullSol[numNodes + 1 + k]
+        // because fullSol has numNodes+1 node voltage entries (0..numNodes) then branch currents
+        fullSol.assign(numNodes + 1, 0.0);
+        for (uint32_t i = 1; i <= numNodes; ++i) fullSol[i] = nodeV[i];
+        for (size_t k = 0; k < prevBranchCurrents_.size(); ++k)
+            fullSol.push_back(prevBranchCurrents_[k]);
+        for (const auto& dev : devices) {
+            if (auto* f = dynamic_cast<CCCS*>(dev.get()))
+                f->setBranchCurrents(&fullSol);
+            if (auto* h = dynamic_cast<CCVS*>(dev.get()))
+                h->setBranchCurrents(&fullSol);
+        }
         SparseMatrix J; Vector F; std::vector<uint32_t> vsOff;
         assemble(numNodes, devices, nodeV, opts, J, F, vsOff);
         // 升级：method==Auto 且大矩阵时走经验基准选择（makeAutoSolver）；
@@ -205,6 +272,16 @@ bool newtonSolve(uint32_t numNodes,
         for (size_t k=0;k<F.size();++k) negF[k]=-F[k];
         Vector dx; solver->solve(negF, dx);
         if (bench) { bench->klu_factor_ms += solver->factorMs(); bench->klu_solve_ms += solver->solveMs(); }
+
+        // Save branch currents (accumulated) for F/H next iteration
+        uint32_t numVS = static_cast<uint32_t>(vsOff.size());
+        if (prevBranchCurrents_.size() != numVS)
+            prevBranchCurrents_.assign(numVS, 0.0);
+        // Branch current in new solution = old + delta
+        for (uint32_t k = 0; k < numVS && numNodes + k < dx.size(); ++k) {
+            double oldVal = (nodeV.size() > numNodes + 1 + k) ? nodeV[numNodes + 1 + k] : 0.0;
+            prevBranchCurrents_[k] = oldVal + dx[numNodes + k];
+        }
 
         double fOld=0; for(double fv:F) fOld+=fv*fv; fOld=std::sqrt(fOld);
         double alpha=1.0;
@@ -307,16 +384,18 @@ DcOpResult solveDcOp(uint32_t numNodes,
     BenchCounters* bench = benchJsonEnabled() ? &r.bench : nullptr;
 
     bool hasNonlinear=false;
-    for(const auto& d:devices)
-        if(auto* o=dynamic_cast<OsdiModel*>(d.get()))
-            if(!o->is_linear()&&o->ready()) hasNonlinear=true;
+    for(const auto& d:devices) {
+        if(!d->is_linear()) { hasNonlinear=true; break; }
+    }
 
     // 跨 DC 求解前重置 limiting 状态，避免前一次求解的 limiting 记忆污染新工作点
     for(const auto& d:devices)
-        if(auto* o=dynamic_cast<OsdiModel*>(d.get()))
-            o->resetLimiting();
+        d->resetLimiting();
 
     std::vector<double> nodeV(numNodes+1,0.0);
+    // For F/H devices: we need a vector that includes branch current slots.
+    // On first iteration, branch currents are 0. After solve, we extend nodeV
+    // with the branch current portion of dx so CCCS/CCVS can read them.
 
     // 源步进 (source stepping) 调度：当 opts.sourceStepCount > 0 且存在
     // 非线性器件时，把所有 VS 电压乘以 ε∈(0,1] 多次求解，每步 warm-start。
@@ -326,13 +405,12 @@ DcOpResult solveDcOp(uint32_t numNodes,
     std::vector<double> vsSched;
     if (hasNonlinear && opts.sourceStepCount > 0) {
         const uint32_t N = opts.sourceStepCount;
-        // P3 post-A1：二次 schedule  t = 1 - (1 - u)^2 ，dense-near-1。
-        // BSIM4 在 V_DS 接近目标值时 limiter 雅可比突变最剧烈，把更多 source
-        // step 放在 ε 接近 1 的区间，使每步前后工作点距离更短、warm-start 更准。
-        // 低 ε 端 (弱反型/截止区) Jacobian 平滑，少几步无害。
+        // 线性 source stepping schedule。
+        // 二次 schedule (dense-near-1) 在深亚阈值区步长过大（~176% 跳变），
+        // Newton 在指数 I-V 区无法收敛。线性 schedule 每步等量增加，
+        // 深亚阈值区步长更小，收敛性显著改善。
         for (uint32_t s = 1; s <= N; ++s) {
-            double u = double(s) / double(N);
-            double t = 1.0 - (1.0 - u) * (1.0 - u);
+            double t = double(s) / double(N);
             vsSched.push_back(t);
         }
     } else {
@@ -494,9 +572,10 @@ DcOpResult solveDcOp(uint32_t numNodes,
                 o.vsScale = scale;
                 // M1: gmin 变化时清 OSDI 器件 eval cache（避免 stale Jacobian 跨 gmin 步）
                 if (gi > 0) {
-                    for (const auto& d : devices)
-                        if (auto* o2 = dynamic_cast<OsdiModel*>(d.get()))
-                            o2->invalidateEvalCache();
+                    for (const auto& d : devices) {
+                        d->invalidateEvalCache();
+                        d->invalidateBypassCache();
+                    }
                 }
                 if (dcopVerbose())
                     std::fprintf(stderr,
@@ -722,6 +801,28 @@ DcOpResult solveDcOp(uint32_t numNodes,
         bench->newton_iter   = r.iterations;
         bench->peak_rss_mb   = currentRssMb();
     }
+
+    // Adaptive retry: if converged but solution has suspicious low voltages
+    // (0.01-0.15V range, suggesting gmin-dominated wrong basin), retry with
+    // lower gminStart. Guard: only retry when gminStart > 1e-3 to prevent
+    // infinite recursion (retry uses 1e-4 which is < 1e-3).
+    if (r.converged && opts.gmin.gminStart > 1e-3) {
+        bool suspicious = false;
+        for (size_t i = 1; i < r.nodeVoltages.size(); ++i) {
+            double v = r.nodeVoltages[i];
+            if (v > 0.01 && v < 0.15) { suspicious = true; break; }
+        }
+        if (suspicious && hasNonlinear) {
+            DcOpOptions retryOpts = opts;
+            retryOpts.gmin.gminStart = 1e-4;
+            retryOpts.gmin.gminSteps = std::max(opts.gmin.gminSteps, (uint32_t)20);
+            auto retryR = solveDcOp(numNodes, devices, retryOpts);
+            if (retryR.converged) {
+                r = std::move(retryR);
+            }
+        }
+    }
+
     return r;
 }
 

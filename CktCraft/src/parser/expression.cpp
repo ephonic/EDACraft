@@ -259,20 +259,66 @@ void registerBuiltinFunctions(EvalContext& ctx) {
     ctx.funcs["sqrt"]  = [](double x){ return std::sqrt(x); };
     ctx.funcs["abs"]   = [](double x){ return std::fabs(x); };
     ctx.funcs["sgn"]   = [](double x){ return (x > 0) ? 1.0 : ((x < 0) ? -1.0 : 0.0); };
+    // HSPICE 工程函数
+    ctx.funcs["tanh"]  = [](double x){ return std::tanh(x); };
+    ctx.funcs["sinh"]  = [](double x){ return std::sinh(x); };
+    ctx.funcs["cosh"]  = [](double x){ return std::cosh(x); };
+    ctx.funcs["floor"] = [](double x){ return std::floor(x); };
+    ctx.funcs["ceil"]  = [](double x){ return std::ceil(x); };
+    ctx.funcs["round"] = [](double x){ return std::round(x); };
+    ctx.funcs["log2"]  = [](double x){ return std::log2(x); };
+    ctx.funcs["cbrt"]  = [](double x){ return std::cbrt(x); };
+    ctx.funcs["fact"]  = [](double x){ double r=1; int n=(int)x; for(int i=2;i<=n;++i) r*=i; return r; };
+    ctx.funcs["acosh"] = [](double x){ return std::acosh(x); };
+    ctx.funcs["asinh"] = [](double x){ return std::asinh(x); };
+    ctx.funcs["atanh"] = [](double x){ return std::atanh(x); };
+    ctx.funcs["int"]   = [](double x){ return static_cast<double>(static_cast<long long>(x)); };
+    ctx.funcs["nint"]  = [](double x){ return std::round(x); };
 
     // C2：多参函数（HSPICE/Verilog-A 常用）。
-    // agauss(nom, abs, nsgma) = nom + abs·tan()... 实际 HSPICE 语义为高斯分布，
-    // 用于 monte-carlo；确定性求值时取名义值 nom（abs/sgma 项均值为 0）。
-    // unif(nom, abs) 同理取 nom。
+    // agauss(nom, abs, nsgma) = nom + abs·N(0,1)·nsgma（Monte-Carlo 采样）
+    // 默认确定性求值取均值（nom）；设 RFSIM_MC=1 时启用随机采样。
+    // unif(nom, abs) = nom + abs·U(-1,1)
+    static bool mcEnabled = []() {
+        const char* s = std::getenv("RFSIM_MC");
+        return s && (s[0] == '1' || s[0] == 't' || s[0] == 'T');
+    }();
     ctx.multiFuncs["agauss"] = [](const std::vector<double>& a) -> double {
-        // 确定性求值：取均值（nom）。a = {nom, abs, nsgma}
-        return a.empty() ? 0.0 : a[0];
+        if (a.empty()) return 0.0;
+        if (!mcEnabled) return a[0];  // 确定性：取均值 nom
+        // MC: nom + abs * gaussian(0,1) * nsgma
+        double nom = a[0], abs3 = (a.size() > 1) ? a[1] : 0.0, nsgma = (a.size() > 2) ? a[2] : 1.0;
+        // Box-Muller 变换生成标准正态分布
+        static thread_local unsigned seed = 12345;
+        seed = seed * 1103515245u + 12345u;
+        double u1 = (seed / 4294967296.0);
+        if (u1 < 1e-10) u1 = 1e-10;
+        seed = seed * 1103515245u + 12345u;
+        double u2 = (seed / 4294967296.0);
+        double gauss = std::sqrt(-2.0 * std::log(u1)) * std::cos(6.28318530718 * u2);
+        return nom + abs3 * gauss * nsgma;
     };
     ctx.multiFuncs["unif"] = [](const std::vector<double>& a) -> double {
-        return a.empty() ? 0.0 : a[0];
+        if (a.empty()) return 0.0;
+        if (!mcEnabled) return a[0];
+        double nom = a[0], abs3 = (a.size() > 1) ? a[1] : 0.0;
+        static thread_local unsigned seed = 54321;
+        seed = seed * 1103515245u + 12345u;
+        double u = (seed / 4294967296.0) * 2.0 - 1.0;  // U(-1,1)
+        return nom + abs3 * u;
     };
     ctx.multiFuncs["gauss"] = [](const std::vector<double>& a) -> double {
-        return a.empty() ? 0.0 : a[0];
+        if (a.empty()) return 0.0;
+        if (!mcEnabled) return a[0];
+        double nom = a[0], sigma = (a.size() > 1) ? a[1] : 1.0;
+        static thread_local unsigned seed = 98765;
+        seed = seed * 1103515245u + 12345u;
+        double u1 = (seed / 4294967296.0);
+        if (u1 < 1e-10) u1 = 1e-10;
+        seed = seed * 1103515245u + 12345u;
+        double u2 = (seed / 4294967296.0);
+        double g = std::sqrt(-2.0 * std::log(u1)) * std::cos(6.28318530718 * u2);
+        return nom + sigma * g;
     };
     ctx.multiFuncs["pow"] = [](const std::vector<double>& a) -> double {
         if (a.size() < 2) return 0.0;
@@ -291,6 +337,10 @@ void registerBuiltinFunctions(EvalContext& ctx) {
     ctx.multiFuncs["atan2"] = [](const std::vector<double>& a) -> double {
         if (a.size() < 2) return 0.0;
         return std::atan2(a[0], a[1]);
+    };
+    ctx.multiFuncs["hypot"] = [](const std::vector<double>& a) -> double {
+        if (a.size() < 2) return 0.0;
+        return std::hypot(a[0], a[1]);
     };
     // if(cond, a, b)：cond!=0 返回 a 否则 b
     ctx.multiFuncs["if"] = [](const std::vector<double>& a) -> double {

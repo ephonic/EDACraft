@@ -1,0 +1,117 @@
+$****************************************************
+$*                CZ6  SPICE MODEL                  *
+$*                   MOD001  4/4                    *
+$*                   2000/03/27                     *
+$*                                                  *
+$*             Shanghai Huahong-NEC                 *
+$****************************************************
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+$ Model Name: MOD078 4/4                 $
+$ Date: 1996/ 4/15                       $
+$ (C) NEC Corporation                    $
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+$                                                          $
+$         HPSICE readme file  for CZ6  process             $
+$                                                          $
+$       Rev. 1.3   Apr.  15, 1996                          $
+$                                                          $
+$     NOTE : USE THIS MODEL WITH HSPICE VERSION H93A.02    $
+$                                                 95.2     $
+$            DO NOT USE WITH THE OTHER VERSIONS            $
+$                                                          $
+$       << NEC CONFIDENTIAL and PROPRIETARY >>             $
+$                                                          $
+$   Rev. 1.0(MOD054)  First edition. Only Typ model        $
+$   Rev. 1.1(MOD055)  Slow model, Fast model added.        $
+$                     Temp coefficient added.              $
+$   Rev. 1.2(MOD057)  N-Slow,P-Fast model added.           $
+$                     N-Fast,P-Slow model added.           $
+$   Rev. 1.3(MOD078)  Parameter "wmin" changed from 1.2um  $
+$                     to 0.8um.                            $
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+
+1.CZ6 Device target spec. (Tj=27C)
+
+  Ln=0.54+/-0.04um Ionn= 4.30mA  Vtn= 0.65+/-0.10V  
+  Lp=0.54+/-0.04um Ionp=-2.20mA  Vtp=-0.80+/-0.15V
+
+  Tox=155+/-10A           
+
+          @Ion equals to IDS/5 for VDS=VGS=5V, W=50um.
+          @Vt equals to Vgs for VDS=5V, IDS=1uA, W=50um.
+
+2.Model name
+
+   nch model name = n
+   pch model name = p
+
+3.Model spec.
+
+ (1)Typical case
+
+  .LIB NT
+  Ln=0.54um  Ionn= 4.30mA  Vtn= 0.65V  Tox=155A
+  .LIB PT
+  Lp=0.54um  Ionp=-2.20mA  Vtp=-0.80V  Tox=155A
+
+ (2)Fast case
+
+  .LIB NF
+  Ln=0.50um  Ionn= 4.68mA  Vtn= 0.55V  Tox=145A
+  .LIB PF
+  Lp=0.50um  Ionp=-2.55mA  Vtp=-0.65V  Tox=145A
+
+ (3)Slow case
+
+  .LIB NS
+  Ln=0.58um  Ionn= 3.93mA  Vtn= 0.75V  Tox=165A
+  .LIB PS
+  Lp=0.58um  Ionp=-1.87mA  Vtp=-0.95V  Tox=165A
+
+ (4)Nch Fast - Pch Slow  case
+
+  .LIB NTF
+  Ln=0.54um  Ionn= 4.48mA  Vtn= 0.55V  Tox=155A
+  .LIB PTS
+  Lp=0.54um  Ionp=-2.04mA  Vtp=-0.95V  Tox=155A
+
+ (5)Nch Slow - Pch Fast  case
+
+  .LIB NTS
+  Ln=0.54um  Ionn= 4.11mA  Vtn= 0.75V  Tox=155A
+  .LIB PTF
+  Lp=0.54um  Ionp=-2.36mA  Vtp=-0.65V  Tox=155A
+
+4. 
+  Perimeter of the drain and source junctions including the channel edge
+ shuld be always assigned by PD and PS in the net list as shown below.
+ 
+        PD=2W+2D
+                                       ____Poly
+                                       |  |
+                            ___________|  |___________
+                           |           |  |           |
+                           |           |  |           |
+                           |           |  |           |
+                         W |    drain  |  |   source  |
+                           |           |  |           |
+                           |___________|  |___________|Diff
+                                 D     |  |
+                                       |  |
+                                       ~  ~ 
+                          
+5.
+  Area of the drain and source junctions shuld be always assigned
+ by AD and AS in the net list as shown below.
+
+        AD=W*D
+
+6. 
+  Wmin is 0.8um in SPICE model parameter, but in SPICE simulation, the 
+  minimum of w in netlist is 0.9um.
+                          
+
+
+

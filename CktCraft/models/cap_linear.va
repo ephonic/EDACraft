@@ -1,0 +1,17 @@
+// 线性电容 VA 模型（验证 ddt 伴随模型）
+// Q = c0 * V(a,b); I = ddt(Q) —— 应与内置 Capacitor 的 BE 伴随完全一致
+`include "disciplines.vams"
+
+module cap_linear(a, b);
+    inout a, b;
+    electrical a, b;
+    parameter real c0 = 1e-9;
+
+    real q;
+
+    analog begin
+        q = c0 * (V(a) - V(b));
+        I(a) <+ ddt(q);
+        I(b) <+ -ddt(q);
+    end
+endmodule

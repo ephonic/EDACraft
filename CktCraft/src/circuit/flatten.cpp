@@ -88,8 +88,13 @@ void expandSubcktCall(const SubcktCall& call, FlattenCtx& ctx) {
     FlattenCtx child{ctx.circuit, ctx.subckts, ctx.diags,
                      ctx.prefix + call.name + ".", std::move(childNodeMap)};
 
-    // 子电路内部可能有自己的 .param —— 形参已 bound，作为参数传递
-    // 把 bound 参数注入为器件参数引用（M1 简化：不展开参数表达式，保留引用文本）
+    // 把 bound 形参注入全局参数（带实例前缀避免冲突）
+    // 这样 device_factory 的 buildResolvedEvalContext 能在求值器件参数表达式时引用这些形参
+    for (const auto& [pname, pval] : bound) {
+        ctx.circuit.globalParams.push_back({pname, pval});
+    }
+
+    // 子电路内部可能有自己的 .param -- 形参已 bound，作为参数传递
     expandItems(def.body, child);
 }
 
@@ -133,6 +138,7 @@ FlattenResult flatten(const Netlist& netlist) {
     FlattenResult r;
     r.circuit.title = netlist.title;
     r.circuit.globalParams = netlist.globalParams;
+    r.circuit.funcDefs = netlist.funcDefs;
 
     SubcktMap subckts;
     collectSubckts(netlist, subckts);

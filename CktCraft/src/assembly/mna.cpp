@@ -1,7 +1,6 @@
 // mna.cpp — MNA 装配实现
 #include "mna.hpp"
 #include "../model/builtin_devices.hpp"
-#include "../model/osdi_model.hpp"
 #include "../model/sparam_device.hpp"
 
 namespace rfsim {
@@ -144,8 +143,7 @@ AssembleResult assembleMna(uint32_t numNodes,
             continue;
         }
 
-        // 非线性器件(OSDI)：DC 阶段若提供工作点则 stamp 雅可比，否则用 1e-12 Gmin 保险
-        // M2 暂不实现非线性 stamp（待 OSDI 库接入校准后）
+        // 非线性器件：由 dc_op.cpp 的 Newton 迭代处理
     }
 
     r.system.G.finalize();

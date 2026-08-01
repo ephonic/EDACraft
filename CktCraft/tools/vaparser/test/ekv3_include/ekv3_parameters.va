@@ -1,0 +1,413 @@
+/////////////////////////
+// INSTANCE PARAMETERS //
+/////////////////////////
+
+parameter real		L 	= 10.0E-06	from (1.0E-9:inf) 	`ATTR(type="instance" info="GATE'S LENGTH");
+parameter real		W 	= 10.0E-06	from (1.0E-9:inf) 	`ATTR(type="instance" info="GATE'S WIDTH");
+parameter real		NF 	= 1		from [1:inf) 		`ATTR(type="instance" info="NUMBER OF FINGERS");
+parameter real		M 	= 1		from [1:inf) 		`ATTR(type="instance" info="NUMBER OF DEVICES IN PARALLEL");
+parameter real		AD 	= 0.0 		from [0.0:inf) 		`ATTR(type="instance" info="DRAIN'S AREA");
+parameter real		AS 	= 0.0		from [0.0:inf) 		`ATTR(type="instance" info="SOURCE'S AREA");
+parameter real		PD 	= 0.0		from [0.0:inf) 		`ATTR(type="instance" info="DRAIN'S PERIMETER");
+parameter real		PS 	= 0.0		from [0.0:inf) 		`ATTR(type="instance" info="SOURCE'S PERIMETER");
+
+parameter real 		SA 	= 0.0					`ATTR(type="instance" info="STI PARAMETER; DISTANCE FROM STI");
+parameter real 		SB 	= 0.0					`ATTR(type="instance" info="STI PARAMETER; DISTANCE FROM STI");
+parameter real 		SD 	= 0.0 					`ATTR(type="instance" info="STI PARAMETER; DISTANCE BETWEEN GATES");
+
+////////////////////////////////
+// FLAGS AND SETUP PARAMETERS //
+////////////////////////////////
+
+parameter real 	 	SIGN 	= 1		from [-1:1]		`ATTR(info="SIGN = 1 FOR NMOS; SIGN = -1 FOR PMOS");
+parameter real		TG 	= -1		from [-1:1]		`ATTR(info="TYPE OF GATE: -1 ENHANCEMENT TYPE; 1 DEPLETION TYPE");
+parameter real		TNOM 	= 27.0		from [-273.15:inf);
+parameter real		SCALE 	= 1.0		from (0.0:inf);
+parameter real		QOFF 	= 0.0;
+parameter real		XL 	= 0.0 		from (-inf:inf);
+parameter real		XW 	= 0.0 		from (-inf:inf);
+parameter real 		NQS_NOI = 1.0;
+parameter real 		TH_NOI  = 0.0;
+
+parameter real 		INFO_LEVEL = 0.0; 
+
+// MATCHING
+
+parameter real		AVTO 	= 0.0 					`ATTR(info="MATCHING PARAMETER FOR THRESHOLD VOLTAGE (VTO)");
+parameter real		AGAMMA 	= 0.0 					`ATTR(info="MATCHING PARAMETER FOR BODY FACTOR (GAMMA)");
+parameter real		AKP	= 0.0 					`ATTR(info="MATCHING PARAMETER FOR MOBILITY (KP)");
+
+//////////////////////
+// MODEL PARAMETERS //
+//////////////////////
+
+// OXIDE, SUBSTRATE AND GATE DOPING RELATED PARAMETERS (7(8))
+
+parameter real		COX 	= 0.012		from (0.0:inf);
+parameter real		XJ 	= 20.0E-09 	from (0.0:inf);
+parameter real		VTO 	= 0.3		from (-inf:inf)		`ATTR(info="THRESHOLD VOLTAGE");
+parameter real		PHIF 	= 0.45		from [0.1:inf)		`ATTR(info="FERMI BULK POTENTIAL");
+parameter real		GAMMA 	= 0.3		from (0.0:inf);
+parameter real		GAMMAG 	= 4.1		from (0.0:inf);
+parameter real		N0 	= 1.0;
+parameter real 		VBI 	= 0.0;
+//parameter real 	VBI 	= (PHIF + PHIF + 5.0 * $vt);
+
+// QUANTUM EFFECTS (3) 
+
+parameter real		AQMA 	= 0.5;
+parameter real		AQMI 	= 0.4;
+parameter real		ETAQM 	= 0.75;
+
+// VERTICAL FIELD MOBILITY EFFECTS PARAMETERS (4)
+
+parameter real		KP 	= 500.0E-06 	from [0.0:inf);
+parameter real		E0 	= 1.0E+10	from (0.0:inf);
+parameter real		E1 	= 3.1E+08	from (0.0:inf);
+parameter real		ETA 	= 0.5		from [0.0:inf);
+
+// COULOMB SCATTERING (2) 
+
+parameter real		ZC 	= 1.0E-6;
+parameter real		THC 	= 0.0;
+
+// MOBILITY RELATED GEOMETRICAL PARAMETERS (7)
+
+parameter real		LA 	= 1.0;
+parameter real		LB 	= 1.0;
+parameter real		KA 	= 0.0;
+parameter real		KB 	= 0.0;
+parameter real		WKP1 	= 1.0E-6;
+parameter real		WKP2 	= 0.0;
+parameter real		WKP3 	= 1.0;
+
+// GEOMETRICAL PARAMETERS (8)
+
+parameter real		DL 	= -10.0E-9	from (-inf:inf);
+parameter real		DLC 	= 0.0		from (-inf:inf);
+parameter real		DW 	= -10.0E-9	from (-inf:inf);
+parameter real		DWC 	= 0.0		from (-inf:inf);
+parameter real		LDW 	= 0.0;
+parameter real		WDL 	= 0.0;
+parameter real		LL 	= 0.0;
+parameter real		LLN 	= 1.0;
+
+// LONG AN DWIDE CHANNEL VTO AND GAMMA CORRECTION (6)
+
+parameter real		AVT 	= 0.0;
+parameter real		LVT 	= 1.0;
+parameter real		WVT 	= 1.0;
+parameter real		AGAM 	= 0.0;
+parameter real		LGAM 	= 1.0;
+parameter real		WGAM 	= 1.0;
+parameter real 		NFVTA   = 0.0;
+parameter real 		NFVTB   = 10000.0;
+
+
+// VELOCITY SATURATION & CLM RELATED PARAMETERS (3)
+
+parameter real		UCRIT 	= 5.0E+06 	from (0.0:inf);
+parameter real		LAMBDA	= 0.5		from [0.0:inf);
+parameter real		DELTA 	= 2.0		from [1.0:2.0];
+parameter real		ACLM 	= 0.83;
+
+// REVERSE SHORT CHANNEL EFFECT (4)
+
+parameter real		LR 	= 50.0E-09 	from (0.0:inf);
+parameter real		QLR 	= 0.5E-3	from (-inf:inf);
+parameter real		NLR 	= 10.0E-3 	from (-inf:inf);
+parameter real		FLR	= 0.0;
+
+// CHARGE SHARING EFFECT (5)
+
+parameter real		LETA0 	= 0.0		from (-inf:inf);
+parameter real		LETA 	= 500.0E-3 	from [0.0:inf);
+parameter real		LETA2 	= 0.0;
+parameter real		WETA 	= 200.0E-3 	from [0.0:inf);
+parameter real		NCS 	= 1.0;
+
+// DRAIN INDUCED BARRIER LOWERING (2)
+
+parameter real		ETAD 	= 1.0		from [0.0:inf);
+parameter real		SIGMAD	= 1.0;
+
+// INVERSE NARROW WIDTH EFFECT (3)
+
+parameter real		WR 	= 90.0E-09 	from (0.0:inf);
+parameter real		QWR 	= 0.3E-3	from (-inf:inf);
+parameter real		NWR 	= 5.0E-3	from (-inf:inf);
+
+// DITS (5)
+
+parameter real	 	FPROUT 	= 1.0E6;
+parameter real	 	PDITS 	= 0.0;
+parameter real	 	PDITSL 	= 0.0;
+parameter real	 	PDITSD 	= 1.0;
+parameter real		DDITS	= 0.3;
+
+// IMPACT IONIZATION CURRENT (3)
+
+parameter real		IBA 	= 000.0E+06 	from [0.0:inf);
+parameter real		IBB 	= 300.0E+06 	from [0.0:inf);
+parameter real		IBN 	= 1.0		from [0.0:inf);
+
+// GATE CURRENT (4)
+
+parameter real		XB 	= 3.1		from (0.0:inf);
+parameter real		EB 	= 29.0E+09	from (0.0:inf);
+parameter real		KG 	= 00.0E-6	from [0.0:inf);
+parameter real		LOVIG 	= 20.0E-9 	from [0.0:inf);
+
+// GIDL - GISL (4)
+
+parameter real 		AGIDL  	= 0.0;
+parameter real 		BGIDL  	= 2.3E+09;
+parameter real 		CGIDL  	= 0.5;
+parameter real 		EGIDL  	= 0.8;
+
+// FLICKER NOISE PARAMETERS (4)
+
+parameter real		KF	= 0.0		from [0.0:inf);
+parameter real		AF	= 1.0		from [0.0:inf);
+parameter real 		EF 	= 2.0 		from [0.0:inf);
+parameter real		KGFN	= 0.0		from [0.0:inf);
+
+// LENGTH SCALING PARAMETERS (3)
+
+parameter real		LQWR 	= 0.0;
+parameter real		LNWR 	= 0.0;
+parameter real		LWR 	= 0.0;
+parameter real		LDPHIEDGE 	= 0.0;
+
+
+// WIDTH SCALING PARAMETERS (11)
+
+parameter real		WQLR 	= 0.0;
+parameter real		WNLR 	= 0.0;
+parameter real		WLR 	= 0.0;
+parameter real		WUCRIT	= 0.0;
+parameter real		WLAMBDA = 0.0;
+parameter real		WETAD 	= 0.0;
+parameter real		WE0 	= 0.0;
+parameter real		WE1 	= 0.0;
+parameter real		WRLX	= 0.0;
+parameter real		WUCEX	= 0.0;
+parameter real		WDPHIEDGE 	= 0.0;
+
+// COMBINED SCALING PARAMETERS (2)
+
+parameter real		WLDPHIEDGE 	= 0.0;
+parameter real		WLDGAMMAEDGE 	= 0.0;
+
+// EDGE DEVICE (3)
+
+parameter real 		WEDGE 	= 0.0;
+parameter real 		DGAMMAEDGE 	= 0.0;
+parameter real 		DPHIEDGE 	= 0.0;
+
+// STI STRESS EFFECT (13)
+
+parameter real 		SAREF 		= 0.0;
+parameter real 		SBREF 		= 0.0;
+parameter real 		WLOD 		= 0.0;
+parameter real 		KKP 		= 0.0;
+parameter real 		LKKP 		= 0.0;
+parameter real 		WKKP 		= 0.0;
+parameter real 		PKKP 		= 0.0;
+parameter real 		TKKP 		= 0.0;
+parameter real 		LLODKKP 	= 1.0;
+parameter real 		WLODKKP 	= 1.0;
+parameter real 		KVTO 		= 0.0;
+parameter real 		LKVTO 		= 0.0;
+parameter real 		WKVTO 		= 0.0;
+parameter real 		PKVTO 		= 0.0;
+parameter real 		LLODKVTO 	= 1.0;
+parameter real 		WLODKVTO	= 1.0;
+parameter real 		KGAMMA 		= 0.0;
+parameter real 		LODKGAMMA 	= 1.0;
+parameter real 		KETAD 		= 0.0;
+parameter real 		LODKETAD 	= 1.0;
+parameter real 		KUCRIT 		= 0.0;
+
+
+
+////////////////////////////////
+// TEMPERATURE PARAMETERS (8) //
+////////////////////////////////
+
+parameter real		TETA 	= -0.9E-3 	from (-inf:inf);
+parameter real		TLAMBDA = 0.0		from (-inf:inf);
+parameter real		TCV 	= 600.0E-6 	from (-inf:inf);
+parameter real		BEX 	= -1.5		from (-inf:inf);
+parameter real		UCEX 	= 1.5		from (-inf:inf);
+parameter real		TE0EX 	= 0.5		from (-inf:inf);
+parameter real		TE1EX 	= 0.5		from (-inf:inf);
+parameter real		IBBT 	= 800.0E-6 	from (-inf:inf);
+
+// TEMPERATURE AND GEOMETRY SCALING (3)
+
+parameter real		TCVL 	= 0.0;
+parameter real		TCVW 	= 0.0;
+parameter real		TCVWL 	= 0.0;
+
+////////////////////
+// EXTRINSIC PART //
+////////////////////
+
+// OVERLAP CAPACITANCES (8)
+
+parameter real		GAMMAOV = 1.6	 	from (0.0:inf);
+parameter real		GAMMAGOV= 10.0	 	from (0.0:inf);
+parameter real		VFBOV	= 0.0	 	from (-inf:inf);
+parameter real		LOV 	= 20.0E-9 	from [0.0:inf);
+parameter real		VOV 	= 1.0	 	from [0.0:2.0];
+parameter real 		CGSO 	= 0.0;
+parameter real 		CGDO 	= 0.0;
+parameter real 		CGBO 	= 0.0;
+
+// FRINGING CAPACITANCE (4)
+
+parameter real		KJF	= 0.0;
+parameter real		CJF	= 0.0;
+parameter real 		VFR 	= 0.0;
+parameter real 		DFR 	= 1.0E-3;
+
+// SERIES RESISTANCES RS AND RD
+
+// - TYPICAL SPICE MODEL
+
+parameter real		HDIF 	= 0.0e-6	from [0.0:inf);
+parameter real		RSH 	= 0.0	 	from [0.0:inf);
+parameter real		LDIF 	= 0.0	 	from [0.0:inf);
+parameter real		RS 	= 0.0	 	from [0.0:inf);
+parameter real		RD 	= 0.0	 	from [0.0:inf);
+
+// - NON-GEOMETRICAL APPROACH
+
+parameter real		RLX 	= -1.0	 	from (-inf:inf)		`ATTR(info="EXTERNAL SERIES RESISTANCE");
+parameter real		RSX 	= -1.0	 	from (-inf:inf);
+parameter real		RDX 	= -1.0	 	from (-inf:inf);
+
+// - TEMPERATURE SCALING
+
+parameter real		TR 	= 0.0	 	from (-inf:inf);
+parameter real		TR2 	= 0.0	 	from (-inf:inf);
+
+// JUNCTION DRAIN - BULK AND SOURCE-BULK AREA, CURRENT, CAPACITANCE
+
+parameter real		GMIN 	= 0.0	 	from (-inf:inf);
+
+// SOURCE SIDE
+
+parameter real		NJS 	= 1.0	 	from (-inf:inf);
+parameter real		XJBVS 	= 0.0	 	from (-inf:inf);
+parameter real		BVS 	= 10.0	 	from (-inf:inf);
+
+parameter real		JSS 	= 0.0E-09 	from (-inf:inf);
+parameter real		JSSWS 	= 0.0E-12 	from (-inf:inf);
+parameter real		JSSWGS 	= 0.0E-12 	from (-inf:inf);
+
+parameter real		JTSS 	= 0.0E-09 	from (-inf:inf);
+parameter real		JTSSWS 	= 0.0E-12 	from (-inf:inf);
+parameter real		JTSSWGS = 0.0E-12 	from (-inf:inf);
+
+parameter real		NJTSS 	= 1.0	 	from (-inf:inf);
+parameter real		NJTSSWS	= 1.0	 	from (-inf:inf);
+parameter real		NJTSSWGS= 1.0	 	from (-inf:inf);
+
+parameter real		VTSS	= 0.0	 	from (-inf:inf);
+parameter real		VTSSWS 	= 0.0	 	from (-inf:inf);
+parameter real		VTSSWGS	= 0.0	 	from (-inf:inf);
+
+parameter real		CJS 	= 0.0E-06 	from (-inf:inf);
+parameter real		CJSWS 	= 0.0E-09 	from (-inf:inf);
+parameter real		CJSWGS 	= 0.0E-09 	from (-inf:inf);
+
+parameter real		PBS 	= 0.800	 	from (-inf:inf);
+parameter real		PBSWS 	= 0.600	 	from (-inf:inf);
+parameter real		PBSWGS 	= 0.600	 	from (-inf:inf);
+
+parameter real		MJS 	= 0.900	 	from (-inf:inf);
+parameter real		MJSWS 	= 0.700	 	from (-inf:inf);
+parameter real		MJSWGS 	= 0.700	 	from (-inf:inf);
+
+parameter real		XTIS 	= 3.0	 	from (-inf:inf);
+
+parameter real		XTSS 	= 0.0		from (-inf:inf);
+parameter real		XTSSWS 	= 0.0		from (-inf:inf);
+parameter real		XTSSWGS	= 0.0		from (-inf:inf);
+
+parameter real		TNJTSS 	= 0.0	 	from (-inf:inf);
+parameter real		TNJTSSWS= 0.0	 	from (-inf:inf);
+parameter real		TNJTSSWGS= 0.0	 	from (-inf:inf);
+
+// BOTH SIDES
+
+parameter real		TCJ 	= 0.0	 	from (-inf:inf);
+parameter real		TCJSW 	= 0.0	 	from (-inf:inf);
+parameter real		TCJSWG 	= 0.0	 	from (-inf:inf);
+
+parameter real		TPB 	= 0.0	 	from (-inf:inf);
+parameter real		TPBSW 	= 0.0	 	from (-inf:inf);
+parameter real		TPBSWG 	= 0.0	 	from (-inf:inf);
+
+// DRAIN SIDE
+
+parameter real		NJD 	= 1.0	 	from (-inf:inf);
+parameter real		XJBVD 	= 0.0	 	from (-inf:inf);
+parameter real		BVD 	= 10.0	 	from (-inf:inf);
+
+parameter real		JSD 	= 0.0E-09 	from (-inf:inf);
+parameter real		JSSWD 	= 0.0E-12 	from (-inf:inf);
+parameter real		JSSWGD 	= 0.0E-12 	from (-inf:inf);
+
+parameter real		JTSD 	= 0.0E-09 	from (-inf:inf);
+parameter real		JTSSWD 	= 0.0E-12 	from (-inf:inf);
+parameter real		JTSSWGD = 0.0E-12 	from (-inf:inf);
+
+parameter real		NJTSD 	= 1.0	 	from (-inf:inf);
+parameter real		NJTSSWD	= 1.0	 	from (-inf:inf);
+parameter real		NJTSSWGD= 1.0	 	from (-inf:inf);
+
+parameter real		VTSD	= 0.0	 	from (-inf:inf);
+parameter real		VTSSWD 	= 0.0	 	from (-inf:inf);
+parameter real		VTSSWGD	= 0.0	 	from (-inf:inf);
+
+parameter real		CJD 	= 0.0E-06 	from (-inf:inf);
+parameter real		CJSWD 	= 0.0E-09 	from (-inf:inf);
+parameter real		CJSWGD 	= 0.0E-09 	from (-inf:inf);
+
+parameter real		PBD 	= 0.800	 	from (-inf:inf);
+parameter real		PBSWD 	= 0.600	 	from (-inf:inf);
+parameter real		PBSWGD 	= 0.600	 	from (-inf:inf);
+
+parameter real		MJD 	= 0.900	 	from (-inf:inf);
+parameter real		MJSWD 	= 0.700	 	from (-inf:inf);
+parameter real		MJSWGD 	= 0.700	 	from (-inf:inf);
+
+parameter real		XTID 	= 3.0	 	from (-inf:inf);
+
+parameter real		XTSD 	= 0.0		from (-inf:inf);
+parameter real		XTSSWD 	= 0.0		from (-inf:inf);
+parameter real		XTSSWGD	= 0.0		from (-inf:inf);
+
+parameter real		TNJTSD 	= 0.0	 	from (-inf:inf);
+parameter real		TNJTSSWD= 0.0	 	from (-inf:inf);
+parameter real		TNJTSSWGD= 0.0	 	from (-inf:inf);
+
+// PARAMETERS RF
+
+parameter real		RGSH	= 3.0;
+parameter real	 	GC 	= 1;
+parameter real 		KRGL1 	= 0.0;
+parameter real	 	RDSBSH 	= 1.0E+3;
+parameter real 		RBWSH 	= 3.0E-3;
+parameter real 		RBN 	= 0.0;
+parameter real 		RSBWSH 	= 1.0E-3;
+parameter real 		RSBN 	= 0.0;
+parameter real 		RDBWSH 	= 1.0E-3;
+parameter real 		RDBN 	= 0.0;
+parameter real 		RINGTYPE= 1.0;
+		     // RINGTYPE: 1: HORSE-SHOE
+		     //           2: SYMMETRIC
+

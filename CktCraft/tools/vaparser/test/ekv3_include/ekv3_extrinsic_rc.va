@@ -1,0 +1,159 @@
+// EXTERNAL: RESISTORS
+
+begin : SERIES_RESISTORS
+	if (RLX < 0.0)
+	begin
+		if (RSX < 0.0) 	rs = (hdif * RSH + (ldif - DL / 2.0) * RS) / WeffNF;
+		else 		rs = RSX / WeffNF;
+		if (RDX < 0.0) 	rd = (hdif * RSH + (ldif - DL / 2.0) * RD) / WeffNF;
+		else 		rd = RDX / WeffNF;
+	end
+	else
+	begin
+				rs = RLX / WeffNF;
+				rd = rs;
+	end
+	// WIDTH SCALING OF RS AND RD
+	tmp 		= (1.0 + WRLX / Weff);
+	rs 		= rs * tmp;
+	rd 		= rd * tmp;
+
+	// EXTERNAL RESISTORS (RG, SUBSTRATE RESISTANCES NETWORK )
+	rg 		= RGSH * Weff / (3.0 * GC * GC * NF * Leff) * (1.0 + KRGL1 * Leff * Leff);
+
+	if (RINGTYPE == 1.0) // HORSE-SHOE
+	begin
+		rb 		= (RBN  == 0.0) ? RBWSH * 0.5 / Weff : 
+						  1.0 / ((Weff * 2.0 / RBWSH ) + (NF / RBN ));
+		if (NF % 2 == 0) // EVEN NUMBER OF FINGERS
+		begin
+			rsb 		= (RSBN == 0.0) ? RSBWSH * 0.5 / Weff :
+							  1.0 / ((Weff * 2.0 / RSBWSH) + (NF / RSBN));
+			rdb 		= (RDBN == 0.0) ? RDBWSH * 0.5 / Weff :
+							  1.0 / ((Weff * 2.0 / RDBWSH) + (NF / RDBN));
+		end
+		else		 // ODD NUMBER OF FINGERS
+		begin
+			rsb 		= (RSBN == 0.0) ? RSBWSH / Weff :
+							  1.0 / ((Weff / RSBWSH) + (NF / RSBN));
+			rdb 		= rsb;
+		end
+	end
+	else // SYMMETRIC
+	begin
+		rb 		= RBWSH * 0.5 / Weff;
+		
+		if (NF % 2 == 0) // EVEN NUMBER OF FINGERS
+		begin
+			rsb 		= RSBWSH * 0.5 / Weff ;
+			rdb 		= RDBWSH * 0.5 / Weff ;
+		end
+		else		 // ODD NUMBER OF FINGERS
+		begin 
+			rsb 		= RSBWSH / Weff ;
+			rdb 		= rsb;
+		end
+	end
+	
+	rdsb 		= RDSBSH * Leff / WeffNF;
+
+	// TEMPERATURE EFFECTS
+	tmp 		= (1.0 + TR * dT + TR2 * dT2);
+	rs 		= rs * tmp;
+	rd 		= rd * tmp;
+	rg 		= rg * tmp;
+	rb 		= rb * tmp;
+	rsb 		= rsb * tmp;
+	rdb 		= rdb * tmp;	
+	rdsb 		= rdsb * tmp;
+	
+	// MINIMUM VALUE FOR RESISTANCES
+	rs 		= `MAX(rs  ,`MINIMUM_RESISTANCE);
+	rd 		= `MAX(rd  ,`MINIMUM_RESISTANCE);
+	rg 		= `MAX(rg  ,`MINIMUM_RESISTANCE);
+	rb 		= `MAX(rb  ,`MINIMUM_RESISTANCE);
+	rsb 		= `MAX(rsb ,`MINIMUM_RESISTANCE);
+	rdb 		= `MAX(rdb ,`MINIMUM_RESISTANCE);
+	rdsb 		= `MAX(rdsb,`MINIMUM_RESISTANCE);
+end	// SERIES RESISTORS
+
+`ifdef DC_S
+	I(g,s) <+ ddt(CGSO * M * WeffNF * V(g,s));
+	I(g,d) <+ ddt(CGDO * M * WeffNF * V(g,d));
+	I(g,b) <+ ddt(CGBO * M * 2.0 * Leff * NF * V(g,b));
+`endif
+
+`ifdef DC
+	I(g,si) <+ ddt(CGSO * M * WeffNF * V(g,si));
+	I(g,di) <+ ddt(CGDO * M * WeffNF * V(g,di));
+	I(g,b) <+ ddt(CGBO * M * 2.0 * Leff * NF * V(g,b));
+// SERIES RESISTORS
+	I(s ,si) <+ M * V(s,si) / rs;
+	I(s ,si) <+ white_noise(4.0 * `C_K * thermocrasia / rs); 
+	I(d ,di) <+ M * V(d,di) / rd;
+	I(d ,di) <+ white_noise(4.0 * `C_K * thermocrasia / rd); 
+`endif
+
+`ifdef RF_S
+	I(gi,si) <+ ddt(CGSO * M * WeffNF * V(gi,si));
+	I(gi,di) <+ ddt(CGDO * M * WeffNF * V(gi,di));
+	I(gi,bi) <+ ddt(CGBO * M * 2.0 * Leff * NF * V(gi,bi));
+// SERIES RESISTORS
+	I(s ,si) <+ M * V(s,si) / rs;
+	I(s ,si) <+ white_noise(4.0 * `C_K * thermocrasia / rs); 
+	I(d ,di) <+ M * V(d,di) / rd;
+	I(d ,di) <+ white_noise(4.0 * `C_K * thermocrasia / rd); 
+// EXTERNAL RESISTORS (RG, RB)
+	I(g ,gi) <+ M * V(g,gi) / rg;
+	I(g ,gi) <+ white_noise(4.0 * `C_K * thermocrasia / rg); 
+	I(b ,bi) <+ M * V(b,bi) / rb;
+	I(b ,bi) <+ white_noise(4.0 * `C_K * thermocrasia / rb); 
+`endif
+
+`ifdef RF
+	I(gi,si)  <+ ddt(CGSO * M * WeffNF * V(gi,si));
+	I(gi,di)  <+ ddt(CGDO * M * WeffNF * V(gi,di));
+	I(gi,bi)  <+ ddt(CGBO * M * 2.0 * Leff * NF * V(gi,bi));
+// SERIES RESISTORS
+	I(s ,si)  <+ M * V(s,si) / rs;
+	I(s ,si)  <+ white_noise(4.0 * `C_K * thermocrasia / rs); 
+	I(d ,di)  <+ M * V(d,di) / rd;
+	I(d ,di)  <+ white_noise(4.0 * `C_K * thermocrasia / rd); 
+// EXTERNAL RESISTORS (RG, SUBSTRATE RESISTANCES NETWORK )
+	I(g ,gi ) <+ M * V(g ,gi ) / rg;
+	I(g ,gi ) <+ white_noise(4.0 * `C_K * thermocrasia / rg); 
+	I(b ,bi ) <+ M * V(b ,bi ) / rb;
+	I(b ,bi ) <+ white_noise(4.0 * `C_K * thermocrasia / rb); 
+	I(b ,bsi) <+ M * V(b ,bsi) / rsb;
+	I(b ,bsi) <+ white_noise(4.0 * `C_K * thermocrasia / rsb); 
+	I(b ,bdi) <+ M * V(b ,bdi) / rdb;
+	I(b ,bdi) <+ white_noise(4.0 * `C_K * thermocrasia / rdb); 
+	I(bi,bsi) <+ M * V(bi,bsi) * 2.0 / rdsb;
+	I(bi,bsi) <+ white_noise(4.0 * `C_K * thermocrasia * 2.0 / rdsb); 
+	I(bi,bdi) <+ M * V(bi,bdi) * 2.0 / rdsb;
+	I(bi,bdi) <+ white_noise(4.0 * `C_K * thermocrasia * 2.0 / rdsb); 
+`endif
+
+`ifdef NQS
+	I(gi,si) <+ ddt(CGSO * M * WeffNF * V(gi,si));
+	I(gi,di) <+ ddt(CGDO * M * WeffNF * V(gi,di));
+	I(gi,bi) <+ ddt(CGBO * M * 2.0 * Leff * NF * V(gi,bi));
+// SERIES RESISTORS
+	I(s ,si) <+ M * V(s,si) / rs;
+	I(s ,si) <+ white_noise(4.0 * `C_K * thermocrasia / rs); 
+	I(d ,di) <+ M * V(d,di) / rd;
+	I(d ,di) <+ white_noise(4.0 * `C_K * thermocrasia / rd); 
+// EXTERNAL RESISTORS (RG, SUBSTRATE RESISTANCES NETWORK )
+	I(g ,gi ) <+ M * V(g ,gi ) / rg;
+	I(g ,gi ) <+ white_noise(4.0 * `C_K * thermocrasia / rg); 
+	I(b ,bi ) <+ M * V(b ,bi ) / rb;
+	I(b ,bi ) <+ white_noise(4.0 * `C_K * thermocrasia / rb); 
+	I(b ,bsi) <+ M * V(b ,bsi) / rsb;
+	I(b ,bsi) <+ white_noise(4.0 * `C_K * thermocrasia / rsb); 
+	I(b ,bdi) <+ M * V(b ,bdi) / rdb;
+	I(b ,bdi) <+ white_noise(4.0 * `C_K * thermocrasia / rdb); 
+	I(bi,bsi) <+ M * V(bi,bsi) * 2.0 / rdsb;
+	I(bi,bsi) <+ white_noise(4.0 * `C_K * thermocrasia * 2.0 / rdsb); 
+	I(bi,bdi) <+ M * V(bi,bdi) * 2.0 / rdsb;
+	I(bi,bdi) <+ white_noise(4.0 * `C_K * thermocrasia * 2.0 / rdsb); 
+`endif

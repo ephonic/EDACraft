@@ -18,11 +18,8 @@ set(RFSIM_CIRCUIT_SOURCES
 # M2+ 模块占位（暂为空，避免空目录报错时再启用）
 set(RFSIM_MODEL_SOURCES
     model/builtin_devices.cpp
-    model/osdi_model.cpp
     model/sparam_device.cpp
     model/device_factory.cpp
-    model/osdi/osdi_library.cpp
-    model/osdi/osdi_client.cpp
 )
 set(RFSIM_ASSEMBLY_SOURCES
     assembly/matrix.cpp
@@ -83,7 +80,13 @@ set(RFSIM_OUTPUT_SOURCES
     output/hspice_out.cpp
     output/waveform_export.cpp
     output/measure.cpp
+    output/fourier.cpp
 )
+
+# 生成模型（Verilog-A -> C++ DeviceModel）— 强制启用，无 OSDI 依赖
+file(GLOB RFSIM_GENERATED_SOURCES model/generated/*_gen.cpp)
+list(APPEND RFSIM_MODEL_SOURCES ${RFSIM_GENERATED_SOURCES}
+    model/generated/generated_registry.cpp)
 
 # S 参数工具
 set(RFSIM_SPARAM_SOURCES
@@ -108,6 +111,8 @@ add_library(rfsim_core STATIC
     ${RFSIM_UTIL_SOURCES}
 )
 
+target_compile_definitions(rfsim_core PUBLIC RFSIM_USE_GENERATED_MODELS)
+
 target_include_directories(rfsim_core
     PUBLIC
         ${CMAKE_SOURCE_DIR}/src
@@ -130,6 +135,11 @@ if(RFSIM_USE_UMFPACK)
     target_compile_definitions(rfsim_core PUBLIC RFSIM_USE_UMFPACK)
     if(DEFINED BLAS_LIBRARIES AND NOT "${BLAS_LIBRARIES}" STREQUAL "")
         target_link_libraries(rfsim_core PUBLIC ${BLAS_LIBRARIES})
+    else()
+        # 无外部 BLAS：编译 stub BLAS（简单循环实现，性能低但可验证 UMFPACK 运行时）
+        add_library(stub_blas STATIC ${CMAKE_SOURCE_DIR}/cmake/stub_blas.c)
+        target_link_libraries(rfsim_core PUBLIC stub_blas)
+        message(STATUS "UMFPACK: using stub BLAS (no external BLAS found)")
     endif()
 endif()
 

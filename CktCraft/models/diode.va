@@ -10,8 +10,8 @@ module diode_va(A,C,dT);
     electrical A,C,CI;
     thermal dT;
 
-    branch (A,CI) br_a_ci;
-    branch (CI,C) br_ci_c;
+    branch (A,CI) br_a_ci;    // RS branch: A → CI
+    branch (CI,C) br_ci_c;    // junction branch: CI → C
     branch (dT )  br_sht; //self-heating
 
     (*desc= "Saturation current", units = "A"*) parameter real is = 1e-14 from [0:inf];
@@ -61,8 +61,8 @@ module diode_va(A,C,dT);
         rs_t = rs*pow(tdev/tnom,zetars);
         rth_t = rth*pow(tdev/tnom,zetarth);
 
-        vd = V(br_a_ci);
-        vr = V(br_ci_c);
+        vr = V(br_a_ci);    // RS voltage: A → CI
+        vd = V(br_ci_c);    // junction voltage: CI → C
         id =  is_t * (limexp(vd / (n * vt)) - 1);
 
 
@@ -73,14 +73,16 @@ module diode_va(A,C,dT);
         y    = sqrt(x*x + 1.92);
         vd_smooth   = vf-vt*(x + y)/(2);
         qd   = cj0*vj * (1-pow(1-vd_smooth/vj, 1-m))/(1-m);
-        
-        I(br_a_ci) <+ id + ddt(qd) + $simparam("gmin", 1e-12) * vd + flicker_noise(abs(id), 1.0);
 
+        // RS branch: A → CI
         if (rs > minr) begin
-            I(br_ci_c) <+ vr / rs_t + white_noise(sqrt(4*`P_K*tdev/rs_t));
+            I(br_a_ci) <+ vr / rs_t + white_noise(sqrt(4*`P_K*tdev/rs_t));
         end else begin
-            V(br_ci_c) <+ 0.0;
+            V(br_a_ci) <+ 0.0;
         end
+
+        // Junction branch: CI → C
+        I(br_ci_c) <+ id + ddt(qd) + $simparam("gmin", 1e-12) * vd + flicker_noise(abs(id), 1.0);
 
         if (rth > minr) begin
             // dissipated power

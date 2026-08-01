@@ -1,0 +1,65 @@
+==9185== Memcheck, a memory error detector
+==9185== Copyright (C) 2002-2015, and GNU GPL'd, by Julian Seward et al.
+==9185== Using Valgrind-3.11.0 and LibVEX; rerun with -h for copyright info
+==9185== Command: ./vaParser bsimsoi450.va bsimsoi450
+==9185== 
+==9185== Invalid read of size 8
+==9185==    at 0x41A4FA: std::__cxx11::_List_base<statement, std::allocator<statement> >::_M_node_count() const (stl_list.h:373)
+==9185==    by 0x417687: std::__cxx11::list<statement, std::allocator<statement> >::size() const (stl_list.h:947)
+==9185==    by 0x40C346: verilogparse() (vaYacc.y:1361)
+==9185==    by 0x42B262: main (vaParser.cpp:512)
+==9185==  Address 0x88ab0a0 is 16 bytes before a block of size 72 alloc'd
+==9185==    at 0x4C2E0EF: operator new(unsigned long) (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==9185==    by 0x403837: lexvalNew(char const*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, int, int) (vaLex.l:22)
+==9185==    by 0x403964: TKRETURN(char const*, int) (vaLex.l:38)
+==9185==    by 0x405B4A: veriloglex() (vaLex.l:248)
+==9185==    by 0x4087DC: verilogparse() (vaYacc.cpp:1711)
+==9185==    by 0x42B262: main (vaParser.cpp:512)
+==9185== 
+==9185== Invalid read of size 8
+==9185==    at 0x418CD8: std::__cxx11::_List_base<statement, std::allocator<statement> >::_M_clear() (list.tcc:69)
+==9185==    by 0x4163D8: std::__cxx11::_List_base<statement, std::allocator<statement> >::~_List_base() (in /home/yangfan/development/xyce/va-dev/vaparser/test/vaParser)
+==9185==    by 0x415BE9: std::__cxx11::list<statement, std::allocator<statement> >::~list() (stl_list.h:507)
+==9185==    by 0x415C0A: yaccVal::~yaccVal() (in /home/yangfan/development/xyce/va-dev/vaparser/test/vaParser)
+==9185==    by 0x40C40A: verilogparse() (vaYacc.y:1370)
+==9185==    by 0x42B262: main (vaParser.cpp:512)
+==9185==  Address 0x88ab090 is 32 bytes before a block of size 80 in arena "client"
+==9185== 
+==9185== Invalid read of size 8
+==9185==    at 0x418CF9: std::__cxx11::_List_base<statement, std::allocator<statement> >::_M_clear() (list.tcc:73)
+==9185==    by 0x4163D8: std::__cxx11::_List_base<statement, std::allocator<statement> >::~_List_base() (in /home/yangfan/development/xyce/va-dev/vaparser/test/vaParser)
+==9185==    by 0x415BE9: std::__cxx11::list<statement, std::allocator<statement> >::~list() (stl_list.h:507)
+==9185==    by 0x415C0A: yaccVal::~yaccVal() (in /home/yangfan/development/xyce/va-dev/vaparser/test/vaParser)
+==9185==    by 0x40C40A: verilogparse() (vaYacc.y:1370)
+==9185==    by 0x42B262: main (vaParser.cpp:512)
+==9185==  Address 0x90 is not stack'd, malloc'd or (recently) free'd
+==9185== 
+==9185== 
+==9185== Process terminating with default action of signal 11 (SIGSEGV)
+==9185==  Access not within mapped region at address 0x90
+==9185==    at 0x418CF9: std::__cxx11::_List_base<statement, std::allocator<statement> >::_M_clear() (list.tcc:73)
+==9185==    by 0x4163D8: std::__cxx11::_List_base<statement, std::allocator<statement> >::~_List_base() (in /home/yangfan/development/xyce/va-dev/vaparser/test/vaParser)
+==9185==    by 0x415BE9: std::__cxx11::list<statement, std::allocator<statement> >::~list() (stl_list.h:507)
+==9185==    by 0x415C0A: yaccVal::~yaccVal() (in /home/yangfan/development/xyce/va-dev/vaparser/test/vaParser)
+==9185==    by 0x40C40A: verilogparse() (vaYacc.y:1370)
+==9185==    by 0x42B262: main (vaParser.cpp:512)
+==9185==  If you believe this happened as a result of a stack
+==9185==  overflow in your program's main thread (unlikely but
+==9185==  possible), you can try to increase the size of the
+==9185==  main thread stack using the --main-stacksize= flag.
+==9185==  The main thread stack size used in this run was 8388608.
+==9185== 
+==9185== HEAP SUMMARY:
+==9185==     in use at exit: 7,287,052 bytes in 326,428 blocks
+==9185==   total heap usage: 454,699 allocs, 128,271 frees, 17,406,871 bytes allocated
+==9185== 
+==9185== LEAK SUMMARY:
+==9185==    definitely lost: 1,765,685 bytes in 36,290 blocks
+==9185==    indirectly lost: 383,358 bytes in 8,621 blocks
+==9185==      possibly lost: 0 bytes in 0 blocks
+==9185==    still reachable: 5,138,009 bytes in 281,517 blocks
+==9185==         suppressed: 0 bytes in 0 blocks
+==9185== Rerun with --leak-check=full to see details of leaked memory
+==9185== 
+==9185== For counts of detected and suppressed errors, rerun with: -v
+==9185== ERROR SUMMARY: 3 errors from 3 contexts (suppressed: 0 from 0)

@@ -1,0 +1,35 @@
+begin : FRINGING_CAPACITANCES
+	if (KJF != 0.0)
+	begin
+		tmp	= vbi + VFR / UT + vs - (psi_p - 2.0 * qs);
+		QSFR	= Weffc * NF * KJF * (1.0 + CJF * UT * vs) * sqrt(UT * `MAXA(tmp,0.0,DFR));
+		tmp	= vbi + VFR / UT + vdp - (psi_p - 2.0 * qdp);
+		QDFR	= Weffc * NF * KJF * (1.0 + CJF * UT * vdp) * sqrt(UT * `MAXA(tmp,0.0,DFR));
+	end
+	else
+	begin
+		QSFR 	= 0.0;
+		QDFR 	= 0.0;
+	end
+end //  FRINGING_CAPACITANCES_GUILDENBLAT
+
+`ifdef DC_S
+	I(d ,g ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QDFR) + (1 - d_gt_s_flag) * ddt(QSFR));
+	I(s ,g ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QSFR) + (1 - d_gt_s_flag) * ddt(QDFR));
+`endif
+`ifdef DC
+	I(di,g ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QDFR) + (1 - d_gt_s_flag) * ddt(QSFR));
+	I(si,g ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QSFR) + (1 - d_gt_s_flag) * ddt(QDFR));
+`endif
+`ifdef RF_S
+	I(di,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QDFR) + (1 - d_gt_s_flag) * ddt(QSFR));
+	I(si,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QSFR) + (1 - d_gt_s_flag) * ddt(QDFR));
+`endif
+`ifdef RF
+	I(di,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QDFR) + (1 - d_gt_s_flag) * ddt(QSFR));
+	I(si,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QSFR) + (1 - d_gt_s_flag) * ddt(QDFR));
+`endif
+`ifdef NQS
+	I(di,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QDFR) + (1 - d_gt_s_flag) * ddt(QSFR));
+	I(si,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QSFR) + (1 - d_gt_s_flag) * ddt(QDFR));
+`endif

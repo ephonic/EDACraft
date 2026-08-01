@@ -1,11 +1,12 @@
-// device_factory.cpp — 器件 wrapper 工厂实现
+// device_factory.cpp — 器件 wrapper 工厂实现（纯生成模型，无 OSDI 依赖）
 #include "device_factory.hpp"
 #include "builtin_devices.hpp"
-#include "osdi_model.hpp"
 #include "sparam_device.hpp"
 #include "../parser/expression.hpp"
+#include "generated/generated_registry.hpp"
 
 #include <cmath>
+#include <set>
 #include <stdexcept>
 
 namespace rfsim {
@@ -19,6 +20,35 @@ namespace {
 EvalContext buildResolvedEvalContext(const ParamEnv& env) {
     EvalContext ctx;
     registerBuiltinFunctions(ctx);
+
+    // 注册用户 .func 定义到 multiFuncs
+    // .func name(a,b,...) 'body' -> 注册为 lambda：把实参绑定到 ctx.vars 后求值 body
+    if (env.funcDefs) {
+        for (const auto& fd : *env.funcDefs) {
+            std::string fname = fd.name;
+            for (auto& c : fname) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            std::vector<std::string> argNames = fd.args;
+            std::string body = fd.body;
+            ctx.multiFuncs[fname] = [argNames, body, &ctx](const std::vector<double>& args) -> double {
+                if (args.size() < argNames.size()) return 0.0;
+                // 把实参绑定到临时 vars（保存旧值，求值后恢复）
+                std::vector<std::pair<std::string, double>> saved;
+                for (size_t i = 0; i < argNames.size(); ++i) {
+                    auto it = ctx.vars.find(argNames[i]);
+                    if (it != ctx.vars.end()) saved.emplace_back(argNames[i], it->second);
+                    ctx.vars[argNames[i]] = args[i];
+                }
+                double result = 0.0;
+                std::string err;
+                evaluateExpression(body, ctx, result, err);
+                // 恢复旧值
+                for (auto& [k, v] : saved) ctx.vars[k] = v;
+                for (size_t i = 0; i < argNames.size(); ++i) ctx.vars.erase(argNames[i]);
+                return result;
+            };
+        }
+    }
+
     if (!env.globalParams) return ctx;
     // 第一遍：所有 Number 直接加入
     for (const auto& [gn, gv] : *env.globalParams) {
@@ -107,10 +137,8 @@ bool lookupFirstPositionalNumber(const std::vector<ParamValue>& positional,
 std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
                                          const FlatModel* model,
                                          const ParamEnv& env,
-                                         std::vector<std::shared_ptr<OsdiLibrary>>& libCache,
                                          NodeId& internalNodeBase,
-                                         Diagnostics& diags,
-                                         OsdiModelBlockCache* blockCache) {
+                                         Diagnostics& diags) {
     char c = fd.firstLetter;
 
     // 电阻 R: name n1 n2 value
@@ -203,6 +231,30 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
                         wf.pw     = getNum(i+6, 0.0);
                         wf.period = getNum(i+7, 0.0);
                         pendingWaveform = wf;
+                    } else if (low == "exp") {
+                        // EXP(v1 v2 td1 tau1 td2 tau2)
+                        Waveform wf; wf.type = Waveform::EXP;
+                        auto getNum = [&](size_t j, double def) -> double {
+                            if (j < fd.positional.size() && fd.positional[j].kind == ParamValue::Kind::Number)
+                                return fd.positional[j].num;
+                            return def;
+                        };
+                        wf.vo     = getNum(i+1, 0.0);       // v1
+                        wf.va     = getNum(i+2, 0.0) - wf.vo; // v2-v1
+                        wf.td     = getNum(i+3, 0.0);        // td1
+                        wf.freq   = getNum(i+4, 1e-6);       // tau1
+                        wf.pw     = getNum(i+5, 1e-6);       // td2
+                        wf.period = getNum(i+6, 1e-6);       // tau2
+                        pendingWaveform = wf;
+                    } else if (low == "pwl") {
+                        // PWL t1 v1 t2 v2 ...
+                        Waveform wf; wf.type = Waveform::PWL;
+                        for (size_t j = i+1; j + 1 < fd.positional.size(); j += 2) {
+                            if (fd.positional[j].kind == ParamValue::Kind::Number &&
+                                fd.positional[j+1].kind == ParamValue::Kind::Number)
+                                wf.pwlPoints.emplace_back(fd.positional[j].num, fd.positional[j+1].num);
+                        }
+                        pendingWaveform = wf;
                     }
                 }
             }
@@ -235,31 +287,118 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
         catch (const std::exception& e) { diags.error(fd.loc, fd.name + ": " + e.what()); return nullptr; }
     }
 
-    // S 参数器件 K: name n1 n2 ... file="device.sNp" z0=50
+    // E: VCVS (电压控电压源)  E name n+ n- nc+ nc- gain
+    if (c == 'e') {
+        if (fd.nodes.size() < 4) { diags.error(fd.loc, fd.name + ": VCVS needs 4 nodes (n+ n- nc+ nc-)"); return nullptr; }
+        double gain = 1.0;
+        lookupNumber(fd.params, "gain", env, gain) ||
+        lookupFirstPositionalNumber(fd.positional, env, gain);
+        return std::make_unique<VCVS>(fd.name, fd.nodes[0], fd.nodes[1], fd.nodes[2], fd.nodes[3], gain);
+    }
+    // G: VCCS (电压控电流源)  G name n+ n- nc+ nc- gain
+    if (c == 'g') {
+        if (fd.nodes.size() < 4) { diags.error(fd.loc, fd.name + ": VCCS needs 4 nodes (n+ n- nc+ nc-)"); return nullptr; }
+        double gain = 1.0;
+        lookupNumber(fd.params, "gain", env, gain) ||
+        lookupFirstPositionalNumber(fd.positional, env, gain);
+        return std::make_unique<VCCS>(fd.name, fd.nodes[0], fd.nodes[1], fd.nodes[2], fd.nodes[3], gain);
+    }
+    // S: 压控开关  S name n+ n- nc+ nc- model [ron= roff= vt= vh=]
+    if (c == 's') {
+        if (fd.nodes.size() < 4) { diags.error(fd.loc, fd.name + ": switch needs 4 nodes"); return nullptr; }
+        double ron = 1.0, roff = 1e12, vt = 0.0, vh = 0.0;
+        lookupNumber(fd.params, "ron", env, ron);
+        lookupNumber(fd.params, "roff", env, roff);
+        lookupNumber(fd.params, "vt", env, vt);
+        lookupNumber(fd.params, "vh", env, vh);
+        return std::make_unique<VCSwitch>(fd.name, fd.nodes[0], fd.nodes[1], fd.nodes[2], fd.nodes[3], ron, roff, vt, vh);
+    }
+    // F: CCCS (电流控电流源)  F name n+ n- vsrc_name gain
+    // 控制电流 = 指定电压源的分支电流
+    if (c == 'f') {
+        if (fd.nodes.size() < 2) { diags.error(fd.loc, fd.name + ": CCCS needs 2 nodes (n+ n-)"); return nullptr; }
+        // vsrc name is in fd.model (if semiconductor) or fd.positional[0] (if not)
+        std::string vsName = fd.model;
+        if (vsName.empty() && !fd.positional.empty()) {
+            vsName = fd.positional[0].str;
+        }
+        if (vsName.empty()) { diags.error(fd.loc, fd.name + ": CCCS needs vsrc name as 3rd arg"); return nullptr; }
+        double gain = 1.0;
+        // gain is in positional (after vsrc name) or named param
+        if (!fd.positional.empty() && fd.positional[0].kind == ParamValue::Kind::Number) {
+            gain = fd.positional[0].num;
+        } else if (fd.positional.size() > 1 && fd.positional[1].kind == ParamValue::Kind::Number) {
+            gain = fd.positional[1].num;
+        } else {
+            lookupNumber(fd.params, "gain", env, gain);
+        }
+        return std::make_unique<CCCS>(fd.name, fd.nodes[0], fd.nodes[1], vsName, gain);
+    }
+    // H: CCVS (电流控电压源)  H name n+ n- vsrc_name gain
+    if (c == 'h') {
+        if (fd.nodes.size() < 2) { diags.error(fd.loc, fd.name + ": CCVS needs 2 nodes (n+ n-)"); return nullptr; }
+        std::string vsName = fd.model;
+        if (vsName.empty() && !fd.positional.empty()) {
+            vsName = fd.positional[0].str;
+        }
+        if (vsName.empty()) { diags.error(fd.loc, fd.name + ": CCVS needs vsrc name as 3rd arg"); return nullptr; }
+        double gain = 1.0;
+        if (!fd.positional.empty() && fd.positional[0].kind == ParamValue::Kind::Number) {
+            gain = fd.positional[0].num;
+        } else if (fd.positional.size() > 1 && fd.positional[1].kind == ParamValue::Kind::Number) {
+            gain = fd.positional[1].num;
+        } else {
+            lookupNumber(fd.params, "gain", env, gain);
+        }
+        return std::make_unique<CCVS>(fd.name, fd.nodes[0], fd.nodes[1], vsName, gain);
+    }
+    // K: 互感（耦合电感）或 S 参数器件
+    // K name L1 L2 k_value -> 互感
+    // K name n1 n2 file="*.sNp" -> S 参数器件
     if (c == 'k') {
-        if (fd.nodes.size() < 2) { diags.error(fd.loc, fd.name + ": s-param device needs >= 2 nodes"); return nullptr; }
+        // Check if this is S-parameter (has file=) or mutual inductance
+        bool isSparam = false;
         std::string touchstonePath;
         double z0 = 50.0;
         for (const auto& [pn, pv] : fd.params) {
-            if (pn == "file" && pv.kind != ParamValue::Kind::Number && !pv.str.empty())
+            if (pn == "file" && pv.kind != ParamValue::Kind::Number && !pv.str.empty()) {
+                isSparam = true;
                 touchstonePath = pv.str;
-            else if (pn == "z0" && pv.kind == ParamValue::Kind::Number)
+            } else if (pn == "z0" && pv.kind == ParamValue::Kind::Number) {
                 z0 = pv.num;
+            }
         }
-        if (touchstonePath.empty()) {
-            diags.error(fd.loc, fd.name + ": s-param device needs file=\"path.sNp\"");
-            return nullptr;
+        if (isSparam) {
+            // S 参数器件
+            if (fd.nodes.size() < 2) { diags.error(fd.loc, fd.name + ": s-param device needs >= 2 nodes"); return nullptr; }
+            try {
+                return std::make_unique<SParamDevice>(fd.name, fd.nodes, touchstonePath, z0);
+            } catch (const std::exception& e) {
+                diags.error(fd.loc, fd.name + ": " + e.what()); return nullptr;
+            }
         }
-        try {
-            return std::make_unique<SParamDevice>(fd.name, fd.nodes, touchstonePath, z0);
-        } catch (const std::exception& e) {
-            diags.error(fd.loc, fd.name + ": " + e.what());
-            return nullptr;
+        // 互感：K name L1_name L2_name k_value
+        // fd.nodes contains L1 and L2 as node references - but for mutual
+        // inductance, the first two args are inductor instance names, not nodes.
+        // For now, support direct node-based mutual inductance:
+        // K name n1a n1b n2a n2b L1= L2= k=
+        if (fd.nodes.size() >= 4) {
+            double L1 = 0, L2 = 0, k = 0;
+            lookupNumber(fd.params, "l1", env, L1);
+            lookupNumber(fd.params, "l2", env, L2);
+            lookupNumber(fd.params, "k", env, k) ||
+            lookupFirstPositionalNumber(fd.positional, env, k);
+            if (L1 > 0 && L2 > 0) {
+                return std::make_unique<MutualInductance>(fd.name,
+                    fd.nodes[0], fd.nodes[1], fd.nodes[2], fd.nodes[3], L1, L2, k);
+            }
         }
+        diags.error(fd.loc, fd.name + ": K needs either file= (S-param) or L1=/L2=/k= (mutual inductance)");
+        return nullptr;
     }
 
-    // 半导体器件 (M/Q/D/Z/J/S/B) → OsdiModel
-    if (c == 'm' || c == 'q' || c == 'd' || c == 'z' || c == 'j' || c == 's' || c == 'b') {
+    // 半导体器件 (M/Q/D/Z/J/S/B) → vaParser 生成模型
+    if (c == 'm' || c == 'q' || c == 'd' || c == 'z' || c == 'j' || c == 'b') {
         std::string modelName = fd.model;
         // 确定模型类型名（用于匹配 OSDI descriptor）
         // SPICE 约定 .model name type：descriptor 通常以 type 或 name 命名
@@ -278,172 +417,88 @@ std::unique_ptr<DeviceModel> buildDevice(const FlatDevice& fd,
         // 故 level=54 的 MOSFET：强制把 descriptor 搜索导向 "bsim4"，
         // 参数照原样传递（表达式参数由 C2 多遍求值解析）。
         std::string origType = (mdlDef && !mdlDef->type.empty()) ? mdlDef->type : "";
-        bool routedToBsim4 = false;
-        if (mdlDef && (origType == "nmos" || origType == "pmos")) {
-            double lvl = 0.0;
-            if (lookupNumber(mdlDef->params, "level", env, lvl)) {
-                int li = static_cast<int>(lvl);
-                // HSPICE BSIM4 levels: 54 (BSIM4), 14 (BSIM4.0+), 4 (BSIM4), 7 (一些 vendor 映射)
-                if (li == 54 || li == 14 || li == 4 || li == 7) {
-                    // 路由到 bsim4.dll descriptor。descriptor 名为 "bsim4va"
-                    // （models/bsim4.va 的 module 名）。
-                    typeOrName = "bsim4va";
-                    routedToBsim4 = true;
+
+        // vaParser 生成模型路由（Verilog-A -> C++ codegen）。
+        // 所有半导体器件均通过生成模型实现，无 OSDI DLL 依赖。
+        {
+            // 解析 .model 参数（排除路由控制关键字）
+            ParamList genModelParams;
+            if (mdlDef) {
+                for (const auto& [pn, pv] : mdlDef->params) {
+                    if (pn == "file" || pn == "osdi" || pn == "lib" || pn == "generated") continue;
+                    double val = 0.0;
+                    if (resolveParamValue(pv, env, val)) {
+                        genModelParams.push_back({pn, ParamValue{ParamValue::Kind::Number, val, "", SourceLoc{}}});
+                    }
                 }
             }
-        }
-
-        // 尝试加载 OSDI 库：
-        //   1. .model 参数 file=<path>
-        //   2. <libSearchDir>/<modelName>.dll|.so
-        //   3. <libSearchDir>/<type>.dll|.so
-        std::shared_ptr<OsdiLibrary> lib;
-        const OsdiDescriptor* desc = nullptr;
-
-        // 收集候选库路径
-        std::vector<std::string> candidates;
-        if (mdlDef) {
-            for (const auto& [pn, pv] : mdlDef->params) {
-                if (pn == "file" || pn == "osdi" || pn == "lib") {
-                    if (pv.kind != ParamValue::Kind::Number && !pv.str.empty()) {
-                        std::string fpath = pv.str;
-                        candidates.push_back(fpath);  // 原始路径（相对 CWD）
-                        // 从 libSearchDir 解析相对路径
-                        if (!env.libSearchDir.empty()) {
-                            // 取 basename，拼到 libSearchDir 后
-                            size_t pos = fpath.find_last_of("\\/");
-                            std::string base = (pos != std::string::npos) ? fpath.substr(pos + 1) : fpath;
-                            candidates.push_back(env.libSearchDir + "\\" + base);
-                            // 也尝试 libSearchDir + 完整相对路径
-                            candidates.push_back(env.libSearchDir + "\\" + fpath);
+            // 处理 SPICE "m" (multiplier) 参数：等效于 m 个并联器件
+            ParamList scaledInstParams = fd.params;
+            double mult = 1.0;
+            if (lookupNumber(scaledInstParams, "m", env, mult) && mult != 1.0 && mult > 0.0) {
+                static const std::set<std::string> scaleByM = {
+                    "w", "nf", "ad", "as", "pd", "ps"
+                };
+                for (auto& [pn, pv] : scaledInstParams) {
+                    if (scaleByM.count(pn) && pv.kind == ParamValue::Kind::Number) {
+                        pv.num *= mult;
+                    }
+                }
+            }
+            // scale 缩放：HSPICE .option scale=<val>
+            if (env.scale != 1.0 && c == 'm') {
+                static const std::set<std::string> scaleParams = {
+                    "w", "l", "ad", "as", "pd", "ps", "nrd", "nrs", "sa", "sb", "sd"
+                };
+                for (auto& [pn, pv] : scaledInstParams) {
+                    if (scaleParams.count(pn) && pv.kind == ParamValue::Kind::Number) {
+                        pv.num *= env.scale;
+                        if (env.scalem != 1.0 && (pn == "ad" || pn == "as")) {
+                            pv.num *= env.scalem;
                         }
                     }
                 }
             }
-        }
-        // C1-level54：若 level=54 路由到 bsim4va，优先把 bsim4.dll 放到候选最前。
-        // 文件名是 bsim4.dll（VA 源文件名），descriptor 名是 bsim4va（module 名）。
-        if (routedToBsim4 && !env.libSearchDir.empty()) {
-#ifdef _WIN32
-            candidates.insert(candidates.begin(), env.libSearchDir + "\\bsim4.dll");
-#else
-            candidates.insert(candidates.begin(), env.libSearchDir + "/libbsim4.so");
-#endif
-        }
-        if (!env.libSearchDir.empty() && !modelName.empty()) {
-#ifdef _WIN32
-            candidates.push_back(env.libSearchDir + "\\" + modelName + ".dll");
-            candidates.push_back(env.libSearchDir + "\\" + typeOrName + ".dll");
-#else
-            candidates.push_back(env.libSearchDir + "/lib" + modelName + ".so");
-            candidates.push_back(env.libSearchDir + "/lib" + typeOrName + ".so");
-#endif
-        }
 
-        // 先检查 cache——用 modelName/type 查找已加载的 library+descriptor
-        for (auto& cached : libCache) {
-            const OsdiDescriptor* d = cached->findDescriptor(typeOrName);
-            if (!d && !modelName.empty()) d = cached->findDescriptor(modelName);
-            if (d) { lib = cached; desc = d; break; }
-        }
+            // 尝试按 type 查找生成模型
+            auto gen = createGeneratedModel(typeOrName, fd.name, fd.nodes, scaledInstParams, genModelParams);
+            if (!gen && typeOrName != modelName)
+                gen = createGeneratedModel(modelName, fd.name, fd.nodes, scaledInstParams, genModelParams);
 
-        if (!lib) {
-        for (const auto& path : candidates) {
-            // 检查缓存（同路径只加载一次）
-            for (auto& cached : libCache) {
-                if (cached->path() == path) { lib = cached; break; }
-            }
-            if (!lib) {
-                auto newLib = std::make_shared<OsdiLibrary>();
-                std::string err;
-                if (newLib->load(path, err)) {
-                    lib = newLib;
-                    libCache.push_back(lib);
-                } else {
-                    diags.warn(fd.loc, fd.name + ": cannot load OSDI lib " + path + ": " + err);
-                    lib.reset();
+            // PDK 风格 level=54/14/4/7 → 路由到 bsim4va
+            if (!gen && (origType == "nmos" || origType == "pmos")) {
+                double lvl = 0.0;
+                if (mdlDef && lookupNumber(mdlDef->params, "level", env, lvl)) {
+                    int li = static_cast<int>(lvl);
+                    if (li == 54 || li == 14 || li == 4 || li == 7) {
+                        bool hasTypeParam = false;
+                        for (const auto& [pn, pv] : genModelParams) {
+                            if (pn == "type") { hasTypeParam = true; break; }
+                        }
+                        if (!hasTypeParam) {
+                            genModelParams.push_back({"type",
+                                ParamValue{ParamValue::Kind::Number,
+                                           (origType == "pmos") ? -1.0 : 1.0,
+                                           "", SourceLoc{}}});
+                        }
+                        gen = createGeneratedModel("bsim4va", fd.name, fd.nodes, scaledInstParams, genModelParams);
+                    }
                 }
             }
-            if (lib) {
-                // 在库中查找匹配的 descriptor（先按 type，再按 name）
-                desc = lib->findDescriptor(typeOrName);
-                if (!desc && !modelName.empty()) desc = lib->findDescriptor(modelName);
-                if (desc) break;
-                lib.reset();
+
+            if (gen) {
+                gen->setTemperature(env.temperature);
+                gen->allocateInternalNodes(internalNodeBase);
+                return gen;
             }
-        }
-        }  // end if (!lib)
 
-        if (!lib || !desc) {
-            // 未找到库：构造占位 OsdiModel（ready=false），保留器件信息供诊断
-            // 发出信息（非错误）：无 OSDI 库时该器件无法评估
-            if (!candidates.empty()) {
-                diags.warn(fd.loc, fd.name + ": no OSDI library found for model '" +
-                           modelName + "' (tried " + std::to_string(candidates.size()) +
-                           " paths); device will not be evaluated");
-            }
-            // 占位 OsdiModel：传 nullptr lib/descriptor，ready()=false
-            auto placeholder = std::make_unique<OsdiModel>(fd.name, fd.nodes, nullptr, nullptr, fd.params, ParamList{});
-            placeholder->setFallbackTypeName(typeOrName);
-            (void)internalNodeBase;  // 占位不分配内部节点
-            return placeholder;
+            // 生成模型未找到：报错
+            diags.error(fd.loc, fd.name + ": no generated model found for type '" + typeOrName +
+                        "' (model='" + modelName + "'). Available: bsim4va, bsimcmg, bsimsoi, "
+                        "diode_va, diode_vt, ekv_va, bjt505va, bsim3_va, cap_linear, "
+                        "nmos_sh, simple_diode");
+            return nullptr;
         }
-
-        // 提取并解析 .model 级参数（排除 OSDI 库控制关键字）
-        ParamList modelParams;
-        if (mdlDef) {
-            for (const auto& [pn, pv] : mdlDef->params) {
-                if (pn == "file" || pn == "osdi" || pn == "lib") continue;
-                double val = 0.0;
-                if (resolveParamValue(pv, env, val)) {
-                    modelParams.push_back({pn, ParamValue{ParamValue::Kind::Number, val, "", SourceLoc{}}});
-                } else {
-                    diags.warn(fd.loc, fd.name + ": cannot resolve model parameter '" + pn + "'; skipped");
-                }
-            }
-        }
-
-        // C1-level54：level=54 路由到 bsim4.dll 时，根据 .model type 注入极性。
-        // VA bsim4 用 type 参数选极性（1=nmos, -1=pmos）。仅 pmos 需显式 type=-1
-        // （nmos 是 VA 默认，不注入保持默认行为，避免与直接 file= 路径不一致）。
-        if (routedToBsim4 && origType == "pmos") {
-            bool hasTypeParam = false;
-            for (const auto& [pn, pv] : modelParams) {
-                if (pn == "type") { hasTypeParam = true; break; }
-            }
-            if (!hasTypeParam) {
-                modelParams.push_back({"type", ParamValue{ParamValue::Kind::Number, -1.0, "", SourceLoc{}}});
-            }
-        }
-
-        auto m = std::make_unique<OsdiModel>(fd.name, fd.nodes, lib, desc, fd.params, modelParams);
-        m->setFallbackTypeName(typeOrName);
-
-        // V2-γ C3：若上层提供了共享 block 缓存且本 modelcard 已经构造过 block，
-        // 注入之；OsdiClient 会跳过重复的 setup_model，仅为本实例分配 instance 数据。
-        // 这同时是 BSIM4 多实例确定性串拥 bug（C1.4 / C2.b）的根本修复。
-        if (blockCache && mdlDef) {
-            auto it = blockCache->find(mdlDef);
-            if (it != blockCache->end() && it->second) {
-                m->useSharedModelBlock(it->second);
-            }
-        }
-
-        // 优化项6：设置器件温度（从 ParamEnv，默认 300.15K）。
-        // 必须在 initialize（→ setup_instance）之前调用。
-        if (env.temperature != 300.15) {
-            m->setTemperature(env.temperature);
-        }
-
-        if (!m->initialize(diags, internalNodeBase)) {
-            diags.warn(fd.loc, fd.name + ": OSDI initialize failed");
-        } else if (blockCache && mdlDef) {
-            // 首次构造成功后，把本 modelcard 的 block 登记进缓存；后续同 modelcard 的
-            // 实例由 cache hit 路径复用。
-            auto& slot = (*blockCache)[mdlDef];
-            if (!slot) slot = m->modelBlock();
-        }
-        return m;
     }
 
     diags.error(fd.loc, fd.name + ": unknown device type '" + std::string(1, c) + "'");
@@ -465,18 +520,14 @@ FactoryResult buildDeviceModels(const Circuit& circuit, const ParamEnv& env) {
     NodeId internalNodeBase = static_cast<NodeId>(circuit.nodes.size()) + 1;
     r.totalNodes = static_cast<uint32_t>(circuit.nodes.size());
 
-    // V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock；按 FlatModel* 索引。
-    OsdiModelBlockCache blockCache;
-
     for (const auto& fd : circuit.devices) {
         const FlatModel* mdl = nullptr;
         if (!fd.model.empty()) {
             auto it = models.find(fd.model);
             if (it != models.end()) mdl = it->second;
         }
-        auto dev = buildDevice(fd, mdl, envFull, r.libraries, internalNodeBase, r.diags, &blockCache);
+        auto dev = buildDevice(fd, mdl, envFull, internalNodeBase, r.diags);
         if (dev) {
-            // 累计内部节点数（OSDI 器件的 nodes 超过 num_terminals 的部分）
             r.devices.push_back(std::move(dev));
         }
     }

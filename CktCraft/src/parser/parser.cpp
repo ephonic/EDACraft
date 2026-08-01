@@ -260,6 +260,7 @@ private:
         if (cmd == "end")    { return; }
         if (cmd == "model")  { parseModelCard(rest, ln, netlist); return; }
         if (cmd == "param" || cmd == "params") { parseParamCard(rest, ln, netlist); return; }
+        if (cmd == "func") { parseFuncCard(rest, ln, netlist); return; }
         if (cmd == "options" || cmd == "option") {
             ControlCard c; c.command = "options"; c.loc = at(ln);
             c.params = parseParamPairs(rest);
@@ -340,6 +341,52 @@ private:
             for (auto& p : pl) substack_.back().def->params.push_back(p);
         }
         (void)ln;
+    }
+
+    // .func name(arg1,arg2,...) 'body_expr'  或  .func name(arg1,arg2,...) body_expr
+    void parseFuncCard(const std::vector<Token>& rest, uint32_t ln, Netlist& netlist) {
+        // rest[0] = name(args)  或 name ( args )
+        // 收集所有 token 文本拼接
+        std::string full;
+        for (const auto& t : rest) full += t.text + " ";
+        // 格式：name(arg1,arg2,...) 'body' 或 name(arg1,arg2,...) body
+        size_t parenOpen = full.find('(');
+        size_t parenClose = full.find(')');
+        if (parenOpen == std::string::npos || parenClose == std::string::npos) {
+            diags_.error(at(ln), ".func syntax error: missing ()");
+            return;
+        }
+        std::string name = full.substr(0, parenOpen);
+        // trim
+        while (!name.empty() && name.back() == ' ') name.pop_back();
+        for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        // 参数列表
+        std::string argsStr = full.substr(parenOpen + 1, parenClose - parenOpen - 1);
+        std::vector<std::string> args;
+        std::stringstream ss(argsStr);
+        std::string a;
+        while (std::getline(ss, a, ',')) {
+            // trim
+            while (!a.empty() && a.front() == ' ') a.erase(0, 1);
+            while (!a.empty() && a.back() == ' ') a.pop_back();
+            if (!a.empty()) args.push_back(a);
+        }
+
+        // body：parenClose 之后的部分，去引号
+        std::string body = full.substr(parenClose + 1);
+        // trim
+        while (!body.empty() && body.front() == ' ') body.erase(0, 1);
+        while (!body.empty() && body.back() == ' ') body.pop_back();
+        // 去引号
+        if (!body.empty() && body.front() == '\'') body.erase(0, 1);
+        if (!body.empty() && body.back() == '\'') body.pop_back();
+
+        FuncDef fd;
+        fd.name = name;
+        fd.args = args;
+        fd.body = body;
+        netlist.funcDefs.push_back(fd);
     }
 
     // C1：解析路径——优先相对于当前文件所在目录（HSPICE 语义），再相对 CWD。
@@ -636,7 +683,7 @@ private:
         // S 参数器件(K)：变长节点，收集到 file= 参数前都是节点
         const bool semi = isSemiconductor(d.firstLetter);
         const bool isSparam = (d.firstLetter == 'k');
-        int expectedNodes = semi ? maxNodes(d.firstLetter) : 2;
+        int expectedNodes = maxNodes(d.firstLetter);
         if (isSparam) expectedNodes = 999;  // 变长：收集到 file= 前都是节点
         bool modelSeen = !semi; // 线性器件不需要模型名
 
@@ -714,18 +761,22 @@ private:
     }
 
     static bool isSemiconductor(char c) {
-        return c=='m'||c=='q'||c=='d'||c=='z'||c=='j'||c=='s'||c=='b';
+        return c=='m'||c=='q'||c=='d'||c=='z'||c=='j'||c=='b';
     }
     // 半导体器件的预期节点数（模型名之前的节点数）
     static int maxNodes(char c) {
         switch (c) {
             case 'd': return 2;            // 二极管: anode cathode
             case 'q': return 3;            // BJT: c b e (+ 可选 substrate)
-            case 'm': return 4;            // MOSFET: d g s b
+            case 'm': return 4;            // MOSFET: d g s b (thermal node via named param t=)
             case 'j': return 3;            // JFET: d g s
             case 'z': return 3;            // MESFET: d g s
-            case 's': return 3;            // SOI
+            case 's': return 4;            // 开关: n+ n- nc+ nc-
             case 'b': return 4;            // GaAs
+            case 'e': return 4;            // VCVS: n+ n- nc+ nc-
+            case 'f': return 2;            // CCCS: n+ n- (控制源通过 VS 索引)
+            case 'g': return 4;            // VCCS: n+ n- nc+ nc-
+            case 'h': return 2;            // CCVS: n+ n- (控制源通过 VS 索引)
             default: return 2;
         }
     }

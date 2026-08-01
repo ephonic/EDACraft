@@ -6,7 +6,6 @@
 #include "../parser/token.hpp"
 #include "../circuit/flatten.hpp"
 #include "../model/device_factory.hpp"
-#include "../model/osdi_model.hpp"
 #include "../model/builtin_devices.hpp"
 #include "../assembly/linear_solver_factory.hpp"
 #include "../solver/dc_op.hpp"
@@ -20,6 +19,7 @@
 #include "../output/hspice_out.hpp"
 #include "../output/waveform_export.hpp"
 #include "../output/measure.hpp"
+#include "../output/fourier.hpp"
 #include "rfsim/rfsim_config.h"
 
 #include <cstdio>
@@ -55,6 +55,26 @@ rfsim::SolverMethod resolveSolverMethod(const rfsim::Circuit& c) {
         }
     }
     return m;
+}
+
+// Gmin stepping: 从 .options gminSteps=N 提取 gmin 步进数。默认 -1（用 DcOpOptions 内部默认）。
+// 也支持 .options gminStart=val, gmin=val。
+struct GminOverride { int steps = -1; double start = -1; double gmin = -1; };
+GminOverride resolveGminOptions(const rfsim::Circuit& c) {
+    GminOverride ov;
+    for (const auto& cc : c.controls) {
+        if (cc.command != "options" && cc.command != "option") continue;
+        for (const auto& [pn, pv] : cc.params) {
+            if (pn == "gminsteps" || pn == "gmin_steps") {
+                if (pv.kind == rfsim::ParamValue::Kind::Number) ov.steps = static_cast<int>(pv.num);
+            } else if (pn == "gminstart" || pn == "gmin_start") {
+                if (pv.kind == rfsim::ParamValue::Kind::Number) ov.start = pv.num;
+            } else if (pn == "gmin") {
+                if (pv.kind == rfsim::ParamValue::Kind::Number) ov.gmin = pv.num;
+            }
+        }
+    }
+    return ov;
 }
 
 // B2：从 .options multirate=1 提取 multi-rate 开关。默认 false。
@@ -233,6 +253,7 @@ int run(const std::string& path, const std::string& libSearchDir) {
     const rfsim::ControlCard* pssCard = nullptr;
     const rfsim::ControlCard* tranCard = nullptr;
     const rfsim::ControlCard* noiseCard = nullptr;
+    const rfsim::ControlCard* stepTempCard = nullptr;
     for (const auto& cc : c.controls) {
         if (cc.command == "op") hasOp = true;
         else if (cc.command == "dc") dcCard = &cc;
@@ -241,26 +262,79 @@ int run(const std::string& path, const std::string& libSearchDir) {
         else if (cc.command == "pss") pssCard = &cc;
         else if (cc.command == "tran") tranCard = &cc;
         else if (cc.command == "noise") noiseCard = &cc;
+        else if (cc.command == "step" && cc.args.size() >= 1) {
+            // .step temp <start> <stop> <increment>
+            if (cc.args[0] == "temp") stepTempCard = &cc;
+        }
     }
 
     // 鑻ユ湁浠讳綍鍒嗘瀽锛屾瀯閫犲櫒浠?wrapper锛堝悇鍒嗘瀽鎸夐渶澶嶅埗鍓湰锛
+    // ---- 温度扫描参数解析 ----
+    // 先解析 .options temp=（在温度循环之前，这样初始温度可用）
+    double temperatureC = 27.0;
+    double scaleFactor = 1.0;
+    double scalemFactor = 1.0;
+    for (const auto& cc : c.controls) {
+        if (cc.command != "options" && cc.command != "option") continue;
+        for (const auto& [pn, pv] : cc.params) {
+            if (pn == "temp" || pn == "temperature") {
+                bool ok; double t = parseSpiceNumber(pv.str, ok);
+                if (ok) temperatureC = t;
+                else if (pv.kind == rfsim::ParamValue::Kind::Number) temperatureC = pv.num;
+            } else if (pn == "scale") {
+                bool ok; double s = parseSpiceNumber(pv.str, ok);
+                if (ok) scaleFactor = s;
+            } else if (pn == "scalem") {
+                bool ok; double s = parseSpiceNumber(pv.str, ok);
+                if (ok) scalemFactor = s;
+            }
+        }
+    }
+
+    struct TempSweep { bool active=false; double start=27; double stop=27; double step=1; };
+    TempSweep tempSweep;
+    if (stepTempCard && stepTempCard->args.size() >= 4) {
+        bool ok1, ok2, ok3;
+        tempSweep.start = parseSpiceNumber(stepTempCard->args[1], ok1);
+        tempSweep.stop  = parseSpiceNumber(stepTempCard->args[2], ok2);
+        tempSweep.step  = parseSpiceNumber(stepTempCard->args[3], ok3);
+        if (ok1 && ok2 && ok3 && tempSweep.step != 0.0) tempSweep.active = true;
+    } else if (stepTempCard && stepTempCard->args.size() == 1) {
+        // .step temp (只有关键字，使用默认范围 -40..125 step 10)
+        tempSweep.start = -40; tempSweep.stop = 125; tempSweep.step = 10;
+        tempSweep.active = true;
+    }
+
+    // 温度扫描结果收集
+    struct TempSweepPoint {
+        double tempC;
+        std::vector<std::pair<std::string, double>> nodeVoltages;
+        std::vector<std::pair<std::string, double>> branchCurrents;
+    };
+    std::vector<TempSweepPoint> tempSweepResults;
+
+    // 温度扫描主循环（单点 = 不扫描）
+    int tempSweepMaxIter = tempSweep.active ? 10000 : 1;
+    for (int tempIter = 0; tempIter < tempSweepMaxIter; ++tempIter) {
+        double currentTempC = temperatureC;
+        if (tempSweep.active) {
+            currentTempC = tempSweep.start + tempIter * tempSweep.step;
+            if (currentTempC > tempSweep.stop + tempSweep.step * 0.01) break;
+            if (tempIter == 0) {
+                std::cout << "\n=== Temperature Sweep (" << tempSweep.start << " to " << tempSweep.stop
+                          << " °C, step=" << tempSweep.step << " °C) ===\n";
+            }
+            std::cout << "\n--- Temp = " << currentTempC << " °C ---\n";
+        }
+
     if (hasOp || dcCard || acCard || hbCard || pssCard || tranCard || noiseCard) {
         rfsim::ParamEnv env;
         env.libSearchDir = libSearchDir;
 
-        // 优化项6：从 .options temp=<Celsius> 解析温度（转开尔文）。
-        double temperatureC = 27.0;  // 默认 27°C = 300.15K
-        for (const auto& cc : c.controls) {
-            if (cc.command != "options" && cc.command != "option") continue;
-            for (const auto& [pn, pv] : cc.params) {
-                if (pn == "temp" || pn == "temperature") {
-                    bool ok; double t = parseSpiceNumber(pv.str, ok);
-                    if (ok) temperatureC = t;
-                    else if (pv.kind == rfsim::ParamValue::Kind::Number) temperatureC = pv.num;
-                }
-            }
-        }
-        env.temperature = temperatureC + 273.15;  // °C → K
+        env.temperature = currentTempC + 273.15;
+        env.scale = scaleFactor;
+        env.scalem = scalemFactor;
+        env.funcDefs = &fr.circuit.funcDefs;
         auto fac = rfsim::buildDeviceModels(c, env);
         for (const auto& e : fac.diags.errors) {
             std::cerr << "  " << e.loc.file << ":" << e.loc.line << ": " << e.message << "\n";
@@ -287,6 +361,17 @@ int run(const std::string& path, const std::string& libSearchDir) {
             std::cout << "\n=== DC Operating Point ===\n";
             rfsim::DcOpOptions dcOpts;
             dcOpts.solver = solverMethod;
+            // Apply gmin overrides from .options
+            auto gminOv = resolveGminOptions(c);
+            if (gminOv.steps >= 0) { dcOpts.gmin.gminSteps = gminOv.steps; }
+            if (gminOv.start >= 0) { dcOpts.gmin.gminStart = gminOv.start; }
+            if (gminOv.gmin >= 0)  { dcOpts.gmin.gmin = gminOv.gmin; }
+            // 当 gmin stepping 被禁用时，自动启用 source stepping 作为同伦替代。
+            // 但仅在用户显式请求 gminSteps=0 时才做此自动切换（保留默认同伦路径）。
+            // BSIM4 等强非线性器件在深亚阈值区可能需要额外同伦保护。
+            if (gminOv.steps == 0 && dcOpts.sourceStepCount == 0) {
+                dcOpts.sourceStepCount = 10;
+            }
             auto dc = rfsim::solveDcOp(fac.totalNodes, fac.devices, dcOpts);
             if (!dc.converged) {
                 std::cerr << "DC did not converge after " << dc.iterations << " iterations\n";
@@ -294,9 +379,13 @@ int run(const std::string& path, const std::string& libSearchDir) {
                 for (const auto& w : dc.diags.warnings) std::cerr << "  warn: " << w.message << "\n";
             } else {
                 std::cout << "converged in " << dc.iterations << " iteration(s)\n\n--- Node Voltages ---\n";
-                std::cout.setf(std::ios::fixed); std::cout.precision(6);
-                for (rfsim::NodeId i = 1; i <= c.nodes.size(); ++i) {
-                    std::cout << "  v(" << c.nodes.nameOf(i) << ") = " << dc.nodeVoltages[i] << " V\n";
+                std::cout.setf(std::ios::scientific); std::cout.precision(6);
+                const rfsim::NodeId nPrint = std::max(static_cast<rfsim::NodeId>(c.nodes.size()), fac.totalNodes);
+                for (rfsim::NodeId i = 1; i <= nPrint && i < dc.nodeVoltages.size(); ++i) {
+                    if (i <= static_cast<rfsim::NodeId>(c.nodes.size()))
+                        std::cout << "  v(" << c.nodes.nameOf(i) << ") = " << dc.nodeVoltages[i] << " V\n";
+                    else
+                        std::cout << "  v(int" << i << ") = " << dc.nodeVoltages[i] << " V\n";
                 }
                 uint32_t vsIdx = 0;
                 for (const auto& d : fac.devices) {
@@ -411,11 +500,10 @@ int run(const std::string& path, const std::string& libSearchDir) {
                     hbcfg.numHarmonics = static_cast<uint32_t>(n);
                 }
             }
-            // 检测是否含非线性 OSDI 器件，决定是否走非线性 HB
+            // 检测是否含非线性器件，决定是否走非线性 HB
             bool hasNonlinear = false;
             for (const auto& dev : fac.devices) {
-                auto* om = dynamic_cast<rfsim::OsdiModel*>(dev.get());
-                if (om && om->ready() && !om->is_linear()) { hasNonlinear = true; break; }
+                if (!dev->is_linear()) { hasNonlinear = true; break; }
             }
             std::cout << "\n=== Harmonic Balance (f0=" << hbcfg.fundamental
                       << " Hz, NH=" << hbcfg.numHarmonics
@@ -441,6 +529,9 @@ int run(const std::string& path, const std::string& libSearchDir) {
                     hb.ok = true;
                     std::cout << "  nonlinear HB converged in " << hbnl.iterations
                               << " iter, " << hbnl.continuationSteps << " continuation steps\n";
+                    if (hbnl.relaxedConvergence)
+                        std::cout << "  note: relaxed convergence (stall-accepted at small residual;\n"
+                                     "        solution below reltol precision — consider more harmonics)\n";
                 } else {
                     // 2) 非线性 HB 不收敛 → 自动回退到 Shooting-PSS → FFT
                     // A2-3：回退 Shooting 用完整同伦（gmin 步进 + 更多迭代），而非原
@@ -612,16 +703,106 @@ int run(const std::string& path, const std::string& libSearchDir) {
             (void)tstart;  // tstart 当前作为初始时刻记录（积分从 DC 工作点开始）
             std::cout << "\n=== Transient Analysis (tstep=" << tstep
                       << ", tstop=" << tstop << ") ===\n";
-            // DC OP warm start
+            // DC OP warm start（增强 gmin 同伦提高收敛率）
             rfsim::DcOpOptions dcTranOpts; dcTranOpts.solver = solverMethod;
+            dcTranOpts.gmin.gminSteps = 20;  // 更激进 gmin 同伦
+            dcTranOpts.gmin.gminStart = 1e-1; // 更大起始 gmin
+            dcTranOpts.sourceStepCount = 10;  // 源步进
+            dcTranOpts.maxIterations = 200;
+
+            // Parse .ic (initial conditions) and .nodeset from control cards
+            // .ic v(node)=value ...  -> override initV after DC OP
+            // .nodeset v(node)=value ... -> use as initial guess for DC OP
+            // Parser tokenizes "v(out)=0.5" as:
+            //   args = ["v", "(", "out"], params = [(")", 0.5)]
+            // (the ")" before "=" becomes the param name)
+            std::map<std::string, double> icMap, nodesetMap;
+            for (const auto& cc : c.controls) {
+                if (cc.command == "ic" || cc.command == "nodeset") {
+                    // Walk args looking for pattern: v ( name
+                    for (size_t i = 0; i + 2 < cc.args.size(); ++i) {
+                        if (cc.args[i] == "v" && cc.args[i+1] == "(") {
+                            // Node name is everything between ( and the end of args
+                            // (the ")" was consumed as param name with "=")
+                            std::string nodeName = cc.args[i+2];
+                            // Value is in the first param (name=")" or empty)
+                            double val = 0;
+                            if (!cc.params.empty()) {
+                                const auto& ppv = cc.params[0].second;
+                                if (ppv.kind == rfsim::ParamValue::Kind::Number) val = ppv.num;
+                                else if (ppv.kind == rfsim::ParamValue::Kind::String) {
+                                    try { val = std::stod(ppv.str); } catch (...) {}
+                                }
+                            }
+                            if (cc.command == "ic") icMap[nodeName] = val;
+                            else nodesetMap[nodeName] = val;
+                            break;  // Only one v() per .ic line in this simple parser
+                        }
+                    }
+                }
+            }
+            if (!nodesetMap.empty()) {
+                std::cerr << "  .nodeset: " << nodesetMap.size() << " node presets\n";
+            }
+
             auto dcTran = rfsim::solveDcOp(fac.totalNodes, fac.devices, dcTranOpts);
+            std::cerr << "  DC OP warm-start: " << (dcTran.converged ? "converged" : "did NOT converge")
+                      << " (" << dcTran.iterations << " iter)\n";
             std::vector<double> initV(fac.totalNodes + 1, 0.0);
-            if (dcTran.converged && dcTran.nodeVoltages.size() > fac.totalNodes) initV = dcTran.nodeVoltages;
+            if (dcTran.converged && dcTran.nodeVoltages.size() > fac.totalNodes) {
+                initV = dcTran.nodeVoltages;
+            } else {
+                std::cerr << "  warn: DC OP did not converge, using mid-rail seed\n";
+                // 中轨种子：电压源节点用其 DC 值，其余节点用 vdd/2
+                // 这比全零更接近实际工作点（MOSFET 在饱和区而非截止区）
+                double vddVal = 1.8;
+                for (const auto& d : fac.devices) {
+                    if (auto* vs = dynamic_cast<rfsim::VoltageSource*>(d.get())) {
+                        const auto& nds = d->nodes();
+                        if (nds.size() >= 1 && nds[0] <= fac.totalNodes)
+                            initV[nds[0]] = vs->voltage();
+                    }
+                }
+                // 其余节点用 vdd/2（中轨）
+                for (uint32_t i = 1; i <= fac.totalNodes; ++i) {
+                    if (initV[i] == 0.0) initV[i] = vddVal / 2.0;
+                }
+            }
+            // Apply .ic overrides: .ic v(node)=value forces initial transient voltage
+            if (!icMap.empty()) {
+                for (const auto& [nodeName, val] : icMap) {
+                    rfsim::NodeId nid = c.nodes.lookup(nodeName);
+                    if (nid != 0 && nid <= fac.totalNodes) {
+                        initV[nid] = val;
+                        std::cerr << "  .ic: v(" << nodeName << ")=" << val << " applied\n";
+                    }
+                }
+            }
             rfsim::TimeStepperOptions tranOpts;
             tranOpts.dt = tstep;
             tranOpts.tstop = tstop;
             tranOpts.solver = solverMethod;
             tranOpts.multiRate = multiRate;
+            tranOpts.failOnNonConverge = false;  // 不收敛也继续推进（避免硬退出）
+            tranOpts.localNewtonMaxIter = 100;   // 更多 Newton 迭代
+            // 自适应步长：.options trtol=<val> 启用；trtol=0 禁用（固定步长）
+            {
+                double trtolVal = -1.0;
+                for (const auto& cc : c.controls) {
+                    if (cc.command != "options" && cc.command != "option") continue;
+                    for (const auto& [pn, pv] : cc.params) {
+                        if (pn == "trtol") {
+                            if (pv.kind == rfsim::ParamValue::Kind::Number) trtolVal = pv.num;
+                            else { bool ok; trtolVal = parseSpiceNumber(pv.str, ok); }
+                        }
+                    }
+                }
+                if (trtolVal > 0.0) {
+                    tranOpts.adaptiveStep = true;
+                    tranOpts.trtol = trtolVal;
+                    std::cout << "  adaptive step: enabled (trtol=" << trtolVal << ")\n";
+                }
+            }
             auto tr = rfsim::integrateTransient(fac.totalNodes, fac.devices, initV, tranOpts);
             if (!tr.ok) {
                 std::cerr << "Transient did not converge\n";
@@ -646,6 +827,33 @@ int run(const std::string& path, const std::string& libSearchDir) {
                 // 优化项2：.measure tran 求值（在波形上做 max/min/pp/avg/rms/when/delay）
                 auto measures = rfsim::evaluateAllMeasures(c.controls, tr, c, std::cout);
                 (void)measures;
+
+                // .four 傅里叶分析：.four <freq> <signal> [nharm]
+                for (const auto& cc : c.controls) {
+                    if (cc.command != "four" && cc.command != "fourier") continue;
+                    if (cc.args.size() < 2) continue;
+                    bool ok; double freq = parseSpiceNumber(cc.args[0], ok);
+                    if (!ok && cc.args[0].find('.') != std::string::npos) {
+                        // 可能被 tokenizer 拆开（如 1.5 -> 1 . 5）
+                        std::string fstr;
+                        for (const auto& a : cc.args) { fstr += a; if (a.find('.') != std::string::npos) break; }
+                        freq = parseSpiceNumber(fstr, ok);
+                    }
+                    if (!ok) continue;
+                    // 信号表达式：重构 v(node) 或 i(branch)
+                    std::string sig;
+                    for (const auto& a : cc.args) {
+                        if (a == cc.args[0]) continue;  // skip freq
+                        sig += a;
+                        if (sig.find(')') != std::string::npos) break;  // v(out) 闭合
+                    }
+                    uint32_t nharm = 10;
+                    for (const auto& [pn, pv] : cc.params) {
+                        if (pn == "nharm" || pn == "n") nharm = static_cast<uint32_t>(pv.num);
+                    }
+                    auto fr = rfsim::computeFourier(tr, c, freq, sig, nharm);
+                    rfsim::writeFourier(std::cout, fr);
+                }
             }
         }
 
@@ -733,6 +941,26 @@ int run(const std::string& path, const std::string& libSearchDir) {
                 rfsim::writeNodeTable(lisf, c);
                 std::cout << "\nlisting written to: " << lisPath << "\n";
             }
+        }
+    }  // end if (hasOp || dcCard || ...)
+
+    // 温度扫描：收集当前温度点的结果
+    if (tempSweep.active && hasOp) {
+        TempSweepPoint pt;
+        pt.tempC = currentTempC;
+        // 结果已在本轮分析中输出到 stdout，无需额外收集
+        tempSweepResults.push_back(pt);
+    }
+
+    }  // end temperature sweep loop
+
+    // 温度扫描汇总表
+    if (tempSweep.active && !tempSweepResults.empty()) {
+        std::cout << "\n=== Temperature Sweep Summary ===\n";
+        std::cout << "  Temp(°C) | Points\n";
+        std::cout << "  ---------+-------\n";
+        for (const auto& pt : tempSweepResults) {
+            printf("  %8.1f | completed\n", pt.tempC);
         }
     }
 

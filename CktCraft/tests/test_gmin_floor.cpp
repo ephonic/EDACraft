@@ -26,39 +26,19 @@
 // stagnant step and accepts it as the gmin-step OP -> floorAcceptsInner
 // counts up. Eventually a deeper gmin step diverges -> floorAcceptOuter.
 #include "model/builtin_devices.hpp"
-#include "model/osdi_model.hpp"
-#include "model/osdi/osdi_library.hpp"
+#include "model/generated/generated_registry.hpp"
 #include "solver/dc_op.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace rfsim {
 namespace {
-
-std::string projectRootFromTestData() {
-    std::string s = RFSIM_TEST_DATA_DIR;
-    auto pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    return s;
-}
-
-std::string bsim4LibPath() {
-    if (const char* p = std::getenv("RFSIM_BSIM4_LIB")) return p;
-#ifdef _WIN32
-    return projectRootFromTestData() + "/models/bsim4.dll";
-#else
-    return projectRootFromTestData() + "/models/bsim4.so";
-#endif
-}
 
 ParamList bsim4Model() {
     ParamList p;
@@ -102,32 +82,22 @@ bool allFinite(const std::vector<double>& v) {
 } // namespace
 
 TEST(GminFloor, CurrentMirrorHostileHomotopy) {
-    OsdiLibrary tmpLib;
-    std::string why;
-    if (!tmpLib.load(bsim4LibPath(), why))
-        GTEST_SKIP() << "bsim4 lib not loadable: " << why;
-    auto lib = std::make_shared<OsdiLibrary>(std::move(tmpLib));
-    if (lib->numDescriptors() < 1)
-        GTEST_SKIP() << "no descriptors in bsim4";
-    const OsdiDescriptor* desc = lib->descriptors();
-
     // Nodes: 1=vdd, 2=nGate(=nDrainRef), 3=nOut
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 2.5));
     devs.push_back(std::make_unique<Resistor>("rref",  1, 2, 10e3));
     devs.push_back(std::make_unique<Resistor>("rload", 1, 3, 10e3));
 
-    Diagnostics diags; NodeId base = 4;
-    auto mref = std::make_unique<OsdiModel>(
-        "mref", std::vector<NodeId>{2, 2, 0, 0},  // d, g(=d, diode), s, b
-        lib, desc, instWL(), bsim4Model());
-    ASSERT_TRUE(mref->initialize(diags, base)) << "mref BSIM4 init failed";
+    auto mref = createGeneratedModel("bsim4va", "mref",
+        std::vector<NodeId>{2, 2, 0, 0},  // d, g(=d, diode), s, b
+        instWL(), bsim4Model());
+    ASSERT_TRUE(mref) << "mref BSIM4 create failed";
     devs.push_back(std::move(mref));
 
-    auto mmir = std::make_unique<OsdiModel>(
-        "mmir", std::vector<NodeId>{3, 2, 0, 0},  // d=nOut, g=nGate, s, b
-        lib, desc, instWL(), bsim4Model());
-    ASSERT_TRUE(mmir->initialize(diags, base)) << "mmir BSIM4 init failed";
+    auto mmir = createGeneratedModel("bsim4va", "mmir",
+        std::vector<NodeId>{3, 2, 0, 0},  // d=nOut, g=nGate, s, b
+        instWL(), bsim4Model());
+    ASSERT_TRUE(mmir) << "mmir BSIM4 create failed";
     devs.push_back(std::move(mmir));
 
     NodeId nN = computeMaxNode(devs);

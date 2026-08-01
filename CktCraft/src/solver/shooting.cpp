@@ -3,7 +3,6 @@
 #include "../assembly/linear_solver_factory.hpp"
 #include "../assembly/hb_jacobian.hpp"
 #include "../model/builtin_devices.hpp"
-#include "../model/osdi_model.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -56,15 +55,7 @@ void updateDeviceStates(const std::vector<std::unique_ptr<DeviceModel>>& devices
     op.method = method;
     for (const auto& d : devices) {
         if (!d->hasTransientState()) continue;
-        // V3-MR: multi-rate——只对到达 K 步的器件调 swapState
-        if (auto* osdi = dynamic_cast<OsdiModel*>(d.get())) {
-            if (osdi->mrAdvance()) {
-                osdi->updateTransientState(op);  // swapState + invalidateEvalCache
-            }
-            // 慢器件未到 K 步：跳过 swapState，保留 prevState_/nextState_
-        } else {
-            d->updateTransientState(op);  // 非 OSDI 器件：正常 swap
-        }
+        d->updateTransientState(op);
     }
 }
 
@@ -127,14 +118,11 @@ bool integrateOnePeriod(uint32_t numNodes,
                         sys.G.addPattern(nds[r] - 1, nds[c] - 1);
                     }
                 }
-            } else if (auto* osdi = dynamic_cast<OsdiModel*>(dev.get())) {
-                if (!osdi->ready()) continue;
-                const OsdiDescriptor* d = osdi->descriptor();
-                const auto& onds = osdi->nodes();
-                for (uint32_t e = 0; e < d->num_jacobian_entries; ++e) {
-                    const OsdiJacobianEntry& je = d->jacobian_entries[e];
-                    NodeId gr = (je.nodes.node_1 < onds.size()) ? onds[je.nodes.node_1] : 0;
-                    NodeId gc = (je.nodes.node_2 < onds.size()) ? onds[je.nodes.node_2] : 0;
+            } else if (!dev->is_linear()) {
+                // 非线性器件：stamp pattern 声明
+                StampPattern sp;
+                dev->stamp_pattern(sp);
+                for (const auto& [gr, gc] : sp.entries) {
                     if (gr == 0 && gc == 0) continue;
                     if (gr == 0) sys.G.addPattern(gc - 1, gc - 1);
                     else if (gc == 0) sys.G.addPattern(gr - 1, gr - 1);
@@ -144,11 +132,9 @@ bool integrateOnePeriod(uint32_t numNodes,
         }
         sys.G.finalize();
         sys.G.commitPattern();
-        // V3-L0: 绑定 OSDI stamp 指针
+        // V3-L0: 绑定 stamp 指针
         for (uint32_t di = 0; di < devices.size(); ++di) {
-            if (auto* osdi = dynamic_cast<OsdiModel*>(devices[di].get())) {
-                if (osdi->ready()) osdi->bindStampPtrs(sys.G, numNodes);
-            }
+            devices[di]->bindStampPtrs(sys.G, numNodes);
         }
     }
     double T = 1.0 / config.fundamental;
@@ -349,12 +335,7 @@ ShootingResult solveShooting(uint32_t numNodes,
     // shooting 的内层 transient evalTransient。
     auto resetAllLimiting = [&]() {
         for (const auto& d : devices)
-            if (auto* o = dynamic_cast<OsdiModel*>(d.get())) {
-                o->resetLimiting();
-                // V3-MR Phase3: 不强制 mrForceEval——让自适应 mrCheckVoltages 决定
-                // FD 扰动 nodeVPert 与 nodeV 只差 eps=1e-7，mrCheckVoltages 会判定稳定→bypass
-                // 这保证主路径和 FD 路径使用一致的 eval 决策
-            }
+            d->resetLimiting();
     };
     resetAllLimiting();
 
@@ -387,7 +368,7 @@ ShootingResult solveShooting(uint32_t numNodes,
     // FD 雅可比路径已强制 needsEval（见 integrateOnePeriod 注释），故不破坏 FD 一致性。
     if (opts.multiRate) {
         for (const auto& d : devices)
-            if (auto* o = dynamic_cast<OsdiModel*>(d.get())) o->setMrAutoTune(true);
+            d->setMrAutoTune(true);
     }
 
     // A1-4：外层 monodromy 雅可比求解器也提到外层 Newton 循环外。

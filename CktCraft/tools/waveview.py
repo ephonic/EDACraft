@@ -24,20 +24,50 @@
     - 信号名筛选（位置参数）
 
 依赖: matplotlib + numpy（pip install matplotlib numpy）
+      无 matplotlib 时可用 --ascii 模式（纯文本波形打印，零依赖）
 """
 import sys
 import os
 import json
 import math
 
+# matplotlib/numpy 可选--无依赖时用 --ascii 模式
+HAS_MPL = False
 try:
     import numpy as np
     import matplotlib
-    matplotlib.use('TkAgg')  # 交互式后端
+    matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
+    HAS_MPL = True
 except ImportError:
-    print("错误: 需要 matplotlib + numpy。安装: pip install matplotlib numpy")
-    sys.exit(1)
+    pass
+
+
+def print_ascii_waveform(t, cols, selected):
+    """纯 ASCII 波形打印（无 matplotlib 依赖）。
+    打印选定信号的数值表 + 简易 ASCII 图。
+    """
+    print(f"\n=== ASCII Waveform ({len(t)} points, t=[{t[0]:.4g}..{t[-1]:.4g}]) ===")
+    # 数值表（每 N 行采样一次，最多 40 行）
+    step = max(1, len(t) // 40)
+    header = "  time          " + "  ".join(f"{s:>12s}" for s in selected)
+    print(header)
+    print("-" * len(header))
+    for i in range(0, len(t), step):
+        vals = "  ".join(f"{cols[s][i]:>12.6e}" for s in selected)
+        print(f"  {t[i]:>12.6e}  {vals}")
+    # ASCII 图（最后一个信号）
+    if selected:
+        sig = selected[-1]
+        vals = cols[sig]
+        vmin, vmax = min(vals), max(vals)
+        if vmax > vmin:
+            print(f"\n  ASCII plot: {sig} (range {vmin:.4g} .. {vmax:.4g})")
+            for i in range(0, len(t), step):
+                v = vals[i]
+                pos = int((v - vmin) / (vmax - vmin) * 60)
+                bar = '#' * pos + '|' if pos < 60 else '#' * 60
+                print(f"  {t[i]:>10.4g} |{bar:<60s}| {v:.4e}")
 
 
 # ============ 格式 reader ============
@@ -262,6 +292,7 @@ def main():
     p.add_argument('--logy', action='store_true', help='对数 Y 轴')
     p.add_argument('--export', metavar='PNG', help='导出 PNG（不弹窗）')
     p.add_argument('--list', action='store_true', help='列出所有信号后退出')
+    p.add_argument('--ascii', action='store_true', help='纯 ASCII 波形打印（无需 matplotlib）')
     args = p.parse_args()
 
     t, cols, fmt = detect_and_read(args.path)
@@ -274,7 +305,6 @@ def main():
         return
 
     selected = args.signals if args.signals else all_sigs
-    # 过滤不存在的信号
     missing = [s for s in selected if s not in cols]
     if missing:
         print(f"警告: 信号不存在，已忽略: {missing}")
@@ -282,6 +312,13 @@ def main():
     if not selected:
         print(f"错误: 无可显示信号。可用: {all_sigs}")
         sys.exit(1)
+
+    # ASCII 模式或无 matplotlib 时用纯文本打印
+    if args.ascii or not HAS_MPL:
+        print_ascii_waveform(t, cols, selected)
+        if not HAS_MPL and not args.ascii:
+            print("\n(未安装 matplotlib，使用 --ascii 模式。安装: pip install matplotlib numpy)")
+        return
 
     fig = None
     if args.xy:

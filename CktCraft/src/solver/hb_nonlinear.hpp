@@ -15,7 +15,6 @@
 #include "hb_solver.hpp"
 #include "../assembly/linear_solver_factory.hpp"
 #include "../model/device_model.hpp"
-#include "../model/osdi_model.hpp"
 #include "../util/bench.hpp"
 #include "gmin_options.hpp"
 #include "nonlinear_damping.hpp"
@@ -28,6 +27,10 @@ namespace rfsim {
 struct HbNlResult {
     std::vector<NodeHarmonics> nodeVoltages;
     bool converged = false;
+    // true 表示 Newton 停滞在小残差窄谷（强非线性截断系统无精确零或
+    // 极病态），按 stallAcceptRel 放宽标准接受的解；物理上可用但
+    // 未达到 reltol 精度。converged 同时为 true。
+    bool relaxedConvergence = false;
     Diagnostics diags;
     HbConfig config;
     uint32_t iterations = 0;
@@ -82,6 +85,14 @@ struct HbNlOptions {
     // 雅可比比固定 Tikhonov 更鲁棒）。可选 Backtracking（原行为）/TrustRegion。
     // lambda 仍作为 LM 的初始 λ（lambda>0 时启用 LM 正则；=0 退化为纯 Newton）。
     DampingStrategy damping = DampingStrategy::LevenbergMarquardt;
+
+    // 停滞接受（stall acceptance）：强非线性 HB 截断系统可能不存在
+    // F=0 的精确解（或山谷极窄），Newton 会在小残差处完全停滞。
+    // 连续 stallAcceptIters 次迭代无进展且 ‖F‖ ≤ stallAcceptRel·‖F0‖
+    // 时按放宽标准接受当前解（relaxedConvergence=true 返回）。
+    // stallAcceptRel=0 禁用。环境变量 RFSIM_HBNL_STALL_REL 可覆盖。
+    double stallAcceptRel = 3e-2;
+    uint32_t stallAcceptIters = 8;
 };
 
 // 求解非线性 HB。

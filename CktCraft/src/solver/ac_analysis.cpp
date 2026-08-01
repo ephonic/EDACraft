@@ -5,7 +5,6 @@
 // 方案4: R 导纳预存 (staticValues), 跨频率不重算
 #include "ac_analysis.hpp"
 #include "../model/builtin_devices.hpp"
-#include "../model/osdi_model.hpp"
 #include "../model/sparam_device.hpp"
 #include "../assembly/sparse_cmpl_matrix.hpp"
 #ifdef RFSIM_USE_KLU
@@ -49,7 +48,7 @@ AcResult solveAc(uint32_t numNodes,
     // H5: 检测非线性器件
     static bool warnedNonlinear = false;
     for (const auto& d : devices) {
-        if (dynamic_cast<const OsdiModel*>(d.get())) {
+        if (!d->is_linear()) {
             if (!warnedNonlinear) {
                 std::fprintf(stderr,
                     "[AC] 警告: 电路含非线性器件 (%s)，AC 分析将跳过该器件。\n"

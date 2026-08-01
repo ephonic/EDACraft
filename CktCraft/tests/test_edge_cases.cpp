@@ -15,40 +15,19 @@
 //   - 全部节点电压 finite（无 NaN/Inf）
 //   - converged==true OR diags 中含 warning/error
 #include "model/builtin_devices.hpp"
-#include "model/osdi_model.hpp"
-#include "model/osdi/osdi_library.hpp"
+#include "model/generated/generated_registry.hpp"
 #include "solver/dc_op.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace rfsim {
 namespace {
-
-// ---- 共用助手（与 multi_device 风格一致；保留独立避免链接耦合）----
-std::string projectRootFromTestData() {
-    std::string s = RFSIM_TEST_DATA_DIR;
-    auto pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    return s;
-}
-
-std::string osdiPath(const char* env, const char* name) {
-    if (const char* p = std::getenv(env)) return p;
-#ifdef _WIN32
-    return projectRootFromTestData() + "/models/" + name + ".dll";
-#else
-    return projectRootFromTestData() + "/models/" + name + ".so";
-#endif
-}
 
 ParamList bsim4Model() {
     ParamList p;
@@ -169,13 +148,6 @@ TEST(EdgeCase, TinyResistor_1pOhm) {
 //       OR 收敛失败 + 显式 warning；不允许 NaN。
 // ============================================================
 TEST(EdgeCase, FloatingBsim4Body) {
-    std::string libPath = osdiPath("RFSIM_BSIM4_LIB", "bsim4");
-    OsdiLibrary tmp; std::string err;
-    if (!tmp.load(libPath, err)) GTEST_SKIP() << "bsim4: " << err;
-    auto lib = std::make_shared<OsdiLibrary>(std::move(tmp));
-    if (lib->numDescriptors() < 1) GTEST_SKIP() << "no bsim4 descriptor";
-    const OsdiDescriptor* desc = lib->descriptors();
-
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.0));
     devs.push_back(std::make_unique<VoltageSource>("vg",  3, 0, 0.7));
@@ -183,12 +155,10 @@ TEST(EdgeCase, FloatingBsim4Body) {
     // body=4 弱接地 1TΩ —— 这是该测试的核心病态点
     devs.push_back(std::make_unique<Resistor>("rb_weak", 4, 0, 1e12));
 
-    Diagnostics diags;
-    NodeId base = 5;
-    auto m = std::make_unique<OsdiModel>(
-        "m1", std::vector<NodeId>{2, 3, 0, 4},  // d, g, s, b
-        lib, desc, instWL(), bsim4Model());
-    if (!m->initialize(diags, base)) GTEST_SKIP() << "BSIM4 init failed";
+    auto m = createGeneratedModel("bsim4va", "m1",
+        std::vector<NodeId>{2, 3, 0, 4},  // d, g, s, b
+        instWL(), bsim4Model());
+    if (!m) GTEST_SKIP() << "bsim4va generated model unavailable";
     devs.push_back(std::move(m));
 
     NodeId nN = computeMaxNode(devs);
@@ -222,31 +192,16 @@ TEST(EdgeCase, FloatingBsim4Body) {
 //       limiting 不应把 Vd latch 到正向。
 // ============================================================
 TEST(EdgeCase, ReverseBiasDiode) {
-    std::string libPath = osdiPath("RFSIM_DIODE_LIB", "diode");
-    OsdiLibrary tmp; std::string err;
-    if (!tmp.load(libPath, err)) GTEST_SKIP() << "diode: " << err;
-    auto lib = std::make_shared<OsdiLibrary>(std::move(tmp));
-    if (lib->numDescriptors() < 1) GTEST_SKIP() << "no diode descriptor";
-    const OsdiDescriptor* desc = lib->descriptors();
-
     std::vector<std::unique_ptr<DeviceModel>> devs;
     // vs 给反偏：在 anode 上施加 -0.5V，cathode 接地
     devs.push_back(std::make_unique<VoltageSource>("vs", 1, 0, -0.5));
     devs.push_back(std::make_unique<Resistor>("rs", 1, 2, 100.0));
 
-    // 端子序：A, C, dT —— dT 单独节点 + Rth 拉地（与 A3 一致）
-    std::vector<NodeId> nodes(desc->num_terminals, 0);
-    if (desc->num_terminals > 0) nodes[0] = 2;
-    if (desc->num_terminals > 1) nodes[1] = 0;
-    if (desc->num_terminals > 2) nodes[2] = 4;
-    if (desc->num_terminals > 2)
-        devs.push_back(std::make_unique<Resistor>("rth", 4, 0, 1.0));
-
-    Diagnostics diags;
-    NodeId base = 5;
-    auto dio = std::make_unique<OsdiModel>(
-        "d1", nodes, lib, desc, ParamList{}, diodeFullModel());
-    if (!dio->initialize(diags, base)) GTEST_SKIP() << "diode init failed";
+    // simple_diode: 端子序 A, C
+    auto dio = createGeneratedModel("simple_diode", "d1",
+        std::vector<NodeId>{2, 0},  // anode=2, cathode=0
+        ParamList{}, diodeFullModel());
+    if (!dio) GTEST_SKIP() << "simple_diode generated model unavailable";
     devs.push_back(std::move(dio));
 
     NodeId nN = computeMaxNode(devs);

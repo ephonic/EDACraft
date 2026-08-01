@@ -2,7 +2,6 @@
 #include "time_stepper.hpp"
 #include "../assembly/linear_solver_factory.hpp"
 #include "../model/builtin_devices.hpp"
-#include "../model/osdi_model.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -39,14 +38,7 @@ void updateDeviceStates(const std::vector<std::unique_ptr<DeviceModel>>& devices
     op.method = method;
     for (const auto& d : devices) {
         if (!d->hasTransientState()) continue;
-        // V3-MR: multi-rate——只对到达 K 步的器件调 swapState
-        if (auto* osdi = dynamic_cast<OsdiModel*>(d.get())) {
-            if (osdi->mrAdvance()) {
-                osdi->updateTransientState(op);
-            }
-        } else {
-            d->updateTransientState(op);
-        }
+        d->updateTransientState(op);
     }
 }
 
@@ -71,11 +63,10 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
     nodeV.resize(numNodes + 1, 0.0);
     std::vector<double> branchI(r.numBranches, 0.0);
 
-    // 跨分析重置 OSDI limiting，防止上一次 DC/HB 求解的 limiting 锚点
-    // （V_old）泄漏到 transient 的第一次 evalTransient。这里走的是
-    // OsdiClient::limitingInitialized_ 的 reset，下一次 eval 会重新带 INIT_LIM。
+    // 跨分析重置 limiting 状态，防止上一次 DC/HB 求解的 limiting 锚点
+    // （V_old）泄漏到 transient 的第一次 evalTransient。
     for (const auto& d : devices)
-        if (auto* o = dynamic_cast<OsdiModel*>(d.get())) o->resetLimiting();
+        d->resetLimiting();
 
     auto buildSol = [&]() {
         std::vector<double> s(dim, 0.0);
@@ -88,7 +79,7 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
     // 现有 mrRateRatio/mrStepCounter/mrAutoTune 机制自动分级（稳定器件 K 增大）。
     if (opts.multiRate) {
         for (const auto& d : devices)
-            if (auto* o = dynamic_cast<OsdiModel*>(d.get())) o->setMrAutoTune(true);
+            d->setMrAutoTune(true);
     }
 
     // 用 DC 工作点初始化所有动态器件状态
@@ -101,6 +92,9 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
     if (numSteps == 0) numSteps = 1;
     double dt = opts.tstop / static_cast<double>(numSteps);
 
+    // 自适应步长：dtmax 默认 tstop/10
+    double effectiveDtMax = (opts.dtmax > 0.0) ? opts.dtmax : opts.tstop / 10.0;
+
     std::vector<double> prevNodeV = nodeV;
 
     // A1-4：求解器提到时间步循环外。同一电路拓扑下跨时间步 + 跨内层 Newton
@@ -109,8 +103,21 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
     std::unique_ptr<LinearSolver> solver;
     const SolverMethod solverMethod = opts.solver;
 
-    for (uint32_t step = 1; step <= numSteps; ++step) {
-        double t = step * dt;
+    // ---- 自适应步长主循环 ----
+    double t = 0.0;
+    uint32_t maxAdaptiveSteps = 1000000;  // 安全上限
+    for (uint32_t step = 1; step <= maxAdaptiveSteps; ++t, ++step) {
+        if (!opts.adaptiveStep) {
+            // 固定步长模式：用原逻辑
+            t = step * dt;
+            if (t > opts.tstop + dt * 0.5) break;
+        } else {
+            // 自适应模式：确保不超过 tstop
+            if (t >= opts.tstop - dt * 1e-6) break;
+            if (t + dt > opts.tstop) dt = opts.tstop - t;
+            if (dt < opts.dtmin) dt = opts.dtmin;
+            t += dt;
+        }
         std::vector<double> trialNodeV = nodeV;
         std::vector<double> trialBranchI = branchI;
 
@@ -151,7 +158,7 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
         for (uint32_t lit = 0; lit < opts.localNewtonMaxIter; ++lit) {
             // B1: 新 Newton 步——重置 OSDI 器件的 resid-only 标记，首装配算完整 jac。
             for (const auto& d : devices)
-                if (auto* o = dynamic_cast<OsdiModel*>(d.get())) o->beginNewtonStep();
+                d->beginNewtonStep();
             TransientSystem sys;
             double fNorm = 0.0;
             if (!assembleAndNorm(trialNodeV, sys, fNorm)) {
@@ -320,8 +327,51 @@ TimeDomainResult integrateTransient(uint32_t numNodes,
 
         // 更新动态器件状态
         updateDeviceStates(devices, nodeV, prevNodeV, t, dt, opts.method);
-        prevNodeV = nodeV;
 
+        // ---- 自适应步长：LTE 估计与 dt 调整 ----
+        if (opts.adaptiveStep && step > 1) {
+            // LTE 估计：基于连续两点解的变化率。
+            // 对 BE (order 1)：LTE ≈ |Δx| * dt / (2 * max(|x|, abstol))
+            // 对 Trap (order 2)：LTE ≈ |Δ²x| * dt² / (12 * max(|x|, abstol))
+            // 其中 Δx = x_{n} - x_{n-1}，Δ²x = x_{n} - 2*x_{n-1} + x_{n-2}
+            double lteNorm = 0.0;
+            uint32_t nCheck = std::min(numNodes, static_cast<uint32_t>(r.points.size() > 1 ? r.points[r.points.size()-1].x.size() : 0));
+            if (nCheck > 0 && r.points.size() >= 2) {
+                const auto& xCurr = r.points.back().x;
+                const auto& xPrev = r.points[r.points.size()-2].x;
+                for (uint32_t i = 0; i < nCheck && i < xCurr.size() && i < xPrev.size(); ++i) {
+                    double dx = xCurr[i] - xPrev[i];
+                    double scale = std::max(std::fabs(xCurr[i]), opts.abstol);
+                    double err = std::fabs(dx) * dt / (2.0 * scale);
+                    if (opts.method == IntegrationMethod::Trapezoidal) {
+                        // Trap: 用二阶差分估计
+                        if (r.points.size() >= 3) {
+                            const auto& xPrev2 = r.points[r.points.size()-3].x;
+                            if (i < xPrev2.size()) {
+                                double d2x = xCurr[i] - 2.0*xPrev[i] + xPrev2[i];
+                                err = std::fabs(d2x) * dt * dt / (12.0 * scale);
+                            }
+                        }
+                    }
+                    lteNorm = std::max(lteNorm, err);
+                }
+            }
+            // 步长调整：dt_new = dt * safety * (trtol / lteNorm)^(1/p)
+            // BE: p=1 (一阶)，Trap: p=2 (二阶)
+            if (lteNorm > 0.0) {
+                double order = (opts.method == IntegrationMethod::Trapezoidal) ? 2.0 : 1.0;
+                double factor = opts.stepSafety * std::pow(opts.trtol / lteNorm, 1.0 / order);
+                // 限制调整幅度：每步最多扩大 5x，缩小到 0.1x
+                factor = std::min(factor, 5.0);
+                factor = std::max(factor, 0.1);
+                dt *= factor;
+                // 钳位到 [dtmin, dtmax]
+                dt = std::max(dt, opts.dtmin);
+                dt = std::min(dt, effectiveDtMax);
+            }
+        }
+
+        prevNodeV = nodeV;
         r.points.push_back({t, buildSol()});
     }
 

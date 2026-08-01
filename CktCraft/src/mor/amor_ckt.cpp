@@ -415,7 +415,7 @@ void ckt::parse(const char* filename)
   unsigned int i, s_beg, s_end;
   string trans_combined_lines;
 
-  
+
   std::istringstream issm;
 
   _nl.nodename2num("0");
@@ -454,7 +454,7 @@ void ckt::parse(const char* filename)
 
       if(oline == "")
 	continue;
-      
+
       line = oline;
       transform(oline.begin(), oline.end(), line.begin(), tolower);
 
@@ -468,7 +468,150 @@ void ckt::parse(const char* filename)
 
   inf.close();
 
-  
+
+}
+
+// 纯内存解析：与 parse() 逻辑相同，但从 stringstream 读取而非 ifstream
+void ckt::parseFromString(const string& netlistContent)
+{
+  istringstream inf(netlistContent);
+
+  string line;
+  string oline;
+  string combined_lines;
+  string line_temp;
+  unsigned int i, s_beg, s_end;
+  string trans_combined_lines;
+
+  _nl.nodename2num("0");
+  while(!inf.eof())
+    {
+      getline(inf, line_temp);
+
+      for(i = 0; i < line_temp.size(); ++i)
+	if(line_temp[i] != ' ' && line_temp[i] != '\t')
+	  break;
+
+      s_beg = i;
+      for(i = s_beg; i < line_temp.size(); ++i)
+	if(line_temp[i] == '$')
+	  break;
+      s_end = i;
+
+      line_temp = line_temp.substr(s_beg, s_end-s_beg);
+      if(line_temp == "")
+	continue;
+
+      if(line_temp[0] != '+')
+	{
+	  oline = combined_lines;
+	  combined_lines = line_temp;
+	}
+      else
+	{
+	  combined_lines += " ";
+	  combined_lines += line_temp.substr(1, line_temp.size());
+	  oline = "";
+	}
+
+      if(oline == "")
+	continue;
+
+      line = oline;
+      transform(oline.begin(), oline.end(), line.begin(), tolower);
+      parse_line(line, oline);
+    }
+
+  trans_combined_lines = combined_lines;
+  transform(combined_lines.begin(), combined_lines.end(), trans_combined_lines.begin(), tolower);
+  parse_line(trans_combined_lines, combined_lines);
+}
+
+// 从降阶后的 _red_g_list / _red_c_list 直接提取等效 R/C 器件
+// 逻辑与 dump_netlist 的器件输出部分一致，但不写文件
+vector<ckt::ReducedRC> ckt::getReducedRC()
+{
+  vector<ReducedRC> result;
+  int i;
+  map<int, map<int, double> >& red_g_data = _red_g_list.get_data();
+  map<int, map<int, double> >& red_c_data = _red_c_list.get_data();
+  map<int, double>::iterator iter;
+
+  auto nodeName = [&](int idx) -> string {
+    if(idx < _num_ports)
+      return _nl.num2nodename(idx + 1);
+    else
+      return "inode" + std::to_string(idx);
+  };
+
+  // 非对角 R（互阻）
+  for(i = 0; i < _num_nodes; ++i)
+    {
+      for(iter = red_g_data[i].begin(); iter != red_g_data[i].end(); ++iter)
+	{
+	  if(iter->first > i)
+	    {
+	      ReducedRC rc;
+	      rc.n1 = nodeName(i);
+	      rc.n2 = nodeName(iter->first);
+	      rc.value = -1.0 / iter->second;
+	      rc.isCap = false;
+	      result.push_back(rc);
+	    }
+	}
+    }
+
+  // 非对角 C（互容）
+  for(i = 0; i < _num_nodes; ++i)
+    {
+      for(iter = red_c_data[i].begin(); iter != red_c_data[i].end(); ++iter)
+	{
+	  if(iter->first > i && -iter->second > _ceps)
+	    {
+	      ReducedRC rc;
+	      rc.n1 = nodeName(i);
+	      rc.n2 = nodeName(iter->first);
+	      rc.value = -(iter->second);
+	      rc.isCap = true;
+	      result.push_back(rc);
+	    }
+	}
+    }
+
+  // 对角 R（对地电阻）
+  for(i = 0; i < _num_nodes; ++i)
+    {
+      if(fabs(red_g_data[i][i]) > _geps)
+	{
+	  ReducedRC rc;
+	  rc.n1 = nodeName(i);
+	  rc.n2 = "0";
+	  rc.value = 1.0 / red_g_data[i][i];
+	  rc.isCap = false;
+	  result.push_back(rc);
+	}
+
+      // 对角 C（对地电容）
+      if(fabs(red_c_data[i][i]) > _ceps)
+	{
+	  ReducedRC rc;
+	  rc.n1 = nodeName(i);
+	  rc.n2 = "0";
+	  rc.value = red_c_data[i][i];
+	  rc.isCap = true;
+	  result.push_back(rc);
+	}
+    }
+
+  return result;
+}
+
+vector<string> ckt::getPortNames()
+{
+  vector<string> names;
+  for(int i = 0; i < _num_ports; ++i)
+    names.push_back(_nl.num2nodename(i + 1));
+  return names;
 }
 
 

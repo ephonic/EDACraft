@@ -441,6 +441,7 @@ std::vector<std::pair<double, double>> buildContinuationSchedule(const HbNlOptio
 }
 
 // 单次 Newton 求解（固定 sourceScale 与 gmin）
+// outRelaxed（可选）：停滞接受（relaxed convergence）时置 true。
 bool solveHbNewton(uint32_t numNodes,
                    const std::vector<std::unique_ptr<DeviceModel>>& devices,
                    const HbConfig& config,
@@ -449,7 +450,8 @@ bool solveHbNewton(uint32_t numNodes,
                    double gmin,
                    std::vector<std::vector<Complex>>& X,
                    uint32_t& outIters,
-                   Diagnostics& diags) {
+                   Diagnostics& diags,
+                   bool* outRelaxed = nullptr) {
     uint32_t NH = config.numHarmonics;
     double w0 = 2.0 * PI * config.fundamental;
 
@@ -461,7 +463,32 @@ bool solveHbNewton(uint32_t numNodes,
 
     HbRealSystem sys;
     double f0Norm = 0;
+    double fNorm = 0.0;
     std::vector<double> prevDx;
+
+    // LM 重试加速：线搜索失败时 X 未变，F/J 不变，仅需用更强 λ 重解
+    // 线性系统——skipAssemble=true 跳过整次装配（强非线性停滞场景下
+    // 每次装配都是全器件 IFFT/eval/FFT，极其昂贵）。
+    bool skipAssemble = false;
+    // 连续无进展迭代计数（停滞检测）
+    uint32_t noProgressIters = 0;
+    // 停滞接受阈值（env 可覆盖）
+    double stallRel = opts.stallAcceptRel;
+    if (const char* s = std::getenv("RFSIM_HBNL_STALL_REL")) {
+        double v = std::atof(s);
+        if (v >= 0.0) stallRel = v;
+    }
+    auto tryStallAccept = [&]() -> bool {
+        if (stallRel <= 0.0 || f0Norm <= 0.0) return false;
+        if (noProgressIters < opts.stallAcceptIters) return false;
+        if (fNorm > stallRel * f0Norm) return false;
+        if (hbnlVerbose() >= 1)
+            std::fprintf(stderr,
+                "[HB-NL] stall-accept: ||F||=%.3e (rel %.2e, target %.3e) — relaxed convergence\n",
+                fNorm, fNorm / f0Norm, opts.reltol * f0Norm + opts.abstol);
+        if (outRelaxed) *outRelaxed = true;
+        return true;
+    };
 
     // A2-4：阻尼控制器（跨 solveHbNewton 的 Newton 迭代保持自适应 λ/Δ）。
     // LM 模式下用 controller.applyLmRegularization 替代固定 opts.lambda；
@@ -470,7 +497,6 @@ bool solveHbNewton(uint32_t numNodes,
     damper.setInitialLambda(opts.lambda);
     damper.setStepClamp(opts.dvmax);
     bool damperDimKnown = false;
-    std::vector<double> lastJreg;  // LM 重解时复用上次的 Jreg（避免重 assemble）
 
     auto doSafestep = [&]() {
         std::vector<std::vector<Complex>> Fcplx(nEntities + 1,
@@ -488,25 +514,28 @@ bool solveHbNewton(uint32_t numNodes,
     for (uint32_t iter = 0; iter < opts.maxIter; ++iter) {
         outIters = iter + 1;
 
-        if (!assembleHarmonicBalanceReal(numNodes, devices, config, X, sys, diags,
-                                         sourceScale, gmin)) {
-            diags.warn({}, "nonlinear HB: assembly failed");
-            return false;
+        if (!skipAssemble) {
+            if (!assembleHarmonicBalanceReal(numNodes, devices, config, X, sys, diags,
+                                             sourceScale, gmin)) {
+                diags.warn({}, "nonlinear HB: assembly failed");
+                return false;
+            }
+            fNorm = residualNorm(sys.F);
+            if (iter == 0) f0Norm = fNorm;
+            if (hbnlVerbose() >= 1) {
+                std::fprintf(stderr,
+                    "[HB-NL] iter=%u  src=%.4g  gmin=%.3g  ||F||=%.6e  ||F||/||F0||=%.3e\n",
+                    iter, sourceScale, gmin, fNorm,
+                    (f0Norm > 0 ? fNorm / f0Norm : 0.0));
+            }
+            if (fNorm < opts.reltol * f0Norm + opts.abstol) {
+                if (hbnlVerbose() >= 1)
+                    std::fprintf(stderr, "[HB-NL] converged at iter=%u (||F||=%.3e)\n",
+                                 iter, fNorm);
+                return true;
+            }
         }
-        double fNorm = residualNorm(sys.F);
-        if (iter == 0) f0Norm = fNorm;
-        if (hbnlVerbose() >= 1) {
-            std::fprintf(stderr,
-                "[HB-NL] iter=%u  src=%.4g  gmin=%.3g  ||F||=%.6e  ||F||/||F0||=%.3e\n",
-                iter, sourceScale, gmin, fNorm,
-                (f0Norm > 0 ? fNorm / f0Norm : 0.0));
-        }
-        if (fNorm < opts.reltol * f0Norm + opts.abstol) {
-            if (hbnlVerbose() >= 1)
-                std::fprintf(stderr, "[HB-NL] converged at iter=%u (||F||=%.3e)\n",
-                             iter, fNorm);
-            return true;
-        }
+        skipAssemble = false;
 
         // 解 J·dx = -F：小规模用稠密 LU，大规模用 GMRES
         std::vector<double> negF(sys.dim);
@@ -525,7 +554,6 @@ bool solveHbNewton(uint32_t numNodes,
             for (uint32_t i = 0; i < sys.dim; ++i)
                 Jreg[size_t(i) * sys.dim + i] += opts.lambda;
         }
-        lastJreg = Jreg;  // LM 失败重解时复用
         std::vector<double> dx;
         bool solved = false;
         const uint32_t gmresThreshold = 200;
@@ -625,25 +653,35 @@ bool solveHbNewton(uint32_t numNodes,
         if (!accepted) {
             // 回溯结束时未找到满足 Armijo 的步长
             if (bestF >= fNorm * (1.0 - 1e-10)) {
-                // A2-4：LM 模式下，线搜索完全失败 → 升 λ（下次迭代 J 正则更强，
-                // 步长更保守），替代直接 doSafestep。最多升 6 次（λ 上限 ~1e6），
-                // 仍无下降才回退 safestep。这把"失败即跳过"改为"失败即增稳"，
-                // 对强非线性 HB 收敛明显改善；Backtracking 模式保持原 doSafestep 行为。
+                // 线搜索完全失败（无任何可接受步长）
+                ++noProgressIters;
+                // 停滞接受：截断系统无精确零/极病态窄谷，残差已足够小 → 放宽接受
+                if (tryStallAccept()) return true;
+                // A2-4 bugfix：原实现把 bestF（常边缘小于 fNorm）传给 damper.step，
+                // LM 判"成功"而降 λ，随后在同一 X 上用更弱正则无限重试（死循环）。
+                // 线搜索失败必须报告失败 → 升 λ（更保守）；X 未变 → skipAssemble
+                // 复用 F/J 仅加强正则重解，省掉整次装配。
                 if ((opts.damping == DampingStrategy::LevenbergMarquardt ||
                      opts.damping == DampingStrategy::TrustRegion) && damper.lambda() < 1e5) {
-                    // 触发 controller 升 λ（step 用失败标记驱动）
-                    DampingController::StepResult sr = damper.step(fNorm, bestF, 1.0, 0.0, 0.0);
-                    (void)sr;  // 副作用：内部 lambda_ 已升
+                    damper.step(fNorm, fNorm * (1.0 + 1e-9), 1.0, 0.0, 0.0);  // 强制判失败 → λ↑
                     if (hbnlVerbose() >= 1)
                         std::fprintf(stderr, "[HB-NL] iter=%u  LM λ→%.3e (retry)\n",
                                      iter, damper.lambda());
-                    continue;  // 下轮用更强正则重解 J·dx=-F
+                    skipAssemble = true;
+                    continue;  // 下轮用更强正则重解 J·dx=-F（不重新装配）
+                }
+                // λ 已用尽：停滞残差不够小（不接受），长期无进展则放弃
+                if (noProgressIters > 40) {
+                    if (hbnlVerbose() >= 1)
+                        std::fprintf(stderr, "[HB-NL] iter=%u  no-progress cap, give up\n", iter);
+                    return false;
                 }
                 // 没有任何试验步使残差下降，回退 safeguard
                 if (hbnlVerbose() >= 1)
                     std::fprintf(stderr, "[HB-NL] iter=%u  λ-search exhausted, safestep\n",
                                  iter);
                 doSafestep();
+                noProgressIters = 0;
                 continue;
             }
             // 否则使用历史最优步长
@@ -668,6 +706,7 @@ bool solveHbNewton(uint32_t numNodes,
             (void)sr;  // 成功路径：内部 lambda_ 已降
         }
         X = std::move(Xtrial);
+        noProgressIters = 0;
         prevDx = dx;
         for (double& v : prevDx) v *= alpha;
 
@@ -697,11 +736,10 @@ HbNlResult solveHbNonlinear(uint32_t numNodes,
     // 把 OSDI 内部节点纳入 HB 未知量
     numNodes = std::max(numNodes, computeMaxNodeId(devices));
 
-    // 检测 OSDI 非线性器件；若无，直接用线性 HB
+    // 检测非线性器件；若无，直接用线性 HB
     bool hasNonlinear = false;
     for (const auto& d : devices)
-        if (dynamic_cast<OsdiModel*>(d.get()) && !d->is_linear())
-            if (dynamic_cast<OsdiModel*>(d.get())->ready()) hasNonlinear = true;
+        if (!d->is_linear()) { hasNonlinear = true; break; }
 
     if (!hasNonlinear) {
         auto lin = solveHbLinear(numNodes, devices, config);
@@ -712,10 +750,9 @@ HbNlResult solveHbNonlinear(uint32_t numNodes,
         return r;
     }
 
-    // 跨 HB 求解前重置 OSDI limiting 状态，避免上一次 continuation/DC 的记忆污染
+    // 跨 HB 求解前重置 limiting 状态，避免上一次 continuation/DC 的记忆污染
     for (const auto& d : devices)
-        if (auto* o = dynamic_cast<OsdiModel*>(d.get()))
-            o->resetLimiting();
+        d->resetLimiting();
 
     uint32_t NH = config.numHarmonics;
 
@@ -817,8 +854,10 @@ HbNlResult solveHbNonlinear(uint32_t numNodes,
         double srcScale = schedule[si].first;
         double gm = schedule[si].second;
         uint32_t stepIters = 0;
+        bool relaxed = false;
         bool ok = solveHbNewton(numNodes, devices, config, eff, srcScale, gm,
-                                X, stepIters, r.diags);
+                                X, stepIters, r.diags, &relaxed);
+        if (relaxed) r.relaxedConvergence = true;
         r.iterations += stepIters;
         if (!ok) {
             r.diags.warn({}, std::string("nonlinear HB: continuation step ") +

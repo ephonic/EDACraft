@@ -206,6 +206,22 @@ public:
     _reserved_tail.push_back(line);
   }
 
+  // ===== 纯内存降阶接口 =====
+  // 从内存字符串解析（不经过文件）。netlistContent 是 SPICE 格式的 RC 网表文本。
+  void parseFromString(const std::string& netlistContent);
+
+  // 降阶后直接提取等效 R/C 器件到 vector（不经 dump_netlist 文件输出）。
+  // 返回 vector<{n1_name, n2_name, value, isCap}>。
+  struct ReducedRC {
+    std::string n1, n2;
+    double value;
+    bool isCap;
+  };
+  std::vector<ReducedRC> getReducedRC();
+
+  // 获取端口节点名列表（降阶后保留的端口）
+  std::vector<std::string> getPortNames();
+
 
 protected:
   /** expand pure parasitic subckts */

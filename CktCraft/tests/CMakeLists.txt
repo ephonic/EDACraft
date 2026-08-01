@@ -19,29 +19,28 @@ set(RFSIM_TEST_SOURCES
     test_expression.cpp
     test_parser.cpp
     test_flatten.cpp
-    test_model.cpp
     test_assembly.cpp
     test_analysis.cpp
-    test_osdi.cpp
     test_hb.cpp
-    test_newton.cpp
     test_hb_nl.cpp
-    test_bsim4.cpp
-    test_gmres.cpp
     test_shooting.cpp
-    test_osdi_models.cpp
-    test_convergence_grid.cpp
-    test_multi_device.cpp
-    test_edge_cases.cpp
-    test_gmin_floor.cpp
-    test_large_scale.cpp
-    test_large_circuit.cpp
+    test_gmres.cpp
     test_sparam.cpp
     test_solver_selection.cpp
     test_solver_benchmark.cpp
     test_nonlinear_damping.cpp
     test_waveform_export.cpp
     test_stability.cpp
+    test_jacobian_fd.cpp
+    test_convergence_grid.cpp
+    test_multi_device.cpp
+    test_edge_cases.cpp
+    test_gmin_floor.cpp
+    test_large_scale.cpp
+    test_large_circuit.cpp
+    test_generated_models.cpp
+    test_newton.cpp
+    test_model.cpp
 )
 
 add_executable(rfsim_tests ${RFSIM_TEST_SOURCES})
@@ -52,12 +51,9 @@ target_include_directories(rfsim_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(rfsim_tests PRIVATE
     RFSIM_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/netlists")
 
-# 已知 BSIM4 OSDI .dll 在多实例（>=2 个 BSIM4 NMOS）的 ctest-isolated
-# 进程中会偶发 0xc0000374 (STATUS_HEAP_CORRUPTION)。复现率约 30~50%，
-# 单实例不复现。已排除 BsimLib 双重 LoadLibrary、测试体重复实例等本仿真器
-# 侧因素；残余 flake 落在 BSIM4 OSDI 库内部 setup_model / eval 路径的多实例
-# 堆行为上，属于上游 OSDI 模块问题。V2-γ C3 引入 OsdiModelBlock 共享层
-# （osdi_model.cpp:46-48 标注的 M2 优化）后 setup_model 10×→1× 可大幅缓解。
+# （历史注记：早期 BSIM4 走 OSDI .dll 路径时多实例偶发堆破坏；OSDI 子系统
+# 已移除，生成模型为唯一器件路径，该问题不再适用。test_osdi.cpp /
+# test_osdi_models.cpp / test_bsim4.cpp / test_accuracy_diag.cpp 已随其移除。）
 #
 # 注意：CTest 的“until-pass 自动重试”不是测试属性，而是 ctest CLI 选项
 #       `--repeat until-pass:N` （per-test property `REPEAT_UNTIL_PASS`

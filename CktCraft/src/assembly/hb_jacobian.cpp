@@ -1,7 +1,6 @@
 // hb_jacobian.cpp - Harmonic Balance 实数化频域雅可比与残差装配实现
 #include "hb_jacobian.hpp"
 #include "../model/builtin_devices.hpp"
-#include "../model/osdi_model.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -135,24 +134,29 @@ void addConductanceBlock(std::vector<double>& J, uint32_t dim, uint32_t perEntit
 void addSusceptanceBlock(std::vector<double>& J, uint32_t dim, uint32_t perEntity,
                          uint32_t rowEntity, uint32_t colEntity,
                          const std::vector<Complex>& G, uint32_t NH, double w0, double sign) {
-    std::vector<Complex> Y(NH + 1, Complex(0, 0));
-    for (uint32_t l = 0; l <= NH; ++l) {
+    // 与 addConductanceBlock 的 k+m 项配合：若 G 含 0..2NH，则 Y 也算到 2NH
+    std::vector<Complex> Y(G.size(), Complex(0, 0));
+    for (size_t l = 0; l < G.size(); ++l) {
         // j * l * w0 * G
-        Y[l] = Complex(-l * w0 * G[l].imag(), l * w0 * G[l].real());
+        Y[l] = Complex(-static_cast<double>(l) * w0 * G[l].imag(),
+                       static_cast<double>(l) * w0 * G[l].real());
     }
     addConductanceBlock(J, dim, perEntity, rowEntity, colEntity, Y, NH, sign);
 }
 
+// G 可以只含 0..NH（线性/近似），也可含 0..2NH（非线性精确雅可比：
+// k+m 和频卷积项最大到 2NH，丢弃会导致强非线性下 Newton 方向非下降而停滞）。
 void addConductanceBlock(std::vector<double>& J, uint32_t dim, uint32_t perEntity,
                          uint32_t rowEntity, uint32_t colEntity,
                          const std::vector<Complex>& G, uint32_t NH, double sign) {
-    auto Gval = [&G, NH](int32_t l) -> Complex {
+    const int32_t gMax = static_cast<int32_t>(G.size()) - 1;
+    auto Gval = [&G, gMax](int32_t l) -> Complex {
         if (l < 0) {
             int32_t p = -l;
-            if (p > static_cast<int32_t>(NH)) return Complex(0, 0);
+            if (p > gMax) return Complex(0, 0);
             return std::conj(G[p]);
         }
-        if (l > static_cast<int32_t>(NH)) return Complex(0, 0);
+        if (l > gMax) return Complex(0, 0);
         return G[l];
     };
     auto addBlock = [&](uint32_t k, uint32_t m, double a00,
@@ -187,7 +191,7 @@ void addConductanceBlock(std::vector<double>& J, uint32_t dim, uint32_t perEntit
     for (uint32_t k = 0; k <= NH; ++k) {
         for (uint32_t m = 0; m <= NH; ++m) {
             Complex gp = Gval(static_cast<int32_t>(k) - static_cast<int32_t>(m));
-            Complex gm = (k + m <= NH) ? G[k + m] : Complex(0, 0);
+            Complex gm = Gval(static_cast<int32_t>(k) + static_cast<int32_t>(m));
             if (k == 0 && m == 0) {
                 addBlock(0, 0, gp.real(), 0, 0, 0);
             } else if (k == 0 && m >= 1) {
@@ -365,125 +369,109 @@ bool assembleHarmonicBalanceReal(
         }
     }
 
-    // ---- 非线性 OSDI 器件：IFFT -> eval -> FFT，雅可比卷积 ----
-    // 优化项3（OpenMP）：per-device eval 并行（每器件独立 OsdiClient，线程安全），
-    // FFT + 装配串行（写共享 sys.F/sys.J）。RFSIM_USE_OPENMP=ON 时启用。
-    // 先收集所有 OSDI 器件及其输入（timeVoltages），并行 eval 到 per-device 缓冲，
-    // 再串行做 FFT + 装配。
-    struct OsdiEvalInputs {
-        OsdiModel* osdi;
-        const OsdiDescriptor* desc;
+    // ---- 非线性器件：IFFT -> eval -> FFT，雅可比卷积（通用 DeviceModel 接口）----
+    // 所有 !is_linear() 器件通过 evalHb 虚接口一次遍历提供时域采样
+    // 电流/电荷与雅可比（默认实现基于 eval()，纯阻性）。
+    // 先收集器件并并行 eval（每器件独立对象，线程安全），再串行 FFT + 装配。
+    struct NlDevData {
+        DeviceModel* dev;
         std::vector<NodeId> dnodes;
-        std::vector<uint32_t> nodeMap;
-        std::vector<std::vector<double>> timeVoltages;
+        StampPattern pattern;
+        std::vector<std::vector<double>> currents;
+        std::vector<std::vector<double>> charges;
+        std::vector<std::vector<double>> jac;
+        std::vector<std::vector<double>> jacReact;
     };
-    std::vector<OsdiEvalInputs> osdiDevs;
+    std::vector<NlDevData> nlDevs;
     for (const auto& d : devices) {
-        auto* osdi = dynamic_cast<OsdiModel*>(d.get());
-        if (!osdi || !osdi->ready()) continue;
-        const OsdiDescriptor* desc = osdi->descriptor();
-        uint32_t dn = desc->num_nodes;
-        const auto& dnodes = d->nodes();
-        OsdiEvalInputs inp;
-        inp.osdi = osdi;
-        inp.desc = desc;
-        inp.dnodes = dnodes;
-        inp.nodeMap.assign(dn, 0);
-        for (uint32_t i = 0; i < dn && i < dnodes.size(); ++i) inp.nodeMap[i] = dnodes[i];
-        inp.timeVoltages.assign(N, std::vector<double>(dn, 0.0));
-        for (uint32_t s = 0; s < N; ++s) {
-            for (uint32_t i = 0; i < dn; ++i) {
-                NodeId g = (i < dnodes.size()) ? dnodes[i] : 0;
-                inp.timeVoltages[s][i] = (g != 0 && g <= numNodes) ? timeV[g][s] : 0.0;
-            }
-        }
-        osdiDevs.push_back(std::move(inp));
+        if (!d || d->is_linear()) continue;
+        NlDevData e;
+        e.dev = d.get();
+        e.dnodes = d->nodes();
+        d->stamp_pattern(e.pattern);
+        nlDevs.push_back(std::move(e));
     }
-    // per-device 输出缓冲
-    std::vector<std::vector<std::vector<double>>> devCurrents(osdiDevs.size());
-    std::vector<std::vector<std::vector<double>>> devCharges(osdiDevs.size());
-    std::vector<std::vector<std::vector<double>>> devJac(osdiDevs.size());
-    std::vector<std::vector<std::vector<double>>> devJacReact(osdiDevs.size());
 
-    const size_t nOsdi = osdiDevs.size();
+    const size_t nNl = nlDevs.size();
 #ifdef RFSIM_USE_OPENMP
-    #pragma omp parallel for schedule(dynamic, 1) if(nOsdi >= 2)
+    #pragma omp parallel for schedule(dynamic, 1) if(nNl >= 2)
 #endif
-    for (ptrdiff_t dip = 0; dip < static_cast<ptrdiff_t>(nOsdi); ++dip) {
-        size_t di = static_cast<size_t>(dip);
-        osdiDevs[di].osdi->evalTimeSamples(osdiDevs[di].timeVoltages, osdiDevs[di].nodeMap,
-                                           devCurrents[di], devCharges[di]);
-        osdiDevs[di].osdi->evalTimeJacobiansReact(osdiDevs[di].timeVoltages, osdiDevs[di].nodeMap,
-                                                  devJacReact[di]);
-        osdiDevs[di].osdi->evalTimeJacobians(osdiDevs[di].timeVoltages, osdiDevs[di].nodeMap,
-                                             devJac[di]);
+    for (ptrdiff_t dip = 0; dip < static_cast<ptrdiff_t>(nNl); ++dip) {
+        NlDevData& e = nlDevs[static_cast<size_t>(dip)];
+        e.dev->evalHb(timeV, e.currents, e.charges, e.jac, e.jacReact);
     }
 
-    // 串行 FFT + 装配（写 sys.F/sys.J）
-    for (size_t di = 0; di < nOsdi; ++di) {
-        const auto& inp = osdiDevs[di];
-        const OsdiDescriptor* desc = inp.desc;
-        uint32_t dn = desc->num_nodes;
-        const auto& dnodes = inp.dnodes;
-        const auto& timeCurrents = devCurrents[di];
-        const auto& timeCharges = devCharges[di];
-        const auto& timeJac = devJac[di];
-        const auto& timeJacReact = devJacReact[di];
-        uint32_t nE = desc->num_jacobian_entries;
+    // 串行 FFT + 装配（写共享 sys.F/sys.J）
+    for (size_t di = 0; di < nNl; ++di) {
+        const NlDevData& e = nlDevs[di];
+        const auto& dnodes = e.dnodes;
 
-        // 时域电流 + 电荷 -> 频域残差（F = -(I + j·ω·Q) for 非线性器件）
-        for (uint32_t i = 0; i < dn; ++i) {
-            NodeId g = (i < dnodes.size()) ? dnodes[i] : 0;
+        // 时域电流 + 电荷 -> 频域残差（F += +(I + j·ω·Q)）
+        // 符号约定：生成模型 eval 的 f 是“电流从节点流入器件”（流出为正），
+        // 与 DC/MNA 装配 F[nk] += f[k] 及本文件线性器件 +i（流出）stamp 一致。
+        // （历史 OSDI resid 为“流入为正”，旧代码取负；生成模型路径必须取正。）
+        for (size_t i = 0; i < dnodes.size(); ++i) {
+            NodeId g = dnodes[i];
             if (g == 0 || g > numNodes) continue;
             std::vector<double> iTime(N, 0.0);
             std::vector<double> qTime(N, 0.0);
+            bool hasQ = false;
             for (uint32_t s = 0; s < N; ++s) {
-                iTime[s] = (i < timeCurrents[s].size()) ? timeCurrents[s][i] : 0.0;
-                qTime[s] = (s < timeCharges.size() && i < timeCharges[s].size())
-                           ? timeCharges[s][i] : 0.0;
+                if (s < e.currents.size() && i < e.currents[s].size())
+                    iTime[s] = e.currents[s][i];
+                if (s < e.charges.size() && i < e.charges[s].size()) {
+                    qTime[s] = e.charges[s][i];
+                    if (qTime[s] != 0.0) hasQ = true;
+                }
             }
             std::vector<Complex> iHarm = currentFft(iTime, NH);
-            std::vector<Complex> qHarm = currentFft(qTime, NH);
+            std::vector<Complex> qHarm(NH + 1, Complex(0, 0));
+            if (hasQ) qHarm = currentFft(qTime, NH);
             uint32_t ent = nodeEntity(g);
             for (uint32_t k = 0; k <= NH; ++k) {
-                Complex contrib;
-                contrib.real(-iHarm[k].real() + k * w0 * qHarm[k].imag());
-                contrib.imag(-iHarm[k].imag() - k * w0 * qHarm[k].real());
+                Complex contrib(iHarm[k].real() - k * w0 * qHarm[k].imag(),
+                                iHarm[k].imag() + k * w0 * qHarm[k].real());
                 addComplexResidual(sys.F, perEntity, ent, k, contrib);
             }
         }
 
-        // 时域雅可比 -> 频域卷积块（阻性）
-        for (uint32_t e = 0; e < nE; ++e) {
-            const OsdiJacobianEntry& je = desc->jacobian_entries[e];
-            uint32_t localA = std::min(je.nodes.node_1, dn - 1);
-            uint32_t localB = std::min(je.nodes.node_2, dn - 1);
-            NodeId gA = (localA < dnodes.size()) ? dnodes[localA] : 0;
-            NodeId gB = (localB < dnodes.size()) ? dnodes[localB] : 0;
+        // 时域雅可比 -> 频域卷积块（阻性，e 对齐 stamp_pattern entries 顺序）
+        const size_t nE = e.pattern.entries.size();
+        for (size_t en = 0; en < nE; ++en) {
+            NodeId gA = e.pattern.entries[en].first;
+            NodeId gB = e.pattern.entries[en].second;
             if (gA == 0 || gA > numNodes || gB == 0 || gB > numNodes) continue;
             std::vector<double> gTime(N, 0.0);
-            for (uint32_t s = 0; s < N; ++s) gTime[s] = timeJac[s][e];
-            std::vector<Complex> G = conductanceFft(gTime, NH);
-            uint32_t entA = nodeEntity(gA);
-            uint32_t entB = nodeEntity(gB);
-            addConductanceBlock(sys.J, dim, perEntity, entA, entB, G, NH, -1.0);
+            for (uint32_t s = 0; s < N; ++s) {
+                if (s < e.jac.size() && en < e.jac[s].size())
+                    gTime[s] = e.jac[s][en];
+            }
+            // 2NH 阶电导谱：卷积雅可比需要 k+m ≤ 2NH 的和频项才是精确雅可比
+            // 符号 +1：与残差 F += +I 及线性器件 +y stamp 一致
+            std::vector<Complex> G = conductanceFft(gTime, 2 * NH);
+            addConductanceBlock(sys.J, dim, perEntity,
+                                nodeEntity(gA), nodeEntity(gB), G, NH, +1.0);
         }
 
-        // 时域电荷雅可比 -> 频域电纳卷积块（反应性）
-        for (uint32_t e = 0; e < nE; ++e) {
-            const OsdiJacobianEntry& je = desc->jacobian_entries[e];
-            if (je.react_ptr_off == 0) continue;
-            uint32_t localA = std::min(je.nodes.node_1, dn - 1);
-            uint32_t localB = std::min(je.nodes.node_2, dn - 1);
-            NodeId gA = (localA < dnodes.size()) ? dnodes[localA] : 0;
-            NodeId gB = (localB < dnodes.size()) ? dnodes[localB] : 0;
-            if (gA == 0 || gA > numNodes || gB == 0 || gB > numNodes) continue;
-            std::vector<double> gQTime(N, 0.0);
-            for (uint32_t s = 0; s < N; ++s) gQTime[s] = timeJacReact[s][e];
-            std::vector<Complex> GQ = conductanceFft(gQTime, NH);
-            uint32_t entA = nodeEntity(gA);
-            uint32_t entB = nodeEntity(gB);
-            addSusceptanceBlock(sys.J, dim, perEntity, entA, entB, GQ, NH, w0, -1.0);
+        // 时域电荷雅可比 -> 频域电纳卷积块（反应性，无电荷模型时 jacReact 为空）
+        if (!e.jacReact.empty()) {
+            for (size_t en = 0; en < nE; ++en) {
+                NodeId gA = e.pattern.entries[en].first;
+                NodeId gB = e.pattern.entries[en].second;
+                if (gA == 0 || gA > numNodes || gB == 0 || gB > numNodes) continue;
+                std::vector<double> gQTime(N, 0.0);
+                bool nz = false;
+                for (uint32_t s = 0; s < N; ++s) {
+                    if (s < e.jacReact.size() && en < e.jacReact[s].size()) {
+                        gQTime[s] = e.jacReact[s][en];
+                        if (gQTime[s] != 0.0) nz = true;
+                    }
+                }
+                if (!nz) continue;
+                std::vector<Complex> GQ = conductanceFft(gQTime, 2 * NH);
+                addSusceptanceBlock(sys.J, dim, perEntity,
+                                    nodeEntity(gA), nodeEntity(gB), GQ, NH, w0, +1.0);
+            }
         }
     }
 

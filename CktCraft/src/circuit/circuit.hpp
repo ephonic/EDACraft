@@ -36,6 +36,7 @@ struct Circuit {
     std::vector<FlatModel>   models;
     std::vector<ControlCard> controls;   // 分析与输出控制卡
     ParamList                globalParams;
+    std::vector<FuncDef>     funcDefs;   // 用户 .func 定义
     std::string              title;
 };
 

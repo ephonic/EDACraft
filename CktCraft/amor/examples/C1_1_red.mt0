@@ -1,0 +1,4 @@
+$DATA1 SOURCE='HSPICE' VERSION='A-2008.03 32-BIT'
+.TITLE '*.reduced circuit'
+ to69r            to69f            temper           alter#            
+  6.948e-09        6.619e-09         25.0000           1.0000         

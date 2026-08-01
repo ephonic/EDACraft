@@ -1,0 +1,892 @@
+// ************* Verilog-A Code for EKV3 MOSFET MODEL **************************
+//
+// Title: EKV3 MOSFET Model Verilog - A Code
+// Authors: Antonios Bazigos, Matthias Bucher, Francois Krummenacher
+//
+//   			Version		Date
+// ---------------------------------------------------------------
+// Current:		301.02  	June 28, 2008
+//
+// Older: 		301.01 		November 22, 2007
+// 			301.00 		September 14, 2007
+// 			300.03		August 1, 2007
+//			300.02 		April 23, 2007
+// 			300.01		October 28, 2006
+// 			300.00		March 23, 2005
+//
+// *******************************************************************************
+//
+// The Verilog - A Code for EKV3 MOSFET Model has been developed in cooperation
+// among Technical University of Crete (TUC), Chania, Crete, National Technical
+// University of Athens (NTUA), Athens, Greece and Swiss Federal Institute of
+// Technology (EPFL), Lausanne, Switzerland.
+//
+// Your feedback is most welcome. Please direct inquiries, comments etc. to,
+//
+// 	Prof. Matthias Bucher
+// 	Technical University of Crete (TUC)
+// 	73100 Chania, Crete, Greece
+// 	phone: + 30 28210 37210
+// 	fax: + 30 28210 37542
+// 	bucher@electronics.tuc.gr
+//
+// Main contributions:
+//
+// Coordination Matthias Bucher, TUC.
+// Coding, implementation and testing Antonios Bazigos, NTUA, Matthias Bucher, TUC.
+// Contributions to model formulation and coding Francois Krummenacher, EPFL.
+// Contributions to model formulation Jean - Michel Sallese, Christian Enz, EPFL.
+// Contributions to noise modelling Ananda Roy, Christian Enz, EPFL.
+// Contributions to code standardization, Wladek Grabinski, EPFL.
+//
+// This model and its code are confidential property of the EKV model
+// development team. Its distribution to third - parties is subject to NDA
+// (non - disclosure agreement) conditions.
+// The model and its code are made available 'as is', without any warranty
+// regarding its functionality or fitness of performance.
+// Any usage of this code supposes that the name of the model, the authors
+// of the present code and contributors are suitably acknowledged.
+//
+// The EKV3 MOSFET model code is continuously being tested, corrected and
+// extended. Updates to the code may be frequent. Backward compatibility of
+// code updates is not guaranteed.
+//
+// *******************************************************************************
+//
+// GENERAL COMMENTS:
+// - genvar (NQS MODEL) NOT ALWAYS SUPPORTED
+// - hand-written version of NQS instead of "for" loop; NLS = 5
+//
+// Please check the ekv3_updates.txt file for changes between the versions
+//
+
+
+`include "ekv3_include/ekv3_natures.va"
+`include "ekv3_include/ekv3_definitions.va"
+
+`ifdef ALL
+`else
+//`define DC_S
+`define DC
+//`define RF_S
+//`define RF
+//`define NQS
+`endif
+
+`include "ekv3_include/ekv3_def_check.va"
+
+`ifdef ALL
+	`ifdef DC_S
+		module ekv3_s 	(d,g,s,b);
+	`endif
+	`ifdef DC
+		module ekv3 	(d,g,s,b);
+	`endif
+	`ifdef RF_S
+		module ekv3_r4 	(d,g,s,b);
+	`endif
+	`ifdef RF
+		module ekv3_rf  (d,g,s,b);
+	`endif	
+	`ifdef NQS
+		module ekv3_nqs (d,g,s,b);
+	`endif
+`else
+		module ekv3     (d,g,s,b);
+`endif
+
+inout 	    d,g,s,b ;
+`ifdef DC_S
+	electrical 	d, g, s, b;
+ 	electrical 	noi;
+`endif
+`ifdef DC
+	electrical 	d, g, s, b;
+	electrical 	di, si;
+	electrical 	noi;
+`endif
+`ifdef RF_S
+	electrical 	d, g, s, b;
+	electrical 	di, si;
+	electrical 	gi, bi;
+	electrical 	noi;
+`endif
+`ifdef RF
+	electrical 	d, g, s, b;
+	electrical 	di, si;
+	electrical 	gi, bi;
+	electrical 	bdi, bsi;
+	electrical 	noi;
+`endif
+`ifdef NQS
+	electrical 	d, g, s, b;
+	electrical 	di, si;
+	electrical 	gi, bi;
+	electrical 	bdi, bsi;
+	electrical 	m1, m2, m3, m4;
+	electrical 	noi;
+`endif
+
+`include "ekv3_include/ekv3_variables.va"
+`include "ekv3_include/ekv3_functions_def.va"
+`include "ekv3_include/ekv3_parameters.va"
+
+analog 	begin
+
+/////////////
+// LEVEL 0 //
+/////////////
+
+//`MODEL 
+begin
+
+begin : GENERAL_VALUES
+	QON 		= (1.0 - QOFF);
+// TYPICAL LENGTHS
+	TSI		= `C_EPSSIL / COX;
+	TOX 		= `C_EPSOX / COX;
+	TOX2 		= TOX * TOX;
+	LC 		= sqrt(TSI * XJ); 		// used in vsat model
+end //  GENERAL_VALUES
+	hdif 		= HDIF * SCALE;
+	ldif 		= LDIF * SCALE;
+
+end
+
+/////////////
+// LEVEL 1 //
+/////////////
+
+//`INSTANCE 
+begin
+
+	NF_M 		= NF * M;
+	SIGN_NF 	= SIGN * NF;
+	SIGN_M 		= SIGN * M;
+	SIGN_NF_M 	= SIGN * NF_M;
+
+begin : EFFECTIVE_GATE_LENGTH_AND_WIDTH___SCALING
+	l 		= L * SCALE + XL;
+	WF 		= W / NF; 			
+	w 		= WF * SCALE + XW;
+	Leff 		= (LL == 0.0) ?
+			  l + DL + WDL / w:
+			  l + DL + WDL / w - LL * exp(LLN * ln(1.0 / l));
+	Weff 		= w + DW + LDW / l;
+	Leffc 		= Leff + DLC;
+	Weffc 		= Weff + DWC;
+
+	Leff 		= `MAX(Leff ,1.0e-9); 
+	Weff 		= `MAX(Weff ,1.0e-9); 
+	Leffc 		= `MAX(Leffc,1.0e-9);
+	Weffc 		= `MAX(Weffc,1.0e-9); 
+
+	WeffNF 		= Weff * NF;
+	WLeff 		= Weff * Leff;
+end //  EFFECTIVE_GATE_LENGTH_AND_WIDTH___SCALING
+
+begin : MATCHING
+	awl 		= 1.0E6 / sqrt(WLeff);
+	VTO_a 		= VTO + AVTO * awl;
+	GAMMA_a 	= GAMMA + AGAMMA * awl;
+	KP_a 		= KP * (1.0 + AKP * awl);
+end //  MATCHING
+
+begin : LONG_AND_WIDE_CHANNEL_CORRECTION_AVT_LVT
+	DVTLONG 	= - AVT * `MAXA(ln(Leff / LVT),0.0,1.0e-2);
+	DVTWIDE 	= - AVT * `MAXA(ln(Weff / WVT),0.0,1.0e-2);
+	// DVTLONG 	= - AVT * ln(1.0 + Leff / LVT) / UT;
+end //  LONG_AND_WIDE_CHANNEL_CORRECTION_AVT_LVT
+
+begin : LONG_AND_WIDE_GAMMA
+	DGAMMALONG  	= - AGAM * `MAXA(ln(Leff / LGAM),0.0,1.0e-2);
+	DGAMMAWIDE 	= - AGAM * `MAXA(ln(Weff / WGAM),0.0,1.0e-2);
+end //  LONG_AND_WIDE_GAMMA
+
+begin : NF_DEPENDENCE_ON_THRESHOLD_VOLTAGE 
+        DVTNF 		= NFVTA * log(((NF)-1)*NFVTB+1);
+end 
+
+begin : WIDTH_SCALING  
+	LR_g 		= LR + WLR / Weff;
+	QLR_g 		= QLR * (1.0 + WQLR / Weff);
+	NLR_g 		= NLR * (1.0 + WNLR / Weff);
+	E0_g 		= E0 * (1.0 + WE0 / Weff);
+	E1_g		= E1 * (1.0 + WE1 / Weff);
+	UCRIT_g 	= UCRIT * (1.0 + WUCRIT / Weff);
+	LAMBDA_g 	= LAMBDA * (1.0 + WLAMBDA / Weff);
+	ETAD_g 		= ETAD * (1.0 + WETAD / Weff);
+	TCV_g 		= TCV + TCVL / Leff + TCVW / Weff + TCVWL / WLeff;
+	UCEX_g		= UCEX * (1.0 + WUCEX / Weff);
+end //  WIDTH_SCALING
+
+begin : LENGTH_SCALING
+	WR_g 		= WR + LWR / Leff;
+	QWR_g 		= QWR * (1.0 + LQWR / Leff);
+	NWR_g 		= NWR * (1.0 + LNWR / Leff);
+end
+
+begin : RSCE
+	Leff_o_LR 	= Leff / LR_g;
+	if (Leff_o_LR > 6.0) 	one_lr = 1.0;
+	else 			one_lr = 1.0 - exp( - Leff_o_LR * Leff_o_LR);
+	DVTRSCE 	= 2.0 * QLR_g * one_lr / (COX * Leff_o_LR);
+	GAMMA_RSCE 	= sqrt(1.0 + 2.0 * NLR_g * one_lr / (COX * Leff_o_LR));
+	DPHIF_RSCE 	= `UT(TNOM + 273.15) * FLR * ln(1.0 + 2.0 * NLR_g * one_lr / (COX * Leff_o_LR));
+end //  RSCE
+
+begin : INWE
+	Weff_o_WR 	= Weff / WR_g;
+	if (Weff_o_WR > 6.0) 	one_wr = 1.0;
+	else 			one_wr = 1.0 - exp( - Weff_o_WR * Weff_o_WR);
+	DVTINWE 	= - 2.0 * QWR_g * one_wr / (COX * Weff_o_WR);
+	GAMMA_INWE 	= 1.0 / sqrt(1.0 + 2.0 * NWR_g * one_wr / (COX * Weff_o_WR));
+end //  INWE
+
+begin : MOBILITY_LENGTH_SCALING
+	if ((KA == 0.0) && (KB == 0.0)) 	kpl  	= 1.0;
+	else 	
+		kpl 	= 1.0 / (1.0 + (KA * LA / Leff) * (1.0 - exp( - Leff / LA)) + (KB * LB / Leff) * (1.0 - exp( - Leff / LB)));
+end //  MOBILITY_LENGTH_SCALING
+
+begin : MOBILITY_WIDTH_SCALING
+	if (WKP2 == 0.0) 		kpw = 1.0;
+	else
+	begin
+		kpw = (ln(Weff/WKP1))/WKP3;
+		kpw = 1.0 + WKP2 * exp(-kpw*kpw);
+	end
+end //  MOBILITY_WIDTH_SCALING
+
+begin : STI_STRESS
+	if ((SA > 0) && (SB > 0))
+	begin
+		i_sti = 0;
+		if (NF == 1)
+		begin
+			inv_sa05l 	= 1.0 / (SA + 0.5 * l);
+			inv_sb05l 	= 1.0 / (SB + 0.5 * l);
+		end
+		else if (NF > 1)
+		begin
+			inv_sa05l 	= 0.0;
+			inv_sb05l 	= 0.0;
+			for (i_sti = 0; i_sti < NF; i_sti = i_sti + 1)
+			begin 
+				inv_sa05l 	= inv_sa05l + 1.0 / (SA + 0.5 * l + i_sti * (SD + l));
+				inv_sb05l 	= inv_sb05l + 1.0 / (SB + 0.5 * l + i_sti * (SD + l));
+			end
+			inv_sa05l = inv_sa05l / NF;
+			inv_sb05l = inv_sb05l / NF;
+		end
+		else
+		begin
+			inv_sa05l 	= 1.0;
+			inv_sb05l 	= 1.0;
+		end
+
+		inv_saref05l 	= 1.0 / (SAREF + 0.5 * l);
+		inv_sbref05l 	= 1.0 / (SBREF + 0.5 * l);
+
+		tmpl 		= exp(-LLODKKP*ln(l));
+		tmpw 		= exp(-WLODKKP*ln(w+WLOD));
+		KKP_sti 	= (1.0 + LKKP * tmpl + WKKP * tmpw + PKKP * tmpl * tmpw);
+		a_sti    	= KKP / KKP_sti * (inv_sa05l    + inv_sb05l);
+		aref_sti 	= KKP / KKP_sti * (inv_saref05l + inv_sbref05l);
+		kp_sti   	= (1.0 + a_sti) / (1.0 + aref_sti);
+		ucrit_sti  	= (1.0 + KUCRIT * a_sti) / (1.0 + KUCRIT * aref_sti);
+		tmpl 		= exp(-LLODKVTO*ln(l));
+		tmpw 		= exp(-WLODKVTO*ln(w+WLOD));
+		KVTO_sti 	= 1.0 + LKVTO * tmpl + WKVTO * tmpw + PKVTO * tmpl * tmpw;
+		b_sti    	= inv_sa05l + inv_sb05l - inv_saref05l - inv_sbref05l;
+		DVTSTI   	= KVTO / KVTO_sti * b_sti;
+		DGAMMASTI 	= KGAMMA / exp(LODKGAMMA*ln(KVTO_sti)) * b_sti;
+		DETADSTI 	= KETAD / exp(LODKETAD*ln(KVTO_sti)) * b_sti;
+	end
+	else
+	begin
+		kp_sti 	 	= 1.0;
+		ucrit_sti 	= 1.0;
+		DVTSTI 	 	= 0.0;
+		KKP_sti	 	= 1.0;
+		DGAMMASTI 	= 0.0;
+		DETADSTI 	= 0.0;
+		inv_sa05l 	= 1.0;
+		inv_sb05l 	= 1.0;
+		inv_saref05l 	= 1.0;
+		inv_sbref05l 	= 1.0;
+	end	
+end //  STI_STRESS
+
+	VTO_DEV 	= VTO_a + SIGN * (DVTLONG + DVTWIDE + DVTRSCE + DVTINWE + DVTNF + DVTSTI);
+	GAMMA_DEV 	= (GAMMA_a * GAMMA_RSCE * GAMMA_INWE) + DGAMMASTI + DGAMMALONG + DGAMMAWIDE;
+	PHIF_DEV 	= PHIF + DPHIF_RSCE;
+	KP_DEV 		= KP_a * kpl * kpw * kp_sti;
+	ETAD_DEV 	= ETAD_g + DETADSTI;
+	UCRIT_DEV	= UCRIT_g * ucrit_sti;
+
+begin : CHARGE_SHARING
+	CHSHL 		= LETA0 + (LETA / Leff) + (LETA2 / (Leff * Leff));
+	CHSHW 		= WETA / Weff;
+	NUV 		= N0 + NCS * 3.0 * TOX * CHSHL;
+end //  CHARGE_SHARING
+
+/////////////
+// LEVEL 2 //
+/////////////
+
+begin : STANDARD_VALUES
+	UT		= $vt;
+	UT2 		= UT * UT;
+	UT3 		= UT * UT2;
+	sqrtUT 		= sqrt(UT);
+
+	thermocrasia 	= $temperature;
+	tnom 		= TNOM + 273.15;		
+	dT 		= thermocrasia - tnom;		
+	dT2 		= dT * dT;
+	rT 		= thermocrasia / tnom;		
+	lnrT 		= ln(rT);
+end //  STANDARD_VALUES
+
+begin : TEMPERATURE_AND_STI
+	if ((SA > 0) && (SB > 0))
+	begin
+		KKP_sti_t  = KKP_sti * (1.0 + TKKP * (rT - 1.0));
+		a_sti_t    = KKP / KKP_sti_t * (inv_sa05l    + inv_sb05l);
+		aref_sti_t = KKP / KKP_sti_t * (inv_saref05l + inv_sbref05l);
+		kp_sti_t   = (1.0 + a_sti_t) / (1.0 + aref_sti_t) / kp_sti;
+	end
+	else
+	begin
+		kp_sti_t   = 1.0;
+	end
+end //  TEMPERATURE_AND_STI
+
+begin : TEMPERATURE
+// MODEL PARAMETERS
+	VTO_DEV_t 	= SIGN * (VTO_DEV - TCV_g * dT);
+	KP_DEV_t 	= KP_DEV * exp(BEX * lnrT) * kp_sti_t;
+	ETA_t 		= ETA + (TETA * dT);
+	E0_gt 		= E0_g * exp(TE0EX * lnrT);
+	E1_gt 		= E1_g * exp(TE1EX * lnrT);
+	UCRIT_DEV_t 	= UCRIT_DEV * exp(UCEX_g * lnrT);
+	LAMBDA_gt 	= LAMBDA_g + TLAMBDA * (rT - 1.0);
+	IBB_t 		= IBB * (1.0 + IBBT * dT);
+// PHIF
+	eg_nom 		= 1.16 - (7.02E-4 * tnom * tnom) / (tnom + 1108.0);
+	eg_thermo 	= 1.16 - (7.02E-4 * thermocrasia * thermocrasia) / (thermocrasia + 1108);
+	temp_arg_S 	= exp((eg_nom / `UT(tnom) - eg_thermo / UT + XTIS * lnrT) / NJS);
+	temp_arg_D 	= exp((eg_nom / `UT(tnom) - eg_thermo / UT + XTID * lnrT) / NJD);
+	temp_arg2 	= - UT * 3.0 * lnrT + (eg_thermo - eg_nom * rT);
+	PHIF_DEV_t 	= (PHIF_DEV * rT) + (temp_arg2 / 2.0);
+end //  TEMPERATURE
+
+//////////////
+// LEVEL 3a //
+//////////////
+
+begin : NORMALIZING
+// PHIF
+	phif 		= PHIF_DEV_t / UT;
+	sqrtphif 	= sqrt(phif);
+// VTO
+	vto 		= VTO_DEV_t / UT;
+// GAMMA, GAMMAG
+	gamma_b_dev 	= GAMMA_DEV / sqrtUT;
+	gamma_b_dev2	= gamma_b_dev * gamma_b_dev;
+	gamma_g 	= GAMMAG / sqrtUT;
+	gamma_g2 	= gamma_g * gamma_g;
+	dpd 		= (TG != 0) ?
+			  gamma_b_dev2 / gamma_g2 :
+			  0.0;
+// OVERLAP
+	gamma_ov 	= GAMMAOV / sqrtUT;
+	gamma_g_ov 	= GAMMAGOV / sqrtUT;
+	vfb_ov 		= VFBOV / UT;
+	gamma_ov2 	= gamma_ov * gamma_ov;
+// VSAT
+	ucrit_o_UT 	= UCRIT_DEV_t / UT;
+// GATE CURRENT
+	xb 		= XB / UT;
+	ub 		= EB * TOX / XB;
+// VMR VARIABLES
+	ev 		= UT / (E0_gt * TSI);
+	tmp 		= E1_gt * TSI;
+	ev1 		= UT2 / (tmp * tmp);
+end //  NORMALIZING
+
+//////////////
+// LEVEL 3b //
+//////////////
+
+// NQ0
+	nq0 		= (TG < 0) ?
+			  (1.0 / (1.0 + (dpd * 2.0 * `SQRT2 * sqrtphif / gamma_b_dev)) + gamma_b_dev / (2.0 * `SQRT2 * sqrtphif)) :
+			  1.0 + (gamma_b_dev / (2.0 * `SQRT2 * sqrtphif));
+
+begin : QUANTUM_MECHANIC_EFFECT
+	aqma 		= AQMA * exp(`ONE3RD * (ln(COX * COX / UT)));
+	axetaqm2_3 	= aqma * exp(`TWO3RDS * ln(ETAQM));
+	inv_dqmip1 	= `ONE3RD * AQMI * exp(`TWO3RDS * ln(gamma_b_dev * COX * 0.5 / (sqrtUT * phif))) * (2.0 * ETAQM * nq0 * `SQRT2 * sqrtphif / gamma_b_dev - 1.0); 
+	inv_dqmip1 	= 1.0 / ( 1.0 + inv_dqmip1);
+	dpsi0 		= AQMI * exp(`TWO3RDS * ln(gamma_b_dev * COX * `SQRT2 * sqrtphif));
+	DPSI0 		= dpsi0 * UT;
+end //  QUANTUM_MECHANIC_EFFECT
+
+// PHI(PHIF)
+	phi 		= phif * 2.0 + ln (4.0 * nq0 * sqrtphif * `SQRT2 / gamma_b_dev) + dpsi0;
+	sqrtphi 	= sqrt(phi);
+// VBI AND NUL
+	if (VBI == 0.0)
+	begin
+		nul 	= 3.0;
+		vbi 	= phi + nul;
+	end
+	else
+	begin
+		vbi 	= VBI / UT;
+		nul 	= vbi - phi;
+	end
+	sqrtvbi 	= sqrt(vbi);
+
+begin : NORMALIZING_FACTORS_FOR_CHARGES
+	Q0 		= - Weffc * NF * Leffc * COX * UT * inv_dqmip1 * (Weff - WEDGE) / Weff;
+	Q0OV 		=   Weffc * NF * LOV   * COX * UT * inv_dqmip1;
+end //  NORMALIZING_FACTORS_FOR_CHARGES
+
+end
+
+//////////////
+// LEVEL 3c //
+//////////////
+
+// INPUT VOLTAGES
+`ifdef DC_S
+	VS = V(s ,b ); VD = V(d ,b ); VG = V(g ,b );
+`endif
+`ifdef DC
+	VS = V(si,b ); VD = V(di,b ); VG = V(g ,b );
+`endif
+`ifdef RF_S
+	VS = V(si,bi); VD = V(di,bi); VG = V(gi,bi);
+`endif
+`ifdef RF
+	VS = V(si,bi); VD = V(di,bi); VG = V(gi,bi);
+`endif
+`ifdef NQS
+	VS = V(si,bi); VD = V(di,bi); VG = V(gi,bi);
+`endif
+
+begin : NORMALIZING_INPUT_VOLTAGES
+	if (SIGN * VS > SIGN * VD) 	d_gt_s_flag = -1;
+	else				d_gt_s_flag = 1;
+	vd 		= SIGN * 0.5 * ((d_gt_s_flag + 1) * VD + (1 - d_gt_s_flag) * VS) / UT;
+	vs 		= SIGN * 0.5 * ((d_gt_s_flag + 1) * VS + (1 - d_gt_s_flag) * VD) / UT;
+	vg 		= SIGN * VG / UT;
+end //  NORMALIZING_INPUT_VOLTAGES
+
+begin : EFFECTIVE_GAMMA_DUE_TO_CHARGE_SHARING_POLYDEPLETION
+	chsh_l 		= CHSHL * TSI;
+	chsh_w 		= CHSHW * TSI;
+	one_w 		= 1.0 + chsh_w;
+	chsh_a1 	= 1.0 - chsh_l * (sqrt(`MAXA(vbi + vs,0.0,UT2)) + sqrt(`MAXA(vbi + vd,0.0,UT2))) / gamma_b_dev;
+	chsh_a2 	= chsh_a1 + chsh_a1 - 1.0 + (chsh_w + chsh_w) * sqrtphi / gamma_b_dev;
+	chsh_a3 	= one_w + dpd * chsh_a2;
+	gamma_b_chsh 	= gamma_b_dev * chsh_a1 / one_w;
+	gamma_b_chsh2 	= gamma_b_chsh * gamma_b_chsh;
+	gamma_b_eff 	= gamma_b_dev * chsh_a1 / chsh_a3;
+	gamma_b_eff2 	= gamma_b_eff * gamma_b_eff;
+	chsh_a10 	= 1.0 - chsh_l * 2.0 * sqrt(vbi) / gamma_b_dev;
+	chsh_a20 	= chsh_a10 + chsh_a10 - 1.0 + (chsh_w + chsh_w) * sqrtphi / gamma_b_dev;
+	chsh_a30 	= one_w + dpd * chsh_a20;
+	gamma_b_chsh0 	= gamma_b_dev * chsh_a10 / one_w;
+	gamma_b_chsh02 	= gamma_b_chsh0 * gamma_b_chsh0;
+end //  EFFECTIVE_GAMMA_DUE_TO_CHARGE_SHARING_POLYDEPLETION
+
+begin : FLAT_BAND_VOLTAGE // depending on gamma_b_dev
+	tmp_vfb 	= 1.0 - (chsh_l + chsh_l) * sqrtvbi / gamma_b_dev + chsh_w * sqrtphi / gamma_b_dev;
+	vfb 		= vto - phi * (one_w + dpd * tmp_vfb * tmp_vfb) - gamma_b_dev * (1.0 - (chsh_l + chsh_l) * sqrtvbi / gamma_b_dev) * sqrtphi;
+end //  FLAT_BAND_VOLTAGE
+
+begin : EFFECTIVE_GATE_VOLTAGE
+	vg_p 		= vg - vfb;
+	vg_p_chsh 	= vg_p / one_w;
+	vg_p_chsh_pd 	= vg_p / chsh_a3;
+	vg_p_chsh_pd0 	= vg_p / chsh_a30;
+end //  EFFECTIVE_GATE_VOLTAGE
+
+begin : PSI_PO___APPROXIMATION_AROUND_PSI_P_EQUALS_ZERO
+	tmp 		= vg_p_chsh * 0.5 - 3.0 * (1.0 + gamma_b_chsh * `ONESQRT2);
+	psi_po 		= tmp + sqrt(tmp * tmp + 6.0 * vg_p_chsh);
+	tmp 		= vg_p_chsh * 0.5 - 3.0 * (1.0 + gamma_b_chsh0 * `ONESQRT2);
+	psi_po0 	= tmp + sqrt(tmp * tmp + 6.0 * vg_p_chsh);
+end //  PSI_PO___APPROXIMATION_AROUND_PSI_P_EQUALS_ZERO
+
+///////////////////////////////////
+// PINCH - OFF SURFACE POTENTIAL //
+///////////////////////////////////
+
+begin : PINCH_OFF_SURFACE_POTENTIAL_VOLTAGE_SLOPE_FACTOR
+	if (vg_p < 0.0)
+	begin
+		tmp 		= (psi_po - vg_p_chsh) / gamma_b_chsh;
+		psi_p 		= - ln(1.0 - psi_po + tmp * tmp);
+		tmp 		= (psi_po0 - vg_p_chsh) / gamma_b_chsh0;
+		psi_p0 		= - ln(1.0 - psi_po0 + tmp * tmp);
+	end
+	else
+	begin   // as polydepletion is formulated into the charge sharing model
+		epsilon		= exp( - psi_po);
+		psi_p_tmp 	= sqrt(vg_p_chsh_pd - 1.0 + epsilon + gamma_b_eff2 * 0.25) - gamma_b_eff * 0.5;
+		psi_p 		= psi_p_tmp * psi_p_tmp + 1.0 - epsilon;
+		epsilon		= exp( - psi_po0);
+		psi_p_tmp 	= sqrt(vg_p_chsh_pd0 - 1.0 + epsilon + gamma_b_chsh02 * 0.25) - gamma_b_chsh0 * 0.5;
+		psi_p0 		= psi_p_tmp * psi_p_tmp + 1.0 - epsilon;
+	end
+ 	sqrt_psi_p 	= sqrt(`MAXA(psi_p ,1.0E-4,1.0E-2));
+ 	sqrt_psi_p0 	= sqrt(`MAXA(psi_p0,1.0E-4,1.0E-2));
+
+// PINCH - OFF VOLTAGE
+	vp 		= psi_p  - phi;
+// SLOPE FACTOR NV 
+	nv 		= chsh_a3  + gamma_b_dev * chsh_a1  / (2.0 * sqrt_psi_p );
+end
+
+begin : DIBL
+	if (ETAD == 0.0) 	
+	begin
+		deltapsis 	= 0.0;
+	end
+	else
+	begin
+		l0 		= ETAD_DEV * TSI * sqrt(2.0 * sqrtphi / gamma_b_dev);
+		v_o_dibl	= 4.0 + 40.0 * l0 / Leff;
+		v_o_dibl2 	= v_o_dibl * v_o_dibl;
+		tmp             = `MINA(vs,vd ,v_o_dibl2);
+		dv_dibl 	= `MINA(vp,tmp,v_o_dibl2);
+		tmp 		= Leff / (l0 + l0);
+		if (tmp > 70.0) 
+		begin
+			deltapsis	= 0.0;
+		end
+		else
+		begin
+			exp_tmp 	= exp(-tmp);
+			deltapsis	= exp_tmp * (2.0 + SIGMAD * tmp * dv_dibl  / (2.0 * phi)) * sqrt((nul + vs - dv_dibl) * (nul + vd - dv_dibl));
+		end
+	end
+end //  DIBL
+
+begin : NORMALIZED_FORWARD_CURRENT
+	`QV(qs,(vp + deltapsis - vs))
+	qs2 		= qs * qs;
+	if_ 		= qs2 + qs;
+	sif2 		= 0.25 + if_;
+	sif 		= sqrt(sif2);
+end //  NORMALIZED_FORWARD_CURRENT
+
+begin : VELOCITY_SATURATION
+	g_clm 		= 0.1;
+	e_clm 		= 2.0 / (ucrit_o_UT * Leff);
+	e_clm2 		= e_clm * e_clm;
+	e_clmx2 	= 2.0 * e_clm;
+	e_clmp2 	= 2.0 + e_clm;
+	e_clmx2xqs 	= e_clmx2 * qs;
+	qsat 		= e_clmx2 * if_ / (e_clmp2 + e_clmx2xqs + sqrt(e_clmp2 * e_clmp2 + 4.0 * e_clmx2xqs));
+	qs_qsat 	= qs - qsat;
+	qs_qsat2 	= qs_qsat * qs_qsat;
+	mdm2 		= 2.0 - DELTA;
+	e_clmxmdm2_2 	= e_clm2 * mdm2 * mdm2;
+	vdsat_tmp1 	= (2.0 * qsat + ln(qsat)) * (1.0 + e_clm * qs_qsat);
+ 	vdsat_tmp11	= g_clm + e_clm * mdm2 * qs_qsat;
+ 	vdsat_tmp2 	= sqrt(1.0 + (2.0 * e_clmxmdm2_2 * qs_qsat2) / vdsat_tmp11 + e_clm2 * qs_qsat2);
+ 	vdsat 		= vp - vdsat_tmp1 / vdsat_tmp2;
+ 	dv_clm 		= (ACLM / DELTA) * (4.0 * qsat + DELTA) / (qs + 1.0);
+	vdssat 		= `MAXA(vdsat - vs,3.0,4.0);
+	vdp_tmp1 	= (vd - vs) * sqrt(1.0 + 4.0 * dv_clm / vdssat);
+	vdp_tmp2 	= sqrt((vdp_tmp1 + vdssat) * (vdp_tmp1 + vdssat) + 4.0 * dv_clm * vdssat);
+	vdp_tmp3 	= sqrt((vdp_tmp1 - vdssat) * (vdp_tmp1 - vdssat) + 4.0 * dv_clm * vdssat);
+	vdp 		= 0.5 * (vdp_tmp2 - vdp_tmp3) + vs;
+// CHANNEL LENGTH MODULATION MODEL
+	u_clm		= 0.5 * e_clm * Leff / LC * (vd - vdp);
+	alpha_clm 	= LC / (Leff - 2.0 * LC);
+	deltal 		= LAMBDA_gt * LC * ln((alpha_clm + u_clm + sqrt(u_clm * u_clm + 2.0 * alpha_clm * u_clm + 1.0)) / (alpha_clm + 1.0));
+end //  VELOCITY_SATURATION
+
+begin : NORMALIZED_REVERSE_CURRENT
+	`QV(qdp,(vp + deltapsis - vdp))
+	qdp2 		= qdp * qdp;
+	irp 		= qdp2 + qdp;
+	sirp2 		= 0.25 + irp;
+	sirp 		= sqrt(sirp2);
+end //  NORMALIZED_REVERSE_CURRENT
+
+// CHARGE CALCULATIONS
+	qsqdp 		= qs + qdp;
+	qs_qdp 		= qs - qdp;
+	powqs_qdp2 	= qs_qdp * qs_qdp;
+	qsqdpp1 	= qsqdp + 1.0;
+	powqsqdpp1_2 	= 1.0 / (qsqdpp1 * qsqdpp1);
+	
+	i 		= if_ - irp;
+
+// NQ
+	`NQ(nq,psi_p,sqrt_psi_p,qs,qdp,dpd,gamma_b_eff,gamma_g2)
+
+begin : CHARGE_MODEL
+//v_o: psi_p0 instead of psi_p
+	v_o 		= vg_p_chsh - psi_p0;
+// QME
+	if (AQMA != 0.0)
+	begin
+	 	qr1 		= 3.0 * `ONESQRT2 * gamma_b_chsh;
+		if (vg_p < 0.0) qbo = vg_p_chsh    - psi_p;
+		else	 	qbo = vg_p_chsh / (1.0 + dpd) - psi_po;
+		dpsiv 		= axetaqm2_3 * (exp(`TWO3RDS * ln(sqrt(0.25 * qbo * qbo + 4.0 * axetaqm2_3 * gamma_b_chsh2) - 0.5 * qbo)) - exp(`TWO3RDS * ln(sqrt(qr1 * qr1 + 4.0 * axetaqm2_3 * gamma_b_chsh2) - qr1)));
+		v_o 		= v_o + dpsiv;
+	end
+	else 	
+	begin
+		dpsiv 		= 0.0;
+	end
+	// QG, QD, QS, QB
+	begin
+		`QX(qS,psi_p,nq,qs,qdp,powqs_qdp2,powqsqdpp1_2)
+		`QX(qD,psi_p,nq,qdp,qs,powqs_qdp2,powqsqdpp1_2)
+		`QG(qG,psi_p,qs,qdp,powqs_qdp2,powqsqdpp1_2,qsqdpp1,v_o,gamma_g2)
+	end
+	qI 		= qS + qD;
+	qB 		= qG - qI;
+end //  CHARGE_MODEL
+
+begin : MOBILITY_EFFECTS
+// COULOMB_SCATTERING
+	beta_coul 	= THC / ((1.0 + (nv * ZC * qs)) * (1.0 + (nv * ZC * qdp)));
+// VMR: VERTICAL-FIELD MOBILITY REDUCTION
+	nu 		= (nv * (1.0 - ETA_t)) - 1.0;
+	gpnu 		= (gamma_b_eff * sqrt_psi_p) + nu;
+ 	eq 		= qB + (ETA_t * nv * qI);
+	eq1 		= gpnu * gpnu + nu * nu * (1.0 + if_ + if_ + irp + irp) - 8.0 * `ONE3RD * nu * gpnu * (sif2 + sif * sirp + sirp2) / (sif + sirp);
+	beta_nom 	= 1.0 + (ev * gamma_b_eff * sqrtphi) + (ev1 * gamma_b_eff2 * phi);
+	beta_denom 	= 1.0 + (ev * eq) + (ev1 * eq1) + beta_coul;
+	beta 		= KP_DEV_t * beta_nom / beta_denom;
+// MOBILITY FACTOR DUE TO CLM
+	beta_clm_denom 	= sqrt(1.0 + 2.0 * e_clmxmdm2_2 * powqs_qdp2 / (g_clm + e_clm * mdm2 * (qs_qdp)) + e_clm2 * powqs_qdp2);
+	beta 		= beta / beta_clm_denom;
+end //  MOBILITY_EFFECTS
+
+begin : SPECIFIC_CURRENT
+	i0 		= 2.0 * nq * UT2 * beta * inv_dqmip1;
+	Ispec 		= i0 * WeffNF / (Leff - deltal) * (Weff - WEDGE) / Weff;
+end //  SPECIFIC_CURRENT
+
+// DITS
+begin : DITS
+	if (PDITS == 0.0)
+	begin
+		dits_factor 	= 1.0;
+	end
+	else
+	begin
+		f_dits 		= 1.0 / (1.0 + FPROUT * sqrt(Leff) / (qI + 2.0));
+		va_dits 	= (f_dits / PDITS) * (1.0 + (1.0 + PDITSL * Leff) * exp(PDITSD * (vd - vs) * UT));
+		vdseff 		= vdssat - `MAXA(vdssat - (vd - vs) - DDITS, 0.0, 4.0 * DDITS * vdssat);
+		dits_factor 	= (1.0 + (vd - vs - vdseff) / va_dits );
+	end
+end //  DITS
+
+begin : DENORMALISING
+	QS 		=   qS * Q0;
+	QD 		=   qD * Q0;
+	QG 		= - qG * Q0;
+	QB 		= - QS - QD - QG;
+
+	IDS 		= Ispec * i * dits_factor;
+end //  DENORMALISING
+   $strobe("Begin of output.");
+`include "ekv3_include/ekv3_extrinsic_diodes.va"
+`include "ekv3_include/ekv3_extrinsic_rc.va"
+`include "ekv3_include/ekv3_edge.va"
+`include "ekv3_include/ekv3_overlap.va"
+`include "ekv3_include/ekv3_fringing.va"
+`include "ekv3_include/ekv3_gidl.va"
+`include "ekv3_include/ekv3_gate_current.va"
+`include "ekv3_include/ekv3_idb.va"
+`include "ekv3_include/ekv3_noise.va"
+
+`ifdef DC_S
+// SERIES RESISTANCE
+	IDS 		= IDS / (1.0 + (rs * Ispec / UT) * qs + (rd * Ispec / UT) * qdp);
+   $strobe("Begin of output.");
+   $strobe("IDS = ", IDS*d_gt_s_flag);
+   $strobe("IDSDvd = ", ddx(IDS*d_gt_s_flag, V(d)));
+   $strobe("IDSDvs = ", ddx(IDS*d_gt_s_flag, V(s)));
+   $strobe("IDSDvg = ", ddx(IDS*d_gt_s_flag, V(g)));
+   $strobe("**End of Time point.");
+   
+// IDS
+	I(d ,s ) <+  SIGN_M * d_gt_s_flag * IDS;
+// CAPACITANCES
+	I(b ,g ) <+  SIGN_M * ddt(QB) * QON;
+	I(d ,g ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QD)   + (1 - d_gt_s_flag) * ddt(QS)) * QON;
+	I(s ,g ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QS)   + (1 - d_gt_s_flag) * ddt(QD)) * QON;
+`endif
+
+`ifdef DC
+// IDS
+
+   $strobe("IDS = ", SIGN_M * IDS*d_gt_s_flag);
+   $strobe("IDSDvd = ", ddx(SIGN_M * IDS*d_gt_s_flag, V(di)));
+   $strobe("IDSDvs = ", ddx(SIGN_M * IDS*d_gt_s_flag, V(si)));
+   $strobe("IDSDvg = ", ddx(SIGN_M * IDS*d_gt_s_flag, V(g)));
+   $strobe("**End of Time point.");
+	I(di,si) <+  SIGN_M * d_gt_s_flag * IDS;
+// CAPACITANCES
+	I(b ,g ) <+  SIGN_M * ddt(QB) * QON;
+	I(di,g ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QD)   + (1 - d_gt_s_flag) * ddt(QS)) * QON;
+	I(si,g ) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QS)   + (1 - d_gt_s_flag) * ddt(QD)) * QON;
+`endif
+
+`ifdef RF_S
+// IDS
+	I(di,si) <+  SIGN_M * d_gt_s_flag * IDS;
+// CAPACITANCES
+	I(bi,gi) <+  SIGN_M * ddt(QB) * QON;
+	I(di,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QD)   + (1 - d_gt_s_flag) * ddt(QS)) * QON;
+	I(si,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QS)   + (1 - d_gt_s_flag) * ddt(QD)) * QON;
+`endif
+
+`ifdef RF
+// IDS
+	I(di,si) <+  SIGN_M * d_gt_s_flag * IDS;
+// CAPACITANCES
+	I(bi,gi) <+  SIGN_M * ddt(QB) * QON;
+	I(di,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QD)   + (1 - d_gt_s_flag) * ddt(QS)) * QON;
+	I(si,gi) <+  SIGN_M * 0.5 * ((d_gt_s_flag + 1) * ddt(QS)   + (1 - d_gt_s_flag) * ddt(QD)) * QON;
+`endif
+
+`ifdef NQS
+	begin : MOS_FIRST
+		spec_factor = `NLS;
+//IV
+		v1 = (d_gt_s_flag == 1) ? SIGN * V(si,bi) / UT: vdp;	v2 = SIGN * V(m1,bi) / UT;
+		`QV(q1,(vp + deltapsis - v1))	i1 = q1 * q1 + q1;
+		`QV(q2,(vp + deltapsis - v2))	i2 = q2 * q2 + q2;
+           $strobe("Begin of output.");
+           IDS = SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+           $strobe("IDS0 = ", IDS);
+           $strobe("IDS0Dvd = ", ddx(IDS, V(di)));
+           $strobe("IDS0Dvs = ", ddx(IDS, V(si)));
+           $strobe("IDS0Dvg = ", ddx(IDS, V(g)));
+		I(m1,si)  <+ SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+//CV
+		`NQ(nq,psi_p,sqrt_psi_p,q1,q2,dpd,gamma_b_chsh,gamma_g2)
+		q1q2 	= q1 + q2;	q1_q2 = q1 - q2; powq1_q22 = q1_q2 * q1_q2; q1q2p1 = q1q2 + 1.0;	powq1q2p1_2 = 1.0 / (q1q2p1 * q1q2p1);
+		`QX(qq1,psi_p,nq,q1,q2,powq1_q22,powq1q2p1_2)
+		`QX(qq2,psi_p,nq,q2,q1,powq1_q22,powq1q2p1_2)
+		`QG(qG,psi_p,q1,q2,powq1_q22,powq1q2p1_2,q1q2p1,v_o,gamma_g2)
+		qB 	= - qq1 - qq2 + qG;
+		I(bi,gi)    <+ SIGN_M * ddt(qB  * Q0 / spec_factor) * QON;
+		I(m1,gi)    <+ SIGN_M * ddt(qq2 * Q0 / spec_factor) * QON;
+		I(si,gi)    <+ SIGN_M * ddt(qq1 * Q0 / spec_factor) * QON;
+	end
+	begin : MOS_M1
+		spec_factor = `NLS;
+//IV
+		v1 = SIGN * V(m1,bi) / UT;	v2 = SIGN * V(m2,bi) / UT;
+		`QV(q1,(vp + deltapsis - v1))	i1 = q1 * q1 + q1;
+		`QV(q2,(vp + deltapsis - v2))	i2 = q2 * q2 + q2;
+           IDS = SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+           $strobe("IDS1 = ", IDS);
+           $strobe("IDS1Dvd = ", ddx(IDS, V(di)));
+           $strobe("IDS1Dvs = ", ddx(IDS, V(si)));
+           $strobe("IDS1Dvg = ", ddx(IDS, V(g)));
+		I(m2,m1)  <+ SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+//CV
+		`NQ(nq,psi_p,sqrt_psi_p,q1,q2,dpd,gamma_b_chsh,gamma_g2)
+		q1q2 	= q1 + q2;	q1_q2 = q1 - q2; powq1_q22 = q1_q2 * q1_q2; q1q2p1 = q1q2 + 1.0;	powq1q2p1_2 = 1.0 / (q1q2p1 * q1q2p1);
+		`QX(qq1,psi_p,nq,q1,q2,powq1_q22,powq1q2p1_2)
+		`QX(qq2,psi_p,nq,q2,q1,powq1_q22,powq1q2p1_2)
+		`QG(qG,psi_p,q1,q2,powq1_q22,powq1q2p1_2,q1q2p1,v_o,gamma_g2)
+		qB 	= - qq1 - qq2 + qG;
+		I(bi,gi)    <+ SIGN_M * ddt(qB  * Q0 / spec_factor) * QON;
+		I(m2,gi)    <+ SIGN_M * ddt(qq2 * Q0 / spec_factor) * QON;
+		I(m1,gi)    <+ SIGN_M * ddt(qq1 * Q0 / spec_factor) * QON;
+	end
+	begin : MOS_M2
+		spec_factor = `NLS;
+//IV
+		v1 = SIGN * V(m2,bi) / UT;	v2 = SIGN * V(m3,bi) / UT;
+		`QV(q1,(vp + deltapsis - v1))	i1 = q1 * q1 + q1;
+		`QV(q2,(vp + deltapsis - v2))	i2 = q2 * q2 + q2;
+           IDS = SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+           $strobe("IDS2 = ", IDS);
+           $strobe("IDS2Dvd = ", ddx(IDS, V(di)));
+           $strobe("IDS2Dvs = ", ddx(IDS, V(si)));
+           $strobe("IDS2Dvg = ", ddx(IDS, V(g)));
+		I(m3,m2)  <+ SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+//CV
+		`NQ(nq,psi_p,sqrt_psi_p,q1,q2,dpd,gamma_b_chsh,gamma_g2)
+		q1q2 	= q1 + q2;	q1_q2 = q1 - q2; powq1_q22 = q1_q2 * q1_q2; q1q2p1 = q1q2 + 1.0;	powq1q2p1_2 = 1.0 / (q1q2p1 * q1q2p1);
+		`QX(qq1,psi_p,nq,q1,q2,powq1_q22,powq1q2p1_2)
+		`QX(qq2,psi_p,nq,q2,q1,powq1_q22,powq1q2p1_2)
+		`QG(qG,psi_p,q1,q2,powq1_q22,powq1q2p1_2,q1q2p1,v_o,gamma_g2)
+		qB 	= - qq1 - qq2 + qG;
+		I(bi,gi)    <+ SIGN_M * ddt(qB  * Q0 / spec_factor) * QON;
+		I(m3,gi)    <+ SIGN_M * ddt(qq2 * Q0 / spec_factor) * QON;
+		I(m2,gi)    <+ SIGN_M * ddt(qq1 * Q0 / spec_factor) * QON;
+	end
+	begin : MOS_M3
+		spec_factor = `NLS;
+//IV
+		v1 = SIGN * V(m3,bi) / UT;	v2 = SIGN * V(m4,bi) / UT;
+		`QV(q1,(vp + deltapsis - v1))	i1 = q1 * q1 + q1;
+		`QV(q2,(vp + deltapsis - v2))	i2 = q2 * q2 + q2;
+           IDS = SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+           $strobe("IDS3 = ", IDS);
+           $strobe("IDS3Dvd = ", ddx(IDS, V(di)));
+           $strobe("IDS3Dvs = ", ddx(IDS, V(si)));
+           $strobe("IDS3Dvg = ", ddx(IDS, V(g)));
+		I(m4,m3)  <+ SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+//CV
+		`NQ(nq,psi_p,sqrt_psi_p,q1,q2,dpd,gamma_b_chsh,gamma_g2)
+		q1q2 	= q1 + q2;	q1_q2 = q1 - q2; powq1_q22 = q1_q2 * q1_q2; q1q2p1 = q1q2 + 1.0;	powq1q2p1_2 = 1.0 / (q1q2p1 * q1q2p1);
+		`QX(qq1,psi_p,nq,q1,q2,powq1_q22,powq1q2p1_2)
+		`QX(qq2,psi_p,nq,q2,q1,powq1_q22,powq1q2p1_2)
+		`QG(qG,psi_p,q1,q2,powq1_q22,powq1q2p1_2,q1q2p1,v_o,gamma_g2)
+		qB 	= - qq1 - qq2 + qG;
+		I(bi,gi)    <+ SIGN_M * ddt(qB  * Q0 / spec_factor) * QON;
+		I(m4,gi)    <+ SIGN_M * ddt(qq2 * Q0 / spec_factor) * QON;
+		I(m3,gi)    <+ SIGN_M * ddt(qq1 * Q0 / spec_factor) * QON;
+	end
+	begin : MOS_LAST
+		spec_factor = `NLS;
+//IV
+		v1 = SIGN * V(m4,bi) / UT;	v2 = (d_gt_s_flag == 1) ?  vdp : SIGN * V(di,bi) / UT;
+		`QV(q1,(vp + deltapsis - v1))	i1 = q1 * q1 + q1;
+		`QV(q2,(vp + deltapsis - v2))	i2 = q2 * q2 + q2;
+           IDS = SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+           $strobe("IDS4 = ", IDS);
+           $strobe("IDS4Dvd = ", ddx(IDS, V(di)));
+           $strobe("IDS4Dvs = ", ddx(IDS, V(si)));
+           $strobe("IDS4Dvg = ", ddx(IDS, V(g)));
+           $strobe("**End of Time point.");
+		I(di,m4)  <+ SIGN_M * Ispec * spec_factor * (i1 - i2) * dits_factor;
+//CV
+		`NQ(nq,psi_p,sqrt_psi_p,q1,q2,dpd,gamma_b_chsh,gamma_g2)
+		q1q2 	= q1 + q2;	q1_q2 = q1 - q2; powq1_q22 = q1_q2 * q1_q2; q1q2p1 = q1q2 + 1.0;	powq1q2p1_2 = 1.0 / (q1q2p1 * q1q2p1);
+		`QX(qq1,psi_p,nq,q1,q2,powq1_q22,powq1q2p1_2)
+		`QX(qq2,psi_p,nq,q2,q1,powq1_q22,powq1q2p1_2)
+		`QG(qG,psi_p,q1,q2,powq1_q22,powq1q2p1_2,q1q2p1,v_o,gamma_g2)
+		qB 	= - qq1 - qq2 + qG;
+		I(bi,gi)   <+ SIGN_M * ddt(qB  * Q0 / spec_factor) * QON;
+		I(di,gi)   <+ SIGN_M * ddt(qq2 * Q0 / spec_factor) * QON;
+		I(m4,gi)   <+ SIGN_M * ddt(qq1 * Q0 / spec_factor) * QON;
+	end
+`endif
+
+`include "ekv3_include/ekv3_extract_debug.va"
+
+end
+endmodule

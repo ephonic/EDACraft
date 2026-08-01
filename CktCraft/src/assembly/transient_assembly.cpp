@@ -1,7 +1,6 @@
 // transient_assembly.cpp — 时域瞬态 MNA 装配实现
 #include "transient_assembly.hpp"
 #include "../model/builtin_devices.hpp"
-#include "../model/osdi_model.hpp"
 #include "../model/sparam_device.hpp"
 
 #include <cmath>
@@ -136,66 +135,6 @@ bool assembleTransient(uint32_t numNodes,
             continue;
         }
 
-        if (auto* osdi = dynamic_cast<OsdiModel*>(dev.get())) {
-            if (!osdi->ready()) continue;
-            const OsdiDescriptor* d = osdi->descriptor();
-            uint32_t nNodes = d->num_nodes;
-            TransientOpPoint op;
-            op.v = nodeV; op.v_prev = prevNodeV;
-            op.time = t; op.dt = dt; op.method = method;
-            DeviceContribution dc;
-            // B1: Jacobian 级 bypass。Newton 内层 line-search（residOnly=true）且本 Newton
-            // 步已算过 jac（residOnlyPending）→ 走 evalTransientResidOnly（复用 jac，只重算 resid）。
-            // 首 assembly（residOnly=false）算完整 f+jac 并 markJacComputed。
-            // 注意：仅当不走 multi-rate bypass（mrNeedsEval / evalCached 路径）时生效——
-            // multi-rate 的完全 cache 命中优先级更高。
-            bool useResidOnly = residOnly && osdi->residOnlyPending();
-            if (useResidOnly) {
-                osdi->evalTransientResidOnly(op, dc);
-            } else if (osdi->mrNeedsEval()) {
-                osdi->evalTransient(op, dc);
-                osdi->mrMarkEvalDone();
-                if (!residOnly) osdi->markJacComputed();  // B1: 标记 jac 已算供后续 resid-only
-            } else {
-                osdi->mrCheckVoltages(nodeV);  // 自适应检查
-                if (osdi->mrNeedsEval()) {
-                    osdi->evalTransient(op, dc);  // 电压变化大，重新 eval
-                    osdi->mrMarkEvalDone();
-                    if (!residOnly) osdi->markJacComputed();
-                } else {
-                    // cache 有效且电压稳定——复用
-                    // 注意: resetLimiting 会清 evalCached_，此时不走 bypass
-                    if (osdi->evalCached()) {
-                        osdi->evalTransientCached(dc);
-                    } else {
-                        osdi->evalTransient(op, dc);
-                        osdi->mrMarkEvalDone();
-                        if (!residOnly) osdi->markJacComputed();
-                    }
-                }
-            }
-            for (uint32_t k = 0; k < nNodes && k < nds.size() && k < dc.f.size(); ++k) {
-                if (nds[k] != 0 && nds[k] <= numNodes) sys.F[nds[k] - 1] += dc.f[k];
-            }
-            // V3-L0: stampPtrs O(1) fast path（仅当绑定到当前 G 时启用）
-            if (osdi->stampPtrsBound(sys.G)) {
-                osdi->stampValuesViaPtrs(dc.jac);
-            } else {
-                uint32_t nE = d->num_jacobian_entries;
-                for (uint32_t e = 0; e < nE && e < dc.jac.size(); ++e) {
-                    const OsdiJacobianEntry& je = d->jacobian_entries[e];
-                    NodeId gr = (je.nodes.node_1 < nds.size()) ? nds[je.nodes.node_1] : 0;
-                    NodeId gc = (je.nodes.node_2 < nds.size()) ? nds[je.nodes.node_2] : 0;
-                    double v = dc.jac[e];
-                    if (gr == 0 && gc == 0) continue;
-                    if (gr == 0) { sys.G.addPattern(gc - 1, gc - 1); sys.G.add(gc - 1, gc - 1, v); }
-                    else if (gc == 0) { sys.G.addPattern(gr - 1, gr - 1); sys.G.add(gr - 1, gr - 1, v); }
-                    else { sys.G.addPattern(gr - 1, gc - 1); sys.G.add(gr - 1, gc - 1, v); }
-                }
-            }
-            continue;
-        }
-
         // SParamDevice: Vector Fitting companion model
         if (auto* sp = dynamic_cast<SParamDevice*>(dev.get())) {
             TransientOpPoint op;
@@ -208,9 +147,6 @@ bool assembleTransient(uint32_t numNodes,
             DeviceContribution dc;
             sp->evalTransient(op, dc);
 
-            // 与 C/L 分支同构：状态更新由 time_stepper 在 Newton 收敛后
-            // 统一调 updateDeviceStates → updateTransientState 完成，
-            // 此处不更新状态（避免每次 Newton 迭代误推进 companion state）。
             if (dc.f.size() != nTerm || dc.jac.size() != nTerm * nTerm) {
                 dc.f.assign(nTerm, 0.0);
                 dc.jac.assign(nTerm * nTerm, 0.0);
@@ -228,7 +164,33 @@ bool assembleTransient(uint32_t numNodes,
             }
             continue;
         }
-    }
+
+        // 通用非线性 DeviceModel 路径（Verilog-A 生成模型等）：
+        // 上面 dynamic_cast 未命中的非线性器件，走 evalTransient 虚接口装配。
+        // 符号约定与 Capacitor/OSDI 一致：F += f（流出节点电流），G += df/dv，
+        // jac 按 stamp_pattern entries 顺序对齐。
+        if (!dev->is_linear()) {
+            TransientOpPoint op;
+            op.v = nodeV; op.v_prev = prevNodeV;
+            op.time = t; op.dt = dt; op.method = method;
+            DeviceContribution dc;
+            dev->evalTransient(op, dc);
+            for (size_t k = 0; k < nds.size() && k < dc.f.size(); ++k) {
+                NodeId nk = nds[k];
+                if (nk == 0) continue;
+                sys.F[nk - 1] += dc.f[k];
+            }
+            StampPattern sp;
+            dev->stamp_pattern(sp);
+            for (size_t e = 0; e < sp.entries.size() && e < dc.jac.size(); ++e) {
+                NodeId gr = sp.entries[e].first, gc = sp.entries[e].second;
+                if (gr == 0 || gc == 0) continue;
+                sys.G.addPattern(gr - 1, gc - 1);
+                sys.G.add(gr - 1, gc - 1, dc.jac[e]);
+            }
+            continue;
+        }
+    }  // end main device loop
 
     if (!committed) sys.G.finalize();
     return true;

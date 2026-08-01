@@ -13,9 +13,9 @@ REM
 REM Usage: build_model.bat <input.va> <output.dll>
 setlocal
 
-set "SIM=G:\vibe-codeing\simulator"
-set "TMP=%SIM%\build\tmp"
-set "TEMP=%SIM%\build\tmp"
+set "SIM=G:\vibe-codeing\simulator\CktCraft"
+set "TMP=G:\vibe-codeing\simulator\build\tmp"
+set "TEMP=G:\vibe-codeing\simulator\build\tmp"
 if not exist "%TMP%" mkdir "%TMP%"
 
 REM Enter MSVC build environment (OpenVAF uses MSVC link.exe for codegen)

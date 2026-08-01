@@ -18,8 +18,7 @@
 //   large  scale  (N≈500)    : wall < 60s,  AC relErr <= 1e-3 (plan §C2 / §4)
 //   AC vs analytical: |H_sim - H_ref| / |H_ref| <= 1e-3 at every probed freq
 #include "model/builtin_devices.hpp"
-#include "model/osdi_model.hpp"
-#include "model/osdi/osdi_library.hpp"
+#include "model/generated/generated_registry.hpp"
 #include "solver/ac_analysis.hpp"
 #include "solver/dc_op.hpp"
 #include "solver/hb_nonlinear.hpp"
@@ -33,7 +32,6 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
-#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -71,24 +69,6 @@ Complex ladderAnalyticalH(int N, double R, double C, double f) {
 
 // ----------------------------- BSIM4 helpers (shared with C1.2..C1.4) ---
 
-std::string projectRootFromTestData() {
-    std::string s = RFSIM_TEST_DATA_DIR;
-    auto pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    pos = s.find_last_of("/\\");
-    if (pos != std::string::npos) s = s.substr(0, pos);
-    return s;
-}
-
-std::string bsim4LibPath() {
-    if (const char* p = std::getenv("RFSIM_BSIM4_LIB")) return p;
-#ifdef _WIN32
-    return projectRootFromTestData() + "/models/bsim4.dll";
-#else
-    return projectRootFromTestData() + "/models/bsim4.so";
-#endif
-}
-
 ParamList bsim4Model() {
     ParamList p;
     auto add = [&](const char* n, double v) {
@@ -116,56 +96,11 @@ ParamList instWL(double w = 1e-6, double l = 130e-9) {
     return p;
 }
 
-struct BsimLib {
-    std::shared_ptr<OsdiLibrary> lib;
-    const OsdiDescriptor* desc = nullptr;
-    // V2-γ C3：同 modelcard 多实例共享 OsdiModelBlock；首次 makeNmos() 后登记，
-    // 后续 makeNmos() 在 initialize() 之前注入，跳过重复 setup_model。
-    std::shared_ptr<OsdiModelBlock> modelBlock;
-    bool ok(std::string& why) {
-        if (lib) return true;
-        OsdiLibrary tmp;
-        if (!tmp.load(bsim4LibPath(), why)) return false;
-        lib = std::make_shared<OsdiLibrary>(std::move(tmp));
-        if (lib->numDescriptors() < 1) {
-            why = "no descriptors";
-            lib.reset();
-            return false;
-        }
-        desc = lib->descriptors();
-        return true;
-    }
-    // 卸载并重新加载 bsim4.dll，清零 dll 内部全局状态；详见
-    // docs/flake_investigation_0621.md。
-    void reload() {
-        if (!lib) return;
-        std::string why;
-        modelBlock.reset();
-        desc = nullptr;
-        if (lib->reload(why)) {
-            desc = lib->descriptors();
-        } else {
-            lib.reset();
-        }
-    }
-};
-
-std::unique_ptr<OsdiModel> makeNmos(const std::string& name,
+std::unique_ptr<DeviceModel> makeNmos(const std::string& name,
                                     NodeId d, NodeId g, NodeId s, NodeId b,
-                                    BsimLib& L,
-                                    Diagnostics& diags,
-                                    NodeId& base,
                                     double w = 1e-6, double l = 130e-9) {
-    auto m = std::make_unique<OsdiModel>(name, std::vector<NodeId>{d, g, s, b},
-                                         L.lib, L.desc, instWL(w, l), bsim4Model());
-    if (L.modelBlock) {
-        m->useSharedModelBlock(L.modelBlock);
-    }
-    if (!m->initialize(diags, base)) return nullptr;
-    if (!L.modelBlock) {
-        L.modelBlock = m->modelBlock();
-    }
-    return m;
+    return createGeneratedModel("bsim4va", name, std::vector<NodeId>{d, g, s, b},
+                                instWL(w, l), bsim4Model());
 }
 
 NodeId computeMaxNode(const std::vector<std::unique_ptr<DeviceModel>>& devs) {
@@ -241,34 +176,8 @@ TEST(LargeScale, RcLadder20Lowpass) {
 }
 
 // ============================================================================
-// LargeScaleBsim4 fixture (C1.2 .. C1.4)
-//
-// Same Meyers-singleton + 1-MOS DC pre-warm pattern as MultiDevice (see
-// test_multi_device.cpp:264) -- bsim4.dll loads once per test process,
-// FreeLibrary fires only at process exit, which avoids the load/unload
-// state corruption (0xc0000374) that breaks ctest-isolated invocations.
+// LargeScaleBsim4 tests (C1.2 .. C1.4)
 // ============================================================================
-class LargeScaleBsim4 : public ::testing::Test {
-public:
-    static BsimLib& warmLib() {
-        static BsimLib L;
-        return L;
-    }
-    // 旧 SetUpTestSuite 跑 1-MOS DC 预热会修改 BSIM4 内部全局状态，后续用例
-    // 继承后部分场景崩溃。改为每用例 reload（见 SetUp）提供干净状态。
-    // 详见 docs/flake_investigation_0621.md。
-
-    // 每用例前 reload bsim4.dll：OSDI v0.3 无 destroy hook → setup_instance 内部
-    // sub-alloc leak 累积 → 同进程多次 BSIM4 用例触发 use-of-stale-pointer AV。
-    // 详见 docs/flake_investigation_0621.md。Set RFSIM_NO_DLL_RELOAD=1 跳过。
-    void SetUp() override {
-        std::string why;
-        if (!warmLib().ok(why)) GTEST_SKIP() << why;
-        if (std::getenv("RFSIM_NO_DLL_RELOAD") == nullptr) {
-            warmLib().reload();
-        }
-    }
-};
 
 // ============================================================================
 // C1.2 -- cascode chain (BSIM4)
@@ -300,10 +209,7 @@ public:
 // PSS-class assertion = HB-NL (matches plan §B2 note: Shooting on multi-BSIM4
 // stack is V2-γ performance work per test_multi_device.cpp:144).
 // ============================================================================
-TEST_F(LargeScaleBsim4, CascodeChain5) {
-    std::string why;
-    if (!warmLib().ok(why)) GTEST_SKIP() << "bsim4 lib not loaded: " << why;
-
+TEST(LargeScaleBsim4, CascodeChain5) {
     // Node assignment: 1=vdd, 2=top drain, 3=interstage, 4=Vbias, 5=Vin
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 1.5));
@@ -316,10 +222,9 @@ TEST_F(LargeScaleBsim4, CascodeChain5) {
     vin->setAcMag(Complex(0.005, 0.0));
     devs.push_back(std::move(vin));
 
-    Diagnostics diags; NodeId base = 6;
     // All bulks → ground (matches B2 TwoStageCascade).
-    auto m2 = makeNmos("m2", 2, 4, 3, 0, warmLib(), diags, base);
-    auto m1 = makeNmos("m1", 3, 5, 0, 0, warmLib(), diags, base);
+    auto m2 = makeNmos("m2", 2, 4, 3, 0);
+    auto m1 = makeNmos("m1", 3, 5, 0, 0);
     ASSERT_TRUE(m2 && m1) << "BSIM4 NMOS init failed";
     devs.push_back(std::move(m2));
     devs.push_back(std::move(m1));
@@ -524,28 +429,24 @@ TEST(LargeScale, RcLadder500Lowpass) {
 // the single tightest empirical link between C1.4 and C2.b: same broken
 // instance index, same pathology, same root cause to be fixed in C3.
 // ============================================================================
-TEST_F(LargeScaleBsim4, SelfBiasedCascodeStack5) {
+TEST(LargeScaleBsim4, SelfBiasedCascodeStack5) {
     // KI-2 红线用例：5-stack 串联 NMOS。Sprint S2 已把 host 切到 MSVC /MD
     // 与 bsim4.dll 的 UCRT 对齐，跨 CRT 堆腐败根因消除，不再 SKIP。
     // 历史：MinGW host 链 msvcrt.dll，dll 链 ucrtbase → 两堆共存，
     // 触发 3rd-instance 状态串扰 (drain 跃过 rail、Iref 反向)。
     // 详见 docs/known_issues.md KI-2、status0621-v2.md。
 
-    std::string why;
-    if (!warmLib().ok(why)) GTEST_SKIP() << "bsim4 lib not loaded: " << why;
-
     // Nodes: 1=vdd, 2=top drain (=M5.gate via diode-connect), 3..6=interstage
     std::vector<std::unique_ptr<DeviceModel>> devs;
     devs.push_back(std::make_unique<VoltageSource>("vdd", 1, 0, 3.3));
     devs.push_back(std::make_unique<Resistor>("rref", 1, 2, 50e3));
 
-    Diagnostics diags; NodeId base = 7;
     // 5 self-biased NMOS, all bulks → ground (matches B2/C1.2 proven config).
-    auto m5 = makeNmos("m5", 2, 2, 3, 0, warmLib(), diags, base);
-    auto m4 = makeNmos("m4", 3, 3, 4, 0, warmLib(), diags, base);
-    auto m3 = makeNmos("m3", 4, 4, 5, 0, warmLib(), diags, base);
-    auto m2 = makeNmos("m2", 5, 5, 6, 0, warmLib(), diags, base);
-    auto m1 = makeNmos("m1", 6, 6, 0, 0, warmLib(), diags, base);
+    auto m5 = makeNmos("m5", 2, 2, 3, 0);
+    auto m4 = makeNmos("m4", 3, 3, 4, 0);
+    auto m3 = makeNmos("m3", 4, 4, 5, 0);
+    auto m2 = makeNmos("m2", 5, 5, 6, 0);
+    auto m1 = makeNmos("m1", 6, 6, 0, 0);
     ASSERT_TRUE(m5 && m4 && m3 && m2 && m1) << "BSIM4 5-NMOS init failed";
     devs.push_back(std::move(m5));
     devs.push_back(std::move(m4));

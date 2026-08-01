@@ -48,6 +48,12 @@ NoiseResult solveNoise(uint32_t numNodes,
         }
     }
 
+    // 收集非线性器件（噪声源）
+    std::vector<DeviceModel*> noiseDevs;
+    for (const auto& d : devices) {
+        if (!d->is_linear()) noiseDevs.push_back(d.get());
+    }
+
     // 收集电压源（分支扩展）
     uint32_t numVS = 0;
     for (const auto& d : devices)
@@ -129,6 +135,10 @@ NoiseResult solveNoise(uint32_t numNodes,
             Complex vout(B[2 * outIdx], B[2 * outIdx + 1]);
             outPSD += std::norm(vout) * psd_src;
         }
+
+        // 2. 非线性器件噪声（load_noise）— requires evalNoise on DeviceModel
+        // TODO: promote evalNoise to DeviceModel virtual method
+        (void)noiseDevs;
 
         NoisePoint pt;
         pt.freq = f;

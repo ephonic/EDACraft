@@ -21,7 +21,7 @@ struct GminOptions {
     double gmin = 1e-12;
 
     // log-spaced 同伦起点（仅当 gminSteps>0 时使用）。
-    double gminStart = 1e-2;
+    double gminStart = 1e-4;
 
     // 同伦级数。
     //   0 = 不启用同伦，单点 schedule={gmin}（零开销，与未启用前完全一致）；

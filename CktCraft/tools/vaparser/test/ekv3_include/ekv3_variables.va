@@ -1,0 +1,528 @@
+///////////////
+// VARIABLES //
+///////////////
+
+// ekv3.va
+
+real 	NF_M 			;
+real	SIGN_NF 		;
+real	SIGN_M 			;
+real	SIGN_NF_M		;
+real	TSI			;		
+real	TOX			;
+real	TOX2 			;
+real	LC 			;
+real 	QON 			;
+real 	hdif 			;
+real	ldif 			;
+real	l 			;
+real	WF 			;
+real	w 			;
+real	Leff 			;
+real	Weff 			;
+real	Leffc 			;
+real	Weffc 			;
+real	WeffNF 			;
+real	WLeff 			;
+real	awl 			;
+real	VTO_a 			;
+real	GAMMA_a 		;
+real	KP_a 			;
+real	DVTLONG 		;
+real	DVTWIDE 		;
+real	DVTNF 			;
+real	DGAMMALONG  		;
+real	DGAMMAWIDE 		;
+real	LR_g 			;
+real	QLR_g 			;
+real	NLR_g 			;
+real	E0_g 			;
+real	E1_g			;
+real	UCRIT_g 		;
+real	LAMBDA_g 		;
+real	ETAD_g 			;
+real	TCV_g 			;
+real	UCEX_g			;
+real	WR_g 			;
+real	QWR_g 			;
+real	NWR_g 			;
+real	DVTRSCE 		;
+real	GAMMA_RSCE 		;
+real	DPHIF_RSCE 		;
+real	DVTINWE 		;
+real	GAMMA_INWE 		;
+real	kpl 			;
+real	kpw			;
+real	VTO_DEV 		;
+real	GAMMA_DEV 		;
+real	PHIF_DEV 		;
+real	KP_DEV 			;
+real	UCRIT_DEV 		;
+real	ETAD_DEV 		;
+real	CHSHL 			;
+real	CHSHW 			;
+real	NUV 			;
+real	UT			;
+real	UT2 			;
+real	UT3 			;
+real	sqrtUT 			;
+real	thermocrasia 		;
+real	tnom 			;
+real	dT 			;
+real	dT2 			;
+real	rT 			;
+real	lnrT 			;
+real	VTO_DEV_t 		;
+real	KP_DEV_t 		;
+real	ETA_t 			;
+real	E0_gt 			;
+real	E1_gt 			;
+real	UCRIT_DEV_t 		;
+real	LAMBDA_gt 		;
+real	IBB_t 			;
+real	eg_nom 			;
+real	eg_thermo 		;
+real	temp_arg_S 		;
+real	temp_arg_D 		;
+real	temp_arg2 		;
+real	PHIF_DEV_t 		;
+real	phif 			;
+real	sqrtphif 		;
+real	vto 			;
+real	gamma_b_dev 		;
+real	gamma_b_dev2		;
+real	gamma_g 		;
+real	gamma_g2 		;
+real	dpd 			;
+real	gamma_ov 		;
+real	gamma_g_ov 		;
+real	vfb_ov 			;
+real	gamma_ov2 		;
+real	ucrit_o_UT 		;
+real	xb 			;
+real	ub 			;
+real	ev 			;
+real	tmp 			;
+real	ev1 			;
+real	nq0 			;
+real	aqma 			;
+real	axetaqm2_3 		;
+real	inv_dqmip1 		;
+real	dpsi0 			;
+real	DPSI0 			;
+real	phi 			;
+real	sqrtphi 		;
+real	nul 			;
+real	vbi 			;
+real	sqrtvbi 		;
+real	chsh_l 			;
+real	chsh_w 			;
+real	one_w 			;
+real	vfb 			;
+real	Q0 			;
+real	Q0OV 			;
+real 	VS			;
+real 	VD			;
+real 	VG			;
+real 	d_gt_s_flag		;
+real	vd 			;
+real	vs 			;		
+real	vg 			;		
+real	chsh_a1 		;		
+real	chsh_a2 		;		
+real	chsh_a3 		;		
+real	gamma_b_chsh 		;		
+real	gamma_b_chsh2 		;		
+real	gamma_b_eff 		;		
+real	gamma_b_eff2 		;		
+real	vg_p 			;		
+real	vg_p_chsh 		;		
+real	vg_p_chsh_pd 		;		
+real	psi_po 			;
+real	psi_p 			;
+real	sqrt_psi_p 		;
+real	vp 			;
+real	nv 			;
+real 	deltapsis 		;	
+real	qs 			;
+real	qs2 			;
+real	if_ 			;
+real	sif2			;
+real	sif 			;
+real 	g_clm			;
+real 	e_clm			;
+real 	e_clm2			;
+real 	mdm2			;
+real 	e_clmxmdm2_2 		;
+real	vdsat 			;		
+real	vdssat 			;
+real	vdp 			;
+real	deltal 			;
+real	qdp 			;
+real	qdp2 			;
+real	irp 			;
+real	sirp2 			;
+real	sirp 			;
+real	qsqdp 			;
+real	qs_qdp 			;
+real	powqs_qdp2 		;
+real	qsqdpp1 		;
+real	powqsqdpp1_2 		;
+real 	i 			;
+real	nq 			;
+real	v_o 			;	
+real 	qr1 			;
+real 	qbo 			;
+real	dpsiv 			;
+real	qS 			;
+real	qD 			;
+real	qG 			;
+real	qI 			;
+real	qB 			;
+real	beta_coul 		;
+real	nu 			;
+real	gpnu 			;
+real	eq 			;
+real	eq1 			;
+real	beta_nom 		;
+real	beta_denom 		;
+real	beta 			;
+real	beta_clm_denom 		;
+real	i0 			;
+real	Ispec 			;
+real 	dits_factor		;
+real	QS 			;
+real	QD 			;
+real	QG 			;
+real	QB 			;
+real	IDS 			;
+real	IDB 			;
+
+real 	Leff_o_LR		;
+real 	one_lr			;
+real 	Weff_o_WR		;
+real 	one_wr			;
+real 	tmp_vfb 		;
+real 	epsilon			;
+real 	psi_p_tmp		;
+real 	l0			;
+real 	v_o_dibl		;
+real 	v_o_dibl2		;
+real 	dv_dibl			;
+real 	exp_tmp			;
+real 	vv 			;
+real 	z1			;
+real 	z2 			;
+real 	ln_z1_			;
+real 	e_clmx2			;
+real 	e_clmp2			;
+real 	e_clmx2xqs		;
+
+real 	qsat 			;
+real 	qs_qsat 		;
+real 	qs_qsat2 		;
+real 	vdsat_tmp1 		;
+real 	vdsat_tmp11		;
+real	vdsat_tmp2 		;
+real 	dv_clm 			;
+real	vdp_tmp1 		;
+real	vdp_tmp2 		;
+real	vdp_tmp3 		;
+real 	u_clm			;
+real 	alpha_clm 		;
+real 	f_dits 			;
+real 	va_dits 		;
+real 	vdseff 			;
+
+real 	psi_p0			;
+real 	psi_po0			;
+real 	sqrt_psi_p0		;
+real 	chsh_a10		;
+real 	chsh_a20		;
+real 	chsh_a30		;
+real 	gamma_b_chsh0		;
+real 	gamma_b_chsh02		;
+real 	vg_p_chsh_pd0		;
+
+real  	psi_sa_tmp		;
+real  	sqrt_psi_sa		;
+real 	z0			;
+real 	zk			;
+real    v1_qg 			;
+real    v2_qg 			;
+real 	k1			;
+real  	k2			;
+real	k12			;			
+real 	k12_2			;
+real  	k12_3			;
+
+real    i_sti 			;
+real 	inv_sa05l		;
+real 	inv_sb05l		;
+real 	inv_saref05l		;
+real 	inv_sbref05l		;
+real 	tmpl			;
+real 	tmpw			;
+real 	KKP_sti			;
+real 	a_sti			;
+real 	aref_sti		;
+real 	kp_sti 			;
+real 	ucrit_sti 			;
+real 	KVTO_sti		;
+real 	b_sti			;
+real 	KKP_sti_t 		;
+real 	a_sti_t			;
+real 	aref_sti_t		;
+real 	kp_sti_t 		;
+real 	DVTSTI 			;
+real 	DGAMMASTI 		;
+real 	DETADSTI 		;
+
+
+`ifdef NQS
+
+real 	v1 			;
+real 	v2 			;
+real 	q1 			;
+real 	q2 			;
+real 	i1 			;
+real 	i2 			;
+real 	qq1 			;
+real 	qq2 			;
+real 	q1q2			;
+real 	q1_q2			;
+real 	powq1_q22		;
+real 	q1q2p1			;
+real 	powq1q2p1_2		;
+real 	spec_factor		;	
+
+`endif
+
+
+// ekv3_edge.va
+
+real	Ispec_edge		; 			
+real	Q0_edge			; 			
+real	dgamma_edge 		;
+real	dphi_edge 		;
+real	dvp_edge 		;
+real	qs_edge  		;
+real	qdp_edge  		;
+real	ids_edge 		;
+real	IDS_edge 		;
+real	psi_p_edge  		;
+real	sqrt_psi_p_edge 	;
+real	nq_edge 		;
+real	qsqdp_edge 		;
+real	qs_qdp_edge 		;
+real	powqs_qdp2_edge 	;
+real	qsqdpp1_edge 		;
+real	powqsqdpp1_2_edge 	;
+real	qS_edge 		;
+real	qD_edge 		;
+real	qG_edge 		;
+real	qI_edge 		;
+real	qB_edge 		;
+real	QS_edge 		;
+real	QD_edge 		;
+real	QG_edge 		;
+real	QB_edge 		;
+real 	gamma_b_chsh_edge	;
+
+// ekv3_overlap.va
+
+real	QSOV 			;
+real	QDOV 			;
+
+real 	vgsov_p			;
+real 	gamma_dep_sov		;
+real 	gamma_acc_sov		;
+real 	v0_sov			;
+real 	a0_sov			;
+real 	a1_sov			;
+real 	a2_sov			;
+real 	a3_sov			;
+real 	v1_sov			;
+real 	dpsigs0			;
+real 	gamma_dep2_sov		;
+real	a4_sov			;
+real 	v2_sov			;
+real 	dpsigs			;
+real 	v2b_sov			;
+real 	v3_sov			;
+real 	dpsiox_s		;
+
+real 	vgdov_p			;
+real 	gamma_dep_dov		;
+real 	gamma_acc_dov		;
+real 	v0_dov			;
+real 	a0_dov			;
+real 	a1_dov			;
+real 	a2_dov			;
+real 	a3_dov			;
+real 	v1_dov			;
+real 	dpsigd0			;
+real 	gamma_dep2_dov		;
+real	a4_dov			;
+real 	v2_dov			;
+real 	dpsigd			;
+real 	v2b_dov			;
+real 	v3_dov			;
+real 	dpsiox_d		;
+
+// ekv3_fringing.va
+
+real	QSFR			;
+real	QDFR			;
+
+// ekv3_gidl.va
+real 	vgse			;
+real 	vgde			;
+real 	tmp1			;
+real 	tmp2			;
+
+real 	IGIDL 			;
+real 	IGISL 			;
+
+// ekv3_gate_current.va 
+
+real 	v1_ig 			;
+real 	v2_ig 			;
+real 	psi_ox			;
+real 	d_psi_dq		;
+real 	psi_x			;
+real 	s1_px			;
+real 	p_tun			;
+real 	igo			;
+real 	nigc			;
+real 	nigs			;
+real 	nigd			;
+real 	dq_dksi			;
+real 	a_gc			;
+real 	b_gc			;
+real 	psi_oxr_ov_s		;
+real 	psi_xr_ov_s		;
+real 	p_tun_sov		;
+real 	psi_oxr_ov_d		;
+real 	psi_xr_ov_d		;
+real 	p_tun_dov		;
+
+real 	IGB			;
+real	IG 			;
+real	IGD			;
+real	IGS			;
+real	IGDOV			;
+real	IGSOV			;
+				
+// ekv3_noise.va
+real 	xf			;
+real 	xr			;
+real 	OMEGA			;
+real 	j			;
+real 	omegaspec		;
+real 	snidid			;
+real 	snigig			;
+real 	snibib			;
+real 	snigid			;
+real 	c_igid			;
+
+real 	gn 			;
+real 	thermal 		;
+real	gmg 			;
+real	flicker 		;
+real 	snspec 			;
+real 	noise_ds1		;
+real 	noise_ds2		;
+real	noise_g  		;
+real	noise_b  		;
+
+real 	sig_shot 		;
+real 	sig_flicker 		;
+
+// ekv3_extrinsic_diodes.va
+
+real 	as			;
+real 	ad			;
+real 	ps			;
+real 	pd			;
+real 	v_di_b			;
+real 	is_d			;
+real 	arg_d			;
+real 	f_breakdown_d		;
+real 	idb_tun			;
+real 	v_si_b			;
+real 	is_s			;
+real 	arg_s			;
+real 	f_breakdown_s		;
+real 	isb_tun			;
+real 	csb_d			;
+real 	cssw_d			;
+real 	csswg_d			;
+real 	csb_s			;
+real 	cssw_s			;
+real 	csswg_s			;
+
+real 	jss_t			;
+real 	jssws_t			;
+real 	jsswgs_t		;
+real 	pbs_t			;
+real 	pbsws_t			;
+real 	pbswgs_t		;
+real	cjs_t			;
+real 	cjsws_t			;
+real 	cjswgs_t		;
+real 	njtss_t			;
+real 	njtssws_t		;
+real 	njtsswgs_t		;
+real 	jtss_t			;
+real 	jtssws_t		;
+real 	jtsswgs_t		;
+
+real 	jsd_t			;
+real 	jsswd_t			;
+real 	jsswgd_t		;
+real 	pbd_t			;
+real 	pbswd_t			;
+real 	pbswgd_t		;
+real	cjd_t			;
+real 	cjswd_t			;
+real 	cjswgd_t		;
+real 	jtsd_t			;
+real 	jtsswd_t		;
+real 	jtsswgd_t		;
+real 	njtsd_t			;
+real 	njtsswd_t		;
+real 	njtsswgd_t		;
+
+real 	IDBJ			;
+real 	ISBJ			;
+real	CSBJ			;
+real	CDBJ			;
+real 	QDBJ			;
+real 	QSBJ			;
+
+real 	qsb_s 			;
+real 	qssw_s 			;
+real 	qsswg_s 		;
+real 	qsb_d 			;
+real 	qssw_d 			;
+real 	qsswg_d 		;
+
+// ekv3_extrinsic_rc.va
+
+real 	rs			;
+real 	rd			;
+real 	rg			;
+real 	rb			;
+real 	rdsb			;
+real 	rsb 			;
+real 	rdb			;
+
+// ekv3_idb.va
+
+real 	v_ib			;
+
+// ekv3_extract_debug.va
+// real 	debug_ `ATTR(ask="yes")	;
+integer file 			;
+integer file_info 		;
