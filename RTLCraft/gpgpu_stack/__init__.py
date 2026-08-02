@@ -55,6 +55,7 @@ from gpgpu_stack.seed_flow import (
     GpuSmSeedFlowResult,
     run_gpu_sm_cluster_seed_flow,
     run_gpu_sm_seed_flow,
+    write_gpu_sm_seed_artifacts,
 )
 from gpgpu_stack.workloads import build_gpu_sm_cluster_workload_trace
 
@@ -99,5 +100,6 @@ __all__ = [
     "project_trace_evaluation_to_perf_counters",
     "run_gpu_sm_cluster_seed_flow",
     "run_gpu_sm_seed_flow",
+    "write_gpu_sm_seed_artifacts",
     "workload_trace_to_archsim_workload",
 ]

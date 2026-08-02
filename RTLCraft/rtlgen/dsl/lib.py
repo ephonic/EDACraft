@@ -1217,10 +1217,11 @@ class PriorityEncoder(Module):
         self.input = Input(in_width, "in")
         self.output = Output(out_width, "out")
         self.valid = Output(1, "valid")
+        self._out_wire = Wire(out_width, "out_wire")
 
         @self.comb
         def _encode():
-            out_wire = Wire(out_width, "out_wire")
+            out_wire = self._out_wire
             out_wire <<= 0
             for i in range(in_width):
                 with If(self.input[i] == 1):
@@ -1245,10 +1246,11 @@ class BarrelShifter(Module):
         self.data_in = Input(width, "data_in")
         self.shift_amount = Input(shift_w, "shift_amount")
         self.data_out = Output(width, "data_out")
+        self._result = Wire(width, "result")
 
         @self.comb
         def _shift():
-            result = Wire(width, "result")
+            result = self._result
             result <<= self.data_in
             for i in range(shift_w):
                 with If(self.shift_amount[i] == 1):
@@ -1289,6 +1291,8 @@ class LFSR(Module):
         self.out = Output(width, "out")
 
         self._state = Reg(width, "lfsr_reg")
+        self._next_val = Wire(width, "next_val")
+        self._fb = Wire(1, "fb")
 
         @self.comb
         def _out():
@@ -1300,9 +1304,9 @@ class LFSR(Module):
                 self._state <<= Const(seed, width=width)
             with Else():
                 with If(self.enable):
-                    next_val = Wire(width, "next_val")
+                    next_val = self._next_val
                     next_val <<= self._state
-                    fb = Wire(1, "fb")
+                    fb = self._fb
                     fb <<= self._state[0]
                     for b in range(width - 1):
                         if (width - b) in self.taps:
@@ -1394,6 +1398,7 @@ class Divider(Module):
         self._quotient = Reg(dividend_width, "quo_reg")
         self._count = Reg(count_w, "count_reg")
         self._state = Reg(2, "state_reg")  # 0=IDLE, 1=RUN, 2=DONE
+        self._shifted_rem = Wire(divisor_width + 1, "shifted_rem")
 
         @self.comb
         def _out():
@@ -1419,7 +1424,7 @@ class Divider(Module):
                 with Else():
                     with If(self._state == 1):
                         # 恢复余数算法单周期步进
-                        shifted_rem = Wire(divisor_width + 1, "shifted_rem")
+                        shifted_rem = self._shifted_rem
                         shifted_rem <<= (self._remainder << 1) | self._quotient[dividend_width - 1]
 
                         with If(shifted_rem >= self.divisor):
@@ -2154,8 +2159,10 @@ class AsyncFIFO(Module):
         self._rd_sync = [Reg(aw + 1, f"rds_{i}") for i in range(2)]
 
         ptr_w = aw
-        wr_next = Wire(aw + 1, "wr_nxt")
-        wr_next_gray = Wire(aw + 1, "wr_nxt_gray")
+        self._wr_next = Wire(aw + 1, "wr_nxt")
+        self._wr_next_gray = Wire(aw + 1, "wr_nxt_gray")
+        wr_next = self._wr_next
+        wr_next_gray = self._wr_next_gray
         with self.comb:
             wr_next <<= self._wr_ptr + 1
             wr_next_gray <<= wr_next ^ (wr_next >> 1)
@@ -2167,7 +2174,8 @@ class AsyncFIFO(Module):
             else:
                 self.full <<= wr_next_gray == ~self._rd_sync[1][aw:aw-1]
 
-        rd_next = Wire(aw + 1, "rd_nxt")
+        self._rd_next = Wire(aw + 1, "rd_nxt")
+        rd_next = self._rd_next
         with self.comb:
             rd_next <<= self._rd_ptr + 1
             self.empty <<= self._rd_gray == self._wr_sync[1]

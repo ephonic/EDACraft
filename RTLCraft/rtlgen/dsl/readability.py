@@ -26,7 +26,14 @@ class ReadabilityReport:
     anonymous_helper_count: int
     duplicated_block_prefix_count: int
     deep_mux_assign_count: int
-    findings: tuple[ReadabilityFinding, ...]
+    findings: tuple[ReadabilityFinding, ...] = ()
+    missing_header_count: int = 0
+    missing_port_table_count: int = 0
+    unlabeled_always_block_count: int = 0
+    unstable_generated_name_count: int = 0
+    source_map_noise_count: int = 0
+    memory_block_not_grouped_count: int = 0
+    clock_reset_not_visible_count: int = 0
 
     @property
     def passed(self) -> bool:
@@ -86,13 +93,28 @@ def analyze_verilog_readability(
 
     lines = text.splitlines()
     findings: List[ReadabilityFinding] = []
-    anonymous_helper_pattern = re.compile(r"\b(?:wire|logic)\s+(?:\[[^\]]+\]\s+)?(_(?:tmp|cse)_\d+)\b")
+    anonymous_helper_pattern = re.compile(r"\b(?:wire|logic|reg)\s+(?:\[[^\]]+\]\s+)?(_(?:tmp|cse)_?\d+)\b")
+    unstable_generated_name_pattern = re.compile(r"\b_(?:tmp|cse)_?\d+\b")
     assign_prefix_pattern = re.compile(r"//\s+(Comb|Seq):\s+\1:")
+    module_header_pattern = re.compile(r"//\s+Module(?:\s*:|:)")
+    module_decl_pattern = re.compile(r"^\s*module\s+\w+")
+    memory_decl_pattern = re.compile(r"^\s*reg\s+\[[^\]]+\]\s+\w+\s+\[0:\d+\];")
+    always_pattern = re.compile(r"^\s*(?:always|always_comb|always_ff|always_latch)\b")
 
     long_line_count = 0
     anonymous_helper_count = 0
     duplicated_block_prefix_count = 0
     deep_mux_assign_count = 0
+    missing_header_count = 0
+    missing_port_table_count = 0
+    unlabeled_always_block_count = 0
+    unstable_generated_name_count = 0
+    source_map_noise_count = 0
+    memory_block_not_grouped_count = 0
+    clock_reset_not_visible_count = 0
+
+    normalized_profile = (profile or "review").lower()
+    enforce_review_structure = normalized_profile != "compact"
 
     for lineno, line in enumerate(lines, start=1):
         stripped = line.rstrip("\n")
@@ -117,6 +139,18 @@ def analyze_verilog_readability(
                 )
             )
 
+        unstable_match = unstable_generated_name_pattern.search(stripped)
+        if unstable_match:
+            unstable_generated_name_count += 1
+            if not (anonymous_match and anonymous_match.group(1) == unstable_match.group(0)):
+                findings.append(
+                    ReadabilityFinding(
+                        kind="unstable_generated_name",
+                        line=lineno,
+                        detail=f"unstable generated name '{unstable_match.group(0)}' appears in review RTL",
+                    )
+                )
+
         if assign_prefix_pattern.search(stripped):
             duplicated_block_prefix_count += 1
             findings.append(
@@ -126,6 +160,26 @@ def analyze_verilog_readability(
                     detail="duplicated review block prefix found",
                 )
             )
+
+        if always_pattern.search(stripped):
+            if not _has_recent_always_label(lines, lineno):
+                unlabeled_always_block_count += 1
+                findings.append(
+                    ReadabilityFinding(
+                        kind="unlabeled_always_block",
+                        line=lineno,
+                        detail="always block is missing a nearby Comb/Seq/timing label",
+                    )
+                )
+            if ("posedge" in stripped or "negedge" in stripped) and not _has_recent_seq_timing_comment(lines, lineno):
+                clock_reset_not_visible_count += 1
+                findings.append(
+                    ReadabilityFinding(
+                        kind="clock_reset_not_visible",
+                        line=lineno,
+                        detail="clock/reset timing is not summarized before the sequential block",
+                    )
+                )
 
         if "assign " in stripped and stripped.count("?") > max_mux_ternaries_per_assign:
             deep_mux_assign_count += 1
@@ -140,6 +194,55 @@ def analyze_verilog_readability(
                 )
             )
 
+    if enforce_review_structure:
+        if not any(module_header_pattern.search(line) for line in lines):
+            module_line = _first_matching_line(lines, module_decl_pattern)
+            missing_header_count = 1
+            findings.append(
+                ReadabilityFinding(
+                    kind="missing_module_header",
+                    line=module_line,
+                    detail="review RTL should include a readable module header before the module declaration",
+                )
+            )
+
+        if any(module_decl_pattern.search(line) for line in lines) and not any("// Ports:" in line for line in lines):
+            module_line = _first_matching_line(lines, module_decl_pattern)
+            missing_port_table_count = 1
+            findings.append(
+                ReadabilityFinding(
+                    kind="missing_port_table",
+                    line=module_line,
+                    detail="review RTL should include a readable port table",
+                )
+            )
+
+    source_map_lines = [idx for idx, line in enumerate(lines, start=1) if "rtlcraft: source=" in line]
+    source_map_budget = max(5, len(lines) // 5)
+    if len(source_map_lines) > source_map_budget:
+        source_map_noise_count = len(source_map_lines)
+        findings.append(
+            ReadabilityFinding(
+                kind="source_map_noise",
+                line=source_map_lines[0],
+                detail=(
+                    f"{len(source_map_lines)} source-map comments exceed review budget "
+                    f"{source_map_budget}; prefer sidecar source maps for dense traces"
+                ),
+            )
+        )
+
+    memory_decl_lines = [idx for idx, line in enumerate(lines, start=1) if memory_decl_pattern.search(line)]
+    if memory_decl_lines and not any("Storage declarations" in line for line in lines):
+        memory_block_not_grouped_count = len(memory_decl_lines)
+        findings.append(
+            ReadabilityFinding(
+                kind="memory_block_not_grouped",
+                line=memory_decl_lines[0],
+                detail="memory declarations should be grouped under a storage section marker",
+            )
+        )
+
     return ReadabilityReport(
         profile=profile,
         line_count=len(lines),
@@ -149,6 +252,13 @@ def analyze_verilog_readability(
         duplicated_block_prefix_count=duplicated_block_prefix_count,
         deep_mux_assign_count=deep_mux_assign_count,
         findings=tuple(findings),
+        missing_header_count=missing_header_count,
+        missing_port_table_count=missing_port_table_count,
+        unlabeled_always_block_count=unlabeled_always_block_count,
+        unstable_generated_name_count=unstable_generated_name_count,
+        source_map_noise_count=source_map_noise_count,
+        memory_block_not_grouped_count=memory_block_not_grouped_count,
+        clock_reset_not_visible_count=clock_reset_not_visible_count,
     )
 
 
@@ -214,6 +324,13 @@ def emit_readability_report_markdown(
     lines.append(f"- anonymous_helper_count: `{report.anonymous_helper_count}`")
     lines.append(f"- duplicated_block_prefix_count: `{report.duplicated_block_prefix_count}`")
     lines.append(f"- deep_mux_assign_count: `{report.deep_mux_assign_count}`")
+    lines.append(f"- missing_header_count: `{report.missing_header_count}`")
+    lines.append(f"- missing_port_table_count: `{report.missing_port_table_count}`")
+    lines.append(f"- unlabeled_always_block_count: `{report.unlabeled_always_block_count}`")
+    lines.append(f"- unstable_generated_name_count: `{report.unstable_generated_name_count}`")
+    lines.append(f"- source_map_noise_count: `{report.source_map_noise_count}`")
+    lines.append(f"- memory_block_not_grouped_count: `{report.memory_block_not_grouped_count}`")
+    lines.append(f"- clock_reset_not_visible_count: `{report.clock_reset_not_visible_count}`")
     if report.findings:
         lines.append("")
         lines.append("## Findings")
@@ -328,6 +445,39 @@ def assert_emitted_rtl_contract(
             title=f"RTL Marker Contract Report: {module.name}",
         )
     return emitted
+
+
+def _first_matching_line(lines: Sequence[str], pattern: re.Pattern[str]) -> int:
+    for lineno, line in enumerate(lines, start=1):
+        if pattern.search(line):
+            return lineno
+    return 1
+
+
+def _has_recent_always_label(lines: Sequence[str], lineno: int) -> bool:
+    for prior in _recent_nonempty_lines(lines, lineno, window=4):
+        stripped = prior.strip()
+        if stripped.startswith("// Comb:"):
+            return True
+        if stripped.startswith("// Seq:"):
+            return True
+        if stripped.startswith("// Seq timing:"):
+            return True
+        if stripped.startswith("// Latch"):
+            return True
+        if stripped.startswith("// Initialization"):
+            return True
+    return False
+
+
+def _has_recent_seq_timing_comment(lines: Sequence[str], lineno: int) -> bool:
+    return any(prior.strip().startswith("// Seq timing:") for prior in _recent_nonempty_lines(lines, lineno, window=4))
+
+
+def _recent_nonempty_lines(lines: Sequence[str], lineno: int, *, window: int) -> tuple[str, ...]:
+    start = max(0, lineno - window - 1)
+    end = max(0, lineno - 1)
+    return tuple(line for line in lines[start:end] if line.strip())
 
 
 def _line_number_for_offset(text: str, offset: int) -> int:

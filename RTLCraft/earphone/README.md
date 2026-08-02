@@ -103,6 +103,11 @@ cd /Users/yangfan/release/EDACraft-main/RTLCraft
 PYTHONPATH=/Users/yangfan/release/EDACraft-main/RTLCraft pytest earphone/modules -q
 ```
 
+The `EarphoneFFT256` L5 DSL wrapper imports the external FFT generator
+`design_scripts.design_fft`. Local generated-UVM runtime checks skip only that
+FFT256 case when the generator is not installed; when it is present, the real
+wrapper is imported and exercised.
+
 **4. iverilog cycle-accurate harness**
 
 ```bash

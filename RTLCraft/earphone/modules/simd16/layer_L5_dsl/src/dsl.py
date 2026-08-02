@@ -137,11 +137,11 @@ class EarphoneSIMD16(Module):
             self.done <<= self.fp_s2_valid | self.int_valid
 
         # Per-path clock enables: gate SIMD datapath when idle to cut dynamic power.
-        int_ce = Wire(1, "int_ce")
-        fp_ce = Wire(1, "fp_ce")
+        self.int_ce = Wire(1, "int_ce")
+        self.fp_ce = Wire(1, "fp_ce")
         with self.comb:
-            int_ce <<= self.start & (self.mode == 0)
-            fp_ce <<= (self.start & (self.mode == 1)) | self.fp_s0_valid | self.fp_s1_valid | self.fp_s2_valid
+            self.int_ce <<= self.start & (self.mode == 0)
+            self.fp_ce <<= (self.start & (self.mode == 1)) | self.fp_s0_valid | self.fp_s1_valid | self.fp_s2_valid
 
         with self.seq(self.clk, ~self.rst_n):
             with If(~self.rst_n):
@@ -154,14 +154,14 @@ class EarphoneSIMD16(Module):
                 self.fp_s2_result <<= 0; self.fp_s2_valid <<= 0
             with Else():
                 # INT16 path: update only when a new INT16 op starts
-                with If(int_ce):
+                with If(self.int_ce):
                     self.int_valid <<= 1
                     self.int_result <<= int16_result
                 with Else():
                     self.int_valid <<= 0
 
                 # FP16 MAC pipeline: advance only when occupied or starting
-                with If(fp_ce):
+                with If(self.fp_ce):
                     self.fp_s0_valid <<= self.start & (self.mode == 1)
                     self.fp_s0_a <<= self.vsrc0
                     self.fp_s0_b <<= self.vsrc1

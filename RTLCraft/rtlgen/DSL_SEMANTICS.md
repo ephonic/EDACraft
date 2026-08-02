@@ -290,7 +290,78 @@ Current contract:
 This source mapping is part of why DSL authoring is valuable relative to plain
 RTL text editing.
 
-## 10. Stability rule
+## 10. Foundation contract gate
+
+The foundation contract gate is a promotion preflight for authored DSL modules.
+It is exposed through:
+
+```python
+from rtlgen.verify import analyze_foundation_contract
+```
+
+The gate currently combines:
+
+1. review-profile readability analysis
+2. CDC and reset-release analysis
+3. storage/lowering/emitted-RTL fail-fast checks
+4. unified diagnostics
+5. Markdown and JSON report rendering
+
+Passing the foundation gate means the module has passed this basic engineering
+preflight. It does not automatically promote a stdlib entry to `stable`, and it
+does not replace simulation, protocol verification, PPA review, or external RTL
+simulator closure.
+
+## 11. Diagnostic report contract
+
+New report-oriented checks should be projectable into `DiagnosticFinding`:
+
+1. `rule`
+2. `severity`
+3. `category`
+4. `message`
+5. optional source file and line
+6. object name
+7. suggested fix
+8. evidence
+
+The supported severities are `info`, `warning`, and `error`. Existing
+`format_diagnostic(...)` text remains part of the public error shape for
+authoring-intent and storage/lowering failures; structured reports adapt that
+shape instead of replacing it.
+
+## 12. Readable RTL contract
+
+Review-profile emitted RTL should preserve enough structure for human review:
+
+1. module header and port table
+2. stable section markers
+3. labeled combinational and sequential blocks
+4. visible clock/reset timing comments
+5. grouped memory and initialization sections
+6. bounded source-map comments
+7. no leaked anonymous helper names such as `_tmp17` or `_cse42`
+
+The detailed rule set is documented in
+[RTL_READABILITY_CONTRACT.md](./RTL_READABILITY_CONTRACT.md). This gate is a
+readability contract only; it does not prove functional correctness.
+
+## 13. Storage/reset/CDC preflight boundary
+
+The foundation preflight intentionally reports known boundaries rather than
+expanding backends:
+
+1. sync-read/read-latency storage can be executable through lowering, but
+   emitted RTL still fails fast unless the author writes an explicit sampled
+   structure
+2. multi-port memories, arbitrary latency, and macro mapping remain deliberate
+   fail-fast or future-policy areas
+3. raw async reset release is reported as a CDC warning unless a recognized
+   sync-release primitive or safe hand-written pattern is present
+4. unsafe multi-bit or memory CDC crossings are errors
+5. CDC analysis is report-oriented and does not claim formal proof
+
+## 14. Stability rule
 
 A feature should only be treated as stable when the same authored construct can
 survive the main closure path without ad hoc escape hatches:
@@ -306,7 +377,7 @@ If any of those steps currently require special handling, the feature should be
 documented as `partial`, `experimental`, or `unsupported` rather than being
 presented as fully closed.
 
-## 11. Authoring intent gate
+## 15. Authoring intent gate
 
 Some patterns are not merely "discouraged style"; they violate the intended
 DSL authoring model strongly enough that the public lowering / emission

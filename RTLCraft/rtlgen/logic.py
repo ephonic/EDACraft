@@ -1,0 +1,46 @@
+"""Compatibility re-export for legacy ``rtlgen.logic`` imports."""
+
+from rtlgen.dsl.logic import (
+    Cat,
+    Else,
+    Elif,
+    ForGen,
+    Foreach,
+    GenElse,
+    GenIf,
+    If,
+    Mux,
+    Otherwise,
+    PadLeft,
+    Rep,
+    RoundShiftRight,
+    SRA,
+    Split,
+    StateTransition,
+    Switch,
+    When,
+    comment,
+)
+
+__all__ = [
+    "Cat",
+    "Elif",
+    "Else",
+    "ForGen",
+    "Foreach",
+    "GenElse",
+    "GenIf",
+    "If",
+    "Mux",
+    "Otherwise",
+    "PadLeft",
+    "Rep",
+    "RoundShiftRight",
+    "SRA",
+    "Split",
+    "StateTransition",
+    "Switch",
+    "When",
+    "comment",
+]
+

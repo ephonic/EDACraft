@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import random
+import shutil
 import subprocess
 
 import pytest
@@ -95,6 +96,8 @@ def test_lowered_python_runtime_directed():
 
 def test_iverilog_cosim_directed():
     """Emitted RTL driven by iverilog matches the golden reference."""
+    if shutil.which("iverilog") is None:
+        pytest.skip("iverilog not installed")
     assert run_iverilog_cosim(directed_program(), tag="pytest_directed")
 
 
@@ -167,6 +170,8 @@ def test_emitted_rtl_review_profile_matches_readability_snapshot():
 
 
 def test_emitted_rtl_compiles_under_iverilog(tmp_path):
+    if shutil.which("iverilog") is None:
+        pytest.skip("iverilog not installed")
     compiler = subprocess.run(["iverilog", "-V"], capture_output=True, text=True)
     if compiler.returncode != 0:
         pytest.skip("iverilog not installed")

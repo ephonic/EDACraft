@@ -84,19 +84,19 @@ class ThorGpuSM(Module):
         self.running = Reg(1, "running", init_value=0)
 
         # --- IMEM write port (host-loadable). ---
-        imem_wr_en_w = Wire(1, "imem_wr_en_w")
+        self.imem_wr_en_w = Wire(1, "imem_wr_en_w")
         with self.comb:
-            imem_wr_en_w <<= self.imem_wr_en
+            self.imem_wr_en_w <<= self.imem_wr_en
         with self.seq(self.clk, ~self.rst_n):
-            with If(imem_wr_en_w):
+            with If(self.imem_wr_en_w):
                 self.imem[self.imem_wr_addr] <<= self.imem_wr_data
 
         # --- start latch (gated through Wire). ---
-        start_w = Wire(1, "start_w")
+        self.start_w = Wire(1, "start_w")
         with self.comb:
-            start_w <<= self.start
+            self.start_w <<= self.start
         with self.seq(self.clk, ~self.rst_n):
-            with If(start_w):
+            with If(self.start_w):
                 self.running <<= 1
 
         # --- Combinational outputs. ---
@@ -126,11 +126,11 @@ class ThorGpuSM(Module):
         vrf_rs2_idx = base + rs2
 
         # Execution: single active warp advances when running and not done.
-        run_w = Wire(1, "run_w")
+        self.run_w = Wire(1, "run_w")
         with self.comb:
-            run_w <<= self.running & (~all_done)
+            self.run_w <<= self.running & (~all_done)
         with self.seq(self.clk, ~self.rst_n):
-            with If(run_w):
+            with If(self.run_w):
                 with If(opcode == Const(OP_DONE, 4)):
                     self.warp_done[self.warp_sel & 0x3] <<= 1
                 with Elif(opcode == Const(OP_SLOAD, 4)):

@@ -1514,6 +1514,7 @@ def test_dsl_emits_external_parameterized_blackbox_instance():
     assert "ext_param_leaf #(.WIDTH(16), .LATENCY(2)) leaf (" in text
     assert ".din(din)" in text
     assert ".dout(dout)" in text
+    assert "leaf_dout" not in text
 
 
 def test_emit_design_skips_external_verilog_blackbox_shell():
@@ -1742,6 +1743,8 @@ def test_analyze_verilog_readability_flags_machineish_helpers_and_long_mux_lines
         "anonymous_helper",
         "deep_mux_assign",
         "long_line",
+        "missing_module_header",
+        "missing_port_table",
     }
 
 
@@ -1979,9 +1982,9 @@ def test_emit_profile_review_async_fifo_matches_readability_snapshot():
         "// Storage declarations",
         "reg [7:0] af_mem [0:3];",
         "// Internal declarations",
-        "logic [2:0] rd_nxt;",
         "logic [2:0] wr_nxt;",
         "logic [2:0] wr_nxt_gray;",
+        "logic [2:0] rd_nxt;",
         "reg [2:0] wr_ptr;",
         "reg [2:0] rd_ptr;",
         "// Combinational logic",
@@ -2587,8 +2590,8 @@ def test_emit_profile_review_lfsr_matches_readability_snapshot():
 
     expected_markers = (
         "// Internal declarations",
-        "logic fb;",
         "logic [7:0] next_val;",
+        "logic fb;",
         "reg [7:0] lfsr_reg;",
         "// Comb: out",
         "assign out = lfsr_reg;",
@@ -2984,6 +2987,8 @@ def test_instantiate_with_bundles_bulk_connects_prefixed_ready_valid_ports():
     assert ".leaf_out_data(down_data)" in emitted
     assert ".leaf_out_valid(down_valid)" in emitted
     assert ".leaf_out_ready(down_ready)" in emitted
+    assert ".clk(clk)" not in emitted
+    assert ".rst(rst)" not in emitted
 
 
 def test_instantiate_with_bundles_can_override_submodule_bundle_lookup():
@@ -4295,20 +4300,31 @@ def test_dsl_runs_on_lowered_python_runtime():
     assert sim.step({"clk": 0, "rst": 0, "inp": 2}) == {"out": 7}
 
 
-def test_dsl_ast_simulation_surfaces_are_removed_from_public_api():
+def test_dsl_ast_simulation_surfaces_keep_only_top_level_compat_wrapper():
     import rtlgen
     import rtlgen.dsl as dsl_mod
 
     assert not hasattr(dsl_mod, "Simulator")
     assert not hasattr(dsl_mod, "DSLSimValidator")
-    assert not hasattr(rtlgen, "Simulator")
+    assert rtlgen.Simulator is importlib.import_module("rtlgen.dsl.sim").Simulator
+
+    sim = rtlgen.Simulator(Accum())
+    sim.reset()
+    sim.poke("rst", 1)
+    sim.poke("inp", 0)
+    assert sim.step() == {"out": 0}
+    sim.poke("rst", 0)
+    sim.poke("inp", 5)
+    assert sim.step() == {"out": 5}
+    assert sim.peek("out") == 5
+    assert sim.peek("inp") == 5
 
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("rtlgen.dsl.sim_jit")
 
     sim_mod = importlib.import_module("rtlgen.dsl.sim")
-    with pytest.raises(DslSimulationRemovedError):
-        sim_mod.Simulator(Accum())
+    with pytest.raises(RuntimeError, match="SimValue is not available"):
+        sim_mod.SimValue(0)
 
     dsl_sim_mod = importlib.import_module("rtlgen.dsl.dsl_sim")
     with pytest.raises(DslSimulationRemovedError):

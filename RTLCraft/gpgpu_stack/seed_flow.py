@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Sequence
 
 from gpu_sm.arch import build_gpu_sm_architecture_model, build_gpu_sm_cluster_architecture_model
@@ -15,6 +16,12 @@ from rtlgen_x.archsim import (
     run_stage_bandwidth_sweep,
 )
 from rtlgen_x.ppa import PpaGoals, PpaReport, emit_ppa_report_markdown
+from rtlgen_x.verify import (
+    FoundationContractReport,
+    analyze_foundation_contract,
+    emit_foundation_contract_markdown,
+    foundation_contract_report_to_json,
+)
 
 from gpgpu_stack.abi import AddressMap, CommandDescriptor, KernelMetadata, PerfCounterSchema
 from gpgpu_stack.analysis import TraceArchitectureEvaluation
@@ -42,8 +49,10 @@ class GpuSmSeedFlowResult:
     perf_counter_sample: PerfCounterSample
     trace_evaluation: TraceArchitectureEvaluation
     ppa_report: PpaReport
+    foundation_report: FoundationContractReport
     architecture_markdown: str
     ppa_markdown: str
+    foundation_markdown: str
 
 
 @dataclass(frozen=True)
@@ -125,6 +134,7 @@ def run_gpu_sm_seed_flow(
         trace_evaluation,
         goals=ppa_goals,
     )
+    foundation_report = analyze_foundation_contract(GpuSm())
     perf_counter_sample = project_trace_evaluation_to_perf_counters(
         trace_evaluation,
         device_contract.perf_counters,
@@ -137,8 +147,10 @@ def run_gpu_sm_seed_flow(
         perf_counter_sample=perf_counter_sample,
         trace_evaluation=trace_evaluation,
         ppa_report=ppa_report,
+        foundation_report=foundation_report,
         architecture_markdown=trace_evaluation.markdown,
         ppa_markdown=emit_ppa_report_markdown(ppa_report, title=ppa_title),
+        foundation_markdown=emit_foundation_contract_markdown(foundation_report),
     )
 
 
@@ -223,6 +235,31 @@ def run_gpu_sm_cluster_seed_flow(
     )
 
 
+def write_gpu_sm_seed_artifacts(
+    result: GpuSmSeedFlowResult,
+    output_dir: str | Path,
+) -> dict[str, Path]:
+    """Persist the markdown/json artifacts from one GPU-SM seed-flow result."""
+
+    target_dir = Path(output_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    paths = {
+        "architecture": target_dir / "architecture.md",
+        "ppa": target_dir / "ppa.md",
+        "foundation": target_dir / "foundation.md",
+        "foundation_json": target_dir / "foundation.json",
+    }
+    paths["architecture"].write_text(result.architecture_markdown, encoding="utf-8")
+    paths["ppa"].write_text(result.ppa_markdown, encoding="utf-8")
+    paths["foundation"].write_text(result.foundation_markdown, encoding="utf-8")
+    paths["foundation_json"].write_text(
+        foundation_contract_report_to_json(result.foundation_report),
+        encoding="utf-8",
+    )
+    return paths
+
+
 def _advise_gpu_sm_seed_ppa(
     model: ArchitectureModel,
     trace_evaluation: TraceArchitectureEvaluation,
@@ -244,4 +281,5 @@ __all__ = [
     "GpuSmSeedFlowResult",
     "run_gpu_sm_cluster_seed_flow",
     "run_gpu_sm_seed_flow",
+    "write_gpu_sm_seed_artifacts",
 ]
