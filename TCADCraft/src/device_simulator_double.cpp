@@ -107,6 +107,10 @@ void DeviceSimulatorDouble::set_newton_primary(bool enable) {
     sim_.set_newton_primary(enable);
 }
 
+void DeviceSimulatorDouble::solve_equilibrium() {
+    sim_.solve_equilibrium();
+}
+
 void DeviceSimulatorDouble::set_newton_freeze_phi(bool enable) { sim_.set_newton_freeze_phi(enable); }
 void DeviceSimulatorDouble::set_newton_freeze_n(bool enable) { sim_.set_newton_freeze_n(enable); }
 void DeviceSimulatorDouble::set_newton_freeze_p(bool enable) { sim_.set_newton_freeze_p(enable); }

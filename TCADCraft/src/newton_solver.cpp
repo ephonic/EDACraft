@@ -741,6 +741,7 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
     // (stall).  On the equilibrated norm every row is O(1) so the step is
     // judged on its true merit.  See audit §17.
     std::vector<real_t> eq_scale;
+    std::vector<real_t> col_scale;
 
     real_t norm_F0 = -1.0Q;  // initial residual norm (set on iter 0)
     real_t blk0[3] = {-1.0Q, -1.0Q, -1.0Q};  // per-block initial residuals
@@ -771,12 +772,17 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
         // on the RAW residual below (convergence criteria keep original units).
         std::vector<real_t> F_raw(F);
 
-        // Row-equilibration: scale each Jacobian row by 1/max_entry.
-        // Preserves cross-block coupling (unlike sqrt(|diag|) which stalls).
+        // Two-sided equilibration: row scaling (1/max_entry per row) then
+        // column scaling (1/max_entry per column).  Row-only scaling leaves
+        // columns unbalanced — the phi column has entries from 1 (phi row)
+        // to 1e-33 (n row), making the Newton step direction biased.
+        // Two-sided scaling makes the matrix entries O(1) in both dimensions,
+        // dramatically improving the condition number and Newton step quality.
         {
             const auto& rp = J.row_offsets();
             const auto& cols = J.col_indices();
             auto& vals = J.vals_mut();
+            // Phase 1: row scaling
             eq_scale.assign(3 * N, 1.0Q);
             for (size_t i = 0; i < 3 * N; ++i) {
                 real_t mx = 0.0Q;
@@ -787,6 +793,23 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
                 for (size_t k = rp[i]; k < rp[i + 1]; ++k)
                     vals[k] *= inv;
                 F[i] *= inv;
+            }
+            // Phase 2: column scaling
+            col_scale.assign(3 * N, 1.0Q);
+            for (size_t j = 0; j < 3 * N; ++j) col_scale[j] = 0.0Q;
+            for (size_t i = 0; i < 3 * N; ++i) {
+                for (size_t k = rp[i]; k < rp[i + 1]; ++k) {
+                    size_t j = cols[k];
+                    col_scale[j] = std::max(col_scale[j], abs_q(vals[k]));
+                }
+            }
+            for (size_t j = 0; j < 3 * N; ++j) {
+                col_scale[j] = (col_scale[j] > EPSILON) ? 1.0Q / col_scale[j] : 1.0Q;
+            }
+            for (size_t i = 0; i < 3 * N; ++i) {
+                for (size_t k = rp[i]; k < rp[i + 1]; ++k) {
+                    vals[k] *= col_scale[cols[k]];
+                }
             }
         }
 
@@ -863,6 +886,8 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
             std::cerr << "Newton linear solve failed: " << e.what() << std::endl;
             return false;
         }
+        // Undo column scaling: dx_unscaled[j] = dx_scaled[j] * col_scale[j]
+        for (size_t j = 0; j < 3 * N; ++j) dx[j] *= col_scale[j];
         // Bank-Rose style log-space step clamp (issues0719 follow-up,
         // plan0728 §1.1): in log-space an unclamped carrier update du
         // explodes the linearised densities (n = exp(u)).  Far from the

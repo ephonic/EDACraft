@@ -82,6 +82,7 @@ public:
     void set_continuity_solver_type(int type);
     void set_use_newton(bool enable);
     void set_newton_primary(bool enable) { newton_primary_ = enable; }
+    void solve_equilibrium();  // Poisson-Boltzmann equilibrium (Sentaurus Coupled{Poisson})
 
     // Newton solver options
     void set_newton_damping(real_t damping);

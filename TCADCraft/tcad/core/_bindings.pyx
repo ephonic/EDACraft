@@ -61,6 +61,7 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_continuity_solver_type(int type)
         void set_use_newton(cbool enable)
         void set_newton_primary(cbool enable)
+        void solve_equilibrium()
         void set_newton_freeze_phi(cbool enable)
         void set_newton_freeze_n(cbool enable)
         void set_newton_freeze_p(cbool enable)
@@ -247,6 +248,9 @@ cdef class PyDeviceSimulator:
 
     def set_newton_primary(self, bint enable):
         self._sim.set_newton_primary(enable)
+
+    def solve_equilibrium(self):
+        self._sim.solve_equilibrium()
 
     def set_newton_freeze_phi(self, bint enable):
         self._sim.set_newton_freeze_phi(enable)

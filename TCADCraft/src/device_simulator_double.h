@@ -38,6 +38,7 @@ public:
     void set_continuity_solver_type(int type);
     void set_use_newton(bool enable);
     void set_newton_primary(bool enable);
+    void solve_equilibrium();
     // C档: Newton freeze flags (isolated-continuity MMS).
     void set_newton_freeze_phi(bool enable);
     void set_newton_freeze_n(bool enable);

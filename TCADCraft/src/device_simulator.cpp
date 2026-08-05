@@ -210,6 +210,102 @@ void DeviceSimulator::set_auger_params(real_t Cn, real_t Cp) {
     auger_Cp_ = Cp;
 }
 
+void DeviceSimulator::solve_equilibrium() {
+    // Poisson-Boltzmann equilibrium: iteratively solve Poisson with
+    // n=ni*exp(phi/VT), p=ni*exp(-phi/VT) until convergence.
+    // This mimics Sentaurus's Coupled(Iterations=100){ Poisson } which
+    // finds the equilibrium potential WITHOUT continuity (no current).
+    // The result is used as initial guess for coupled Newton — this
+    // initialization sequence puts Newton in the "on-state" basin of
+    // attraction for lightly-doped devices (DG FinFET).
+    const size_t N = g_.npts();
+
+    // Build a Poisson solver for equilibrium
+    GummelOptions eq_opt;
+    eq_opt.max_iter = 200;
+    eq_opt.poisson_tol = 1e-8Q;
+    eq_opt.continuity_tol = 1e-8Q;
+    eq_opt.VT = VT_;
+    eq_opt.statistics_type = statistics_type_;
+    eq_opt.poisson_solver = (N > 2000) ? SolverType::PETSC : SolverType::DENSE_DIRECT;
+    eq_opt.continuity_solver = eq_opt.poisson_solver;
+
+    GummelSolver eq_gummel(g_, eq_opt);
+    eq_gummel.set_mobility(mu_n_, mu_p_);
+    eq_gummel.set_doping(Nd_minus_Na_);
+    eq_gummel.set_recombination(tau_n_, tau_p_);
+    eq_gummel.set_effective_dos(Nc_, Nv_);
+    eq_gummel.set_bandgap(Eg_);
+    eq_gummel.set_permittivity(eps_);
+    eq_gummel.set_poisson_dirichlet(phi_bc_);
+    eq_gummel.set_electron_bc(n_bc_);
+    eq_gummel.set_hole_bc(p_bc_);
+
+    // Initial guess: uniform Boltzmann from doping
+    std::vector<real_t> phi_eq(N, 0.0Q), n_eq(N), p_eq(N);
+    for (size_t i = 0; i < N; ++i) {
+        real_t ni_local = intrinsic_density(Eg_[i], temperature_, Nc_[i], Nv_[i], statistics_type_);
+        real_t net = Nd_minus_Na_[i];
+        if (net > 0) {
+            n_eq[i] = net;
+            p_eq[i] = ni_local * ni_local / net;
+            phi_eq[i] = VT_ * log_q(net / ni_local);
+        } else if (net < 0) {
+            p_eq[i] = -net;
+            n_eq[i] = ni_local * ni_local / (-net);
+            phi_eq[i] = -VT_ * log_q((-net) / ni_local);
+        } else {
+            n_eq[i] = ni_local;
+            p_eq[i] = ni_local;
+        }
+    }
+
+    // Poisson-Boltzmann iteration: solve Poisson, update n/p from Boltzmann
+    // relation n=ni*exp(phi/VT), p=ni*exp(-phi/VT).  This is the Sentaurus
+    // Coupled{Poisson} mode — carrier densities FOLLOW the potential (no
+    // current), so a channel node near S/D potential gets n~1e18 (on-state).
+    // This is DIFFERENT from charge-neutrality which gives n~ni regardless
+    // of phi.
+    real_t log_ni_ref = log_q(intrinsic_density(Eg_[0], temperature_, Nc_[0], Nv_[0], statistics_type_));
+
+    for (int iter = 0; iter < 100; ++iter) {
+        // Solve Poisson with current n, p
+        eq_gummel.recompute_poisson(phi_eq, n_eq, p_eq);
+
+        // Update n, p from new phi using Boltzmann relation
+        real_t max_dphi = 0.0Q;
+        for (size_t i = 0; i < N; ++i) {
+            real_t ni_local = intrinsic_density(Eg_[i], temperature_, Nc_[i], Nv_[i], statistics_type_);
+            real_t phi_new = phi_eq[i];
+            real_t arg_n = phi_new / VT_;
+            // Clamp to prevent overflow
+            if (arg_n > 50.0Q) arg_n = 50.0Q;
+            if (arg_n < -50.0Q) arg_n = -50.0Q;
+            real_t arg_p = -phi_new / VT_;
+            if (arg_p > 50.0Q) arg_p = 50.0Q;
+            if (arg_p < -50.0Q) arg_p = -50.0Q;
+            real_t n_new = ni_local * exp_q(arg_n);
+            real_t p_new = ni_local * exp_q(arg_p);
+            // Ensure minimum density
+            if (n_new < 1.0Q) n_new = 1.0Q;
+            if (p_new < 1.0Q) p_new = 1.0Q;
+            n_eq[i] = n_new;
+            p_eq[i] = p_new;
+        }
+
+        if (max_dphi < 1e-10Q) {
+            std::cout << "Equilibrium converged in " << iter + 1 << " iterations.\n";
+            break;
+        }
+    }
+
+    // Store as initial guess
+    init_phi_ = phi_eq;
+    init_n_ = n_eq;
+    init_p_ = p_eq;
+    has_initial_guess_ = true;
+}
+
 void DeviceSimulator::set_breakdown_enabled(bool enable) {
     bd_enabled_ = enable;
 }
