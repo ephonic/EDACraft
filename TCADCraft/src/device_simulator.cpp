@@ -692,7 +692,7 @@ SimulationResult DeviceSimulator::solve() {
             nopt.temperature = temperature_;
             nopt.statistics_type = statistics_type_;
 #ifdef TCAD_USE_PETSC
-            nopt.linear_solver = (N > 2000) ? SolverType::PETSC : SolverType::DENSE_DIRECT;
+            nopt.linear_solver = SolverType::IR_BICGSTAB;  // float128 iterative refinement
 #else
             // Without PETSc, requesting it silently no-ops the linear solve
             // (universal Newton stall on >2000-node problems).  Fall back to

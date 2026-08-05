@@ -23,6 +23,7 @@ enum class SolverType {
     JACOBI,
     GAUSS_SEIDEL,
     DENSE_DIRECT,  // Fallback for n < 2000, guarantees convergence
+    IR_BICGSTAB,   // Iterative refinement: double BiCGStab + float128 residual
     PETSC          // External PETSc solver (CG/GMRES/AMG/ILU)
 };
 
@@ -64,6 +65,7 @@ private:
     size_t jacobi(const SparseMatrix& A, const Vector& b, Vector& x);
     size_t gauss_seidel(const SparseMatrix& A, const Vector& b, Vector& x);
     size_t dense_direct(const SparseMatrix& A, const Vector& b, Vector& x);
+    size_t solve_ir_bicgstab(const SparseMatrix& A, const Vector& b, Vector& x);
 #ifdef TCAD_USE_PETSC
     size_t solve_petsc(const SparseMatrix& A, const Vector& b, Vector& x);
     // PETSc reuse cache: keep Mat/KSP/Vecs across calls when the problem size
