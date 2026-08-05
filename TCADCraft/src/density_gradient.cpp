@@ -24,22 +24,55 @@ void DensityGradient::laplace_sqrt_over_sqrt(const std::vector<real_t>& f,
         for (size_t j = 0; j < g_.ny; ++j) {
             for (size_t i = 0; i < g_.nx; ++i) {
                 size_t idx = g_.index(i, j, k);
-                real_t sqrt_f = sqrt_q(f[idx]);
-                if (sqrt_f < EPSILON) {
-                    out[idx] = 0.0Q;
-                    continue;
+                if (!semi_.empty() && idx < semi_.size() && semi_[idx] == 0) {
+                    out[idx] = 0.0Q; continue;
                 }
+                real_t f_reg = f[idx];
+                if (f_reg < 1.0e10Q) f_reg = 1.0e10Q;
+                real_t sqrt_f = sqrt_q(f_reg);
+                if (sqrt_f < EPSILON) { out[idx] = 0.0Q; continue; }
+
+                // Helper: is this neighbor semiconductor?
+                auto is_semi = [&](size_t ni) -> bool {
+                    if (ni >= N) return false;
+                    if (semi_.empty()) return true;
+                    return (ni < semi_.size() && semi_[ni] != 0);
+                };
+                // sqrt of f at a semiconductor node
+                auto sq = [&](size_t ni) -> real_t {
+                    real_t fn = (ni < N) ? f[ni] : f_reg;
+                    if (fn < 1.0e10Q) fn = 1.0e10Q;
+                    return sqrt_q(fn);
+                };
 
                 real_t lap = 0.0Q;
-                // Central difference Laplacian
-                if (i > 0 && i + 1 < g_.nx) {
-                    lap += (sqrt_q(f[idx + 1]) - 2.0Q * sqrt_f + sqrt_q(f[idx - 1])) / (g_.dx * g_.dx);
+                // X axis: central difference with Dirichlet BC (ghost=0) at
+                // insulator boundaries, representing ψ=0 at the barrier.
+                if (i + 1 < g_.nx && i > 0) {
+                    bool sp = is_semi(idx + 1), sm = is_semi(idx - 1);
+                    real_t gp = sp ? sq(idx + 1) : 0.0Q;
+                    real_t gm = sm ? sq(idx - 1) : 0.0Q;
+                    if (sp || sm) {
+                        lap += (gp - 2.0Q * sqrt_f + gm) / (g_.dx * g_.dx);
+                    }
                 }
-                if (j > 0 && j + 1 < g_.ny) {
-                    lap += (sqrt_q(f[idx + g_.nx]) - 2.0Q * sqrt_f + sqrt_q(f[idx - g_.nx])) / (g_.dy * g_.dy);
+                // Y axis
+                if (j + 1 < g_.ny && j > 0) {
+                    bool sp = is_semi(idx + g_.nx), sm = is_semi(idx - g_.nx);
+                    real_t gp = sp ? sq(idx + g_.nx) : 0.0Q;
+                    real_t gm = sm ? sq(idx - g_.nx) : 0.0Q;
+                    if (sp || sm) {
+                        lap += (gp - 2.0Q * sqrt_f + gm) / (g_.dy * g_.dy);
+                    }
                 }
-                if (k > 0 && k + 1 < g_.nz) {
-                    lap += (sqrt_q(f[idx + g_.nx * g_.ny]) - 2.0Q * sqrt_f + sqrt_q(f[idx - g_.nx * g_.ny])) / (g_.dz * g_.dz);
+                // Z axis
+                if (k + 1 < g_.nz && k > 0) {
+                    bool sp = is_semi(idx + g_.nx*g_.ny), sm = is_semi(idx - g_.nx*g_.ny);
+                    real_t gp = sp ? sq(idx + g_.nx*g_.ny) : 0.0Q;
+                    real_t gm = sm ? sq(idx - g_.nx*g_.ny) : 0.0Q;
+                    if (sp || sm) {
+                        lap += (gp - 2.0Q * sqrt_f + gm) / (g_.dz * g_.dz);
+                    }
                 }
                 out[idx] = lap / sqrt_f;
             }
@@ -53,9 +86,52 @@ void DensityGradient::quantum_potential(const std::vector<real_t>& n,
                                         std::vector<real_t>& Qp) const {
     laplace_sqrt_over_sqrt(n, Qn);
     laplace_sqrt_over_sqrt(p, Qp);
+    // Effective DOS for screening (Si defaults; can be overridden)
+    const real_t Nc_eff = 2.780e25Q;
+    const real_t Nv_eff = 3.143e25Q;
     for (size_t i = 0; i < g_.npts(); ++i) {
+        bool lap_active = (Qn[i] < -1e-15Q);  // Laplacian gave non-zero Qn
+        if (Qn[i] > 0.0Q) Qn[i] = 0.0Q;
+        if (Qp[i] > 0.0Q) Qp[i] = 0.0Q;
         Qn[i] = bn_ * Qn[i];
         Qp[i] = bp_ * Qp[i];
+
+        if (!L_conf_.empty() && i < L_conf_.size() && L_conf_[i] > 0.0Q) {
+            real_t pi2 = 9.8696Q;
+            real_t E1n = pi2 * bn_ / (L_conf_[i] * L_conf_[i]);
+            real_t E1p = pi2 * bp_ / (L_conf_[i] * L_conf_[i]);
+            real_t fn = 1.0Q / (1.0Q + (n[i] / Nc_eff) * (n[i] / Nc_eff));
+            real_t fp = 1.0Q / (1.0Q + (p[i] / Nv_eff) * (p[i] / Nv_eff));
+            real_t Qn_model = -E1n * fn;
+            real_t Qp_model = -E1p * fp;
+
+            if (!lap_active) {
+                // Laplacian was zero (flat profile): use model, but ONLY
+                // when n is below the S/D doping level.  In S/D regions
+                // (n~1e26) the z-profile is also flat, but the carriers
+                // come from doping, not gate confinement — DG shouldn't
+                // apply there.
+                if (n[i] < 5.0e25Q) {
+                    Qn[i] = Qn_model;
+                }
+                if (p[i] < 5.0e25Q) {
+                    Qp[i] = Qp_model;
+                }
+            } else {
+                // Laplacian is active (peaked profile, above threshold):
+                // apply E1 cap and density screening.  In strong inversion
+                // the quantum correction is screened by multi-subband
+                // occupation (Sentaurus DG/clas → 0.98 at Vg=1.0).
+                real_t E1cap_n = 3.0Q * pi2 * bn_ / (L_conf_[i] * L_conf_[i]);
+                real_t E1cap_p = 3.0Q * pi2 * bp_ / (L_conf_[i] * L_conf_[i]);
+                real_t screen_n = 1.0Q / (1.0Q + (n[i] / Nc_eff) * (n[i] / Nc_eff));
+                real_t screen_p = 1.0Q / (1.0Q + (p[i] / Nv_eff) * (p[i] / Nv_eff));
+                Qn[i] *= screen_n;
+                Qp[i] *= screen_p;
+                if (Qn[i] < -E1cap_n) Qn[i] = -E1cap_n;
+                if (Qp[i] < -E1cap_p) Qp[i] = -E1cap_p;
+            }
+        }
     }
 }
 
@@ -86,12 +162,67 @@ void DensityGradient::correct(const std::vector<real_t>& n,
         // guard [-100, 100] purely to absorb transients from pathological
         // grids (NaN/Inf protection) during iteration; at steady state on a
         // sane grid the exponent never approaches this band.
-        if (arg_n > 100.0Q) arg_n = 100.0Q;
-        if (arg_n < -100.0Q) arg_n = -100.0Q;
-        if (arg_p > 100.0Q) arg_p = 100.0Q;
-        if (arg_p < -100.0Q) arg_p = -100.0Q;
+        // Tight guard [-4,4]: the physical DG exponent is O(1); values beyond
+        // indicate the n->0 singularity leaking through and would amplify
+        // carriers by exp(>4)=55x (spurious).  Regularization in the sqrt
+        // path keeps it O(1) at steady state; this is a transient guard.
+        if (arg_n > 4.0Q) arg_n = 4.0Q;
+        if (arg_n < -4.0Q) arg_n = -4.0Q;
+        if (arg_p > 4.0Q) arg_p = 4.0Q;
+        if (arg_p < -4.0Q) arg_p = -4.0Q;
         n_q[i] = n[i] * exp_q(arg_n);
         p_q[i] = p[i] * exp_q(arg_p);
+    }
+}
+
+void DensityGradient::compute_confinement() {
+    const size_t N = g_.npts();
+    L_conf_.assign(N, 1.0Q);  // default: large (no confinement)
+    if (semi_.empty()) return;  // all-semiconductor: no insulator boundaries
+
+    auto is_semi = [&](size_t idx) -> bool {
+        return (idx < semi_.size() && semi_[idx] != 0);
+    };
+
+    for (size_t k = 0; k < g_.nz; ++k) {
+        for (size_t j = 0; j < g_.ny; ++j) {
+            for (size_t i = 0; i < g_.nx; ++i) {
+                size_t idx = g_.index(i, j, k);
+                if (!is_semi(idx)) continue;
+
+                // For each axis, find the distance to the nearest insulator
+                // boundary.  L_axis = extent of contiguous semiconductor
+                // region containing this node along that axis.
+                real_t L_min = 1e10Q;  // start huge
+
+                // Z axis
+                {
+                    size_t k0 = k, k1 = k;
+                    while (k0 > 0 && is_semi(g_.index(i, j, k0 - 1))) --k0;
+                    while (k1 + 1 < g_.nz && is_semi(g_.index(i, j, k1 + 1))) ++k1;
+                    real_t Lz = (k1 - k0 + 1) * g_.dz;
+                    if (Lz < L_min) L_min = Lz;
+                }
+                // X axis
+                {
+                    size_t i0 = i, i1 = i;
+                    while (i0 > 0 && is_semi(g_.index(i0 - 1, j, k))) --i0;
+                    while (i1 + 1 < g_.nx && is_semi(g_.index(i1 + 1, j, k))) ++i1;
+                    real_t Lx = (i1 - i0 + 1) * g_.dx;
+                    if (Lx < L_min) L_min = Lx;
+                }
+                // Y axis
+                if (g_.ny > 1) {
+                    size_t j0 = j, j1 = j;
+                    while (j0 > 0 && is_semi(g_.index(i, j0 - 1, k))) --j0;
+                    while (j1 + 1 < g_.ny && is_semi(g_.index(i, j1 + 1, k))) ++j1;
+                    real_t Ly = (j1 - j0 + 1) * g_.dy;
+                    if (Ly < L_min) L_min = Ly;
+                }
+
+                L_conf_[idx] = L_min;
+            }
+        }
     }
 }
 

@@ -398,13 +398,26 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
 
                 real_t center = 0.0Q;
 
-                auto add_link = [&](size_t nbr, real_t dx, real_t mu) {
+                // Face-area weighting (2026-08 fix): FV/FD continuity row.
+                // Non-uniform z-mesh: per-node w_z and per-edge dz.
+                const real_t w_y = g_.dx_cell(i) / g_.dy_cell(j);
+                const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                const real_t dz_p = g_.dz_edge(k);       // z+ edge length
+                const real_t dz_m = (k > 0) ? g_.dz_edge(k-1) : g_.dz;  // z- edge
+                auto add_link = [&](size_t nbr, real_t dx, real_t mu, real_t w) {
                     // Skip coupling to insulator/metal neighbors: zero carrier flux
                     if (mu_n_[nbr] < EPSILON) return (real_t)0.0;
                     real_t dphi = phi[nbr] - phi[idx];
                     real_t B_plus = bernoulli(dphi / opt_.VT);
                     real_t B_minus = bernoulli(-dphi / opt_.VT);
-                    real_t D = mu * opt_.VT / dx;
+                    // Edge mobility: HARMONIC mean of the two nodes (2026-08
+                    // fix).  The previous node-upwind value (mu_n_[idx]) gave
+                    // each node a DIFFERENT flux on the shared edge wherever
+                    // mobility varies (junctions!), breaking current
+                    // conservation (div J != 0) and corrupting terminal
+                    // currents (NPN BJT Ic error ~4x).
+                    real_t mu_e = 2.0Q * mu * mu_n_[nbr] / (mu + mu_n_[nbr] + 1e-30Q);
+                    real_t D = w * mu_e * opt_.VT / dx;
                     // Original SG discretization (kept for self-consistency)
                     real_t a_ii = D * B_minus;   // contribution to diagonal (positive)
                     real_t a_ij = -D * B_plus;   // off-diagonal (negative)
@@ -412,12 +425,14 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
                     return a_ii;
                 };
 
-                if (i + 1 < g_.nx) center += add_link(idx + 1, g_.dx, mu_n_[idx]);
-                if (i > 0)        center += add_link(idx - 1, g_.dx, mu_n_[idx]);
-                if (j + 1 < g_.ny) center += add_link(idx + g_.nx, g_.dy, mu_n_[idx]);
-                if (j > 0)        center += add_link(idx - g_.nx, g_.dy, mu_n_[idx]);
-                if (k + 1 < g_.nz) center += add_link(idx + g_.nx * g_.ny, g_.dz, mu_n_[idx]);
-                if (k > 0)        center += add_link(idx - g_.nx * g_.ny, g_.dz, mu_n_[idx]);
+                const real_t dx_p = g_.dx_edge(i);
+                const real_t dx_m = (i > 0) ? g_.dx_edge(i-1) : g_.dx;
+                if (i + 1 < g_.nx) center += add_link(idx + 1, dx_p, mu_n_[idx], 1.0Q);
+                if (i > 0)        center += add_link(idx - 1, dx_m, mu_n_[idx], 1.0Q);
+                if (j + 1 < g_.ny) center += add_link(idx + g_.nx, g_.dy, mu_n_[idx], w_y);
+                if (j > 0)        center += add_link(idx - g_.nx, g_.dy, mu_n_[idx], w_y);
+                if (k + 1 < g_.nz) center += add_link(idx + g_.nx * g_.ny, dz_p, mu_n_[idx], w_z);
+                if (k > 0)        center += add_link(idx - g_.nx * g_.ny, dz_m, mu_n_[idx], w_z);
 
                 // Recombination (SRH simplified): R = (n*p - ni^2) / (tau_p*(n+ni) + tau_n*(p+ni))
                 // Explicit treatment in Gummel iteration
@@ -429,6 +444,11 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
                     real_t denom = tau_p_[idx] * (n[idx] + ni) + tau_n_[idx] * (p[idx] + ni);
                     if (denom > EPSILON)
                         R = (np - ni * ni) / denom;
+                }
+                // Auger recombination: R_A = (Cn*n + Cp*p) * (n*p - ni²)
+                if (opt_.auger.enabled) {
+                    real_t np_ni2 = n[idx] * p[idx] - ni * ni;
+                    R += (opt_.auger.Cn * n[idx] + opt_.auger.Cp * p[idx]) * np_ni2;
                 }
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
                 if (opt_.btbt.enabled && idx < G_btbt.size()) G += G_btbt[idx];
@@ -454,9 +474,9 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
     A.finalize();
     SolverOptions cont_opt = LinearSolver::default_continuity_options();
     cont_opt.type = opt_.continuity_solver;
-    LinearSolver solver(cont_opt);
+    if (!cont_e_solver_) cont_e_solver_ = std::make_unique<LinearSolver>(cont_opt);
     Vector x(n.begin(), n.end());
-    solver.solve(A, rhs, x);
+    cont_e_solver_->solve(A, rhs, x);
     bool has_nan = false;
     for (size_t i = 0; i < N; ++i) {
         if (std::isnan((double)x[i]) || std::isinf((double)x[i])) {
@@ -508,13 +528,22 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
                     continue;
                 }
                 real_t center = 0.0Q;
-                auto add_link = [&](size_t nbr, real_t dx, real_t mu) {
+                const real_t w_x = 1.0Q;
+                const real_t w_y = g_.dx_cell(i) / g_.dy_cell(j);
+                const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                const real_t dz_p = g_.dz_edge(k);
+                const real_t dz_m = (k > 0) ? g_.dz_edge(k-1) : g_.dz;
+                auto add_link = [&](size_t nbr, real_t dx, real_t mu, real_t w) {
                     // Skip coupling to insulator/metal neighbors: zero carrier flux
                     if (mu_p_[nbr] < EPSILON) return (real_t)0.0;
                     real_t dphi = phi[nbr] - phi[idx];
                     real_t B_plus = bernoulli(dphi / opt_.VT);
                     real_t B_minus = bernoulli(-dphi / opt_.VT);
-                    real_t D = mu * opt_.VT / dx;
+                    // Edge mobility: HARMONIC mean (current conservation fix,
+                    // see electron block comment).
+                    real_t mu_e = 2.0Q * mu * mu_p_[nbr] / (mu + mu_p_[nbr] + 1e-30Q);
+                    // Face-area weighting (see electron block comment).
+                    real_t D = w * mu_e * opt_.VT / dx;
                     // Hole SG: J_p = -q*D*[B(dphi/VT)*p_i - B(-dphi/VT)*p_j]
                     // Equation: B_plus*p_i - B_minus*p_j = 0
                     // => diagonal coeff = D*B_plus, off-diagonal = -D*B_minus
@@ -523,12 +552,14 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
                     A.add_entry(idx, nbr, a_ij);
                     return a_ii;
                 };
-                if (i + 1 < g_.nx) center += add_link(idx + 1, g_.dx, mu_p_[idx]);
-                if (i > 0)        center += add_link(idx - 1, g_.dx, mu_p_[idx]);
-                if (j + 1 < g_.ny) center += add_link(idx + g_.nx, g_.dy, mu_p_[idx]);
-                if (j > 0)        center += add_link(idx - g_.nx, g_.dy, mu_p_[idx]);
-                if (k + 1 < g_.nz) center += add_link(idx + g_.nx * g_.ny, g_.dz, mu_p_[idx]);
-                if (k > 0)        center += add_link(idx - g_.nx * g_.ny, g_.dz, mu_p_[idx]);
+                const real_t hdx_p = g_.dx_edge(i);
+                const real_t hdx_m = (i > 0) ? g_.dx_edge(i-1) : g_.dx;
+                if (i + 1 < g_.nx) center += add_link(idx + 1, hdx_p, mu_p_[idx], w_x);
+                if (i > 0)        center += add_link(idx - 1, hdx_m, mu_p_[idx], w_x);
+                if (j + 1 < g_.ny) center += add_link(idx + g_.nx, g_.dy, mu_p_[idx], w_y);
+                if (j > 0)        center += add_link(idx - g_.nx, g_.dy, mu_p_[idx], w_y);
+                if (k + 1 < g_.nz) center += add_link(idx + g_.nx * g_.ny, dz_p, mu_p_[idx], w_z);
+                if (k > 0)        center += add_link(idx - g_.nx * g_.ny, dz_m, mu_p_[idx], w_z);
                 real_t ni = intrinsic_density(Eg_[idx], opt_.temperature, Nc_[idx], Nv_[idx], opt_.statistics_type);
                 real_t R = 0.0Q;
                 if (idx < tau_n_.size() && idx < tau_p_.size() &&
@@ -537,6 +568,11 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
                     real_t denom = tau_p_[idx] * (n[idx] + ni) + tau_n_[idx] * (p[idx] + ni);
                     if (denom > EPSILON)
                         R = (np - ni * ni) / denom;
+                }
+                // Auger recombination: R_A = (Cn*n + Cp*p) * (n*p - ni²)
+                if (opt_.auger.enabled) {
+                    real_t np_ni2 = n[idx] * p[idx] - ni * ni;
+                    R += (opt_.auger.Cn * n[idx] + opt_.auger.Cp * p[idx]) * np_ni2;
                 }
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
                 if (opt_.btbt.enabled && idx < G_btbt.size()) G += G_btbt[idx];
@@ -556,9 +592,9 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
 
     SolverOptions cont_opt = LinearSolver::default_continuity_options();
     cont_opt.type = opt_.continuity_solver;
-    LinearSolver solver(cont_opt);
+    if (!cont_h_solver_) cont_h_solver_ = std::make_unique<LinearSolver>(cont_opt);
     Vector x(p.begin(), p.end());
-    solver.solve(A, rhs, x);
+    cont_h_solver_->solve(A, rhs, x);
     bool has_nan = false;
     for (size_t i = 0; i < N; ++i) {
         if (std::isnan((double)x[i]) || std::isinf((double)x[i])) {
@@ -577,6 +613,9 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
                                     std::vector<real_t>& p) {
     bool ok = true;
     std::vector<real_t> n_ref = n, p_ref = p;
+    // DG correction is now POST-CONVERGENCE only (see solve()).  The
+    // continuity solve is always classical here.
+    std::vector<real_t> phi_eff_n, phi_eff_p;
     for (size_t inner = 0; inner < opt_.inner_iterations; ++inner) {
         bool ok1 = solve_electron_density(phi, n, p);
         bool ok2 = solve_hole_density(phi, n, p);
@@ -614,7 +653,17 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     cont_res_.clear();
     poisson_residual_final_ = -1.0Q;
     phi_was_frozen_ = false;
+    Qn_prev_.clear(); Qp_prev_.clear();  // reset DG damping each solve()
     const size_t N = Nd_minus_Na_.size();
+
+    // DG semiconductor mask from mobility (mu>0 => semiconductor; mu=0 oxide).
+    // Restricts the density-gradient quantum potential to the active region so
+    // it doesn't blow up across the Si-oxide material boundary.
+    if (opt_.enable_quantum && !mu_n_.empty()) {
+        std::vector<char> semi(N, 0);
+        for (size_t i = 0; i < N; ++i) semi[i] = (mu_n_[i] > EPSILON || mu_p_[i] > EPSILON) ? 1 : 0;
+        dg_.set_semiconductor_mask(semi);
+    }
 
     std::vector<real_t> phi_old(N);
     std::vector<real_t> n_old(N), p_old(N);
@@ -687,12 +736,23 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         }
         if (!phi_frozen) {
             std::vector<real_t> n_solve = n, p_solve = p;
-            if (opt_.enable_quantum) {
-                dg_.correct(n, p, n_solve, p_solve);
+            // Fermi-Dirac statistics: correct the carrier densities used in
+            // Poisson.  The SG continuity solve gives Boltzmann n; for Poisson
+            // charge we need n_FD = Nc * F_{1/2}(ln(n/Nc)).  At moderate
+            // doping (n << Nc) the correction γ = F_{1/2}/exp ≈ 1 (Boltzmann).
+            // At high doping (n ~ Nc) γ < 1 (degenerate, lower effective n).
+            if (opt_.statistics_type == StatisticsType::FERMI_DIRAC) {
+                for (size_t i = 0; i < N; ++i) {
+                    if (n_solve[i] > 1.0Q && Nc_[i] > 1.0Q) {
+                        real_t eta = log_q(n_solve[i] / Nc_[i]);
+                        n_solve[i] = Nc_[i] * fermi_dirac_half(eta);
+                    }
+                    if (p_solve[i] > 1.0Q && Nv_[i] > 1.0Q) {
+                        real_t eta = log_q(p_solve[i] / Nv_[i]);
+                        p_solve[i] = Nv_[i] * fermi_dirac_half(eta);
+                    }
+                }
             }
-            // P2.2: cache phi for the leakage field-dependent conductance.
-            // P6: also needed for interface-trap charge (uses cached phi for f_t).
-            // Always cache - it's cheap and serves both leakage and trap models.
             poisson_.set_leakage_field(phi);
             poisson_.assemble(n_solve, p_solve);
             if (!poisson_.solve(phi)) {
@@ -824,10 +884,26 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                     min_r = std::min(min_r, r1);
                     min_r = std::min(min_r, r2);
                 }
+                // 2026-08: ALSO detect a period-2 CARRIER cycle (rel_dN/rel_dP
+                // alternating high/low while rel_dPhi drifts down slowly) —
+                // the GAA nanosheet cycles exactly this way (rel_dN flipping
+                // 6.389 <-> 0.865 for 100+ iterations with rel_dPhi < 0.01,
+                // invisible to the phi-only detector above).
+                bool carrier_cycle = false;
+                if (cont_res_.size() >= 6) {
+                    size_t flips = 0;
+                    for (size_t k = 1; k < 6; ++k) {
+                        real_t a = cont_res_[cont_res_.size()-k];
+                        real_t b = cont_res_[cont_res_.size()-1-k];
+                        if (b > 0 && (a / b > 2.0Q || b / a > 2.0Q)) ++flips;
+                    }
+                    // every consecutive pair alternates by >2x -> period-2 cycle
+                    if (flips >= 4) carrier_cycle = true;
+                }
                 // Only freeze when oscillation amplitude is small (< 0.1),
                 // and there are at least 2 rises in the last 5 pairs (true oscillation).
-                if (opt_.enable_phi_freezing && min_r > 0 && max_r < 1e-1Q && rises >= 2 &&
-                    (max_r - min_r) / min_r < 0.3Q) {
+                if (carrier_cycle || (opt_.enable_phi_freezing && min_r > 0 && max_r < 1e-1Q && rises >= 2 &&
+                    (max_r - min_r) / min_r < 0.3Q)) {
                     // Warm-up mode (Gummel->Newton cascade): hand the
                     // cycle-mean state to the Newton polish at the FIRST
                     // detected cycle (see GummelOptions).
@@ -931,7 +1007,13 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             }
         }
 
-        // --- Step 2: Solve continuity with new phi ---
+        // --- Step 2: Solve continuity with new phi (CLASSICAL) ---
+        // DG is post-convergence correction only (see dg_.correct() below).
+        // The phi_eff approach (phi+Qn in SG) gives positive feedback
+        // (less interface charge → higher φ → more n → more current),
+        // increasing Id instead of decreasing it.  Only a fully-coupled
+        // Newton-DG (5-equation block solve) can handle the coupling
+        // without this feedback.
         if (!solve_electron_density(phi, n, p)) {
             std::cerr << "Gummel iter " << iter << ": Electron continuity failed\n";
             return false;
@@ -1040,7 +1122,23 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                 }
             }
             // P0-3: true Poisson equation residual at the returned state.
+            // Re-solve Poisson to ensure phi is consistent with the polished
+            // n,p.  Critical for the cycle-mean exit path where phi was pinned
+            // to the average of two oscillating iterates — the averaged phi
+            // gives wrong SG Bernoulli edge currents.
+            poisson_.set_leakage_field(phi);
+            poisson_.assemble(n, p);
+            poisson_.solve(phi);
             poisson_residual_final_ = compute_poisson_residual(phi, n, p);
+            // DG post-convergence correction: modify n,p in-place.
+            if (opt_.enable_quantum) {
+                dg_.set_thermal_voltage(opt_.VT);
+                std::vector<real_t> n_dg, p_dg;
+                dg_.correct(n, p, n_dg, p_dg);
+                for (const auto& bc : n_bc_) n_dg[bc.first] = bc.second;
+                for (const auto& bc : p_bc_) p_dg[bc.first] = bc.second;
+                n = n_dg; p = p_dg;
+            }
             return true;
         }
     }
@@ -1086,12 +1184,25 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     // (Observed: the 2D PN junction current tests stagnate at rel_dPhi~1e-3
     // with a true residual of 1.1e-4 — a valid solution that the update-norm
     // criterion alone would dishonestly fail.)
-    // In warm-up mode (exit_on_limit_cycle) this exit hands the state to
-    // the Newton polish — the committed polish would perturb that handoff
-    // state (observed: PN junction Newton converges from the unpolished
-    // state, stalls from the polished one), so skip it there.
-    if (!opt_.exit_on_limit_cycle &&
-        (opt_.cont_damping < 1.0Q || opt_.use_log_damping)) {
+    // In warm-up mode (exit_on_limit_cycle) the cycle-mean break left phi
+    // as the average of two oscillating iterates and n,p from the previous
+    // iteration's continuity solve — an inconsistent pair that gives WRONG
+    // edge currents (the SG Bernoulli of an averaged phi ≠ average of
+    // Bernoullis).  Re-solve Poisson + continuity + Poisson to restore
+    // full phi-n consistency before judging the residual.
+    if (opt_.exit_on_limit_cycle) {
+        poisson_.set_leakage_field(phi);
+        poisson_.assemble(n, p);
+        poisson_.solve(phi);
+        GummelOptions saved = opt_;
+        opt_.cont_damping = 1.0Q;
+        opt_.use_log_damping = false;
+        opt_.inner_iterations = 1;
+        solve_continuity(phi, n, p);
+        opt_ = saved;
+        poisson_.assemble(n, p);
+        poisson_.solve(phi);
+    } else if (opt_.cont_damping < 1.0Q || opt_.use_log_damping) {
         GummelOptions saved = opt_;
         opt_.cont_damping = 1.0Q;
         opt_.use_log_damping = false;
@@ -1121,6 +1232,14 @@ real_t GummelSolver::compute_poisson_residual(const std::vector<real_t>& phi,
     // quantum enabled this scores the classical-operator residual.
     poisson_.set_leakage_field(phi);
     return poisson_.residual_norm(phi, n, p);
+}
+
+bool GummelSolver::recompute_poisson(std::vector<real_t>& phi,
+                                     const std::vector<real_t>& n,
+                                     const std::vector<real_t>& p) {
+    poisson_.set_leakage_field(phi);
+    poisson_.assemble(n, p);
+    return poisson_.solve(phi);
 }
 
 void GummelSolver::set_poisson_solver_type(SolverType type) {

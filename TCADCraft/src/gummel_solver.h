@@ -7,6 +7,7 @@
 #include "statistics.h"
 #include <vector>
 #include <functional>
+#include <memory>
 
 namespace tcad {
 
@@ -117,6 +118,14 @@ struct ImpactIonizationParams {
     real_t E_floor = 1.0e5Q;  // below this |E| [V/m] alpha is negligible -> 0
 };
 
+struct AugerParams {
+    bool enabled = false;
+    // Sentaurus Si defaults (MaterialDB): Cn=2.8e-31, Cp=9.9e-32 [cm^6/s]
+    // Converted to SI: multiply by 1e-12 (cm^6 → m^6)
+    real_t Cn = 2.8e-43Q;     // electron Auger coefficient [m^6/s]
+    real_t Cp = 9.9e-44Q;     // hole Auger coefficient [m^6/s]
+};
+
 struct GummelOptions {
     size_t max_iter = 50;
     real_t poisson_tol = 1e-25Q;
@@ -156,6 +165,8 @@ struct GummelOptions {
     BTBTParams btbt;
     // Avalanche impact ionization
     ImpactIonizationParams ii;
+    // Auger recombination
+    AugerParams auger;
     // Ferroelectric polarization
     FerroelectricParams ferro;
     // Leakage current (Poole-Frenkel / Fowler-Nordheim) (P2.2)
@@ -246,11 +257,25 @@ public:
                                     const std::vector<real_t>& n,
                                     const std::vector<real_t>& p);
 
+    // Re-solve Poisson only (phi ← solve(∇²φ = -ρ(n,p)/ε)).
+    // Used after Newton polish to ensure phi is consistent with the
+    // converged n,p, fixing wrong edge currents from phi-n mismatch.
+    bool recompute_poisson(std::vector<real_t>& phi,
+                           const std::vector<real_t>& n,
+                           const std::vector<real_t>& p);
+
 private:
     Grid3D g_;
     GummelOptions opt_;
     PoissonSolver poisson_;
     DensityGradient dg_;
+    // Persistent continuity linear solvers (lazily created) so the PETSc
+    // factorization cache (Mat/KSP/symbolic) is reused across Gummel iters
+    // for BOTH electron and hole solves, not just the Poisson solve.
+    std::unique_ptr<LinearSolver> cont_e_solver_, cont_h_solver_;
+    // DG quantum potential damping (under-relaxation to stabilize the Qn->n->Qn
+    // feedback loop that otherwise prevents Gummel convergence with DG).
+    std::vector<real_t> Qn_prev_, Qp_prev_;
 
     std::vector<real_t> mu_n_, mu_p_;
     std::vector<real_t> tau_n_, tau_p_;

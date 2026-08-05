@@ -8,8 +8,12 @@ which is a prerequisite for credible Ion/Ioff/SS ranking in device discovery
 The Scharfetter-Gummel edge flux here mirrors the C++ solver exactly
 (``gummel_solver.cpp`` / ``newton_solver.cpp`` ``add_link``):
 
-    Jn_edge(i->j) = q * (mu_n*VT/dx) * (n_i * B(-dphi/VT) - n_j * B(+dphi/VT))
+    Jn_edge(i->j) = q * (mu_n*VT/dx) * (n_j * B(+dphi/VT) - n_i * B(-dphi/VT))
     Jp_edge(i->j) = q * (mu_p*VT/dx) * (p_i * B(+dphi/VT) - p_j * B(-dphi/VT))
+
+    (conventional-current sign for both, so Jn + Jp is the physical total;
+    the raw electron SG flux must be negated — a sign inconsistency here was
+    found and fixed during Sentaurus cross-validation, Aug 2026)
 
 with dphi = phi_j - phi_i, B(x) = x/(exp(x)-1), and node-upwind mobility
 mu[i] (matching ``mu_n_[idx]`` in the C++ stencil). At steady state the total
@@ -73,9 +77,15 @@ def sg_current_density_1d(
     dphi = phi[1:] - phi[:-1]
     Bp = _bernoulli(dphi / VT)
     Bm = _bernoulli(-dphi / VT)
-    Dn = mu_n[:-1] * VT / dx   # node-upwind mobility
-    Dp = mu_p[:-1] * VT / dx
-    Jn = QE * Dn * (n[:-1] * Bm - n[1:] * Bp)
+    # Edge mobility: harmonic mean (matches the C++ solver assembly after the
+    # 2026-08 current-conservation fix; node-upwind broke div J = qR).
+    mu_ne = 2.0 * mu_n[:-1] * mu_n[1:] / (mu_n[:-1] + mu_n[1:] + 1e-30)
+    mu_pe = 2.0 * mu_p[:-1] * mu_p[1:] / (mu_p[:-1] + mu_p[1:] + 1e-30)
+    Dn = mu_ne * VT / dx
+    Dp = mu_pe * VT / dx
+    # Conventional current densities: Jn must be negated relative to the raw
+    # electron SG flux so that Jn + Jp is the total conventional current.
+    Jn = QE * Dn * (n[1:] * Bp - n[:-1] * Bm)
     Jp = QE * Dp * (p[:-1] * Bp - p[1:] * Bm)
     return Jn, Jp
 
@@ -212,9 +222,13 @@ def sg_current_density_1d_z(
     dphi = phi[1:] - phi[:-1]
     Bp = _bernoulli(dphi / VT)
     Bm = _bernoulli(-dphi / VT)
-    Dn = mu_n[:-1] * VT / dz
-    Dp = mu_p[:-1] * VT / dz
-    Jn = QE * Dn * (n[:-1] * Bm - n[1:] * Bp)
+    # Edge mobility: harmonic mean (see sg_current_density_1d note).
+    mu_ne = 2.0 * mu_n[:-1] * mu_n[1:] / (mu_n[:-1] + mu_n[1:] + 1e-30)
+    mu_pe = 2.0 * mu_p[:-1] * mu_p[1:] / (mu_p[:-1] + mu_p[1:] + 1e-30)
+    Dn = mu_ne * VT / dz
+    Dp = mu_pe * VT / dz
+    # Conventional current densities (see sg_current_density_1d note).
+    Jn = QE * Dn * (n[1:] * Bp - n[:-1] * Bm)
     Jp = QE * Dp * (p[:-1] * Bp - p[1:] * Bm)
     return Jn, Jp
 

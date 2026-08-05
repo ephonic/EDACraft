@@ -53,11 +53,14 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_electron_bc(const map[size_t, double]& bc)
         void set_hole_bc(const map[size_t, double]& bc)
         void set_quantum_enabled(cbool enable)
+        void set_z_positions(const vector[double]& z_pos)
+        void set_x_positions(const vector[double]& x_pos)
         void set_gummel_max_iter(size_t max_iter)
         void set_tolerance(double tol)
         void set_poisson_solver_type(int type)
         void set_continuity_solver_type(int type)
         void set_use_newton(cbool enable)
+        void set_newton_primary(cbool enable)
         void set_newton_freeze_phi(cbool enable)
         void set_newton_freeze_n(cbool enable)
         void set_newton_freeze_p(cbool enable)
@@ -77,6 +80,8 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_btbt_use_nonlocal(cbool enable)
         void set_ii_enabled(cbool enable)
         void set_ii_params(double A_n, double B_n, double A_p, double B_p)
+        void set_auger_enabled(cbool enable)
+        void set_auger_params(double Cn, double Cp)
         void set_breakdown_enabled(cbool enable)
         void set_breakdown_params(const vector[signed char]& bd_mask,
                                   const vector[double]& E_bd, double sigma_bd)
@@ -216,6 +221,15 @@ cdef class PyDeviceSimulator:
     def set_quantum_enabled(self, bint enable):
         self._sim.set_quantum_enabled(enable)
 
+    def set_z_positions(self, np.ndarray[np.float64_t, ndim=1, mode="c"] z_pos not None):
+        """Set non-uniform z-node positions for local mesh refinement.
+        When set, the Poisson/continuity/current assembly uses per-edge
+        spacing derived from these positions instead of the uniform dz."""
+        self._sim.set_z_positions(np_to_vec(z_pos))
+
+    def set_x_positions(self, np.ndarray[np.float64_t, ndim=1, mode="c"] x_pos not None):
+        self._sim.set_x_positions(np_to_vec(x_pos))
+
     def set_gummel_max_iter(self, size_t max_iter):
         self._sim.set_gummel_max_iter(max_iter)
 
@@ -230,6 +244,9 @@ cdef class PyDeviceSimulator:
 
     def set_use_newton(self, bint enable):
         self._sim.set_use_newton(enable)
+
+    def set_newton_primary(self, bint enable):
+        self._sim.set_newton_primary(enable)
 
     def set_newton_freeze_phi(self, bint enable):
         self._sim.set_newton_freeze_phi(enable)
@@ -290,6 +307,12 @@ cdef class PyDeviceSimulator:
 
     def set_ii_params(self, double A_n, double B_n, double A_p, double B_p):
         self._sim.set_ii_params(A_n, B_n, A_p, B_p)
+
+    def set_auger_enabled(self, bint enable):
+        self._sim.set_auger_enabled(enable)
+
+    def set_auger_params(self, double Cn, double Cp):
+        self._sim.set_auger_params(Cn, Cp)
 
     def set_breakdown_enabled(self, bint enable):
         self._sim.set_breakdown_enabled(enable)

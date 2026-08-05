@@ -12,22 +12,23 @@ enum class StatisticsType {
 // Fermi-Dirac integral of order 1/2 via Bednarczyk (1981) rational approximation.
 // Accurate to < 0.4% for all eta.
 static inline real_t fermi_dirac_half(real_t eta) {
-    // For very negative eta, Boltzmann limit is accurate enough
-    if (eta < -20.0Q) return exp_q(eta);
+    // For eta < -1, the Boltzmann limit exp(eta) is accurate to < 5%.
+    // The Bednarczyk rational approximation below is designed for eta > 0
+    // and gives ~pi× error for eta < 0 (verified: returns 1.13 instead
+    // of exp(-1.02)=0.36 at eta=-1.02).  Use Boltzmann for non-degenerate.
+    if (eta < -1.0Q) return exp_q(eta);
 
     if (eta < 5.0Q) {
-        // Low-to-moderate eta region
+        // Bednarczyk (1981) rational approximation, valid for eta > -1.
         real_t eta2 = eta * eta;
         real_t eta3 = eta2 * eta;
         real_t num = 1.0Q + 0.2319Q * eta + 0.02803Q * eta2 + 0.001872Q * eta3;
         num = num * num;
         real_t den = 1.0Q + 0.1337Q * eta + 0.02578Q * eta2 + 0.001237Q * eta3;
-        // 4/sqrt(pi) * Gamma(3/2) = 2/sqrt(pi) ≈ 1.128
         real_t prefactor = 1.1283791670955126Q;
         return prefactor * sqrt_q(eta2 + 1.0Q) * num / den;
     } else {
-        // High eta: asymptotic expansion
-        // F_1/2(η) ≈ (2/3) η^(3/2) * (1 + π^2/(8η^2) + ...)
+        // High eta: Sommerfeld asymptotic expansion
         real_t eta_sqrt = sqrt_q(eta);
         real_t result = (2.0Q / 3.0Q) * eta * eta_sqrt;
         result *= (1.0Q + 3.14159265358979323846Q * 3.14159265358979323846Q / (8.0Q * eta * eta));

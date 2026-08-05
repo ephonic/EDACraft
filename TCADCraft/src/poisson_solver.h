@@ -16,9 +16,37 @@ namespace tcad {
 struct Grid3D {
     size_t nx, ny, nz;
     real_t dx, dy, dz;
+    // Non-uniform position arrays (empty = uniform mode, backward compatible)
+    std::vector<real_t> zx;  // z node positions, size nz
+    std::vector<real_t> xx;  // x node positions, size nx
+    std::vector<real_t> yx;  // y node positions, size ny
+
     size_t npts() const { return nx * ny * nz; }
     size_t index(size_t i, size_t j, size_t k) const {
         return i + nx * (j + ny * k);
+    }
+    // Edge spacing (node n -> n+1)
+    real_t dz_edge(size_t k) const { return zx.empty() ? dz : (zx[k+1]-zx[k]); }
+    real_t dx_edge(size_t i) const { return xx.empty() ? dx : (xx[i+1]-xx[i]); }
+    real_t dy_edge(size_t j) const { return yx.empty() ? dy : (yx[j+1]-yx[j]); }
+    // FV cell size at node n
+    real_t dz_cell(size_t k) const {
+        if (zx.empty()) return dz;
+        real_t l = (k > 0) ? (zx[k] - zx[k-1]) / 2 : (zx[1] - zx[0]) / 2;
+        real_t r = (k+1 < nz) ? (zx[k+1] - zx[k]) / 2 : (zx[nz-1] - zx[nz-2]) / 2;
+        return l + r;
+    }
+    real_t dx_cell(size_t i) const {
+        if (xx.empty()) return dx;
+        real_t l = (i > 0) ? (xx[i] - xx[i-1]) / 2 : (xx[1] - xx[0]) / 2;
+        real_t r = (i+1 < nx) ? (xx[i+1] - xx[i]) / 2 : (xx[nx-1] - xx[nx-2]) / 2;
+        return l + r;
+    }
+    real_t dy_cell(size_t j) const {
+        if (yx.empty()) return dy;
+        real_t l = (j > 0) ? (yx[j] - yx[j-1]) / 2 : (yx[1] - yx[0]) / 2;
+        real_t r = (j+1 < ny) ? (yx[j+1] - yx[j]) / 2 : (yx[ny-1] - yx[ny-2]) / 2;
+        return l + r;
     }
 };
 

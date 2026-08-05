@@ -182,6 +182,18 @@ class Device:
             # Interface/oxide traps (P6)
             out["Dit"][mask] = region.material.Dit
             out["Q_ot"][mask] = region.material.Q_ot
+        # 2026-08 fix: uncovered nodes (material_id == -1) previously kept ALL
+        # ZEROS (epsilon=0, mu=0, Eg=0), making the Poisson equation singular
+        # (zero Laplacian rows) and the Newton Jacobian factorization fail
+        # (SuperLU DIVERGED_PC_FAILED) — the root cause of the FinFET/GAA
+        # convergence failures.  Treat them as vacuum/air.
+        air = out["material_id"] == -1
+        out["epsilon"][air] = 8.854187817e-12   # eps0 (air)
+        out["Eg"][air] = 9.0
+        out["chi"][air] = 4.05
+        out["Nc"][air] = 1.0e19
+        out["Nv"][air] = 1.0e19
+        # mu_n / mu_p / doping remain zero (insulator, no carriers)
         return out
 
     def get_contacts_on_grid(self, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> Dict[str, np.ndarray]:
@@ -345,7 +357,12 @@ class Device:
         # Contacts
         dev.add_contact("source", Box(0, Lsd, 0, tsi, -5e-9, 0), voltage=Vs)
         dev.add_contact("drain", Box(x_total - Lsd, x_total, 0, tsi, -5e-9, 0), voltage=Vd)
-        dev.add_contact("gate", Box(Lsd, Lsd + Lg, -tox - tgate, tsi + tox + tgate, -5e-9, 0), voltage=Vg)
+        # Gate contacts on the METAL SLABS ONLY (2026-08 fix).  The previous
+        # single box spanned the full y range at z in [-5nm, 0], pinning the
+        # FIN BOTTOM ROW (z=0, y in [0,tsi]) to the gate voltage — shorting
+        # the gate to the channel (measured: I_gate ~ 60x I_channel).
+        dev.add_contact("gate", Box(Lsd, Lsd + Lg, -tox - tgate, -tox, -5e-9, Hfin), voltage=Vg)
+        dev.add_contact("gate_r", Box(Lsd, Lsd + Lg, tsi + tox, tsi + tox + tgate, -5e-9, Hfin), voltage=Vg)
 
         return dev
 
@@ -483,9 +500,12 @@ class Device:
         dev.add_region(gate_metal_left)
         dev.add_region(gate_metal_right)
 
-        # Contacts
-        dev.add_contact("source", Box(0, Lsd, 0, W_sheet, -5e-9, 0), voltage=Vs)
-        dev.add_contact("drain", Box(Lsd + Lg, x_total, 0, W_sheet, -5e-9, 0), voltage=Vd)
+        # Contacts (2026-08 fix): the S/D boxes previously extended 5nm into
+        # the BOX oxide (z in [-5nm, 0]), pinning BOX-oxide nodes to N+ carrier
+        # BCs and shorting S/D through the BOX to the substrate — the root
+        # cause of the GAA carrier limit cycle.  Pin the S/D SHEET only.
+        dev.add_contact("source", Box(0, Lsd, 0, W_sheet, 0, t_sheet), voltage=Vs)
+        dev.add_contact("drain", Box(Lsd + Lg, x_total, 0, W_sheet, 0, t_sheet), voltage=Vd)
         dev.add_contact("gate", Box(Lsd, Lsd + Lg, -tox - t_gate, W_sheet + tox + t_gate,
                                      t_sheet + tox, t_sheet + tox + 5e-9), voltage=Vg)
 

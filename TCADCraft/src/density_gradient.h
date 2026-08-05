@@ -49,8 +49,14 @@ public:
                            std::vector<real_t>& Qn,
                            std::vector<real_t>& Qp) const;
 
+    // Semiconductor-region mask (1 = active region where DG applies; 0 =
+    // oxide/insulator where DG is suppressed).  Set from mobility (>0 = semi).
+    void set_semiconductor_mask(const std::vector<char>& m) { semi_ = m; compute_confinement(); }
+
 private:
     Grid3D g_;
+    std::vector<char> semi_;   // empty = treat all nodes as semiconductor
+    std::vector<real_t> L_conf_;  // confinement length per node (m)
     // Si DOS-mass DG coefficients (V·m²): ħ²/(6·q·m*) with m*_n=0.26, m*_p=0.37.
     real_t bn_ = 4.885e-20Q;
     real_t bp_ = 3.432e-20Q;
@@ -58,6 +64,7 @@ private:
 
     void laplace_sqrt_over_sqrt(const std::vector<real_t>& f,
                                 std::vector<real_t>& out) const;
+    void compute_confinement();
 };
 
 } // namespace tcad

@@ -31,6 +31,10 @@ struct SimulationResult {
     std::vector<real_t> Jp_x, Jp_y, Jp_z;  // hole current density
     bool converged = false;
     size_t iterations = 0;
+    // Convergence-honesty diagnostics (P0-3): final Poisson residual (-1 = not
+    // computed) and whether the potential was frozen by the limit-cycle guard.
+    real_t poisson_residual = static_cast<real_t>(-1.0);
+    bool phi_frozen = false;
 };
 
 class DeviceSimulator {
@@ -61,6 +65,8 @@ public:
 
     // Simulation control
     void set_quantum_enabled(bool enable);
+    void set_grid_z(const std::vector<real_t>& z_pos) { g_.zx = z_pos; }
+    void set_grid_x(const std::vector<real_t>& x_pos) { g_.xx = x_pos; }
     void set_phi_freezing_enabled(bool enable);
     // C档: Newton freeze flags — pin a block (phi/n/p) to its current value so
     // the Newton solve reduces to the other blocks. freeze_phi enables an
@@ -75,6 +81,7 @@ public:
     void set_poisson_solver_type(int type);
     void set_continuity_solver_type(int type);
     void set_use_newton(bool enable);
+    void set_newton_primary(bool enable) { newton_primary_ = enable; }
 
     // Newton solver options
     void set_newton_damping(real_t damping);
@@ -100,6 +107,8 @@ public:
     // G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q injected into both continuity eqns.
     void set_ii_enabled(bool enable);
     void set_ii_params(real_t A_n, real_t B_n, real_t A_p, real_t B_p);
+    void set_auger_enabled(bool enable);
+    void set_auger_params(real_t Cn, real_t Cp);
 
     // Dielectric breakdown (M7b, audit §22).  Flags dielectric nodes whose
     // |E| exceeds the material breakdown field E_bd and applies a soft-
@@ -121,6 +130,8 @@ public:
                                   real_t alpha, real_t beta);
     // Ferroelectric model selection (M7c): 0 = Landau-Khalatnikov, 1 = Preisach.
     void set_ferroelectric_model(int model);
+    // FE polar axis: 0=x, 1=y, 2=z (P0-1)
+    void set_ferroelectric_polar_axis(int axis);
     // Preisach parameters (M7c, used only when model == 1). Escale=0 => Ec/3
     // (P1.3); a smaller Escale lets |P| approach the named saturation Ps.
     void set_ferroelectric_preisach(real_t ps, real_t ec, real_t escale);
@@ -205,6 +216,7 @@ private:
     SolverType poisson_solver_type_ = SolverType::DENSE_DIRECT;
     SolverType continuity_solver_type_ = SolverType::DENSE_DIRECT;
     bool use_newton_ = false;
+    bool newton_primary_ = false;  // skip Gummel warm-up, Newton from initial guess
     // Newton freeze flags (C档) — expose NewtonOptions::freeze_phi/n/p.
     bool newton_freeze_phi_ = false;
     bool newton_freeze_n_ = false;
@@ -235,6 +247,10 @@ private:
     real_t ii_B_n_ = 1.231e8Q;
     real_t ii_A_p_ = 1.58e8Q;
     real_t ii_B_p_ = 2.036e8Q;
+    // Auger recombination (SI units; defaults = silicon Sentaurus MaterialDB)
+    bool auger_enabled_ = false;
+    real_t auger_Cn_ = 2.8e-43Q;  // m^6/s (2.8e-31 cm^6/s)
+    real_t auger_Cp_ = 9.9e-44Q;  // m^6/s (9.9e-32 cm^6/s)
     // Dielectric breakdown (M7b, audit §22)
     bool bd_enabled_ = false;
     std::vector<char> bd_mask_;       // which nodes participate (dielectric) [npts]
@@ -249,6 +265,7 @@ private:
     real_t fe_beta_ = 1.5e10Q;     // Landau beta [m^5/(F*C^2)] (P1.2)
     // Ferroelectric model + Preisach params (M7c)
     int fe_model_ = 0;             // 0 = LK, 1 = PREISACH
+    int fe_polar_axis_ = 0;        // 0=x, 1=y, 2=z
     real_t fe_ps_ = 0.2Q;          // Preisach saturation polarization [C/m^2]
     real_t fe_ec_ = 1.0e9Q;        // Preisach coercive field [V/m]
     real_t fe_escale_ = 0.0Q;      // Preisach tanh width [V/m]; 0 => Ec (default)

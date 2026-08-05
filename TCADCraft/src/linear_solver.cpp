@@ -1,6 +1,20 @@
 #include "linear_solver.h"
 #include <iostream>
 #include <algorithm>
+#include <vector>
+
+// Direct LAPACK/BLAS linkage (-llapack -lblas in setup.py).  The linear solve
+// inside Newton/Gummel is done in double precision (the nonlinear outer
+// iteration restores full accuracy); ~100x faster than __float128 elimination.
+extern "C" {
+void dgesv_(const int* n, const int* nrhs, double* A, const int* lda,
+            int* ipiv, double* B, const int* ldb, int* info);
+void dgbtrf_(const int* m, const int* n, const int* kl, const int* ku,
+             double* AB, const int* ldab, int* ipiv, int* info);
+void dgbtrs_(const char* trans, const int* n, const int* kl, const int* ku,
+             const int* nrhs, const double* AB, const int* ldab,
+             const int* ipiv, double* B, const int* ldb, int* info);
+}
 
 #ifdef __APPLE__
 // Accelerate framework available but native dense direct solver is self-contained
@@ -46,7 +60,21 @@ SolverOptions LinearSolver::default_continuity_options() {
 
 LinearSolver::LinearSolver(const SolverOptions& opt) : opt_(opt) {}
 
-LinearSolver::~LinearSolver() = default;
+LinearSolver::~LinearSolver() {
+#ifdef TCAD_USE_PETSC
+    petsc_free();
+#endif
+}
+
+#ifdef TCAD_USE_PETSC
+void LinearSolver::petsc_free() {
+    if (petsc_ksp_) { KSPDestroy(&petsc_ksp_); petsc_ksp_ = nullptr; }
+    if (petsc_A_)   { MatDestroy(&petsc_A_);   petsc_A_ = nullptr; }
+    if (petsc_b_)   { VecDestroy(&petsc_b_);   petsc_b_ = nullptr; }
+    if (petsc_x_)   { VecDestroy(&petsc_x_);   petsc_x_ = nullptr; }
+    petsc_n_ = -1;
+}
+#endif
 
 size_t LinearSolver::solve(const SparseMatrix& A, const Vector& b, Vector& x) {
     switch (opt_.type) {
@@ -64,7 +92,13 @@ size_t LinearSolver::solve(const SparseMatrix& A, const Vector& b, Vector& x) {
             return solve_petsc(A, b, x);
 #endif
     }
-    return 0;
+    // Unknown/unsupported solver type (e.g. SolverType::PETSC requested
+    // without PETSc compiled in).  Previously this fell through to a silent
+    // `return 0` WITHOUT SOLVING — the Newton step was identically zero,
+    // producing the universal line-search stall on all >2000-node problems.
+    throw std::runtime_error("LinearSolver: unsupported solver type " +
+                             std::to_string(static_cast<int>(opt_.type)) +
+                             " (PETSc not compiled?)");
 }
 
 size_t LinearSolver::bicgstab(const SparseMatrix& A, const Vector& b, Vector& x) {
@@ -506,8 +540,69 @@ size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector
             return 1;
         }
     }
+    // LAPACK direct solve in double precision.  The linear solve inside
+    // Newton/Gummel is done in double (the nonlinear outer iteration restores
+    // full accuracy), via optimized BLAS/LAPACK -- ~100x faster than manual
+    // __float128 Gaussian elimination.  Detect the bandwidth from the CSR
+    // structure: genuinely banded systems (coupled DD Jacobian on a structured
+    // grid, bw ~ 2*neq+1 ~ 9) use dgbtrf/dgbtrs O(n*bw^2); otherwise dgesv
+    // O(n^3) in double.  Makes the 200-2000-node "dead zone" fast.
+    {
+        const auto& cols_csr = A.col_indices();
+        const auto& rp_csr = A.row_offsets();
+        size_t kl = 0, ku = 0;
+        for (size_t i = 0; i < n; ++i) {
+            for (size_t idx = rp_csr[i]; idx < rp_csr[i + 1]; ++idx) {
+                size_t j = cols_csr[idx];
+                if (j < i) kl = std::max(kl, i - j);
+                else if (j > i) ku = std::max(ku, j - i);
+            }
+        }
+        const int ni = static_cast<int>(n);
+        const int nrhsi = 1;
+        int info = 0;
+        std::vector<double> B(n);
+        for (size_t i = 0; i < n; ++i) B[i] = static_cast<double>(rhs[i]);
+        const size_t bw = kl + ku + 1;
+        if (getenv("TCAD_LIN_DEBUG")) { static long long c=0; if(++c<=8) std::cerr << "[LAPACK n=" << n << " bw=" << bw << " banded=" << (n>32 && 4*bw<n) << "]\n"; }
+        if (n > 32 && 4 * bw < n) {
+            // Banded: LAPACK column-major band storage AB[(2*kl+ku+1) x n].
+            const int kli = static_cast<int>(kl);
+            const int kui = static_cast<int>(ku);
+            const int ldab = 2 * kli + kui + 1;
+            std::vector<double> AB(static_cast<size_t>(ldab) * n, 0.0);
+            for (size_t i = 0; i < n; ++i) {
+                for (size_t idx = rp_csr[i]; idx < rp_csr[i + 1]; ++idx) {
+                    size_t j = cols_csr[idx];
+                    int row = static_cast<int>(kl + ku + i - j);  // AB row (LAPACK band layout)
+                    AB[static_cast<size_t>(j) * ldab + row] = static_cast<double>(vals[idx]);  // column-major
+                }
+            }
+            std::vector<int> ipiv(n);
+            dgbtrf_(&ni, &ni, &kli, &kui, AB.data(), &ldab, ipiv.data(), &info);
+            if (info == 0) {
+                const char trans = 'N';
+                dgbtrs_(&trans, &ni, &kli, &kui, &nrhsi, AB.data(), &ldab,
+                        ipiv.data(), B.data(), &ni, &info);
+            }
+        } else {
+            // General dense: column-major double copy.
+            std::vector<double> AD(n * n, 0.0);
+            for (size_t i = 0; i < n; ++i)
+                for (size_t idx = rp_csr[i]; idx < rp_csr[i + 1]; ++idx)
+                    AD[cols_csr[idx] * n + i] = static_cast<double>(vals[idx]);
+            std::vector<int> ipiv(n);
+            dgesv_(&ni, &nrhsi, AD.data(), &ni, ipiv.data(), B.data(), &ni, &info);
+        }
+        if (info == 0) {
+            for (size_t i = 0; i < n; ++i) x[i] = static_cast<real_t>(B[i]);
+            return 1;
+        }
+        if (getenv("TCAD_LIN_DEBUG"))
+            std::cerr << "[LAPACK info=" << info << " n=" << n << "] -> quad fallback\n";
+    }
 
-    // Gaussian elimination with partial pivoting
+    // Gaussian elimination with partial pivoting (__float128 fallback)
     for (size_t k = 0; k < n; ++k) {
         size_t max_row = k;
         real_t max_val = abs_q(M[k * n + k]);
@@ -562,92 +657,99 @@ size_t LinearSolver::solve_petsc(const SparseMatrix& A, const Vector& b, Vector&
     }
 
     const size_t n = b.size();
-    const size_t nnz = A.nnz();
-
-    Mat petsc_A;
-    Vec petsc_b, petsc_x;
-    KSP ksp;
-    PC pc;
-
-    MatCreateSeqAIJ(PETSC_COMM_SELF, static_cast<PetscInt>(n), static_cast<PetscInt>(n),
-                    static_cast<PetscInt>(nnz), nullptr, &petsc_A);
-
-    // Copy CSR data to PETSc matrix
+    const PetscInt N = static_cast<PetscInt>(n);
     const auto& row_ptr = A.row_offsets();
     const auto& col_idx = A.col_indices();
     const auto& values = A.vals();
-    for (size_t i = 0; i < n; ++i) {
-        PetscInt row = static_cast<PetscInt>(i);
-        PetscInt ncols = static_cast<PetscInt>(row_ptr[i+1] - row_ptr[i]);
-        if (ncols == 0) continue;
-        std::vector<PetscInt> cols;
-        cols.reserve(ncols);
-        std::vector<PetscScalar> vals;
-        vals.reserve(ncols);
-        for (size_t j = row_ptr[i]; j < row_ptr[i+1]; ++j) {
-            cols.push_back(static_cast<PetscInt>(col_idx[j]));
-            vals.push_back(static_cast<PetscScalar>(values[j]));
+
+    // ---- Reuse cache: keep Mat/KSP/Vecs across calls when the problem size
+    // is unchanged.  On a fixed mesh the sparsity pattern is constant, so we
+    // lock MAT_NEW_NONZERO_LOCATIONS=FALSE after the first assembly and
+    // SuperLU reuses the SYMBOLIC factorization (only numeric refactor each
+    // call).  This removes the per-call MatCreate/KSPCreate/symbolic-analysis
+    // overhead (~the dominant cost for the 10k-node nMOS Gummel loop).
+    bool reuse = (petsc_n_ == N && petsc_A_ != nullptr && petsc_ksp_ != nullptr);
+    if (getenv("TCAD_PETSC_DEBUG")) { static long long cc=0; ++cc; if(cc<=8) std::cerr << "[petsc n=" << N << " reuse=" << reuse << "]\n"; }
+    auto fill_matrix = [&]() {
+        for (size_t i = 0; i < n; ++i) {
+            PetscInt row = static_cast<PetscInt>(i);
+            PetscInt ncols = static_cast<PetscInt>(row_ptr[i + 1] - row_ptr[i]);
+            if (ncols == 0) continue;
+            std::vector<PetscInt> cols;
+            std::vector<PetscScalar> vals;
+            cols.reserve(ncols); vals.reserve(ncols);
+            for (size_t j = row_ptr[i]; j < row_ptr[i + 1]; ++j) {
+                cols.push_back(static_cast<PetscInt>(col_idx[j]));
+                vals.push_back(static_cast<PetscScalar>(values[j]));
+            }
+            MatSetValues(petsc_A_, 1, &row, ncols, cols.data(), vals.data(), INSERT_VALUES);
         }
-        MatSetValues(petsc_A, 1, &row, ncols, cols.data(), vals.data(), INSERT_VALUES);
-    }
-    MatAssemblyBegin(petsc_A, MAT_FINAL_ASSEMBLY);
-    MatAssemblyEnd(petsc_A, MAT_FINAL_ASSEMBLY);
+        MatAssemblyBegin(petsc_A_, MAT_FINAL_ASSEMBLY);
+        MatAssemblyEnd(petsc_A_, MAT_FINAL_ASSEMBLY);
+    };
 
-    VecCreateSeq(PETSC_COMM_SELF, static_cast<PetscInt>(n), &petsc_b);
-    VecCreateSeq(PETSC_COMM_SELF, static_cast<PetscInt>(n), &petsc_x);
-
-    PetscScalar* b_arr;
-    VecGetArray(petsc_b, &b_arr);
-    for (size_t i = 0; i < n; ++i) {
-        b_arr[i] = static_cast<PetscScalar>(b[i]);
-    }
-    VecRestoreArray(petsc_b, &b_arr);
-
-    // Set initial guess
-    PetscScalar* x_arr;
-    VecGetArray(petsc_x, &x_arr);
-    for (size_t i = 0; i < n; ++i) {
-        x_arr[i] = static_cast<PetscScalar>(x[i]);
-    }
-    VecRestoreArray(petsc_x, &x_arr);
-
-    KSPCreate(PETSC_COMM_SELF, &ksp);
-    KSPSetOperators(ksp, petsc_A, petsc_A);
-    KSPSetTolerances(ksp, static_cast<PetscReal>(opt_.tol), PETSC_DEFAULT,
-                     PETSC_DEFAULT, static_cast<PetscInt>(opt_.max_iter));
-
-    KSPGetPC(ksp, &pc);
-
-    // For moderate-sized systems (< 50k nodes), use direct LU via PETSc
-    // for guaranteed robustness.  For larger systems, iterative solvers
-    // can be selected via -ksp_type / -pc_type command-line options.
-    if (n < 50000) {
-        KSPSetType(ksp, KSPPREONLY);
-        PCSetType(pc, PCLU);
+    if (!reuse) {
+        petsc_free();
+        const PetscInt nz_row = (PetscInt)std::min<size_t>(30, n);
+        MatCreateSeqAIJ(PETSC_COMM_SELF, N, N, nz_row, nullptr, &petsc_A_);
+        fill_matrix();
+        // Lock the nonzero pattern so SuperLU reuses the symbolic factorization
+        // on subsequent calls (only the numeric factorization is redone).
+        MatSetOption(petsc_A_, MAT_NEW_NONZERO_LOCATIONS, PETSC_FALSE);
+        VecCreateSeq(PETSC_COMM_SELF, N, &petsc_b_);
+        VecCreateSeq(PETSC_COMM_SELF, N, &petsc_x_);
+        KSPCreate(PETSC_COMM_SELF, &petsc_ksp_);
+        KSPSetOperators(petsc_ksp_, petsc_A_, petsc_A_);
+        KSPSetTolerances(petsc_ksp_, static_cast<PetscReal>(opt_.tol), PETSC_DEFAULT,
+                         PETSC_DEFAULT, static_cast<PetscInt>(opt_.max_iter));
+        PC pc;
+        KSPGetPC(petsc_ksp_, &pc);
+        if (n < 80000) {
+            KSPSetType(petsc_ksp_, KSPPREONLY);
+            PCSetType(pc, PCLU);
+            PCFactorSetMatSolverType(pc, MATSOLVERSUPERLU);
+        } else {
+            KSPSetType(petsc_ksp_, KSPBCGS);
+            PCSetType(pc, PCGAMG);
+        }
+        KSPSetFromOptions(petsc_ksp_);
+        petsc_n_ = N;
     } else {
-        KSPSetType(ksp, KSPBCGS);
-        PCSetType(pc, PCILU);
+        // Same size/pattern: update values in place and reuse the cached KSP
+        // (SuperLU numeric refactor only; symbolic reused).
+        MatSetOption(petsc_A_, MAT_NEW_NONZERO_LOCATIONS, PETSC_FALSE);
+        fill_matrix();
     }
 
-    // Allow command-line override (e.g., -ksp_type cg -pc_type hypre)
-    KSPSetFromOptions(ksp);
+    // RHS
+    PetscScalar* b_arr;
+    VecGetArray(petsc_b_, &b_arr);
+    for (size_t i = 0; i < n; ++i) b_arr[i] = static_cast<PetscScalar>(b[i]);
+    VecRestoreArray(petsc_b_, &b_arr);
+    // Initial guess
+    PetscScalar* x_arr;
+    VecGetArray(petsc_x_, &x_arr);
+    for (size_t i = 0; i < n; ++i) x_arr[i] = static_cast<PetscScalar>(x[i]);
+    VecRestoreArray(petsc_x_, &x_arr);
 
-    KSPSolve(ksp, petsc_b, petsc_x);
+    KSPSolve(petsc_ksp_, petsc_b_, petsc_x_);
+
+    KSPConvergedReason reason;
+    KSPGetConvergedReason(petsc_ksp_, &reason);
+    if (reason < 0) {
+        std::cerr << "PETSc KSP failed (reason " << static_cast<int>(reason)
+                  << "): " << KSPConvergedReasons[reason] << std::endl;
+        throw std::runtime_error("PETSc linear solve failed");
+    }
 
     PetscInt its;
-    KSPGetIterationNumber(ksp, &its);
+    KSPGetIterationNumber(petsc_ksp_, &its);
 
-    VecGetArray(petsc_x, &x_arr);
-    for (size_t i = 0; i < n; ++i) {
-        x[i] = static_cast<real_t>(x_arr[i]);
-    }
-    VecRestoreArray(petsc_x, &x_arr);
+    VecGetArray(petsc_x_, &x_arr);
+    for (size_t i = 0; i < n; ++i) x[i] = static_cast<real_t>(x_arr[i]);
+    VecRestoreArray(petsc_x_, &x_arr);
 
-    KSPDestroy(&ksp);
-    VecDestroy(&petsc_b);
-    VecDestroy(&petsc_x);
-    MatDestroy(&petsc_A);
-
+    // NOTE: no KSPDestroy/MatDestroy here — objects are cached for reuse.
     return static_cast<size_t>(its);
 }
 #endif

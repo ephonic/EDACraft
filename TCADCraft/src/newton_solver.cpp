@@ -1,5 +1,6 @@
 #include "newton_solver.h"
 #include "statistics.h"
+#include "density_gradient.h"
 #include <iostream>
 #include <cstdio>
 #include <cmath>
@@ -165,12 +166,12 @@ real_t NewtonSolver::compute_ii_at(const real_t* phi, const real_t* n,
         G += (an * abs_q(Jn) + ap * abs_q(Jp)) / QE;
     };
 
-    if (i + 1 < g_.nx) edge(idx + 1, g_.dx);
-    if (i > 0)         edge(idx - 1, g_.dx);
-    if (j + 1 < g_.ny) edge(idx + g_.nx, g_.dy);
-    if (j > 0)         edge(idx - g_.nx, g_.dy);
-    if (k + 1 < g_.nz) edge(idx + g_.nx * g_.ny, g_.dz);
-    if (k > 0)         edge(idx - g_.nx * g_.ny, g_.dz);
+    if (i + 1 < g_.nx) edge(idx + 1, g_.dx_edge(i));
+    if (i > 0)         edge(idx - 1, g_.dx_edge(i-1 > 0 ? i-1 : 0));
+    if (j + 1 < g_.ny) edge(idx + g_.nx, g_.dy_edge(j));
+    if (j > 0)         edge(idx - g_.nx, g_.dy_edge(j-1 > 0 ? j-1 : 0));
+    if (k + 1 < g_.nz) edge(idx + g_.nx * g_.ny, g_.dz_edge(k));
+    if (k > 0)         edge(idx - g_.nx * g_.ny, g_.dz_edge(k-1 > 0 ? k-1 : 0));
     return G;
 }
 
@@ -243,7 +244,38 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
         ni[i] = intrinsic_density(Eg_[i], opt_.temperature, Nc_[i], Nv_[i], opt_.statistics_type);
     }
 
-    // --- Poisson residual ---
+    // --- DG quantum potential (lagged: computed from current n,p) ---
+    // Qn modifies the Poisson charge (n → n*exp(Qn/VT)) and the continuity
+    // SG potential (φ → φ+Qn).  The Jacobian treats Qn as constant (lagged),
+    // which adds a few Newton iterations but avoids the 5-equation block.
+    std::vector<real_t> Qn_dg, Qp_dg;
+    std::vector<real_t> n_dg(N), p_dg(N);  // DG-corrected densities for Poisson
+    if (opt_.enable_quantum && !semi_mask_.empty()) {
+        DensityGradient dg_tmp(g_);
+        dg_tmp.set_semiconductor_mask(semi_mask_);
+        dg_tmp.set_thermal_voltage(VT_);
+        dg_tmp.quantum_potential(
+            std::vector<real_t>(n, n + N),
+            std::vector<real_t>(p, p + N),
+            Qn_dg, Qp_dg);
+        for (size_t i = 0; i < N; ++i) {
+            real_t arg_n = Qn_dg[i] / VT_;
+            if (arg_n > 4.0Q) arg_n = 4.0Q;
+            if (arg_n < -4.0Q) arg_n = -4.0Q;
+            real_t arg_p = Qp_dg[i] / VT_;
+            if (arg_p > 4.0Q) arg_p = 4.0Q;
+            if (arg_p < -4.0Q) arg_p = -4.0Q;
+            n_dg[i] = n[i] * exp_q(arg_n);
+            p_dg[i] = p[i] * exp_q(arg_p);
+        }
+    } else {
+        n_dg.assign(n, n + N);
+        p_dg.assign(p, p + N);
+        Qn_dg.assign(N, 0.0Q);
+        Qp_dg.assign(N, 0.0Q);
+    }
+
+    // --- Poisson residual ---  Uses DG-corrected charge n_dg, p_dg
     for (size_t k = 0; k < g_.nz; ++k) {
         for (size_t j = 0; j < g_.ny; ++j) {
             for (size_t i = 0; i < g_.nx; ++i) {
@@ -267,13 +299,13 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     center += c;
                     sum += c * phi[nbr];
                 };
-                if (i + 1 < g_.nx) add_link(idx + 1, g_.dx);
-                if (i > 0)        add_link(idx - 1, g_.dx);
-                if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy);
-                if (j > 0)        add_link(idx - g_.nx, g_.dy);
-                if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz);
-                if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz);
-                real_t rhs_poisson = sum - center * phi[idx] + QE * (p[idx] - n[idx] + Nd_minus_Na_[idx]);
+                if (i + 1 < g_.nx) add_link(idx + 1, g_.dx_edge(i));
+                if (i > 0)        add_link(idx - 1, g_.dx_edge(i-1));
+                if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy_edge(j));
+                if (j > 0)        add_link(idx - g_.nx, g_.dy_edge(j-1));
+                if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k));
+                if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz_edge(k-1));
+                real_t rhs_poisson = sum - center * phi[idx] + QE * (p_dg[idx] - n_dg[idx] + Nd_minus_Na_[idx]);
                 // Ferroelectric bound charge: -div(P), mirroring
                 // PoissonSolver::assemble (poisson_solver.cpp:187-199).  This
                 // was previously MISSING from the Newton path, so any solve
@@ -357,24 +389,30 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     continue;
                 }
                 real_t center = 0.0Q, flux_sum = 0.0Q;
-                auto add_link = [&](size_t nbr, real_t dx) {
+                const real_t w_y = g_.dx_cell(i) / g_.dy_cell(j);
+                const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                auto add_link = [&](size_t nbr, real_t dx, real_t w) {
                     if (mu_n_[nbr] < EPSILON) return (real_t)0.0;
-                    real_t dphi = phi[nbr] - phi[idx];
+                    real_t dphi = (phi[nbr] + Qn_dg[nbr]) - (phi[idx] + Qn_dg[idx]);
                     real_t B_minus = bernoulli(-dphi / VT_);
                     real_t B_plus = bernoulli(dphi / VT_);
-                    real_t D = mu_n_[idx] * VT_ / dx;
+                    // Edge mobility: HARMONIC mean (current conservation fix,
+                    // see gummel_solver.cpp electron block comment).
+                    real_t mu_e = 2.0Q * mu_n_[idx] * mu_n_[nbr] / (mu_n_[idx] + mu_n_[nbr] + 1e-30Q);
+                    // Face-area weighting (see gummel_solver.cpp comment).
+                    real_t D = w * mu_e * VT_ / dx;
                     real_t a_ii = D * B_minus;
                     real_t a_ij = -D * B_plus;
                     center += a_ii;
                     flux_sum += a_ij * n[nbr];
                     return a_ii;
                 };
-                if (i + 1 < g_.nx) add_link(idx + 1, g_.dx);
-                if (i > 0)        add_link(idx - 1, g_.dx);
-                if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy);
-                if (j > 0)        add_link(idx - g_.nx, g_.dy);
-                if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz);
-                if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz);
+                if (i + 1 < g_.nx) add_link(idx + 1, g_.dx, 1.0Q);
+                if (i > 0)        add_link(idx - 1, g_.dx, 1.0Q);
+                if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy, w_y);
+                if (j > 0)        add_link(idx - g_.nx, g_.dy, w_y);
+                if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k), w_z);
+                if (k > 0)        add_link(idx - g_.nx * g_.ny, (k > 0 ? g_.dz_edge(k-1) : g_.dz), w_z);
                 real_t R = 0.0Q, dRdn, dRdp;
                 compute_srh_and_derivs(idx, n[idx], p[idx], ni[idx], R, dRdn, dRdp);
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
@@ -427,24 +465,28 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     continue;
                 }
                 real_t center = 0.0Q, flux_sum = 0.0Q;
-                auto add_link = [&](size_t nbr, real_t dx) {
+                const real_t w_y = g_.dx_cell(i) / g_.dy_cell(j);
+                const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                auto add_link = [&](size_t nbr, real_t dx, real_t w) {
                     if (mu_p_[nbr] < EPSILON) return (real_t)0.0;
-                    real_t dphi = phi[nbr] - phi[idx];
+                    real_t dphi = (phi[nbr] - Qp_dg[nbr]) - (phi[idx] - Qp_dg[idx]);
                     real_t B_plus = bernoulli(dphi / VT_);
                     real_t B_minus = bernoulli(-dphi / VT_);
-                    real_t D = mu_p_[idx] * VT_ / dx;
+                    // Edge mobility: HARMONIC mean (current conservation fix).
+                    real_t mu_e = 2.0Q * mu_p_[idx] * mu_p_[nbr] / (mu_p_[idx] + mu_p_[nbr] + 1e-30Q);
+                    real_t D = w * mu_e * VT_ / dx;
                     real_t a_ii = D * B_plus;
                     real_t a_ij = -D * B_minus;
                     center += a_ii;
                     flux_sum += a_ij * p[nbr];
                     return a_ii;
                 };
-                if (i + 1 < g_.nx) add_link(idx + 1, g_.dx);
-                if (i > 0)        add_link(idx - 1, g_.dx);
-                if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy);
-                if (j > 0)        add_link(idx - g_.nx, g_.dy);
-                if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz);
-                if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz);
+                if (i + 1 < g_.nx) add_link(idx + 1, g_.dx, 1.0Q);
+                if (i > 0)        add_link(idx - 1, g_.dx, 1.0Q);
+                if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy, w_y);
+                if (j > 0)        add_link(idx - g_.nx, g_.dy, w_y);
+                if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k), w_z);
+                if (k > 0)        add_link(idx - g_.nx * g_.ny, (k > 0 ? g_.dz_edge(k-1) : g_.dz), w_z);
                 real_t R = 0.0Q, dRdn, dRdp;
                 compute_srh_and_derivs(idx, n[idx], p[idx], ni[idx], R, dRdn, dRdp);
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
@@ -523,8 +565,8 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                     if (i > 0)        add_link(idx - 1, g_.dx);
                     if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy);
                     if (j > 0)        add_link(idx - g_.nx, g_.dy);
-                    if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz);
-                    if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz);
+                    if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k));
+                    if (k > 0)        add_link(idx - g_.nx * g_.ny, (k > 0 ? g_.dz_edge(k-1) : g_.dz));
                     J.add_entry(i_phi, i_phi, -center);
                     // Poisson<>carrier coupling.  Chain rule in log-space:
                     // dF/du = dF/dn * n, dF/dv = dF/dp * p.  See audit §18.
@@ -552,13 +594,17 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                     real_t sp = opt_.use_log_space ? p[idx] : 1.0Q;
                     real_t center = 0.0Q;
                     real_t dF_dphi_i = 0.0Q;
-                    auto add_link = [&](size_t nbr, real_t dx) {
+                    const real_t w_y = g_.dx / g_.dy;
+                    const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                    auto add_link = [&](size_t nbr, real_t dx, real_t w) {
                         if (mu_n_[nbr] < EPSILON) return (real_t)0.0;
                         real_t dphi = phi[nbr] - phi[idx];
                         real_t x_val = dphi / VT_;
                         real_t B_minus = bernoulli(-x_val);
                         real_t B_plus = bernoulli(x_val);
-                        real_t D = mu_n_[idx] * VT_ / dx;
+                        // Edge mobility: HARMONIC mean (matches residual).
+                        real_t mu_e = 2.0Q * mu_n_[idx] * mu_n_[nbr] / (mu_n_[idx] + mu_n_[nbr] + 1e-30Q);
+                        real_t D = w * mu_e * VT_ / dx;
                         real_t a_ii = D * B_minus;
                         real_t a_ij = -D * B_plus;
                         center += a_ii;
@@ -574,12 +620,12 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                         J.add_entry(i_n, phi_idx(nbr), dflux_dphi_j);
                         return a_ii;
                     };
-                    if (i + 1 < g_.nx) add_link(idx + 1, g_.dx);
-                    if (i > 0)        add_link(idx - 1, g_.dx);
-                    if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy);
-                    if (j > 0)        add_link(idx - g_.nx, g_.dy);
-                    if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz);
-                    if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz);
+                    if (i + 1 < g_.nx) add_link(idx + 1, g_.dx, 1.0Q);
+                    if (i > 0)        add_link(idx - 1, g_.dx, 1.0Q);
+                    if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy, w_y);
+                    if (j > 0)        add_link(idx - g_.nx, g_.dy, w_y);
+                    if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k), w_z);
+                    if (k > 0)        add_link(idx - g_.nx * g_.ny, (k > 0 ? g_.dz_edge(k-1) : g_.dz), w_z);
                     // Self carrier column scaled by sn; phi column unscaled.
                     J.add_entry(i_n, i_n, center * sn);
                     J.add_entry(i_n, i_phi, dF_dphi_i);
@@ -608,13 +654,17 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                     real_t sp = opt_.use_log_space ? p[idx] : 1.0Q;
                     real_t center = 0.0Q;
                     real_t dF_dphi_i = 0.0Q;
-                    auto add_link = [&](size_t nbr, real_t dx) {
+                    const real_t w_y = g_.dx / g_.dy;
+                    const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                    auto add_link = [&](size_t nbr, real_t dx, real_t w) {
                         if (mu_p_[nbr] < EPSILON) return (real_t)0.0;
                         real_t dphi = phi[nbr] - phi[idx];
                         real_t x_val = dphi / VT_;
                         real_t B_plus = bernoulli(x_val);
                         real_t B_minus = bernoulli(-x_val);
-                        real_t D = mu_p_[idx] * VT_ / dx;
+                        // Edge mobility: HARMONIC mean (matches residual).
+                        real_t mu_e = 2.0Q * mu_p_[idx] * mu_p_[nbr] / (mu_p_[idx] + mu_p_[nbr] + 1e-30Q);
+                        real_t D = w * mu_e * VT_ / dx;
                         real_t a_ii = D * B_plus;
                         real_t a_ij = -D * B_minus;
                         center += a_ii;
@@ -629,12 +679,12 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                         J.add_entry(i_p, phi_idx(nbr), dflux_dphi_j);
                         return a_ii;
                     };
-                    if (i + 1 < g_.nx) add_link(idx + 1, g_.dx);
-                    if (i > 0)        add_link(idx - 1, g_.dx);
-                    if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy);
-                    if (j > 0)        add_link(idx - g_.nx, g_.dy);
-                    if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz);
-                    if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz);
+                    if (i + 1 < g_.nx) add_link(idx + 1, g_.dx, 1.0Q);
+                    if (i > 0)        add_link(idx - 1, g_.dx, 1.0Q);
+                    if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy, w_y);
+                    if (j > 0)        add_link(idx - g_.nx, g_.dy, w_y);
+                    if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k), w_z);
+                    if (k > 0)        add_link(idx - g_.nx * g_.ny, (k > 0 ? g_.dz_edge(k-1) : g_.dz), w_z);
                     J.add_entry(i_p, i_p, center * sp);
                     J.add_entry(i_p, i_phi, dF_dphi_i);
                     real_t R, dRdn, dRdp;
@@ -717,49 +767,34 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
 
         assemble_jacobian(x, J);
 
-        // Row-equilibration (transient only): scale each Jacobian row (and
-        // the corresponding RHS entry) by the inverse of its diagonal
-        // magnitude.  The BE +dx/dt diagonal guarantees a nonzero scale on
-        // every row; in DC some depleted-region continuity rows have
-        // near-zero diagonals, where 1/diag equilibration explodes the
-        // scaled residual (observed: |F_eq| ~ 1e29 on a plain PN junction).
-        // The Newton step dx is invariant under row scaling, so this changes
-        // only conditioning, not the solution.
-        if (opt_.transient_enabled) {
+        // Per-BLOCK residual norms and per-block solution scales are computed
+        // on the RAW residual below (convergence criteria keep original units).
+        std::vector<real_t> F_raw(F);
+
+        // Row-equilibration: scale each Jacobian row by 1/max_entry.
+        // Preserves cross-block coupling (unlike sqrt(|diag|) which stalls).
+        {
             const auto& rp = J.row_offsets();
             const auto& cols = J.col_indices();
             auto& vals = J.vals_mut();
             eq_scale.assign(3 * N, 1.0Q);
             for (size_t i = 0; i < 3 * N; ++i) {
-                real_t diag = 0.0Q;
-                for (size_t k = rp[i]; k < rp[i + 1]; ++k) {
-                    if (cols[k] == i) { diag = vals[k]; break; }
-                }
-                if (abs_q(diag) < EPSILON) continue;
-                real_t inv = 1.0Q / diag;
+                real_t mx = 0.0Q;
+                for (size_t k = rp[i]; k < rp[i + 1]; ++k)
+                    mx = std::max(mx, abs_q(vals[k]));
+                real_t inv = (mx > EPSILON) ? 1.0Q / mx : 1.0Q;
                 eq_scale[i] = inv;
-                for (size_t k = rp[i]; k < rp[i + 1]; ++k) {
+                for (size_t k = rp[i]; k < rp[i + 1]; ++k)
                     vals[k] *= inv;
-                }
                 F[i] *= inv;
             }
         }
 
-        // Convergence metric.  For transient problems we use the EQUILIBRATED
-        // residual L∞ norm (F has been row-scaled above): the equilibrated L2
-        // norm can GROW when a full Newton step reduces the dominant (max)
-        // residual while slightly growing several small ones, causing a
-        // premature stall; the L∞ norm tracks the single worst node, so if it
-        // drops the step is genuinely downhill.  For non-transient (DC) problems
-        // F is untouched and we keep the L2 norm (the original behaviour).
-        // See audit §17.
-        real_t norm_F;
-        if (opt_.transient_enabled) {
-            norm_F = 0.0Q;
-            for (size_t i = 0; i < 3 * N; ++i) norm_F = std::max(norm_F, abs_q(F[i]));
-        } else {
-            norm_F = norm_l2(F);
-        }
+        // Merit function: equilibrated L-inf for ALL problems (2026-08): the
+        // worst scaled row, so a step is judged on every row's merit instead
+        // of being dominated by the largest-magnitude rows.
+        real_t norm_F = 0.0Q;
+        for (size_t i = 0; i < 3 * N; ++i) norm_F = std::max(norm_F, abs_q(F[i]));
         if (norm_F0 < 0.0Q) norm_F0 = (norm_F > EPSILON) ? norm_F : 1.0Q;
         // Per-BLOCK residual norms and per-block solution scales (issues0719
         // P0-3).  A single GLOBAL convergence test lets the largest-scale
@@ -769,16 +804,12 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
         // p) to satisfy a criterion measured against ITS OWN scale.
         real_t blk[3] = {0.0Q, 0.0Q, 0.0Q};
         real_t xsc[3] = {0.0Q, 0.0Q, 0.0Q};
-        if (opt_.transient_enabled) {
+        // Computed on the RAW residual (F_raw) so the convergence criteria
+        // keep their original units regardless of row equilibration.
+        {
             for (size_t i = 0; i < 3 * N; ++i) {
                 size_t b = (i < N) ? 0 : ((i < 2 * N) ? 1 : 2);
-                blk[b] = std::max(blk[b], abs_q(F[i]));
-                xsc[b] = std::max(xsc[b], abs_q(x[i]));
-            }
-        } else {
-            for (size_t i = 0; i < 3 * N; ++i) {
-                size_t b = (i < N) ? 0 : ((i < 2 * N) ? 1 : 2);
-                blk[b] += F[i] * F[i];
+                blk[b] += F_raw[i] * F_raw[i];
                 xsc[b] = std::max(xsc[b], abs_q(x[i]));
             }
             for (int b = 0; b < 3; ++b) blk[b] = sqrt_q(blk[b]);
@@ -900,22 +931,11 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
                 std::vector<real_t> F_try(3 * N);
                 assemble_residual(x_try, F_try);
                 // Apply the SAME row-equilibration as the baseline so the
-                // trial norm is comparable to norm_F.  Without this the raw
-                // ||F_try|| is dominated by the largest-magnitude node and a
-                // step that reduces a big residual while growing a small one
-                // is wrongly rejected (stall).  See audit §17.
-                if (opt_.transient_enabled) {
-                    for (size_t i = 0; i < 3 * N; ++i) F_try[i] *= eq_scale[i];
-                }
-                // Merit function: L∞ (max |F|) for transient (equilibrated),
-                // L2 for non-transient (raw, original behaviour).  See §17.
-                real_t norm_try;
-                if (opt_.transient_enabled) {
-                    norm_try = 0.0Q;
-                    for (size_t i = 0; i < 3 * N; ++i) norm_try = std::max(norm_try, abs_q(F_try[i]));
-                } else {
-                    norm_try = norm_l2(F_try);
-                }
+                // trial norm is comparable to norm_F (2026-08: now always on).
+                for (size_t i = 0; i < 3 * N; ++i) F_try[i] *= eq_scale[i];
+                // Merit function: equilibrated L-inf for ALL problems.
+                real_t norm_try = 0.0Q;
+                for (size_t i = 0; i < 3 * N; ++i) norm_try = std::max(norm_try, abs_q(F_try[i]));
                 if (norm_try < best_norm) {
                     best_norm = norm_try;
                     best_alpha = alpha;

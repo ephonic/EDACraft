@@ -131,6 +131,7 @@ public:
     void set_trap_charge(const std::vector<char>& trap_mask,
                          real_t D_it, real_t E_t,
                          const std::vector<real_t>& Q_ot);
+    void set_semiconductor_mask(const std::vector<char>& mask) { semi_mask_ = mask; }
 
     bool solve(std::vector<real_t>& phi,
                std::vector<real_t>& n,
@@ -188,6 +189,9 @@ private:
     real_t trap_D_it_ = 0.0Q;
     real_t trap_E_t_ = 0.0Q;
     std::vector<real_t> Q_ot_;
+
+    // DG semiconductor mask (1=semi, 0=oxide). Empty = no DG.
+    std::vector<char> semi_mask_;
 
     std::vector<real_t> residuals_;
 

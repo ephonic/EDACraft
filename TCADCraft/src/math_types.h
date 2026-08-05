@@ -13,8 +13,12 @@
     #define TCAD_HAS_FLOAT128_TYPE 1
 #endif
 #if defined(__SIZEOF_FLOAT128__) || defined(TCAD_HAS_FLOAT128_TYPE)
-    #define TCAD_USE_FLOAT128
-    #include <quadmath.h>
+    // Define TCAD_FORCE_LONG_DOUBLE to build the fast 80-bit variant
+    // (hardware x87 FPU; ~5-20x faster than software __float128).
+    #ifndef TCAD_FORCE_LONG_DOUBLE
+        #define TCAD_USE_FLOAT128
+        #include <quadmath.h>
+    #endif
 #endif
 
 namespace tcad {

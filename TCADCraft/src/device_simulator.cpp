@@ -201,6 +201,15 @@ void DeviceSimulator::set_ii_params(real_t A_n, real_t B_n, real_t A_p, real_t B
     ii_B_p_ = B_p;
 }
 
+void DeviceSimulator::set_auger_enabled(bool enable) {
+    auger_enabled_ = enable;
+}
+
+void DeviceSimulator::set_auger_params(real_t Cn, real_t Cp) {
+    auger_Cn_ = Cn;
+    auger_Cp_ = Cp;
+}
+
 void DeviceSimulator::set_breakdown_enabled(bool enable) {
     bd_enabled_ = enable;
 }
@@ -452,6 +461,10 @@ SimulationResult DeviceSimulator::solve() {
     opt.ii.B_n = ii_B_n_;
     opt.ii.A_p = ii_A_p_;
     opt.ii.B_p = ii_B_p_;
+    // Auger recombination
+    opt.auger.enabled = auger_enabled_;
+    opt.auger.Cn = auger_Cn_;
+    opt.auger.Cp = auger_Cp_;
     // Ferroelectric parameters
     opt.ferro.enabled = fe_enabled_;
     opt.ferro.fe_mask = fe_mask_;
@@ -494,7 +507,7 @@ SimulationResult DeviceSimulator::solve() {
         // initial guess.  Normal contracting warm-up progress is never
         // interrupted.  (issues0719 P0-3 follow-up.)
         GummelOptions warm_opt = opt;
-        warm_opt.exit_on_limit_cycle = true;
+        warm_opt.exit_on_limit_cycle = false;  // run to full convergence (cycle-mean average gives wrong edge currents)
         gummel_ = GummelSolver(g_, warm_opt);
         gummel_.set_mobility(mu_n_eff, mu_p_eff);
         gummel_.set_doping(Nd_minus_Na_);
@@ -532,7 +545,14 @@ SimulationResult DeviceSimulator::solve() {
             gummel_.set_interface_traps(trap_mask_, trap_D_it_, trap_E_t_);
         }
         if (!Q_ot_.empty()) gummel_.set_oxide_traps(Q_ot_);
-        bool gummel_ok = gummel_.solve(res.phi, res.n, res.p);
+        // Newton-primary mode: skip Gummel warm-up entirely, go to Newton
+        // directly from the initial guess.  Needed for lightly-doped 3D
+        // devices (e.g. DG FinFET) where Gummel converges to the "off"
+        // state but the physical solution is "on" (S/D injection fills body).
+        bool gummel_ok = true;
+        if (!newton_primary_) {
+            gummel_ok = gummel_.solve(res.phi, res.n, res.p);
+        }
         if (fe_enabled_) {
             fe_polarization_ = gummel_.fe_polarization();
             if (fe_model_ == 1) fe_play_state_ = gummel_.fe_play_state();
@@ -555,7 +575,7 @@ SimulationResult DeviceSimulator::solve() {
             nopt.max_iter = max_iter_;
             nopt.tol = (double)tol_;
             nopt.abs_tol = 1e-20Q;
-            nopt.verbose = false;
+            nopt.verbose = (getenv("TCAD_NEWTON_VERBOSE") != nullptr);
             nopt.damping = newton_damping_;
             nopt.min_damping = newton_min_damping_;
             nopt.use_line_search = newton_use_line_search_;
@@ -564,6 +584,7 @@ SimulationResult DeviceSimulator::solve() {
             nopt.use_log_space = newton_use_log_space_;
             nopt.jacobian_reuse_threshold = newton_jacobian_reuse_threshold_;
             nopt.enable_btbt = btbt_enabled_;
+            nopt.enable_quantum = quantum_enabled_;
             nopt.btbt_A = btbt_A_;
             nopt.btbt_B = btbt_B_;
             nopt.btbt_D = btbt_D_;
@@ -574,7 +595,15 @@ SimulationResult DeviceSimulator::solve() {
             nopt.ii_B_p = ii_B_p_;
             nopt.temperature = temperature_;
             nopt.statistics_type = statistics_type_;
+#ifdef TCAD_USE_PETSC
             nopt.linear_solver = (N > 2000) ? SolverType::PETSC : SolverType::DENSE_DIRECT;
+#else
+            // Without PETSc, requesting it silently no-ops the linear solve
+            // (universal Newton stall on >2000-node problems).  Fall back to
+            // GMRES (more robust than BiCGStab on the ill-conditioned Newton
+            // Jacobian, where BiCGStab stagnates and silently returns garbage).
+            nopt.linear_solver = (N > 2000) ? SolverType::GMRES : SolverType::DENSE_DIRECT;
+#endif
             // C档: Newton freeze flags (isolated-continuity MMS).
             nopt.freeze_phi = newton_freeze_phi_;
             nopt.freeze_n = newton_freeze_n_;
@@ -602,12 +631,42 @@ SimulationResult DeviceSimulator::solve() {
             if (!trap_mask_.empty()) {
                 newton_.set_trap_charge(trap_mask_, trap_D_it_, trap_E_t_, Q_ot_);
             }
-            // Skip the Newton polish when the warm-up already converged:
-            // the state is earned, and a stalled Newton's write-back could
-            // only degrade it (observed: Newton stalls even on a Gummel-
-            // converged equilibrium — the Jacobian/residual inconsistency of
-            // fix0719_report.md open issue #2).
-            bool newton_ok = gummel_ok ? true : newton_.solve(res.phi, res.n, res.p);
+            // DG semiconductor mask for Newton (same as Gummel)
+            if (quantum_enabled_ && !mu_n_eff.empty()) {
+                std::vector<char> semi(N, 0);
+                for (size_t i = 0; i < N; ++i)
+                    semi[i] = (mu_n_eff[i] > 1e-30Q || mu_p_eff[i] > 1e-30Q) ? 1 : 0;
+                newton_.set_semiconductor_mask(semi);
+            }
+            // ALWAYS attempt the Newton polish (2026-08 follow-up): the
+            // Gummel warm-up's update-norm criterion does NOT imply a small
+            // true coupled residual — at high injection a Gummel-"converged"
+            // state can violate current continuity (div J >> qR), corrupting
+            // terminal currents (KCL imbalance observed in the NPN BJT).
+            // The Newton fixed point enforces the true residual.  To avoid
+            // the regression warned about in fix0719 (a stalled Newton's
+            // write-back degrading an earned Gummel state), the warm-up
+            // state is saved and restored when the polish fails.
+            // Newton polish ONLY when the Gummel warm-up did not converge (limit
+            // cycle / high injection).  When Gummel converged, the state already
+            // satisfies the update-norm criterion and a Newton polish just stalls
+            // (line search makes no progress) then rolls back — pure waste
+            // (~20s/solve on the 10k-node nMOS).  High-injection cases where
+            // Gummel "converges" but violates continuity instead hit a Gummel
+            // limit cycle (gummel_ok=false) and so still get the Newton rescue.
+            std::vector<real_t> phi_w = res.phi, n_w = res.n, p_w = res.p;
+            bool newton_ok = false;
+            // Run Newton when Gummel didn't converge OR newton_primary mode.
+            if (!gummel_ok || newton_primary_) {
+                newton_ok = newton_.solve(res.phi, res.n, res.p);
+                if (newton_ok) {
+                    gummel_.recompute_poisson(res.phi, res.n, res.p);
+                }
+                if (!newton_ok) {
+                    // Roll back: keep the earned Gummel (limit-cycle) state.
+                    res.phi = phi_w; res.n = n_w; res.p = p_w;
+                }
+            }
             // Newton path (P0-3): no phi freezing applies; score the final
             // state against the Gummel Poisson operator (one re-assembly,
             // cheap) instead of the warm-up residual.
@@ -679,6 +738,33 @@ SimulationResult DeviceSimulator::solve() {
         res.poisson_residual = gummel_.poisson_residual_final();
         res.phi_frozen = gummel_.phi_was_frozen();
         res.iterations = gummel_.poisson_residuals().size();
+    }
+
+    // --- Convergence robustness: physical clamp on the returned state. ---
+    // A diverged Gummel warm-up can leave non-finite / extreme carrier values
+    // that produce garbage edge currents (1e10+ A/m^2) and corrupt downstream
+    // IV comparison.  Clamp n, p (and phi) to physical bounds so that even a
+    // non-converged point yields a usable, finite current instead of NaN/inf.
+    // `!(x > lo)` is false for NaN, so NaN is replaced too.  Converged Si
+    // solutions live in n,p ~ [1e10, 1e27] m^-3 and phi ~ [-5, 5] V, so the
+    // generous bounds below never touch a legitimate solution.
+    {
+        const real_t CARR_FLOOR = 1e6Q;    // m^-3  (1 cm^-3)
+        const real_t CARR_CEIL  = 1e28Q;   // m^-3  (1e22 cm^-3, above any doping)
+        const real_t PHI_CEIL   = 50.0Q;   // V
+        for (size_t i = 0; i < res.n.size(); ++i) {
+            real_t nv = res.n[i];
+            if (!(nv > CARR_FLOOR)) nv = CARR_FLOOR; else if (nv > CARR_CEIL) nv = CARR_CEIL;
+            res.n[i] = nv;
+            real_t pv = res.p[i];
+            if (!(pv > CARR_FLOOR)) pv = CARR_FLOOR; else if (pv > CARR_CEIL) pv = CARR_CEIL;
+            res.p[i] = pv;
+        }
+        for (size_t i = 0; i < res.phi.size(); ++i) {
+            real_t ph = res.phi[i];
+            if (!(ph > -PHI_CEIL)) ph = -PHI_CEIL; else if (ph > PHI_CEIL) ph = PHI_CEIL;
+            res.phi[i] = ph;
+        }
     }
 
     // DeviceSimulator's own poisson_ is used for post-processing (E-field)
@@ -757,9 +843,15 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
                                             const std::vector<real_t>& n,
                                             const std::vector<real_t>& p) {
     // Full-precision Scharfetter-Gummel edge fluxes from the converged state.
-    // Jn = (QE*Dn/d) * (n[i]*B(-dphi/VT) - n[j]*B(+dphi/VT))   [A/m^2]
+    // CONVENTIONAL current densities (so Jn + Jp = total current, positive in
+    // the +axis direction):
+    // Jn = (QE*Dn/d) * (n[j]*B(+dphi/VT) - n[i]*B(-dphi/VT))   [A/m^2]
     // Jp = (QE*Dp/d) * (p[i]*B(+dphi/VT) - p[j]*B(-dphi/VT))
     // where Dn = mu_n*VT, d = grid spacing, dphi = phi[j]-phi[i].
+    // NOTE: Jn must carry the opposite sign to the raw electron SG flux
+    // (conventional current vs electron particle flow); an earlier version
+    // stored Jn with the opposite sign, making Jn+Jp subtract the two
+    // physical components instead of adding them (verified against Sentaurus).
     // Computed in __float128 so the Bernoulli cancellation that destroys the
     // double-precision Python re-derivation (p~1e24, dphi~1e-15) is retained.
     // (Audit §20.)
@@ -780,31 +872,36 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
 
     auto fill_axis = [&](std::vector<real_t>& Jn_ax,
                          std::vector<real_t>& Jp_ax,
-                         real_t d, size_t stride,
+                         int axis, size_t stride,
                          size_t n0, size_t n1, size_t n2) {
-        // Iterate over nodes that HAVE a +neighbor along this axis.
         for (size_t k = 0; k < n2; ++k) {
             for (size_t j = 0; j < n1; ++j) {
                 for (size_t i = 0; i < n0; ++i) {
                     size_t idx = g_.index(i, j, k);
                     size_t nbr = idx + stride;
+                    // Per-edge spacing for non-uniform grid
+                    real_t d;
+                    if (axis == 0)      d = g_.dx_edge(i);
+                    else if (axis == 1) d = g_.dy_edge(j);
+                    else                d = g_.dz_edge(k);
                     real_t dphi = phi[nbr] - phi[idx];
                     real_t delta = dphi / VT_;
-                    real_t Bm = B(-delta);   // B(-dphi/VT)
-                    real_t Bp = B(delta);    // B(+dphi/VT)
-                    real_t Dn = mu_n_[idx] * VT_ / d;
-                    real_t Dp = mu_p_[idx] * VT_ / d;
-                    Jn_ax[idx] = QE * Dn * (n[idx] * Bm - n[nbr] * Bp);
+                    real_t Bm = B(-delta);
+                    real_t Bp = B(delta);
+                    real_t mu_ne = 2.0Q * mu_n_[idx] * mu_n_[nbr] / (mu_n_[idx] + mu_n_[nbr] + 1e-30Q);
+                    real_t mu_pe = 2.0Q * mu_p_[idx] * mu_p_[nbr] / (mu_p_[idx] + mu_p_[nbr] + 1e-30Q);
+                    real_t Dn = mu_ne * VT_ / d;
+                    real_t Dp = mu_pe * VT_ / d;
+                    Jn_ax[idx] = QE * Dn * (n[nbr] * Bp - n[idx] * Bm);
                     Jp_ax[idx] = QE * Dp * (p[idx] * Bp - p[nbr] * Bm);
                 }
             }
         }
     };
 
-    // +x neighbor exists when i < nx-1 (use upwind mobility mu_[idx])
-    fill_axis(res.Jn_x, res.Jp_x, g_.dx, 1,            g_.nx - 1, g_.ny,     g_.nz);
-    fill_axis(res.Jn_y, res.Jp_y, g_.dy, g_.nx,        g_.nx,     g_.ny - 1, g_.nz);
-    fill_axis(res.Jn_z, res.Jp_z, g_.dz, g_.nx * g_.ny, g_.nx,     g_.ny,     g_.nz - 1);
+    fill_axis(res.Jn_x, res.Jp_x, 0, 1,            g_.nx - 1, g_.ny,     g_.nz);
+    fill_axis(res.Jn_y, res.Jp_y, 1, g_.nx,        g_.nx,     g_.ny - 1, g_.nz);
+    fill_axis(res.Jn_z, res.Jp_z, 2, g_.nx * g_.ny, g_.nx,     g_.ny,     g_.nz - 1);
 }
 
 std::vector<SimulationResult> DeviceSimulator::solve_transient() {

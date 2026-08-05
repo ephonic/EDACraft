@@ -68,67 +68,73 @@ void PoissonSolver::set_neumann_faces(char face) {
 real_t PoissonSolver::cx_plus(size_t idx) const {
     size_t i = idx % g_.nx;
     if (i + 1 >= g_.nx) return 0.0Q;
+    real_t ec = g_.dx_edge(i) * g_.dx_cell(i);
     if (!edge_eps_x_plus_.empty() && edge_eps_x_plus_[idx] > 0.0Q) {
-        return edge_eps_x_plus_[idx] / (g_.dx * g_.dx);
+        return edge_eps_x_plus_[idx] / ec;
     }
     real_t eps_sum = eps_[idx] + eps_[idx + 1];
     if (eps_sum < EPSILON) return 0.0Q;
-    return 2.0Q * eps_[idx] * eps_[idx + 1] / eps_sum / (g_.dx * g_.dx);
+    return 2.0Q * eps_[idx] * eps_[idx + 1] / eps_sum / ec;
 }
 
 real_t PoissonSolver::cx_minus(size_t idx) const {
     size_t i = idx % g_.nx;
     if (i == 0) return 0.0Q;
+    real_t ec = g_.dx_edge(i-1) * g_.dx_cell(i);
     if (!edge_eps_x_minus_.empty() && edge_eps_x_minus_[idx] > 0.0Q) {
-        return edge_eps_x_minus_[idx] / (g_.dx * g_.dx);
+        return edge_eps_x_minus_[idx] / ec;
     }
     real_t eps_sum = eps_[idx] + eps_[idx - 1];
     if (eps_sum < EPSILON) return 0.0Q;
-    return 2.0Q * eps_[idx] * eps_[idx - 1] / eps_sum / (g_.dx * g_.dx);
+    return 2.0Q * eps_[idx] * eps_[idx - 1] / eps_sum / ec;
 }
 
 real_t PoissonSolver::cy_plus(size_t idx) const {
     size_t j = (idx / g_.nx) % g_.ny;
     if (j + 1 >= g_.ny) return 0.0Q;
+    real_t ec = g_.dy_edge(j) * g_.dy_cell(j);
     if (!edge_eps_y_plus_.empty() && edge_eps_y_plus_[idx] > 0.0Q) {
-        return edge_eps_y_plus_[idx] / (g_.dy * g_.dy);
+        return edge_eps_y_plus_[idx] / ec;
     }
     real_t eps_sum = eps_[idx] + eps_[idx + g_.nx];
     if (eps_sum < EPSILON) return 0.0Q;
-    return 2.0Q * eps_[idx] * eps_[idx + g_.nx] / eps_sum / (g_.dy * g_.dy);
+    return 2.0Q * eps_[idx] * eps_[idx + g_.nx] / eps_sum / ec;
 }
 
 real_t PoissonSolver::cy_minus(size_t idx) const {
     size_t j = (idx / g_.nx) % g_.ny;
     if (j == 0) return 0.0Q;
+    real_t ec = g_.dy_edge(j-1) * g_.dy_cell(j);
     if (!edge_eps_y_minus_.empty() && edge_eps_y_minus_[idx] > 0.0Q) {
-        return edge_eps_y_minus_[idx] / (g_.dy * g_.dy);
+        return edge_eps_y_minus_[idx] / ec;
     }
     real_t eps_sum = eps_[idx] + eps_[idx - g_.nx];
     if (eps_sum < EPSILON) return 0.0Q;
-    return 2.0Q * eps_[idx] * eps_[idx - g_.nx] / eps_sum / (g_.dy * g_.dy);
+    return 2.0Q * eps_[idx] * eps_[idx - g_.nx] / eps_sum / ec;
 }
 
 real_t PoissonSolver::cz_plus(size_t idx) const {
     size_t k = idx / (g_.nx * g_.ny);
     if (k + 1 >= g_.nz) return 0.0Q;
+    real_t ec = g_.dz_edge(k) * g_.dz_cell(k);
     if (!edge_eps_z_plus_.empty() && edge_eps_z_plus_[idx] > 0.0Q) {
-        return edge_eps_z_plus_[idx] / (g_.dz * g_.dz);
+        return edge_eps_z_plus_[idx] / ec;
     }
     real_t eps_sum = eps_[idx] + eps_[idx + g_.nx * g_.ny];
     if (eps_sum < EPSILON) return 0.0Q;
-    return 2.0Q * eps_[idx] * eps_[idx + g_.nx * g_.ny] / eps_sum / (g_.dz * g_.dz);
+    return 2.0Q * eps_[idx] * eps_[idx + g_.nx * g_.ny] / eps_sum / ec;
 }
 
 real_t PoissonSolver::cz_minus(size_t idx) const {
     size_t k = idx / (g_.nx * g_.ny);
     if (k == 0) return 0.0Q;
+    real_t ec = g_.dz_edge(k-1) * g_.dz_cell(k);
     if (!edge_eps_z_minus_.empty() && edge_eps_z_minus_[idx] > 0.0Q) {
-        return edge_eps_z_minus_[idx] / (g_.dz * g_.dz);
+        return edge_eps_z_minus_[idx] / ec;
     }
     real_t eps_sum = eps_[idx] + eps_[idx - g_.nx * g_.ny];
     if (eps_sum < EPSILON) return 0.0Q;
-    return 2.0Q * eps_[idx] * eps_[idx - g_.nx * g_.ny] / eps_sum / (g_.dz * g_.dz);
+    return 2.0Q * eps_[idx] * eps_[idx - g_.nx * g_.ny] / eps_sum / ec;
 }
 
 void PoissonSolver::assemble(const std::vector<real_t>& n, const std::vector<real_t>& p) {

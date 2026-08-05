@@ -55,6 +55,13 @@ if os.environ.get("TCAD_USE_PETSC", "1") != "0":
     mpi_prefix = os.environ.get("MPI_DIR", "/opt/homebrew/Cellar/open-mpi/5.0.9")
     
     petsc_header = os.path.join(petsc_prefix, "include", "petsc.h")
+    if not os.path.isfile(petsc_header) and os.path.isfile("/usr/include/petsc/petsc.h"):
+        # System-wide PETSc (e.g. Linux package with MPIUNI, no MPI needed)
+        petsc_available = True
+        petsc_include_dirs = ["/usr/include/petsc"]
+        petsc_library_dirs = ["/usr/lib64"]
+        petsc_libs = ["petsc"]
+        extra_compile_args.append("-DTCAD_USE_PETSC")
     if os.path.isfile(petsc_header):
         petsc_available = True
         petsc_include_dirs = [
@@ -111,6 +118,8 @@ if is_macos:
 else:
     # Linux / other
     extra_compile_args.append("-march=native")
+    # GCC needs -fext-numeric-literals to accept __float128 'Q' suffix literals
+    extra_compile_args.append("-fext-numeric-literals")
     extra_link_args.append("-lquadmath")
     extra_link_args.append("-llapack")
     extra_link_args.append("-lblas")

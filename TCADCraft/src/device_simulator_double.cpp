@@ -103,6 +103,10 @@ void DeviceSimulatorDouble::set_use_newton(bool enable) {
     sim_.set_use_newton(enable);
 }
 
+void DeviceSimulatorDouble::set_newton_primary(bool enable) {
+    sim_.set_newton_primary(enable);
+}
+
 void DeviceSimulatorDouble::set_newton_freeze_phi(bool enable) { sim_.set_newton_freeze_phi(enable); }
 void DeviceSimulatorDouble::set_newton_freeze_n(bool enable) { sim_.set_newton_freeze_n(enable); }
 void DeviceSimulatorDouble::set_newton_freeze_p(bool enable) { sim_.set_newton_freeze_p(enable); }
@@ -171,6 +175,14 @@ void DeviceSimulatorDouble::set_ii_enabled(bool enable) {
 
 void DeviceSimulatorDouble::set_ii_params(double A_n, double B_n, double A_p, double B_p) {
     sim_.set_ii_params((real_t)A_n, (real_t)B_n, (real_t)A_p, (real_t)B_p);
+}
+
+void DeviceSimulatorDouble::set_auger_enabled(bool enable) {
+    sim_.set_auger_enabled(enable);
+}
+
+void DeviceSimulatorDouble::set_auger_params(double Cn, double Cp) {
+    sim_.set_auger_params((real_t)Cn, (real_t)Cp);
 }
 
 void DeviceSimulatorDouble::set_breakdown_enabled(bool enable) {
@@ -394,6 +406,14 @@ std::vector<std::vector<double>> DeviceSimulatorDouble::solve_transient_p() {
 
 std::vector<bool> DeviceSimulatorDouble::solve_transient_converged() const {
     return transient_history_converged_;
+}
+
+void DeviceSimulatorDouble::set_z_positions(const std::vector<double>& z_pos) {
+    sim_.set_grid_z(to_real_t(z_pos));
+}
+
+void DeviceSimulatorDouble::set_x_positions(const std::vector<double>& x_pos) {
+    sim_.set_grid_x(to_real_t(x_pos));
 }
 
 } // namespace tcad

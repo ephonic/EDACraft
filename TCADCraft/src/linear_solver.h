@@ -6,6 +6,11 @@
 #include "ic_preconditioner.h"
 #include <functional>
 
+#ifdef TCAD_USE_PETSC
+#include <petsc.h>
+#include <petscksp.h>
+#endif
+
 
 
 namespace tcad {
@@ -31,7 +36,9 @@ enum class PreconditionerType {
 struct SolverOptions {
     SolverType type = SolverType::BICGSTAB_ILU0;
     size_t max_iter = 10000;
-    real_t tol = 1e-25Q; // Adjusted: 1e-25 for quad, 1e-12 for double fallback
+    // 1e-16: quad-justified but far cheaper than 1e-25 (BiCGStab iteration
+    // count scales with log(1/tol); 1e-25 made 2D/3D sweeps impractically slow).
+    real_t tol = 1e-16Q;
     size_t restart = 30; // For GMRES
     bool verbose = false;
     PreconditionerType prec = PreconditionerType::ILU0;
@@ -59,6 +66,15 @@ private:
     size_t dense_direct(const SparseMatrix& A, const Vector& b, Vector& x);
 #ifdef TCAD_USE_PETSC
     size_t solve_petsc(const SparseMatrix& A, const Vector& b, Vector& x);
+    // PETSc reuse cache: keep Mat/KSP/Vecs across calls when the problem size
+    // is unchanged (fixed mesh -> constant sparsity pattern -> SuperLU reuses
+    // the symbolic factorization, only numeric refactor each call).  Cuts the
+    // per-Gummel-iteration PETSc setup overhead (~50ms x 44 iters x 3 solves).
+    Mat petsc_A_ = nullptr;
+    KSP petsc_ksp_ = nullptr;
+    Vec petsc_b_ = nullptr, petsc_x_ = nullptr;
+    PetscInt petsc_n_ = -1;
+    void petsc_free();
 #endif
 };
 

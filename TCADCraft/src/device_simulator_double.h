@@ -37,6 +37,7 @@ public:
     void set_poisson_solver_type(int type);
     void set_continuity_solver_type(int type);
     void set_use_newton(bool enable);
+    void set_newton_primary(bool enable);
     // C档: Newton freeze flags (isolated-continuity MMS).
     void set_newton_freeze_phi(bool enable);
     void set_newton_freeze_n(bool enable);
@@ -60,6 +61,9 @@ public:
     // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
     void set_ii_enabled(bool enable);
     void set_ii_params(double A_n, double B_n, double A_p, double B_p);
+    // Auger recombination: R = (Cn*n + Cp*p)*(n*p - ni²)
+    void set_auger_enabled(bool enable);
+    void set_auger_params(double Cn, double Cp);
     // Dielectric breakdown (M7b).
     void set_breakdown_enabled(bool enable);
     void set_breakdown_params(const std::vector<signed char>& bd_mask,
@@ -131,6 +135,12 @@ public:
     size_t ny() const;
     size_t nz() const;
     size_t npts() const;
+
+    // Set non-uniform z-node positions for local mesh refinement.
+    // When set, the Poisson/continuity/current assembly uses per-edge
+    // spacing derived from these positions instead of the uniform dz.
+    void set_z_positions(const std::vector<double>& z_pos);
+    void set_x_positions(const std::vector<double>& x_pos);
 
 private:
     DeviceSimulator sim_;
