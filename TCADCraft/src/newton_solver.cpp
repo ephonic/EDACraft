@@ -364,8 +364,22 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
             for (size_t i = 0; i < g_.nx; ++i) {
                 size_t idx = g_.index(i, j, k);
                 if (n_bc_.count(idx)) {
-                    // Log-space: enforce u = log(n_bc).  Linear: n = n_bc.
-                    if (opt_.use_log_space) {
+                    // Ohmic contact: n follows phi via Boltzmann relation
+                    // n = ni*exp((phi-EFn)/VT).  This replaces the Dirichlet
+                    // n=NSD BC with a self-consistent coupling.
+                    if (!ohmic_nodes_.empty() && ohmic_nodes_.count(idx)) {
+                        real_t EFn = ohmic_EFn_.count(idx) ? ohmic_EFn_.at(idx) : 0.0Q;
+                        real_t ni_local = ohmic_ni_;
+                        real_t arg = (phi[idx] - EFn) / VT_;
+                        if (arg > 50.0Q) arg = 50.0Q;
+                        if (arg < -50.0Q) arg = -50.0Q;
+                        real_t n_target = ni_local * exp_q(arg);
+                        if (opt_.use_log_space) {
+                            F[n_idx(idx)] = x[n_idx(idx)] - log_q(n_target);
+                        } else {
+                            F[n_idx(idx)] = n[idx] - n_target;
+                        }
+                    } else if (opt_.use_log_space) {
                         F[n_idx(idx)] = x[n_idx(idx)] - log_q(n_bc_.at(idx));
                     } else {
                         F[n_idx(idx)] = n[idx] - n_bc_.at(idx);
@@ -445,7 +459,19 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
             for (size_t i = 0; i < g_.nx; ++i) {
                 size_t idx = g_.index(i, j, k);
                 if (p_bc_.count(idx)) {
-                    if (opt_.use_log_space) {
+                    // Ohmic: p follows phi via Boltzmann p = ni*exp(-(phi+EFp)/VT)
+                    if (!ohmic_nodes_.empty() && ohmic_nodes_.count(idx)) {
+                        real_t EFp = ohmic_EFp_.count(idx) ? ohmic_EFp_.at(idx) : 0.0Q;
+                        real_t arg = -(phi[idx] + EFp) / VT_;
+                        if (arg > 50.0Q) arg = 50.0Q;
+                        if (arg < -50.0Q) arg = -50.0Q;
+                        real_t p_target = ohmic_ni_ * exp_q(arg);
+                        if (opt_.use_log_space) {
+                            F[p_idx(idx)] = x[p_idx(idx)] - log_q(p_target);
+                        } else {
+                            F[p_idx(idx)] = p[idx] - p_target;
+                        }
+                    } else if (opt_.use_log_space) {
                         F[p_idx(idx)] = x[p_idx(idx)] - log_q(p_bc_.at(idx));
                     } else {
                         F[p_idx(idx)] = p[idx] - p_bc_.at(idx);
@@ -581,6 +607,10 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
 
                 if (n_bc_.count(idx)) {
                     J.add_entry(i_n, i_n, 1.0Q);
+                    // Ohmic: n follows phi, dF[n]/d[phi] = -1/VT
+                    if (!ohmic_nodes_.empty() && ohmic_nodes_.count(idx)) {
+                        J.add_entry(i_n, i_phi, -1.0Q / VT_);
+                    }
                 } else if (opt_.freeze_n) {
                     J.add_entry(i_n, i_n, 1.0Q);
                 } else if (mu_n_[idx] < EPSILON) {
@@ -643,6 +673,10 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
 
                 if (p_bc_.count(idx)) {
                     J.add_entry(i_p, i_p, 1.0Q);
+                    // Ohmic: p follows phi, dF[p]/d[phi] = +1/VT
+                    if (!ohmic_nodes_.empty() && ohmic_nodes_.count(idx)) {
+                        J.add_entry(i_p, i_phi, 1.0Q / VT_);
+                    }
                 } else if (opt_.freeze_p) {
                     J.add_entry(i_p, i_p, 1.0Q);
                 } else if (mu_p_[idx] < EPSILON) {

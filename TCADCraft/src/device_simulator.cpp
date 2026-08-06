@@ -752,6 +752,10 @@ SimulationResult DeviceSimulator::solve() {
                     semi[i] = (mu_n_eff[i] > 1e-30Q || mu_p_eff[i] > 1e-30Q) ? 1 : 0;
                 newton_.set_semiconductor_mask(semi);
             }
+            // Pass Ohmic contacts to Newton
+            if (!ohmic_nodes_.empty()) {
+                newton_.set_ohmic_contacts(ohmic_nodes_, ohmic_EFn_, ohmic_EFp_, ohmic_ni_);
+            }
             // ALWAYS attempt the Newton polish (2026-08 follow-up): the
             // Gummel warm-up's update-norm criterion does NOT imply a small
             // true coupled residual — at high injection a Gummel-"converged"

@@ -132,6 +132,12 @@ public:
                          real_t D_it, real_t E_t,
                          const std::vector<real_t>& Q_ot);
     void set_semiconductor_mask(const std::vector<char>& mask) { semi_mask_ = mask; }
+    void set_ohmic_contacts(const std::set<size_t>& nodes,
+                            const std::map<size_t, real_t>& EFn,
+                            const std::map<size_t, real_t>& EFp,
+                            real_t ni) {
+        ohmic_nodes_ = nodes; ohmic_EFn_ = EFn; ohmic_EFp_ = EFp; ohmic_ni_ = ni;
+    }
 
     bool solve(std::vector<real_t>& phi,
                std::vector<real_t>& n,
@@ -192,6 +198,10 @@ private:
 
     // DG semiconductor mask (1=semi, 0=oxide). Empty = no DG.
     std::vector<char> semi_mask_;
+    // Ohmic contact data
+    std::set<size_t> ohmic_nodes_;
+    std::map<size_t, real_t> ohmic_EFn_, ohmic_EFp_;
+    real_t ohmic_ni_ = 1.07e16Q;
 
     std::vector<real_t> residuals_;
 
