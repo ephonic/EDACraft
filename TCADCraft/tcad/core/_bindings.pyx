@@ -3,6 +3,7 @@
 
 from libcpp.vector cimport vector
 from libcpp.map cimport map
+from libcpp.set cimport set as cset
 from libcpp cimport bool as cbool
 from libc.stddef cimport size_t
 import numpy as np
@@ -62,6 +63,11 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_use_newton(cbool enable)
         void set_newton_primary(cbool enable)
         void solve_equilibrium()
+        void set_ohmic_contacts(const cset[size_t]& nodes,
+                                const map[size_t, double]& EFn,
+                                const map[size_t, double]& EFp,
+                                double ni)
+        void clear_ohmic_contacts()
         void set_newton_freeze_phi(cbool enable)
         void set_newton_freeze_n(cbool enable)
         void set_newton_freeze_p(cbool enable)
@@ -251,6 +257,18 @@ cdef class PyDeviceSimulator:
 
     def solve_equilibrium(self):
         self._sim.solve_equilibrium()
+
+    def set_ohmic_contacts(self, nodes, EFn, EFp, double ni):
+        cdef cset[size_t] c_nodes
+        cdef map[size_t, double] c_efn
+        cdef map[size_t, double] c_efp
+        for n in nodes: c_nodes.insert(n)
+        for k, v in EFn.items(): c_efn[k] = v
+        for k, v in EFp.items(): c_efp[k] = v
+        self._sim.set_ohmic_contacts(c_nodes, c_efn, c_efp, ni)
+
+    def clear_ohmic_contacts(self):
+        self._sim.clear_ohmic_contacts()
 
     def set_newton_freeze_phi(self, bint enable):
         self._sim.set_newton_freeze_phi(enable)

@@ -202,6 +202,12 @@ public:
 
     // Forward material/BC settings to internal Poisson solver
     void set_poisson_dirichlet(const std::map<size_t, real_t>& bc) { poisson_.set_dirichlet(bc); }
+    void set_ohmic_contacts(const std::set<size_t>& nodes,
+                            const std::map<size_t, real_t>& EFn,
+                            const std::map<size_t, real_t>& EFp,
+                            real_t ni) {
+        poisson_.set_ohmic_contacts(nodes, EFn, EFp, ni);
+    }
     void set_permittivity(const std::vector<real_t>& eps) { poisson_.set_permittivity(eps); }
     void set_ferroelectric_gamma(real_t gamma) { poisson_.set_ferroelectric_gamma(gamma); }
     // Ferroelectric model + Preisach params (M7c): forward to PoissonSolver.

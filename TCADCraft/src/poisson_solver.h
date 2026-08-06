@@ -140,6 +140,19 @@ public:
         boltzmann_lin_ = enable;
         VT_ = VT;
     }
+    // Ohmic contact: mark nodes where Poisson should use Boltzmann n(phi)
+    // instead of frozen n from continuity BC.  EFn/EFp are quasi-Fermi
+    // shifts (source=0, drain=Vd) at each Ohmic node.
+    void set_ohmic_contacts(const std::set<size_t>& nodes,
+                            const std::map<size_t, real_t>& EFn,
+                            const std::map<size_t, real_t>& EFp,
+                            real_t ni) {
+        ohmic_nodes_ = nodes;
+        ohmic_EFn_ = EFn;
+        ohmic_EFp_ = EFp;
+        ohmic_ni_ = ni;
+    }
+    void clear_ohmic_contacts() { ohmic_nodes_.clear(); }
 
     void set_leakage(const std::vector<char>& mask,
                      real_t C_pf, real_t B_pf, real_t phi_t,
@@ -235,6 +248,10 @@ private:
     Grid3D g_;
     bool boltzmann_lin_ = true;     // stabilized-Gummel charge linearization
     real_t VT_ = 0.02585Q;          // thermal voltage for the linearization
+    // Ohmic contact data
+    std::set<size_t> ohmic_nodes_;
+    std::map<size_t, real_t> ohmic_EFn_, ohmic_EFp_;
+    real_t ohmic_ni_ = 1.07e16Q;   // intrinsic density for Boltzmann n(phi)
     std::vector<real_t> eps_;       // Permittivity at each grid point
     std::vector<real_t> edge_eps_x_plus_;
     std::vector<real_t> edge_eps_x_minus_;

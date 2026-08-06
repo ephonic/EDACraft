@@ -184,6 +184,27 @@ void PoissonSolver::assemble(const std::vector<real_t>& n, const std::vector<rea
                 A_.add_entry(idx, idx, center);
                 rhs_[idx] = -QE * (p[idx] - n[idx] + Nd_minus_Na_[idx]);
 
+                // Ohmic contact: replace frozen n,p with Boltzmann n(phi_old).
+                // At Ohmic nodes, n=NSD from continuity BC is physically wrong
+                // when phi is gate-controlled (phi≈0V but n=NSD).  Using
+                // n=ni*exp((phi_old-EFn)/VT) makes Poisson self-consistent:
+                // the D term gives dn/dphi = n/VT, so phi can change freely.
+                if (!ohmic_nodes_.empty() && ohmic_nodes_.count(idx)) {
+                    real_t phi_old = leak_phi_.empty() ? 0.0Q :
+                        (idx < leak_phi_.size() ? leak_phi_[idx] : 0.0Q);
+                    real_t EFn = (ohmic_EFn_.count(idx)) ? ohmic_EFn_.at(idx) : 0.0Q;
+                    real_t EFp = (ohmic_EFp_.count(idx)) ? ohmic_EFp_.at(idx) : 0.0Q;
+                    real_t arg_n = (phi_old - EFn) / VT_;
+                    real_t arg_p = -(phi_old + EFp) / VT_;
+                    if (arg_n > 50.0Q) arg_n = 50.0Q;
+                    if (arg_n < -50.0Q) arg_n = -50.0Q;
+                    if (arg_p > 50.0Q) arg_p = 50.0Q;
+                    if (arg_p < -50.0Q) arg_p = -50.0Q;
+                    real_t n_ohmic = ohmic_ni_ * exp_q(arg_n);
+                    real_t p_ohmic = ohmic_ni_ * exp_q(arg_p);
+                    rhs_[idx] = -QE * (p_ohmic - n_ohmic + Nd_minus_Na_[idx]);
+                }
+
                 // Stabilized-Gummel Boltzmann linearization (plan0728 §1.2):
                 // the carrier charge rho(phi) is linearized about the
                 // previous iterate (leak_field_):

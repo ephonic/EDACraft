@@ -111,6 +111,22 @@ void DeviceSimulatorDouble::solve_equilibrium() {
     sim_.solve_equilibrium();
 }
 
+void DeviceSimulatorDouble::set_ohmic_contacts(const std::set<size_t>& nodes,
+                                                const std::map<size_t, double>& EFn,
+                                                const std::map<size_t, double>& EFp,
+                                                double ni) {
+    std::set<size_t> n;
+    std::map<size_t, real_t> ef_n, ef_p;
+    for (auto idx : nodes) n.insert(idx);
+    for (auto& kv : EFn) ef_n[kv.first] = (real_t)kv.second;
+    for (auto& kv : EFp) ef_p[kv.first] = (real_t)kv.second;
+    sim_.set_ohmic_contacts(n, ef_n, ef_p, (real_t)ni);
+}
+
+void DeviceSimulatorDouble::clear_ohmic_contacts() {
+    sim_.clear_ohmic_contacts();
+}
+
 void DeviceSimulatorDouble::set_newton_freeze_phi(bool enable) { sim_.set_newton_freeze_phi(enable); }
 void DeviceSimulatorDouble::set_newton_freeze_n(bool enable) { sim_.set_newton_freeze_n(enable); }
 void DeviceSimulatorDouble::set_newton_freeze_p(bool enable) { sim_.set_newton_freeze_p(enable); }

@@ -82,6 +82,11 @@ public:
     void set_continuity_solver_type(int type);
     void set_use_newton(bool enable);
     void set_newton_primary(bool enable) { newton_primary_ = enable; }
+    void set_ohmic_contacts(const std::set<size_t>& nodes,
+                            const std::map<size_t, real_t>& EFn,
+                            const std::map<size_t, real_t>& EFp,
+                            real_t ni);
+    void clear_ohmic_contacts();
     void solve_equilibrium();  // Poisson-Boltzmann equilibrium (Sentaurus Coupled{Poisson})
 
     // Newton solver options
@@ -216,6 +221,11 @@ private:
     real_t VT_ = 0.02585Q;
     SolverType poisson_solver_type_ = SolverType::DENSE_DIRECT;
     SolverType continuity_solver_type_ = SolverType::DENSE_DIRECT;
+    // Ohmic contact data
+    std::set<size_t> ohmic_nodes_;
+    std::map<size_t, real_t> ohmic_EFn_, ohmic_EFp_;
+    real_t ohmic_ni_ = 1.07e16Q;
+
     bool use_newton_ = false;
     bool newton_primary_ = false;  // skip Gummel warm-up, Newton from initial guess
     // Newton freeze flags (C档) — expose NewtonOptions::freeze_phi/n/p.

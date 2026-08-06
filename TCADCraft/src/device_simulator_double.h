@@ -39,6 +39,11 @@ public:
     void set_use_newton(bool enable);
     void set_newton_primary(bool enable);
     void solve_equilibrium();
+    void set_ohmic_contacts(const std::set<size_t>& nodes,
+                            const std::map<size_t, double>& EFn,
+                            const std::map<size_t, double>& EFp,
+                            double ni);
+    void clear_ohmic_contacts();
     // C档: Newton freeze flags (isolated-continuity MMS).
     void set_newton_freeze_phi(bool enable);
     void set_newton_freeze_n(bool enable);

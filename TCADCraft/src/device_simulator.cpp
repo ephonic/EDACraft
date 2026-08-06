@@ -210,6 +210,20 @@ void DeviceSimulator::set_auger_params(real_t Cn, real_t Cp) {
     auger_Cp_ = Cp;
 }
 
+void DeviceSimulator::set_ohmic_contacts(const std::set<size_t>& nodes,
+                                         const std::map<size_t, real_t>& EFn,
+                                         const std::map<size_t, real_t>& EFp,
+                                         real_t ni) {
+    ohmic_nodes_ = nodes;
+    ohmic_EFn_ = EFn;
+    ohmic_EFp_ = EFp;
+    ohmic_ni_ = ni;
+}
+
+void DeviceSimulator::clear_ohmic_contacts() {
+    ohmic_nodes_.clear();
+}
+
 void DeviceSimulator::solve_equilibrium() {
     // Poisson-Boltzmann equilibrium: iteratively solve Poisson with
     // n=ni*exp(phi/VT), p=ni*exp(-phi/VT) until convergence.
@@ -614,6 +628,10 @@ SimulationResult DeviceSimulator::solve() {
         gummel_.set_electron_bc(n_bc_);
         gummel_.set_hole_bc(p_bc_);
         gummel_.set_poisson_dirichlet(phi_bc_);
+        // Ohmic contacts: pass to Gummel's Poisson solver
+        if (!ohmic_nodes_.empty()) {
+            gummel_.set_ohmic_contacts(ohmic_nodes_, ohmic_EFn_, ohmic_EFp_, ohmic_ni_);
+        }
         gummel_.set_permittivity(eps_);
         // Inject the persistent vector P so this bias point continues from the
         // previous one (path dependence -> hysteresis). GummelSolver (and its
@@ -803,6 +821,10 @@ SimulationResult DeviceSimulator::solve() {
         gummel_.set_electron_bc(n_bc_);
         gummel_.set_hole_bc(p_bc_);
         gummel_.set_poisson_dirichlet(phi_bc_);
+        // Ohmic contacts: pass to Gummel's Poisson solver
+        if (!ohmic_nodes_.empty()) {
+            gummel_.set_ohmic_contacts(ohmic_nodes_, ohmic_EFn_, ohmic_EFp_, ohmic_ni_);
+        }
         gummel_.set_permittivity(eps_);
         if (fe_enabled_) {
             if (!fe_polarization_init_) {
