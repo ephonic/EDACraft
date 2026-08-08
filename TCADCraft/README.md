@@ -542,13 +542,13 @@ add-on (four-layer binding: `Simulator.set_impact_ionization` → Cython →
   `dG_ii/dn`, and `dG_ii/dp` edge derivatives. Nonuniform x/y/z edge spacing,
   harmonic face mobility, and half-volume endpoint deposition are shared by
   Gummel, Newton, and the exposed final-state `G_ii` diagnostic.
-- The Sentaurus-calibrated one-dimensional ABA + electrothermal replay passes:
+- The calibrated one-dimensional ABA + electrothermal replay passes:
   BV/ionization integrals match, thermal-runaway voltage error is 3.72%, peak
   temperature error is 0.193%, and terminal KCL spread is 6.10e-9. The closure
   removes a post-Newton Poisson-only mutation, preserves converged depletion
   densities, adds mixed absolute/relative KCL convergence, and includes Auger
   derivatives in Newton. A calibrated 0.07 avalanche-current factor currently
-  stands in for Sentaurus `HighFieldSaturation(GradQuasiFermi)`; replace and
+  stands in for `HighFieldSaturation(GradQuasiFermi)`; replace and
   re-calibrate it when native field-dependent mobility enters Newton.
 
 ### Test snapshot (M7a)
