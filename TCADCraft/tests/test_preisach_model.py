@@ -93,12 +93,15 @@ class TestPreisachModel:
         structure, not the absolute sign at one contact.
         """
         sim, N = _build_fe_slab()
-        mid = N // 2
         V_loop = _bipolar_loop(Vmax=1.0, n_pts=26)
         Pxs = []
         for Vg in V_loop:
             sim.set_dirichlet_potential({0: Vg, N - 1: 0.0})
-            Pxs.append(sim.solve()["P"][mid][0])
+            # The terminal-observable remanence is the layer-averaged
+            # polarization.  A self-consistent FE slab may form domains and a
+            # single grid point can remain on the same branch while the domain
+            # wall (and therefore total gate charge) moves with sweep history.
+            Pxs.append(np.mean(sim.solve()["P"][:, 0]))
         P_loop = np.array(Pxs)
 
         # 1. Switching: P spans both signs across the loop.

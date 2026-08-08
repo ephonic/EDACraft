@@ -11,9 +11,7 @@ The Scharfetter-Gummel edge flux here mirrors the C++ solver exactly
     Jn_edge(i->j) = q * (mu_n*VT/dx) * (n_j * B(+dphi/VT) - n_i * B(-dphi/VT))
     Jp_edge(i->j) = q * (mu_p*VT/dx) * (p_i * B(+dphi/VT) - p_j * B(-dphi/VT))
 
-    (conventional-current sign for both, so Jn + Jp is the physical total;
-    the raw electron SG flux must be negated — a sign inconsistency here was
-    found and fixed during Sentaurus cross-validation, Aug 2026)
+    (conventional-current sign for both, so Jn + Jp is the physical total)
 
 with dphi = phi_j - phi_i, B(x) = x/(exp(x)-1), and node-upwind mobility
 mu[i] (matching ``mu_n_[idx]`` in the C++ stencil). At steady state the total
@@ -83,8 +81,8 @@ def sg_current_density_1d(
     mu_pe = 2.0 * mu_p[:-1] * mu_p[1:] / (mu_p[:-1] + mu_p[1:] + 1e-30)
     Dn = mu_ne * VT / dx
     Dp = mu_pe * VT / dx
-    # Conventional current densities: Jn must be negated relative to the raw
-    # electron SG flux so that Jn + Jp is the total conventional current.
+    # Conventional electron and hole current densities.  Their small-field
+    # expansion matches the drift/diffusion split in mechanism.py.
     Jn = QE * Dn * (n[1:] * Bp - n[:-1] * Bm)
     Jp = QE * Dp * (p[:-1] * Bp - p[1:] * Bm)
     return Jn, Jp
@@ -98,11 +96,11 @@ def contact_current_1d(
 ) -> float:
     """Terminal current [A] into a named contact of a quasi-1-D device.
 
-    Integrates the total SG current density (Jn + Jp) on the interior edge
+    Integrates the total current density (Jn + Jp + Jleak) on the interior edge
     adjacent to the contact, times a unit cross-section (1 m^2). For a true 1-D
     sheet the result is current density [A/m^2]; multiply by the device width
-    for absolute current. Sign: positive = current flowing *into* the contact
-    from the interior (i.e. conventional current entering the terminal).
+    for absolute current. Sign: positive = conventional current supplied by
+    the contact into the device, matching DEVSIM/Sentaurus terminal convention.
 
     The simulator mesh may be 1-D, 2-D or 3-D; this routine extracts the
     x-axis line (fixed j,k) that passes through the requested contact and
@@ -168,6 +166,8 @@ def contact_current_1d(
         Jn_edge = np.asarray(result["Jn_x"], dtype=float)[line]   # Jn on edge i
         Jp_edge = np.asarray(result["Jp_x"], dtype=float)[line]
         J = (Jn_edge + Jp_edge)[:nx - 1]  # length nx-1, J[i] = edge (i, i+1)
+        if "Jleak_x" in result and len(result["Jleak_x"]) == mesh.npts():
+            J = J + np.asarray(result["Jleak_x"], dtype=float)[line][:nx - 1]
     else:
         phi = np.asarray(result["phi"], dtype=float)[line]
         n = np.asarray(result["n"], dtype=float)[line]
@@ -184,16 +184,14 @@ def contact_current_1d(
 
     if direction == "left":
         # Left contact occupies i=0..i_last; the boundary edge is
-        # (i_last, i_last+1).  J[i_last] is +x (into interior).  Current *into*
-        # the left terminal = -J[i_last] (conventional current leaving the
-        # interior toward the left contact).
+        # (i_last, i_last+1).  J[i_last] is +x, from contact into device.
         i_last = int(line_contact_i[-1])
-        return -float(J[i_last])
+        return float(J[i_last])
     else:  # right
         # Right contact occupies i_first..nx-1; boundary edge is
         # (i_first-1, i_first).  J[i_first-1] is +x (into the right contact).
         i_first = int(line_contact_i[0])
-        return float(J[i_first - 1])
+        return -float(J[i_first - 1])
 
 
 # ---------------------------------------------------------------------------
@@ -260,8 +258,8 @@ def contact_current_2d(
     BC nodes (which would be zero).
 
     ``W`` defaults to the device width ``mesh.dy * mesh.ny`` (the y-extent).
-    Sign convention: positive = conventional current flowing *into* the contact
-    from the interior.
+    Sign convention: positive = conventional current supplied by the contact
+    into the device, matching DEVSIM/Sentaurus.
 
     Parameters
     ----------
@@ -337,6 +335,8 @@ def contact_current_2d(
                 Jn_edge = np.asarray(result["Jn_x"], dtype=float)[line]
                 Jp_edge = np.asarray(result["Jp_x"], dtype=float)[line]
                 J = (Jn_edge + Jp_edge)[:nx - 1]
+                if "Jleak_x" in result and len(result["Jleak_x"]) == mesh.npts():
+                    J = J + np.asarray(result["Jleak_x"], dtype=float)[line][:nx - 1]
             else:
                 phi_l = np.asarray(result["phi"], dtype=float)[line]
                 n_l = np.asarray(result["n"], dtype=float)[line]
@@ -355,13 +355,13 @@ def contact_current_2d(
 
             if is_left:
                 # Inner boundary edge = (i_last, i_last+1); +x into interior.
-                # Into left terminal = -J[i_last].
+                # Positive +x flux is supplied by the left contact.
                 i_last = int(line_contact_i[-1])
-                total += -J[i_last]
+                total += J[i_last]
             else:  # right
                 # Inner boundary edge = (i_first-1, i_first); +x into contact.
                 i_first = int(line_contact_i[0])
-                total += J[i_first - 1]
+                total += -J[i_first - 1]
         # Integrate over z-extent: each z-row contributes over dz, times width W.
         return float(total * mesh.dz * width)
 
@@ -384,6 +384,8 @@ def contact_current_2d(
                 Jn_edge = np.asarray(result["Jn_z"], dtype=float)[line]
                 Jp_edge = np.asarray(result["Jp_z"], dtype=float)[line]
                 J = (Jn_edge + Jp_edge)[:nz - 1]
+                if "Jleak_z" in result and len(result["Jleak_z"]) == mesh.npts():
+                    J = J + np.asarray(result["Jleak_z"], dtype=float)[line][:nz - 1]
             else:
                 phi_l = np.asarray(result["phi"], dtype=float)[line]
                 n_l = np.asarray(result["n"], dtype=float)[line]
@@ -402,11 +404,11 @@ def contact_current_2d(
 
             if is_bot:
                 # Inner boundary edge = (k_last, k_last+1); +z into interior.
-                # Into bottom terminal = -J[k_last].
+                # Positive +z flux is supplied by the bottom contact.
                 k_last = int(line_contact_k[-1])
-                total += -J[k_last]
+                total += J[k_last]
             else:  # top
                 # Inner boundary edge = (k_first-1, k_first); +z into contact.
                 k_first = int(line_contact_k[0])
-                total += J[k_first - 1]
+                total += -J[k_first - 1]
         return float(total * mesh.dx * width)

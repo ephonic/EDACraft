@@ -41,6 +41,7 @@ enum class FerroelectricModel {
     LANDAU_KHALATNIKOV = 0,
     PREISACH = 1,
     NLS = 2,   // Nucleation-Limited Switching, Merz-law tau(E) (P3)
+    SENTAURUS_PREISACH = 3, // Ps/Pr/Fc-compatible tanh branches (SDevice Eq. 986)
 };
 
 struct FerroelectricParams {
@@ -48,7 +49,9 @@ struct FerroelectricParams {
     std::vector<char> fe_mask;
     real_t alpha = -5.0e8Q;   // Landau alpha [m/F] (P1.2)
     real_t beta = 1.5e10Q;    // Landau beta [m^5/(F*C^2)] (P1.2)
-    // Preisach (play-operator) parameters. Used only when model == PREISACH.
+    // Preisach parameters. For PREISACH, Escale is the play-operator tanh
+    // width. For SENTAURUS_PREISACH it is 1/w in SDevice Eq. 986; given Pr,
+    // use Escale=2*Ec/log((Ps+Pr)/(Ps-Pr)).
     // Ps = saturation polarization [C/m^2], Ec = coercive field [V/m],
     // Escale = tanh output width [V/m] (0 => Escale=Ec for correct loop shape;
     // <Ec lets |P| approach Ps on a monotonic ramp but steepens the loop).
@@ -73,32 +76,25 @@ struct FerroelectricParams {
 
 // Leakage current through the ferroelectric/insulator stack (P2.2).
 // Poole-Frenkel (PF) and Fowler-Nordheim (FN) emission provide a field-dependent
-// conductive path across the dielectric. This manifests as a small effective
-// conductance on the Poisson diagonal of masked nodes, proportional to the
-// leakage current density J_leak(E). In steady state this relaxes phi slightly
-// (a residual voltage drop across the leaky layer) so the P-V loop does NOT
-// close at V=0 — reproducing the experimentally observed "0V non-closure" and
-// the off-state gate leakage in FeFETs.
+// conventional-current path across the dielectric.  It is evaluated on mesh
+// edges after the electrostatic solve and exposed as Jleak_x/y/z [A/m^2].
+// It is not inserted into Poisson, whose RHS is charge density.
 //
 //   PF:  J = C_pf * |E| * exp( -B_pf * sqrt(phi_t / |E|) )     trap-assisted
 //   FN:  J = C_fn * |E|^2 * exp( -B_fn * phi_b^(3/2) / |E| )   direct tunneling
-// The total field-dependent conductance is added to the Poisson diagonal of
-// each masked node during assemble(), NORMALISED to the local Laplacian
-// diagonal eps/dx^2 — so C_pf/C_fn are dimensionless fractions of the
-// dielectric conductance (e.g. 0.01 = 1% leak). This sidesteps the need to
-// match absolute current units and makes the model grid-independent.
-// E_mag is computed from phi (central differences) at assemble time.
+// C_pf is an SI conductivity prefactor [S/m]; C_fn is an FN current
+// prefactor [A/V^2].
 struct LeakageParams {
     bool enabled = false;
     std::vector<char> mask;       // nodes that carry leakage [npts] (1 = leaky)
-    real_t C_pf = 0.0Q;           // PF prefactor [fraction of eps/dx^2 per V/m]
+    real_t C_pf = 0.0Q;           // PF conductivity prefactor [S/m]
     real_t B_pf = 0.0Q;           // PF barrier coefficient [(V/m)^(1/2)]
     real_t phi_t = 0.0Q;          // PF trap ionization energy [eV]
-    real_t C_fn = 0.0Q;           // FN prefactor [fraction of eps/dx^2 per (V/m)^2]
+    real_t C_fn = 0.0Q;           // FN current prefactor [A/V^2]
     real_t B_fn = 0.0Q;           // FN exponent coefficient [V/m·eV^(-3/2)]
     real_t phi_b = 0.0Q;          // FN barrier height [eV]
     real_t E_floor = 1.0e6Q;      // below this |E| [V/m] leakage is negligible
-    real_t sigma_cap = 0.05Q;     // cap: fraction of eps/dx^2 (P2.2)
+    real_t sigma_cap = 0.05Q;     // total conductivity cap [S/m]
 };
 
 // Avalanche impact ionization (Chynoweth ionization coefficient).
@@ -193,6 +189,9 @@ public:
     void set_recombination(const std::vector<real_t>& tau_n, const std::vector<real_t>& tau_p);
     void set_optical_generation(const std::vector<real_t>& G_opt);
     void set_doping(const std::vector<real_t>& Nd_minus_Na);
+    void set_charge_volume_fraction(const std::vector<real_t>& fraction) {
+        poisson_.set_charge_volume_fraction(fraction);
+    }
     void set_effective_dos(const std::vector<real_t>& Nc, const std::vector<real_t>& Nv);
     void set_bandgap(const std::vector<real_t>& Eg);
 
@@ -270,6 +269,24 @@ public:
                            const std::vector<real_t>& n,
                            const std::vector<real_t>& p);
 
+    // Evaluate the configured BTBT model on an arbitrary potential field.
+    // This post-processing entry point exposes the same source term injected
+    // into both continuity equations, so callers can inspect/validate
+    // Band2BandGeneration directly instead of inferring it from contact-pinned
+    // extrema of n or p.  Output units are [m^-3 s^-1].
+    void evaluate_btbt_generation(const std::vector<real_t>& phi,
+                                  std::vector<real_t>& G_btbt) const {
+        compute_btbt(phi, G_btbt);
+    }
+
+    void evaluate_impact_ionization(
+        const std::vector<real_t>& phi,
+        const std::vector<real_t>& n,
+        const std::vector<real_t>& p,
+        std::vector<real_t>& G_ii) const {
+        compute_impact_ionization(phi, n, p, G_ii);
+    }
+
 private:
     Grid3D g_;
     GummelOptions opt_;
@@ -303,11 +320,13 @@ private:
 
     // Build and solve electron continuity: div(Jn) = R
     bool solve_electron_density(const std::vector<real_t>& phi,
-                                std::vector<real_t>& n,
-                                const std::vector<real_t>& p);
+                                 std::vector<real_t>& n,
+                                 const std::vector<real_t>& p,
+                                 const std::vector<real_t>* transport_phi);
     bool solve_hole_density(const std::vector<real_t>& phi,
-                            const std::vector<real_t>& n,
-                            std::vector<real_t>& p);
+                             const std::vector<real_t>& n,
+                             std::vector<real_t>& p,
+                             const std::vector<real_t>* transport_phi);
 
     // Bernoulli function for Scharfetter-Gummel
     static real_t bernoulli(real_t x);

@@ -17,6 +17,14 @@ import sys
 import numpy as np
 from pathlib import Path
 
+# This module is an interactive validation example (see the ``python ...``
+# invocation in the module docstring), not a pytest test module.  Its helper
+# functions intentionally print reports and return ValidationFramework objects;
+# collecting them as tests also launches several 3-D grid/parameter sweeps and
+# can stall the unit-test suite for tens of minutes.  Keep the manual entry
+# point while making the collection boundary explicit.
+__test__ = False
+
 # 添加项目路径
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))

@@ -1,0 +1,12 @@
+include LICENSE
+include README.md
+include CHANGELOG.md
+include RELEASE_NOTES.md
+include pyproject.toml
+include setup.py
+recursive-include src *.cpp *.h
+recursive-include tcad *.py *.pyx *.json
+recursive-include scripts *.py
+prune build
+prune dist
+global-exclude __pycache__ *.py[cod] *.so *.pyd

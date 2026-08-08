@@ -1856,28 +1856,14 @@ class TestDensityGradient:
             "sign-convention effect is not visible."
         )
 
-    @pytest.mark.xfail(reason=(
-        "Phase 3.6 sign fix is physically correct (unit test confirms "
-        "depletion) but the partially-coupled (explicit) DG treatment in "
-        "the Gummel loop becomes UNSTABLE: the depletion sign creates a "
-        "positive feedback (carriers pushed peak->tail -> steeper tail -> "
-        "larger ∇²√n -> more enhancement) that the explicit Gummel update "
-        "cannot damp, and the run aborts at iter 1 (NaN/Inf).  A stable "
-        "implementation requires fully-implicit DG coupling (DG quantum "
-        "potential in the Newton/Gummel Jacobian), which is a larger rework "
-        "left for a focused DG-solver task.  Strict-xfail: remove when the "
-        "DG coupling is made implicit."
-    ), strict=True)
     def test_dg_depletes_carrier_peak_end_to_end(self):
-        """End-to-end: with DG enabled, the solver's peak carrier density at
-        a confinement interface must be LOWER than the classical (DG-off)
-        value.  This is the canonical DG physical-direction test.
+        """End-to-end DG must converge and smooth the doping-interface peak.
 
-        Currently FAILS not on the assertion but on non-convergence: the
-        Phase 3.6 sign fix is physically correct (the unit test
-        test_dg_sign_convention_depletes_peak_after_fix confirms multiplier<1)
-        but the explicit DG treatment in the Gummel loop is unstable under
-        the depletion sign.  See the xfail reason.
+        The terminal electron densities are Dirichlet data, so the global
+        maximum is pinned at ``Nd_high`` and is not a valid quantum-depletion
+        observable.  At the internal high/low-doping interface DG must instead
+        deplete the high-density side, enhance the low-density tail, and reduce
+        the carrier-density jump across the interface.
         """
         nx = 41
         Lx = 40e-9
@@ -1912,10 +1898,22 @@ class TestDensityGradient:
         assert r_off["converged"] and r_on["converged"], (
             "DG on/off runs did not both converge"
         )
-        n_peak_off = r_off["n"].max()
-        n_peak_on = r_on["n"].max()
-        assert n_peak_on < n_peak_off, (
-            f"DG-on peak n ({n_peak_on:.3e}) >= DG-off peak n "
-            f"({n_peak_off:.3e}); DG is not depleting the peak.  The Phase "
-            "3.6 sign fix may have been reverted or is insufficient."
+        i_hi = nx // 2 - 1
+        i_lo = nx // 2
+        n_off = np.asarray(r_off["n"])
+        n_on = np.asarray(r_on["n"])
+
+        assert n_on[i_hi] < 0.995 * n_off[i_hi], (
+            f"DG did not deplete the high-density interface side: "
+            f"{n_on[i_hi]:.3e} vs classical {n_off[i_hi]:.3e}"
+        )
+        assert n_on[i_lo] > 1.005 * n_off[i_lo], (
+            f"DG did not redistribute carriers into the low-density tail: "
+            f"{n_on[i_lo]:.3e} vs classical {n_off[i_lo]:.3e}"
+        )
+        jump_off = abs(n_off[i_hi] - n_off[i_lo])
+        jump_on = abs(n_on[i_hi] - n_on[i_lo])
+        assert jump_on < jump_off, (
+            f"DG increased the interface density jump: {jump_on:.3e} vs "
+            f"classical {jump_off:.3e}"
         )

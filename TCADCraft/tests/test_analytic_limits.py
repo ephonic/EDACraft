@@ -10,15 +10,14 @@ Modules covered:
     response about the well, spinodal identities.
   - Preisach (play-operator): Ps->0, Ec->0, saturation-to-Ps (post Escale fix),
     loop-closure invariant, Escale decoupling.
-  - Dielectric breakdown: sigma_bd->inf hard-short, sigma_bd->0 no-leak,
-    E_bd->inf never-break, dimensional self-consistency.
+  - Dielectric breakdown: J=sigma_bd*E, sigma_bd->0 no-leak,
+    E_bd->inf never-break, no fictitious electrostatic grounding.
   - Impact ionization (Chynoweth): E->0, E->inf saturation, monotonicity,
     sub-critical no-perturbation.
   - Newton-vs-Gummel cross-implementation consistency (quantitative).
 
-The two bugs found by this analysis (Preisach Escale=Ec saturation cap;
-sigma_bd [S/m] dimensional inconsistency) are fixed in the same commit and
-pinned here by the saturation / hard-short tests.
+The model identities are pinned here by quantitative saturation, current
+scaling and limiting-case tests.
 """
 
 import numpy as np
@@ -243,6 +242,51 @@ class TestPreisachAnalyticLimits:
             f"smaller Escale should give higher |P|: {sat_small}")
 
 
+class TestSentaurusPreisachAnalyticLimits:
+    """Sentaurus-compatible Eq. 986 major-loop calibration properties."""
+
+    def test_independent_ps_pr_and_fc(self):
+        ps = 0.20
+        pr = 0.12
+        ec = 5.0e7
+        escale = 2.0 * ec / np.log((ps + pr) / (ps - pr))
+        sim, N, mid = _build_preisach_slab(ps=ps, ec=ec, escale=escale)
+        sim.set_ferroelectric_model(3)
+
+        # The slab is 10 nm, so 2.5 V corresponds to 5*Fc.
+        voltages = np.concatenate([
+            np.linspace(0.0, 2.5, 21),
+            np.linspace(2.5, -2.5, 41)[1:],
+            np.linspace(-2.5, 2.5, 41)[1:],
+        ])
+        polarization = []
+        for voltage in voltages:
+            sim.set_dirichlet_potential({0: voltage, N - 1: 0.0})
+            polarization.append(sim.solve()["P"][mid][0])
+        polarization = np.asarray(polarization)
+
+        # Zero-field points on the decreasing and increasing major branches.
+        rem_pos = polarization[40]
+        rem_neg = polarization[80]
+        assert abs(abs(rem_pos) - pr) < 0.01
+        assert abs(abs(rem_neg) - pr) < 0.01
+        assert rem_pos * rem_neg < 0.0
+        assert np.max(np.abs(polarization)) > 0.98 * ps
+
+        # Linear interpolation around P=0 recovers +/-Fc.
+        fields = voltages / 10.0e-9
+        crossings = []
+        for start, stop in ((20, 61), (60, 101)):
+            for index in range(start + 1, stop):
+                p0, p1 = polarization[index - 1:index + 1]
+                if p0 * p1 <= 0.0 and p0 != p1:
+                    e0, e1 = fields[index - 1:index + 1]
+                    crossings.append(e0 + (e1 - e0) * (-p0) / (p1 - p0))
+                    break
+        assert len(crossings) == 2
+        assert all(abs(abs(field) - ec) / ec < 0.05 for field in crossings)
+
+
 # ===========================================================================
 # Dielectric breakdown analytic limits (post dimensional fix)
 # ===========================================================================
@@ -272,33 +316,23 @@ def _build_bd_stack(tox=2e-9, tsi=20e-9, nx_ox=5, nx_si=21, E_BD=5.0e8):
 
 
 class TestBreakdownAnalyticLimits:
-    """Dielectric breakdown against analytic limits (post [F/m^3] fix)."""
+    """Dielectric breakdown against explicit J=sigma*E limits."""
 
-    def test_sigma_bd_large_pins_phi_to_zero(self):
-        """sigma_bd -> large: broken NON-CONTACT nodes' phi -> 0 (hard short).
-        With the [F/m^3] definition, a sigma_bd >> eps/dx^2 dominates the
-        Poisson diagonal. (Contact/Dirichlet nodes are pinned to Vg by the BC
-        row, which overrides the leakage term — excluded from the assert.)"""
+    def test_sigma_bd_produces_explicit_current_without_grounding_phi(self):
+        """A failed filament carries J=sigma*E but does not alter Poisson."""
         sim, N, is_ox, E_bd = _build_bd_stack()
         sim.set_breakdown_enabled(True)
-        # eps_SiO2/dx^2 ~ 4.5e7 for tox=2nm; use 1e11 to dominate (~2000x).
-        sim.set_breakdown_params(is_ox.astype(np.int8), E_bd, 1.0e11)
+        sigma = 2.0e-2  # S/m
+        sim.set_breakdown_params(is_ox.astype(np.int8), E_bd, sigma)
         sim.set_dirichlet_potential({0: 3.0, N - 1: 0.0})
-        sim.solve()   # break
-        sim.solve()   # apply leakage at broken nodes
+        first = sim.solve()   # detects breakdown after this electrostatic solve
+        second = sim.solve()  # evaluates explicit current on failed edges
         bd = sim.breakdown_state()
         assert bd[is_ox].max() == 1, "no breakdown induced"
-        r = sim.solve()
-        # Broken INTERIOR oxide nodes (exclude contact node 0 which is Dirichlet).
-        broken_int = np.where(is_ox & (bd == 1) & (np.arange(N) != 0))[0]
-        assert len(broken_int) > 0, "no interior (non-contact) broken oxide node"
-        phi_broken = r["phi"][broken_int]
-        # With sigma_bd=1e11 >> diagonal ~4.5e7 (2000x), phi is pulled far
-        # below its unshorted value (~0.9). Assert <<unshorted (not exact 0,
-        # since neighbours still couple via edge terms).
-        assert np.max(np.abs(phi_broken)) < 0.05, (
-            f"hard-short limit failed: interior broken-node phi={phi_broken} "
-            f"not near 0 with sigma_bd=1e11 [F/m^3] (diag ~4.5e7, unshorted ~0.9)")
+        J = np.asarray(second["Jleak_x"])
+        assert np.max(np.abs(J)) > 0.0, "failed filament produced no Jleak"
+        assert np.allclose(first["phi"], second["phi"], rtol=1e-6, atol=1e-10), (
+            "breakdown current must not act as a fictitious Poisson ground")
 
     def test_sigma_bd_zero_no_leakage(self):
         """sigma_bd -> 0: the guard skips the leakage term, so broken nodes
@@ -328,31 +362,37 @@ class TestBreakdownAnalyticLimits:
         assert sim.breakdown_state().max() == 0, (
             "E_bd=1e30 should never trigger breakdown")
 
-    def test_dimensional_response_monotonic_in_sigma_bd(self):
-        """With sigma_bd in [F/m^3], the leakage effect should grow
-        monotonically with sigma_bd: a larger sigma_bd pulls broken-node phi
-        closer to 0. (Verifies the dimensional fix gives sensible physics.)
-        eps/dx^2 ~ 4.5e7 for tox=2nm; sweep sigma across that scale."""
-        phi_max_by_sigma = []
-        for sigma in [1e6, 1e9, 1e12]:   # below, at, above the diagonal scale
+    def test_current_is_linear_in_sigma_bd(self):
+        """At fixed electrostatic field, filament current scales with S/m."""
+        current_by_sigma = []
+        phi_by_sigma = []
+        for sigma in [1e-4, 1e-3, 1e-2]:
             sim, N, is_ox, E_bd = _build_bd_stack()
             sim.set_breakdown_enabled(True)
             sim.set_breakdown_params(is_ox.astype(np.int8), E_bd, sigma)
             sim.set_dirichlet_potential({0: 3.0, N - 1: 0.0})
             sim.solve()  # break
-            sim.solve()  # apply leak
             r = sim.solve()
-            bd = sim.breakdown_state()
-            # interior broken oxide nodes (exclude contact 0)
-            broken = np.where(is_ox & (bd == 1) & (np.arange(N) != 0))[0]
-            if len(broken):
-                phi_max_by_sigma.append(np.max(np.abs(r["phi"][broken])))
-            else:
-                phi_max_by_sigma.append(np.inf)
-        # Larger sigma -> smaller |phi| (closer to short). All finite here.
-        if all(np.isfinite(phi_max_by_sigma)):
-            assert phi_max_by_sigma[2] <= phi_max_by_sigma[0], (
-                f"larger sigma_bd should pull phi closer to 0: {phi_max_by_sigma}")
+            current_by_sigma.append(np.max(np.abs(r["Jleak_x"])))
+            phi_by_sigma.append(r["phi"])
+        assert np.allclose(np.asarray(current_by_sigma) / current_by_sigma[0],
+                           [1.0, 10.0, 100.0], rtol=1e-5)
+        assert np.allclose(phi_by_sigma[0], phi_by_sigma[-1], rtol=1e-6, atol=1e-10)
+
+    def test_breakdown_current_contributes_to_self_heating(self):
+        """Explicit filament J·E must enter the lattice heat equation."""
+        sim, N, is_ox, E_bd = _build_bd_stack()
+        sim.set_breakdown_enabled(True)
+        sim.set_breakdown_params(is_ox.astype(np.int8), E_bd, 1.0)
+        sim.set_thermal_coupling_enabled(True)
+        sim.set_thermal_conductivity(np.full(N, 1.0))
+        sim.set_ambient_temperature(300.0)
+        sim.set_dirichlet_potential({0: 3.0, N - 1: 0.0})
+        before = sim.solve()  # detects breakdown; no filament current yet
+        after = sim.solve()   # carries J_bd and deposits J_bd*E heat
+        assert np.max(np.abs(after["Jleak_x"])) > 0.0
+        assert np.max(after["temperature"]) > np.max(before["temperature"]), (
+            "post-breakdown dielectric Joule heat was not coupled thermally")
 
 
 # ===========================================================================

@@ -538,11 +538,18 @@ add-on (four-layer binding: `Simulator.set_impact_ionization` → Cython →
 - Coefficient law `alpha(E) = A·exp(-B/|E|)` with a field-floor guard (1e5 V/m).
 - Tests: Chynoweth α(E) curve unit test, field-floor onset, four-layer setter
   round-trip — all passing.
-- **Known limitation:** a converged avalanche I-V requires a fully-coupled
-  Newton Jacobian carrying `dG_ii/dn` (the II source is strong positive
-  feedback); the alternating-sweep Gummel path converges only while II stays
-  sub-critical. Full coupled-Jacobian avalanche is a follow-on task (as in
-  commercial tools).
+- The Newton Jacobian now carries the piecewise-smooth `dG_ii/dphi`,
+  `dG_ii/dn`, and `dG_ii/dp` edge derivatives. Nonuniform x/y/z edge spacing,
+  harmonic face mobility, and half-volume endpoint deposition are shared by
+  Gummel, Newton, and the exposed final-state `G_ii` diagnostic.
+- The Sentaurus-calibrated one-dimensional ABA + electrothermal replay passes:
+  BV/ionization integrals match, thermal-runaway voltage error is 3.72%, peak
+  temperature error is 0.193%, and terminal KCL spread is 6.10e-9. The closure
+  removes a post-Newton Poisson-only mutation, preserves converged depletion
+  densities, adds mixed absolute/relative KCL convergence, and includes Auger
+  derivatives in Newton. A calibrated 0.07 avalanche-current factor currently
+  stands in for Sentaurus `HighFieldSaturation(GradQuasiFermi)`; replace and
+  re-calibrate it when native field-dependent mobility enters Newton.
 
 ### Test snapshot (M7a)
 ```

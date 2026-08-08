@@ -3,9 +3,10 @@
 #include <algorithm>
 #include <vector>
 
-// Direct LAPACK/BLAS linkage (-llapack -lblas in setup.py).  The linear solve
-// inside Newton/Gummel is done in double precision (the nonlinear outer
-// iteration restores full accuracy); ~100x faster than __float128 elimination.
+// Optional direct LAPACK/BLAS linkage (TCAD_USE_LAPACK=1 at build time).  It is
+// disabled in portable wheels because an extension linked against a system
+// LAPACK can collide with the private BLAS/LAPACK bundled in SciPy wheels.
+#ifdef TCAD_USE_LAPACK
 extern "C" {
 void dgesv_(const int* n, const int* nrhs, double* A, const int* lda,
             int* ipiv, double* B, const int* ldb, int* info);
@@ -13,8 +14,9 @@ void dgbtrf_(const int* m, const int* n, const int* kl, const int* ku,
              double* AB, const int* ldab, int* ipiv, int* info);
 void dgbtrs_(const char* trans, const int* n, const int* kl, const int* ku,
              const int* nrhs, const double* AB, const int* ldab,
-             const int* ipiv, double* B, const int* ldb, int* info);
+            const int* ipiv, double* B, const int* ldb, int* info);
 }
+#endif
 
 #ifdef __APPLE__
 // Accelerate framework available but native dense direct solver is self-contained
@@ -92,6 +94,9 @@ size_t LinearSolver::solve(const SparseMatrix& A, const Vector& b, Vector& x) {
 #ifdef TCAD_USE_PETSC
         case SolverType::PETSC:
             return solve_petsc(A, b, x);
+#else
+        case SolverType::PETSC:
+            break;
 #endif
     }
     // Unknown/unsupported solver type (e.g. SolverType::PETSC requested
@@ -238,7 +243,6 @@ size_t LinearSolver::solve_ir_bicgstab(const SparseMatrix& A, const Vector& b, V
     }
     opt_ = saved;
     return inner_iters;
-}
 }
 
 size_t LinearSolver::gmres(const SparseMatrix& A, const Vector& b, Vector& x) {
@@ -582,6 +586,7 @@ size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector
     // structure: genuinely banded systems (coupled DD Jacobian on a structured
     // grid, bw ~ 2*neq+1 ~ 9) use dgbtrf/dgbtrs O(n*bw^2); otherwise dgesv
     // O(n^3) in double.  Makes the 200-2000-node "dead zone" fast.
+#ifdef TCAD_USE_LAPACK
     {
         const auto& cols_csr = A.col_indices();
         const auto& rp_csr = A.row_offsets();
@@ -636,6 +641,7 @@ size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector
         if (getenv("TCAD_LIN_DEBUG"))
             std::cerr << "[LAPACK info=" << info << " n=" << n << "] -> quad fallback\n";
     }
+#endif
 
     // Gaussian elimination with partial pivoting (__float128 fallback)
     for (size_t k = 0; k < n; ++k) {

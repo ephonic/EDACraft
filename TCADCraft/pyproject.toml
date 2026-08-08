@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61", "wheel", "Cython>=3.0", "numpy>=1.24"]
+requires = ["setuptools>=77", "wheel", "Cython>=3.0", "numpy>=1.24"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "0.2.0"
 description = "3D Quantum-Corrected Semiconductor Device Simulator with Extended Precision"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "TCAD Contributors"},
 ]
@@ -16,7 +17,6 @@ keywords = ["tcad", "semiconductor", "device-simulation", "quantum", "spice"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: C++",
     "Programming Language :: Cython",
     "Programming Language :: Python :: 3",
@@ -40,9 +40,9 @@ gmsh = ["gmsh>=4.12"]
 dev = ["pytest>=7.0", "pytest-cov", "black", "mypy"]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/tcad"
-Repository = "https://github.com/yourusername/tcad"
-Issues = "https://github.com/yourusername/tcad/issues"
+Homepage = "https://github.com/ephonic/EDACraft/tree/main/TCADCraft"
+Repository = "https://github.com/ephonic/EDACraft"
+Issues = "https://github.com/ephonic/EDACraft/issues"
 
 [tool.setuptools.packages.find]
 include = ["tcad", "tcad.*"]

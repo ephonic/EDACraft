@@ -255,12 +255,10 @@ class TestImpactIonization:
 
     The II source ``G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q`` is a strong
     positive feedback (alpha grows with |E|, and J grows with the carrier
-    density that II itself generates).  An alternating-sweep solver (Gummel)
-    can therefore only converge while II stays sub-critical; a full avalanche
-    requires a fully-coupled Newton Jacobian carrying dG_ii/dn (a follow-on
-    task, like commercial tools use).  These tests therefore verify the
-    *physics and wiring* of the II module rather than a converged avalanche
-    I-V:
+    density that II itself generates). The Newton path now carries the full
+    piecewise-smooth source derivatives with respect to potential and both
+    carrier densities. These tests verify the physics, binding, and final-state
+    diagnostic; the Sentaurus calibration separately exercises breakdown I-V:
 
       1. The Chynoweth coefficient alpha(E)=A*exp(-B/|E|) is computed correctly
          (pure-function unit test against the closed form).
@@ -304,14 +302,10 @@ class TestImpactIonization:
         guard at the pure-function level (the curve test) and confirm the
         solver accepts II enabled without crashing at zero bias.
 
-        NOTE: a converged avalanche I-V requires a fully-coupled Newton
-        Jacobian carrying dG_ii/dn (the II source is a strong positive
-        feedback: alpha grows with |E|, J grows with the density II itself
-        generates). The current alternating-sweep (Gummel) path converges only
-        while II stays sub-critical; full avalanche convergence with a
-        coupled Jacobian is a follow-on task, as in commercial tools. The FE
-        coupling fix in this file (the user-reported HZO/MV bug) is independent
-        of this limitation and is fully tested above.
+        The Gummel warm-up is still only a sub-critical continuation aid; the
+        Newton path owns strong-feedback closure and includes all II source
+        derivatives. The electrothermal benchmark additionally enforces a KCL
+        gate before accepting self-heating results.
         """
         # At and below the floor alpha must be ~0 in the closed form too.
         for E in [self.E_FLOOR * 0.5, self.E_FLOOR]:
@@ -346,10 +340,9 @@ class TestImpactIonization:
         A direct ON-vs-OFF equilibrium comparison is unstable because the II
         source activates during the convergence transient (before equilibrium
         is reached, the field is nonzero and briefly exceeds the floor),
-        which the alternating-sweep Gummel path cannot always damp. This is
-        documented as the known avalanche-convergence limitation (see
-        test_ii_field_floor_is_zero_below_onset docstring); a coupled-Newton
-        treatment removes it. The field-floor physics itself is correct.
+        which the alternating-sweep Gummel warm-up cannot always damp. The
+        direct coupled-Newton production path avoids relying on that transient;
+        this skipped comparison remains a poor test of the field-floor law.
         """
         pytest.skip("see test_ii_field_floor_is_zero_below_onset")
 
@@ -364,6 +357,8 @@ class TestImpactIonization:
         r = sim.solve()
         # No exception, returns a result dict with the expected keys.
         assert "n" in r and "p" in r and "converged" in r
+        assert "G_ii" in r and r["G_ii"].shape == (sim.npts,)
+        assert np.all(np.isfinite(r["G_ii"]))
 
 
 class TestImpactIonizationMaterialLibrary:
@@ -397,4 +392,3 @@ class TestImpactIonizationMaterialLibrary:
             assert key in f, f"sample_on_grid missing {key}"
             assert np.allclose(f[key], expected), (
                 f"{key} not propagated from Material to mesh field")
-

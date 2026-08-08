@@ -191,7 +191,10 @@ class TestKirchhoffCurrentLaw:
 
     def test_public_sg_matches_reference_helper(self):
         """Public ``sg_current_density_1d`` == audit's ``_sg_current_1d``."""
-        # Reference helper copied verbatim from test_numerical_validation.py.
+        # Independent reference in the conventional-current sign convention.
+        # The continuity matrix uses the raw electron particle flux, whose
+        # sign is opposite to the conventional electron current returned by
+        # the public postprocessor and by SimulationResult.Jn_*.
         QE = 1.602176634e-19
         VT = 8.617333262e-5 * 300.0
 
@@ -214,7 +217,7 @@ class TestKirchhoffCurrentLaw:
             Bm = _bernoulli_ref(-dphi / VT)
             Dn = mu_n * VT / dx
             Dp = mu_p * VT / dx
-            Jn = QE * Dn * (n[:-1] * Bm - n[1:] * Bp)
+            Jn = QE * Dn * (n[1:] * Bp - n[:-1] * Bm)
             Jp = QE * Dp * (p[:-1] * Bp - p[1:] * Bm)
             return Jn, Jp
 

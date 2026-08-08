@@ -101,28 +101,32 @@ class TestPoissonMMSConvergence:
         """The sine-BC Laplace box must converge at ~2nd order (Richardson).
         Re-asserts the existing test_numerical_validation result via the
         shared richardson_rate helper (independent sanity anchor)."""
-        ns = [9, 17, 33]
+        # The full [9, 17, 33]^3 triplet is already exercised by
+        # test_numerical_validation.py.  Keep this independent MMS anchor on a
+        # smaller nested triplet so the default suite does not solve the same
+        # 35,937-node extended-precision box twice.
+        ns = [5, 9, 17]
         phis = [_laplace_box_solve(n, n, n) for n in ns]
-        # Subsample all to the common 9x9x9 node set (stride = (n-1)//8).
+        # Subsample all to the common 5x5x5 node set (stride = (n-1)//4).
         common = []
         for n, phi in zip(ns, phis):
-            stride = (n - 1) // 8
-            idx_1d = np.arange(9) * stride
-            sub = np.zeros(9 * 9 * 9)
-            for ki in range(9):
-                for j in range(9):
-                    for i in range(9):
+            stride = (n - 1) // 4
+            idx_1d = np.arange(5) * stride
+            sub = np.zeros(5 * 5 * 5)
+            for ki in range(5):
+                for j in range(5):
+                    for i in range(5):
                         node = idx_1d[i] + n * (idx_1d[j] + n * idx_1d[ki])
-                        sub[i + 9 * (j + 9 * ki)] = phi[node]
+                        sub[i + 5 * (j + 5 * ki)] = phi[node]
             common.append(sub)
         # Interior mask (exclude the boundary, where phi is pinned exactly).
-        interior = np.zeros(9 * 9 * 9, dtype=bool)
-        for ki in range(9):
-            for j in range(9):
-                for i in range(9):
-                    if i in (0, 8) or j in (0, 8) or ki in (0, 8):
+        interior = np.zeros(5 * 5 * 5, dtype=bool)
+        for ki in range(5):
+            for j in range(5):
+                for i in range(5):
+                    if i in (0, 4) or j in (0, 4) or ki in (0, 4):
                         continue
-                    interior[i + 9 * (j + 9 * ki)] = True
+                    interior[i + 5 * (j + 5 * ki)] = True
         rate = richardson_rate(common[0], common[1], common[2], mask=interior)
         if rate is None:
             return  # FP-noise floor

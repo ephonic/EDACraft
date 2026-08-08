@@ -2,6 +2,7 @@
 #include "statistics.h"
 #include <iostream>
 #include <cmath>
+#include <string>
 
 namespace tcad {
 
@@ -22,11 +23,50 @@ DeviceSimulator::DeviceSimulator(size_t nx, size_t ny, size_t nz,
     tau_n_.assign(N, 1e100Q);
     tau_p_.assign(N, 1e100Q);
     Nd_minus_Na_.assign(N, 0.0Q);
+    charge_volume_fraction_.assign(N, 1.0Q);
     G_opt_.assign(N, 0.0Q);
     Nc_.assign(N, 2.8e19Q);   // Default Si conduction-band DOS [cm^-3]
     Nv_.assign(N, 1.04e19Q);  // Default Si valence-band DOS [cm^-3]
     Eg_.assign(N, 1.12Q);     // Default Si bandgap [eV]
     thermal_conductivity_.assign(N, 150.0Q); // Default: Silicon thermal conductivity [W/(m*K)]
+}
+
+namespace {
+void validate_positions(const std::vector<real_t>& positions, size_t expected,
+                        const char* axis) {
+    if (positions.size() != expected)
+        throw std::invalid_argument(std::string(axis) + " position count mismatch");
+    for (size_t i = 1; i < positions.size(); ++i) {
+        if (!(positions[i] > positions[i - 1]))
+            throw std::invalid_argument(std::string(axis) +
+                                        " positions must be strictly increasing");
+    }
+}
+}  // namespace
+
+void DeviceSimulator::set_grid_z(const std::vector<real_t>& z_pos) {
+    validate_positions(z_pos, g_.nz, "z");
+    g_.zx = z_pos;
+    // Grid-owning helpers store Grid3D by value. Refresh them immediately so
+    // final E/J/Q post-processing uses exactly the mesh used by the nonlinear
+    // solve (Gummel/Newton are rebuilt from g_ inside solve()).
+    poisson_ = PoissonSolver(g_);
+    poisson_.set_permittivity(eps_);
+    poisson_.set_doping(Nd_minus_Na_);
+    poisson_.set_charge_volume_fraction(charge_volume_fraction_);
+    poisson_.set_dirichlet(phi_bc_);
+    dg_ = DensityGradient(g_);
+}
+
+void DeviceSimulator::set_grid_x(const std::vector<real_t>& x_pos) {
+    validate_positions(x_pos, g_.nx, "x");
+    g_.xx = x_pos;
+    poisson_ = PoissonSolver(g_);
+    poisson_.set_permittivity(eps_);
+    poisson_.set_doping(Nd_minus_Na_);
+    poisson_.set_charge_volume_fraction(charge_volume_fraction_);
+    poisson_.set_dirichlet(phi_bc_);
+    dg_ = DensityGradient(g_);
 }
 
 void DeviceSimulator::set_permittivity(const std::vector<real_t>& eps) {
@@ -53,6 +93,19 @@ void DeviceSimulator::set_doping(const std::vector<real_t>& Nd_minus_Na) {
     Nd_minus_Na_ = Nd_minus_Na;
     poisson_.set_doping(Nd_minus_Na_);
     gummel_.set_doping(Nd_minus_Na_);
+}
+
+void DeviceSimulator::set_charge_volume_fraction(
+    const std::vector<real_t>& fraction) {
+    if (fraction.size() != g_.npts())
+        throw std::invalid_argument("charge volume fraction size mismatch");
+    for (real_t value : fraction) {
+        if (value < 0.0Q || value > 1.0Q)
+            throw std::invalid_argument(
+                "charge volume fraction must be in [0,1]");
+    }
+    charge_volume_fraction_ = fraction;
+    poisson_.set_charge_volume_fraction(charge_volume_fraction_);
 }
 
 void DeviceSimulator::set_optical_generation(const std::vector<real_t>& G_opt) {
@@ -280,8 +333,6 @@ void DeviceSimulator::solve_equilibrium() {
     // current), so a channel node near S/D potential gets n~1e18 (on-state).
     // This is DIFFERENT from charge-neutrality which gives n~ni regardless
     // of phi.
-    real_t log_ni_ref = log_q(intrinsic_density(Eg_[0], temperature_, Nc_[0], Nv_[0], statistics_type_));
-
     for (int iter = 0; iter < 100; ++iter) {
         // Solve Poisson with current n, p
         eq_gummel.recompute_poisson(phi_eq, n_eq, p_eq);
@@ -531,7 +582,17 @@ SimulationResult DeviceSimulator::solve() {
     opt.max_iter = max_iter_;
     opt.poisson_tol = tol_;
     opt.continuity_tol = tol_;
+    // A cycle-mean/frozen state must respect the requested accuracy.  The
+    // historical fixed 1e-3 gate silently accepted four orders less accuracy
+    // than a tol=1e-7 quantum run and produced bias-to-bias current jumps.
+    opt.frozen_residual_gate = std::min(
+        std::max(100.0Q * tol_, 1.0e-8Q), 1.0e-4Q);
     opt.enable_quantum = quantum_enabled_;
+    // The density-gradient fixed-point map is substantially stiffer than
+    // classical DD in ultra-thin films. Keep the outer carrier update
+    // contractive; the final undamped continuity polish still returns the
+    // same discrete solution once the coupled state has converged.
+    if (quantum_enabled_) opt.cont_damping = 0.2Q;
     opt.VT = VT_;
     // Auto-switch from dense direct to iterative/PETSc for large systems
     // to avoid O(n^3) slowdown.  User overrides are respected.
@@ -617,10 +678,15 @@ SimulationResult DeviceSimulator::solve() {
         // initial guess.  Normal contracting warm-up progress is never
         // interrupted.  (issues0719 P0-3 follow-up.)
         GummelOptions warm_opt = opt;
-        warm_opt.exit_on_limit_cycle = false;  // run to full convergence (cycle-mean average gives wrong edge currents)
+        // Complete the Gummel stabilisation when possible.  Large contact
+        // jumps are already subdivided by the high-level continuation path;
+        // handing a cycle-mean state directly to Newton degraded KCL and the
+        // Newton/Gummel agreement on ordinary PN devices.
+        warm_opt.exit_on_limit_cycle = false;
         gummel_ = GummelSolver(g_, warm_opt);
         gummel_.set_mobility(mu_n_eff, mu_p_eff);
         gummel_.set_doping(Nd_minus_Na_);
+        gummel_.set_charge_volume_fraction(charge_volume_fraction_);
         gummel_.set_recombination(tau_n_, tau_p_);
         gummel_.set_optical_generation(G_opt_);
         gummel_.set_effective_dos(Nc_, Nv_);
@@ -644,8 +710,10 @@ SimulationResult DeviceSimulator::solve() {
             }
             gummel_.set_fe_polarization(fe_polarization_);
             // Inject the persistent Preisach play state (M7c).
-            if (fe_model_ == 1) {
-                if (fe_play_state_.size() != N) fe_play_state_.assign(N, 0.0Q);
+            if (fe_model_ == 1 || fe_model_ == 3) {
+                const size_t state_size = (fe_model_ == 3) ? 2 * N : N;
+                if (fe_play_state_.size() != state_size)
+                    fe_play_state_.assign(state_size, 0.0Q);
                 gummel_.set_fe_play_state(fe_play_state_);
             }
         }
@@ -663,13 +731,19 @@ SimulationResult DeviceSimulator::solve() {
         // directly from the initial guess.  Needed for lightly-doped 3D
         // devices (e.g. DG FinFET) where Gummel converges to the "off"
         // state but the physical solution is "on" (S/D injection fills body).
-        bool gummel_ok = true;
+        // A skipped stage has not converged.  Initialising this to true made
+        // newton_primary mode report success even when the primary Newton
+        // solve stalled: res.converged below used (gummel_ok || newton_ok),
+        // so the nonexistent Gummel warm-up masked a genuine Newton failure
+        // and let a KCL-broken state seed the next bias point.
+        bool gummel_ok = false;
         if (!newton_primary_) {
             gummel_ok = gummel_.solve(res.phi, res.n, res.p);
         }
         if (fe_enabled_) {
             fe_polarization_ = gummel_.fe_polarization();
-            if (fe_model_ == 1) fe_play_state_ = gummel_.fe_play_state();
+            if (fe_model_ == 1 || fe_model_ == 3)
+                fe_play_state_ = gummel_.fe_play_state();
         }
         size_t gummel_iters = gummel_.poisson_residuals().size();
         // Convergence-honesty diagnostics from the Gummel warm-up (P0-3).
@@ -707,6 +781,9 @@ SimulationResult DeviceSimulator::solve() {
             nopt.ii_B_n = ii_B_n_;
             nopt.ii_A_p = ii_A_p_;
             nopt.ii_B_p = ii_B_p_;
+            nopt.enable_auger = auger_enabled_;
+            nopt.auger_Cn = auger_Cn_;
+            nopt.auger_Cp = auger_Cp_;
             nopt.temperature = temperature_;
             nopt.statistics_type = statistics_type_;
 #ifdef TCAD_USE_PETSC
@@ -726,6 +803,7 @@ SimulationResult DeviceSimulator::solve() {
             newton_.set_permittivity(eps_);
             newton_.set_mobility(mu_n_eff, mu_p_eff);
             newton_.set_doping(Nd_minus_Na_);
+            newton_.set_charge_volume_fraction(charge_volume_fraction_);
             newton_.set_recombination(tau_n_, tau_p_);
             newton_.set_optical_generation(G_opt_);
             newton_.set_effective_dos(Nc_, Nv_);
@@ -777,9 +855,12 @@ SimulationResult DeviceSimulator::solve() {
             // Run Newton when Gummel didn't converge OR newton_primary mode.
             if (!gummel_ok || newton_primary_) {
                 newton_ok = newton_.solve(res.phi, res.n, res.p);
-                if (newton_ok) {
-                    gummel_.recompute_poisson(res.phi, res.n, res.p);
-                }
+                // Newton already returns one coupled Poisson/electron/hole
+                // state.  A former "polish" re-solved Poisson alone here,
+                // changing phi without re-solving n and p.  The change can be
+                // numerically tiny yet destroy drift/diffusion cancellation
+                // at an abrupt high-doping junction, producing a KCL-broken
+                // 1e6 A/m^2 local current from an equilibrium solution.
                 if (!newton_ok) {
                     // Roll back: keep the earned Gummel (limit-cycle) state.
                     res.phi = phi_w; res.n = n_w; res.p = p_w;
@@ -802,7 +883,9 @@ SimulationResult DeviceSimulator::solve() {
             // advance the FE memory state (Preisach/NLS) a SECOND time for
             // the same bias point, breaking the one-state-advance-per-bias-
             // step semantics of the P0-2 fix.
-            if (!gummel_ok) {
+            // In Newton-primary mode no Gummel warm-up was attempted, so do
+            // not label the primary solver's status as a Gummel limit cycle.
+            if (!gummel_ok && !newton_primary_) {
                 if (res.converged) {
                     std::cout << "Gummel warm-up stalled (limit cycle); "
                               << "Newton polish converged (true residual="
@@ -818,6 +901,7 @@ SimulationResult DeviceSimulator::solve() {
         gummel_ = GummelSolver(g_, opt);
         gummel_.set_mobility(mu_n_eff, mu_p_eff);
         gummel_.set_doping(Nd_minus_Na_);
+        gummel_.set_charge_volume_fraction(charge_volume_fraction_);
         gummel_.set_recombination(tau_n_, tau_p_);
         gummel_.set_optical_generation(G_opt_);
         gummel_.set_effective_dos(Nc_, Nv_);
@@ -836,8 +920,10 @@ SimulationResult DeviceSimulator::solve() {
                 fe_polarization_init_ = true;
             }
             gummel_.set_fe_polarization(fe_polarization_);
-            if (fe_model_ == 1) {
-                if (fe_play_state_.size() != N) fe_play_state_.assign(N, 0.0Q);
+            if (fe_model_ == 1 || fe_model_ == 3) {
+                const size_t state_size = (fe_model_ == 3) ? 2 * N : N;
+                if (fe_play_state_.size() != state_size)
+                    fe_play_state_.assign(state_size, 0.0Q);
                 gummel_.set_fe_play_state(fe_play_state_);
             }
         }
@@ -854,7 +940,8 @@ SimulationResult DeviceSimulator::solve() {
         res.converged = gummel_.solve(res.phi, res.n, res.p);
         if (fe_enabled_) {
             fe_polarization_ = gummel_.fe_polarization();
-            if (fe_model_ == 1) fe_play_state_ = gummel_.fe_play_state();
+            if (fe_model_ == 1 || fe_model_ == 3)
+                fe_play_state_ = gummel_.fe_play_state();
         }
         // Convergence-honesty diagnostics (P0-3).
         res.poisson_residual = gummel_.poisson_residual_final();
@@ -862,15 +949,16 @@ SimulationResult DeviceSimulator::solve() {
         res.iterations = gummel_.poisson_residuals().size();
     }
 
-    // --- Convergence robustness: physical clamp on the returned state. ---
+    // --- Failure-path robustness: physical clamp on a non-converged state. ---
     // A diverged Gummel warm-up can leave non-finite / extreme carrier values
     // that produce garbage edge currents (1e10+ A/m^2) and corrupt downstream
     // IV comparison.  Clamp n, p (and phi) to physical bounds so that even a
     // non-converged point yields a usable, finite current instead of NaN/inf.
-    // `!(x > lo)` is false for NaN, so NaN is replaced too.  Converged Si
-    // solutions live in n,p ~ [1e10, 1e27] m^-3 and phi ~ [-5, 5] V, so the
-    // generous bounds below never touch a legitimate solution.
-    {
+    // `!(x > lo)` is false for NaN, so NaN is replaced too.  Never apply this
+    // to a converged state: a reverse-biased depletion region can legitimately
+    // fall below 1 cm^-3, and changing that density after the coupled solve
+    // breaks continuity/KCL.
+    if (!res.converged) {
         const real_t CARR_FLOOR = 1e6Q;    // m^-3  (1 cm^-3)
         const real_t CARR_CEIL  = 1e28Q;   // m^-3  (1e22 cm^-3, above any doping)
         const real_t PHI_CEIL   = 50.0Q;   // V
@@ -896,6 +984,13 @@ SimulationResult DeviceSimulator::solve() {
     // Compute E-field even if not fully converged (results may still be useful)
     poisson_.compute_electric_field(res.phi, res.Ex, res.Ey, res.Ez);
 
+    // Sentaurus-style mechanism diagnostic: expose the exact BTBT source
+    // evaluated at the returned electrostatic state.  This is deliberately
+    // recomputed after any Newton polish/rollback so it cannot describe a
+    // stale intermediate Gummel iterate.
+    gummel_.evaluate_btbt_generation(res.phi, res.G_btbt);
+    gummel_.evaluate_impact_ionization(res.phi, res.n, res.p, res.G_ii);
+
     // Dielectric breakdown detection (M7b, audit §22).  After the field is
     // known, flag any masked dielectric node whose |E| exceeds its material
     // breakdown field E_bd.  The flip is IRREVERSIBLE (bd_state_ only goes 0->1)
@@ -903,6 +998,7 @@ SimulationResult DeviceSimulator::solve() {
     // down on subsequent (even lower) bias points, modelling the conductive
     // filament.  The leakage term itself is applied on the NEXT solve() via
     // set_breakdown_state above (this solve already assembled without it).
+    const std::vector<char> bd_state_entered = bd_state_;
     if (bd_enabled_ && !bd_mask_.empty() && E_bd_.size() == N) {
         for (size_t i = 0; i < N; ++i) {
             if (!bd_mask_[i] || bd_state_[i]) continue;   // skip non-dielectric / already broken
@@ -916,20 +1012,88 @@ SimulationResult DeviceSimulator::solve() {
     // Full-precision edge current densities (Audit §20).  Computed in
     // __float128 from the converged phi/n/p to avoid the catastrophic
     // cancellation of double-precision Python re-derivation.
+    const std::vector<char> bd_state_detected = bd_state_;
+    bd_state_ = bd_state_entered;
     compute_edge_currents(res, res.phi, res.n, res.p);
 
     // Thermal coupling (self-heating)
-    if (thermal_coupling_enabled_) {
+    if (thermal_coupling_enabled_ && res.converged) {
         res.temperature.assign(N, ambient_temperature_);
         
-        // Compute self-heating power density: P = sigma * |E|^2 [W/m^3]
-        // sigma = q * (mu_n * n + mu_p * p)  [S/m]
+        // Compute carrier Joule heating from the *net SG current*, not
+        // sigma*|E|^2.  In a junction at equilibrium drift and diffusion
+        // cancel (J=0) despite a large built-in field; sigma*E^2 therefore
+        // created spurious zero-bias heating.  Deposit each edge's J.E half
+        // to either endpoint to preserve the finite-volume energy balance.
         std::vector<real_t> power(N, 0.0Q);
-        for (size_t i = 0; i < N; ++i) {
-            real_t sigma = QE * (mu_n_[i] * res.n[i] + mu_p_[i] * res.p[i]);
-            real_t E2 = res.Ex[i] * res.Ex[i] + res.Ey[i] * res.Ey[i] + res.Ez[i] * res.Ez[i];
-            power[i] = sigma * E2;
+        // In a steady 1-D device div(Jn+Jp)=0, so the physically admissible
+        // total-current field is constant.  Contact Dirichlet edges can carry
+        // large cancellation spikes even when the coupled residual passes;
+        // feeding those spikes into J.E creates a false contact hotspot.  Use
+        // the robust L1 (median) conservative projection for heat deposition,
+        // while leaving the raw edge currents untouched for explicit KCL QA.
+        bool project_1d_current = (g_.ny == 1 && g_.nz == 1 && g_.nx > 4);
+        real_t projected_Jx = 0.0Q;
+        if (project_1d_current) {
+            std::vector<real_t> interior_J;
+            interior_J.reserve(g_.nx - 3);
+            for (size_t i = 1; i + 2 < g_.nx; ++i)
+                interior_J.push_back(res.Jn_x[i] + res.Jp_x[i]);
+            auto middle = interior_J.begin() + interior_J.size() / 2;
+            std::nth_element(interior_J.begin(), middle, interior_J.end());
+            projected_Jx = *middle;
         }
+        auto add_mobile_heat = [&](const std::vector<real_t>& Jn_ax,
+                                   const std::vector<real_t>& Jp_ax,
+                                   int axis, size_t stride,
+                                   size_t n0, size_t n1, size_t n2) {
+            for (size_t k = 0; k < n2; ++k)
+                for (size_t j = 0; j < n1; ++j)
+                    for (size_t i = 0; i < n0; ++i) {
+                        size_t idx = g_.index(i, j, k);
+                        size_t nbr = idx + stride;
+                        real_t d = (axis == 0) ? g_.dx_edge(i)
+                                 : (axis == 1) ? g_.dy_edge(j) : g_.dz_edge(k);
+                        real_t E_axis = -(res.phi[nbr] - res.phi[idx]) / d;
+                        real_t Jtotal = (project_1d_current && axis == 0)
+                                      ? projected_Jx : Jn_ax[idx] + Jp_ax[idx];
+                        real_t qdot = abs_q(Jtotal * E_axis);
+                        power[idx] += 0.5Q * qdot;
+                        power[nbr] += 0.5Q * qdot;
+                    }
+        };
+        add_mobile_heat(res.Jn_x, res.Jp_x, 0, 1,
+                        g_.nx - 1, g_.ny, g_.nz);
+        add_mobile_heat(res.Jn_y, res.Jp_y, 1, g_.nx,
+                        g_.nx, g_.ny - 1, g_.nz);
+        add_mobile_heat(res.Jn_z, res.Jp_z, 2, g_.nx * g_.ny,
+                        g_.nx, g_.ny, g_.nz - 1);
+
+        // Add dielectric Joule heating J_leak·E, including PF/FN and the
+        // explicit post-breakdown filament current. Edge power is split
+        // equally between its two control volumes. The absolute value guards
+        // against round-off/sign conventions while preserving non-negative
+        // irreversible heat generation.
+        auto add_leak_heat = [&](const std::vector<real_t>& J_ax,
+                                 int axis, size_t stride,
+                                 size_t n0, size_t n1, size_t n2) {
+            for (size_t k = 0; k < n2; ++k)
+                for (size_t j = 0; j < n1; ++j)
+                    for (size_t i = 0; i < n0; ++i) {
+                        size_t idx = g_.index(i, j, k);
+                        size_t nbr = idx + stride;
+                        if (J_ax[idx] == 0.0Q) continue;
+                        real_t d = (axis == 0) ? g_.dx_edge(i)
+                                 : (axis == 1) ? g_.dy_edge(j) : g_.dz_edge(k);
+                        real_t E_axis = -(res.phi[nbr] - res.phi[idx]) / d;
+                        real_t qdot = abs_q(J_ax[idx] * E_axis);
+                        power[idx] += 0.5Q * qdot;
+                        power[nbr] += 0.5Q * qdot;
+                    }
+        };
+        add_leak_heat(res.Jleak_x, 0, 1,              g_.nx - 1, g_.ny,     g_.nz);
+        add_leak_heat(res.Jleak_y, 1, g_.nx,          g_.nx,     g_.ny - 1, g_.nz);
+        add_leak_heat(res.Jleak_z, 2, g_.nx * g_.ny,  g_.nx,     g_.ny,     g_.nz - 1);
         
         // If no explicit thermal BCs set, anchor contacts to ambient temperature
         std::map<size_t, real_t> tbc = thermal_bc_;
@@ -946,8 +1110,16 @@ SimulationResult DeviceSimulator::solve() {
         // Use PETSc direct solver for thermal — dense solver suffers catastrophic
         // cancellation when matrix coefficients (~1e16) dwarf ambient (~300 K).
         SolverOptions thermal_opt;
+#ifdef TCAD_USE_PETSC
         thermal_opt.type = SolverType::PETSC;
         thermal_opt.max_iter = 1;
+#else
+        // Never request an unavailable backend. The previous unconditional
+        // PETSC enum made every electrothermal solve a no-op in the normal
+        // non-PETSc Python build.
+        thermal_opt.type = SolverType::DENSE_DIRECT;
+        thermal_opt.max_iter = 5000;
+#endif
         thermal_opt.tol = 1e-12Q;
         thermal_solver.set_solver_options(thermal_opt);
         thermal_solver.assemble_thermal(power);
@@ -955,6 +1127,48 @@ SimulationResult DeviceSimulator::solve() {
         if (!thermal_solver.solve(res.temperature)) {
             std::cerr << "Thermal solve failed\n";
         }
+    }
+
+    // Reject KCL-broken electrothermal states with the same mixed
+    // absolute/relative criterion as the Newton convergence guard. Relative
+    // spread alone is ill-conditioned at equilibrium, while a power-only gate
+    // previously admitted large non-conservative leakage currents.
+    if (thermal_coupling_enabled_ && res.converged &&
+        g_.ny == 1 && g_.nz == 1 && g_.nx > 2 &&
+        !res.temperature.empty()) {
+        real_t jmin = res.Jn_x[0] + res.Jp_x[0];
+        real_t jmax = jmin;
+        real_t jabs = abs_q(jmin);
+        for (size_t i = 1; i + 1 < g_.nx; ++i) {
+            real_t jt = res.Jn_x[i] + res.Jp_x[i];
+            jmin = std::min(jmin, jt);
+            jmax = std::max(jmax, jt);
+            jabs = std::max(jabs, abs_q(jt));
+        }
+        real_t absolute_spread = jmax - jmin;
+        real_t relative_spread = absolute_spread / (jabs + 1e-30Q);
+        if (absolute_spread > 1.0e-8Q && relative_spread > 1.0e-2Q) {
+            std::cerr << "Electrothermal KCL gate rejected state: relative "
+                      << "current spread=" << (double)relative_spread << "\n";
+            res.converged = false;
+        }
+    }
+
+    // A DeviceSimulator instance represents one device along a bias sweep.
+    // Retain an honestly converged state as the default initial guess for the
+    // next solve.  Previously the low-level API silently restarted every bias
+    // point from charge-neutral equilibrium unless callers manually copied
+    // phi/n/p back with set_initial_guess(); NLS/Preisach branches and abrupt
+    // FinFET/GAA sweeps then left the convergence basin despite a good previous
+    // solution being available.
+    // Newly detected dielectric filaments affect the next solve, keeping the
+    // electrical result, reported current, and heat source synchronized.
+    bd_state_ = bd_state_detected;
+    if (res.converged) {
+        init_phi_ = res.phi;
+        init_n_ = res.n;
+        init_p_ = res.p;
+        has_initial_guess_ = true;
     }
 
     return res;
@@ -992,6 +1206,23 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
     res.Jn_x.assign(N, 0.0Q); res.Jn_y.assign(N, 0.0Q); res.Jn_z.assign(N, 0.0Q);
     res.Jp_x.assign(N, 0.0Q); res.Jp_y.assign(N, 0.0Q); res.Jp_z.assign(N, 0.0Q);
 
+    // Use the same DG-shifted transport potential as the continuity solver.
+    // Recomputing terminal currents from classical phi after a quantum solve
+    // produced non-conservative currents and even the wrong sign near threshold.
+    std::vector<real_t> Qn(N, 0.0Q), Qp(N, 0.0Q);
+    if (quantum_enabled_) {
+        std::vector<char> semi(N, 0);
+        for (size_t i = 0; i < N; ++i)
+            semi[i] = (mu_n_[i] > EPSILON || mu_p_[i] > EPSILON) ? 1 : 0;
+        dg_.set_semiconductor_mask(semi);
+        dg_.set_thermal_voltage(VT_);
+        dg_.quantum_potential(n, p, Qn, Qp);
+        for (const auto& bc : n_bc_) Qn[bc.first] = 0.0Q;
+        for (const auto& bc : p_bc_) Qp[bc.first] = 0.0Q;
+    }
+    res.Qn = Qn;
+    res.Qp = Qp;
+
     auto fill_axis = [&](std::vector<real_t>& Jn_ax,
                          std::vector<real_t>& Jp_ax,
                          int axis, size_t stride,
@@ -1006,16 +1237,20 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
                     if (axis == 0)      d = g_.dx_edge(i);
                     else if (axis == 1) d = g_.dy_edge(j);
                     else                d = g_.dz_edge(k);
-                    real_t dphi = phi[nbr] - phi[idx];
-                    real_t delta = dphi / VT_;
-                    real_t Bm = B(-delta);
-                    real_t Bp = B(delta);
+                    real_t delta_n = ((phi[nbr] + Qn[nbr]) -
+                                      (phi[idx] + Qn[idx])) / VT_;
+                    real_t delta_p = ((phi[nbr] - Qp[nbr]) -
+                                      (phi[idx] - Qp[idx])) / VT_;
+                    real_t Bmn = B(-delta_n);
+                    real_t Bpn = B(delta_n);
+                    real_t Bmp = B(-delta_p);
+                    real_t Bpp = B(delta_p);
                     real_t mu_ne = 2.0Q * mu_n_[idx] * mu_n_[nbr] / (mu_n_[idx] + mu_n_[nbr] + 1e-30Q);
                     real_t mu_pe = 2.0Q * mu_p_[idx] * mu_p_[nbr] / (mu_p_[idx] + mu_p_[nbr] + 1e-30Q);
                     real_t Dn = mu_ne * VT_ / d;
                     real_t Dp = mu_pe * VT_ / d;
-                    Jn_ax[idx] = QE * Dn * (n[nbr] * Bp - n[idx] * Bm);
-                    Jp_ax[idx] = QE * Dp * (p[idx] * Bp - p[nbr] * Bm);
+                    Jn_ax[idx] = QE * Dn * (n[nbr] * Bpn - n[idx] * Bmn);
+                    Jp_ax[idx] = QE * Dp * (p[idx] * Bpp - p[nbr] * Bmp);
                 }
             }
         }
@@ -1024,6 +1259,65 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
     fill_axis(res.Jn_x, res.Jp_x, 0, 1,            g_.nx - 1, g_.ny,     g_.nz);
     fill_axis(res.Jn_y, res.Jp_y, 1, g_.nx,        g_.nx,     g_.ny - 1, g_.nz);
     fill_axis(res.Jn_z, res.Jp_z, 2, g_.nx * g_.ny, g_.nx,     g_.ny,     g_.nz - 1);
+
+    // Dielectric PF/FN and post-breakdown filament conduction are real
+    // conventional-current fluxes, not charge terms in Poisson. Store them on
+    // the same +axis edges as Jn/Jp so terminal integration and KCL checks use
+    // explicit A/m^2 quantities.
+    res.Jleak_x.assign(N, 0.0Q);
+    res.Jleak_y.assign(N, 0.0Q);
+    res.Jleak_z.assign(N, 0.0Q);
+    const bool have_pf_fn = leak_enabled_ && leak_mask_.size() == N;
+    const bool have_breakdown = bd_enabled_ && bd_state_.size() == N &&
+                                bd_mask_.size() == N && sigma_bd_ > 0.0Q;
+    if (!have_pf_fn && !have_breakdown) return;
+
+    auto conductivity = [&](real_t E_mag) -> real_t {
+        if (E_mag <= leak_E_floor_) return 0.0Q;
+        real_t sigma = 0.0Q;  // [S/m]
+        if (leak_C_pf_ > 0.0Q && leak_phi_t_ > 0.0Q) {
+            real_t arg = leak_B_pf_ * sqrt_q(leak_phi_t_ / E_mag);
+            sigma += leak_C_pf_ * exp_q(-arg);
+        }
+        if (leak_C_fn_ > 0.0Q && leak_phi_b_ > 0.0Q) {
+            real_t arg = leak_B_fn_ * pow_q(leak_phi_b_, 1.5Q) / E_mag;
+            // J_FN=C_fn*E^2*exp(-arg), hence sigma_FN=J/E.
+            sigma += leak_C_fn_ * E_mag * exp_q(-arg);
+        }
+        if (leak_sigma_cap_ > 0.0Q && sigma > leak_sigma_cap_)
+            sigma = leak_sigma_cap_;
+        return sigma;
+    };
+
+    auto fill_leak_axis = [&](std::vector<real_t>& J_ax,
+                              int axis, size_t stride,
+                              size_t n0, size_t n1, size_t n2) {
+        for (size_t k = 0; k < n2; ++k)
+            for (size_t j = 0; j < n1; ++j)
+                for (size_t i = 0; i < n0; ++i) {
+                    size_t idx = g_.index(i, j, k);
+                    size_t nbr = idx + stride;
+                    const bool pf_edge = have_pf_fn &&
+                                         (leak_mask_[idx] || leak_mask_[nbr]);
+                    const bool bd_edge = have_breakdown &&
+                                         (bd_state_[idx] || bd_state_[nbr]) &&
+                                         (bd_mask_[idx] || bd_mask_[nbr]);
+                    if (!pf_edge && !bd_edge) continue;
+                    real_t d = (axis == 0) ? g_.dx_edge(i)
+                             : (axis == 1) ? g_.dy_edge(j) : g_.dz_edge(k);
+                    real_t E_axis = -(phi[nbr] - phi[idx]) / d;
+                    real_t E2_i = res.Ex[idx]*res.Ex[idx] + res.Ey[idx]*res.Ey[idx] + res.Ez[idx]*res.Ez[idx];
+                    real_t E2_j = res.Ex[nbr]*res.Ex[nbr] + res.Ey[nbr]*res.Ey[nbr] + res.Ez[nbr]*res.Ez[nbr];
+                    real_t E_mag = 0.5Q * (sqrt_q(E2_i) + sqrt_q(E2_j));
+                    if (E_mag < abs_q(E_axis)) E_mag = abs_q(E_axis);
+                    real_t sigma = pf_edge ? conductivity(E_mag) : 0.0Q;
+                    if (bd_edge) sigma += sigma_bd_;
+                    J_ax[idx] = sigma * E_axis;
+                }
+    };
+    fill_leak_axis(res.Jleak_x, 0, 1,             g_.nx - 1, g_.ny,     g_.nz);
+    fill_leak_axis(res.Jleak_y, 1, g_.nx,         g_.nx,     g_.ny - 1, g_.nz);
+    fill_leak_axis(res.Jleak_z, 2, g_.nx * g_.ny, g_.nx,     g_.ny,     g_.nz - 1);
 }
 
 std::vector<SimulationResult> DeviceSimulator::solve_transient() {
@@ -1163,6 +1457,7 @@ std::vector<SimulationResult> DeviceSimulator::solve_transient() {
         newton_.set_permittivity(eps_);
         newton_.set_mobility(mu_n_eff, mu_p_eff);
         newton_.set_doping(Nd_minus_Na_);
+        newton_.set_charge_volume_fraction(charge_volume_fraction_);
         newton_.set_recombination(tau_n_, tau_p_);
         newton_.set_optical_generation(G_opt_);
         newton_.set_effective_dos(Nc_, Nv_);

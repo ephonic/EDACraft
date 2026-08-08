@@ -16,6 +16,53 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 
+def _fe_mask(sim) -> np.ndarray:
+    """Return the material-defined ferroelectric-node mask."""
+    if "fe_alpha" in sim.mesh.fields:
+        return np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
+    return np.ones(sim.mesh.npts(), dtype=bool)
+
+
+def _read_axial_polarization(sim, result, mask=None) -> float:
+    """Read FE-layer mean polarization along the configured polar axis."""
+    if "P" not in result or result["P"] is None:
+        return 0.0
+    if mask is None:
+        mask = _fe_mask(sim)
+    P = np.asarray(result["P"]).reshape(-1, 3)
+    axis = int(getattr(sim, "_fe_polar_axis", 0))
+    if axis not in (0, 1, 2):
+        axis = 0
+    values = P[:, axis]
+    return float(np.mean(values[mask])) if np.any(mask) else float(np.mean(values))
+
+
+def _electric_field_magnitude(result, npts: int) -> np.ndarray:
+    """Return |E| from a solver result, or zeros for protocol test doubles."""
+    components = []
+    for name in ("Ex", "Ey", "Ez"):
+        value = np.asarray(result.get(name, np.zeros(npts)), dtype=float).ravel()
+        if value.size != npts:
+            raise ValueError(f"result field {name} size {value.size} != {npts}")
+        components.append(value)
+    return np.sqrt(sum(component * component for component in components))
+
+
+def _advance_traps(sim, result, trap_model, dt: float, temperature: float):
+    """Advance an optional TrapKinetics state and feed Q_ot into Poisson."""
+    if trap_model is None:
+        return result, None
+    if "phi" not in result or result["phi"] is None:
+        raise ValueError("dynamic trap coupling requires result['phi']")
+    phi = np.asarray(result["phi"], dtype=float).ravel()
+    if phi.size == 0:
+        raise ValueError("dynamic trap coupling requires non-empty result['phi']")
+    field_mag = _electric_field_magnitude(result, phi.size)
+    qot = trap_model.advance(phi, field_mag, dt, temperature)
+    sim.set_oxide_traps(qot)
+    return result, qot
+
+
 def _bipolar_voltage(Vmax: float, n_pts: int) -> np.ndarray:
     """Generate a full bipolar voltage sweep: 0 -> +Vmax -> 0 -> -Vmax -> 0.
 
@@ -71,7 +118,7 @@ def run_pv_sweep(
     voltages : np.ndarray
         The swept voltage sequence [V].
     P_avg : np.ndarray
-        FE-layer-averaged polarization (Px component) [C/m^2].
+        FE-layer-averaged polarization along the configured polar axis [C/m^2].
     last_result : dict
         The full result dict from the final solve (for inspection).
         If ``track_breakdown=True``, also contains ``"breakdown_count"``
@@ -82,19 +129,12 @@ def run_pv_sweep(
     bd_counts: List[int] = []
     result: Dict[str, np.ndarray] = {}
     # Identify FE nodes from the material field for averaging.
-    if "fe_alpha" in sim.mesh.fields:
-        fe_mask = np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
-    else:
-        fe_mask = np.ones(sim.mesh.npts(), dtype=bool)
+    fe_mask = _fe_mask(sim)
 
     for Vg in V_loop:
         sim.update_contact(contact, Vg)
         result = sim.run(max_iter=max_iter, tol=tol)
-        if "P" in result and result["P"] is not None:
-            Px = np.asarray(result["P"]).reshape(-1, 3)[:, 0]
-            P_avg = float(np.mean(Px[fe_mask])) if np.any(fe_mask) else float(np.mean(Px))
-        else:
-            P_avg = 0.0
+        P_avg = _read_axial_polarization(sim, result, fe_mask)
         P_vals.append(P_avg)
         if track_breakdown:
             try:
@@ -135,7 +175,7 @@ def run_pv_sweep_with_breakdown(
     Vmax : float
         Maximum voltage [V].
     sigma_bd : float
-        Soft-breakdown leakage conductance [F/m^3].
+        Post-breakdown filament conductivity [S/m].
     n_pts, max_iter, tol : see :func:`run_pv_sweep`.
 
     Returns
@@ -273,29 +313,23 @@ def run_pund_sequence(
 
     P_vals: List[float] = []
     result: Dict[str, np.ndarray] = {}
-    if "fe_alpha" in sim.mesh.fields:
-        fe_mask = np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
-    else:
-        fe_mask = np.ones(sim.mesh.npts(), dtype=bool)
+    fe_mask = _fe_mask(sim)
 
     for Vg in v_seq:
         sim.update_contact(contact, Vg)
         result = sim.run(max_iter=max_iter, tol=tol)
-        if "P" in result and result["P"] is not None:
-            Px = np.asarray(result["P"]).reshape(-1, 3)[:, 0]
-            P_avg = float(np.mean(Px[fe_mask])) if np.any(fe_mask) else float(np.mean(Px))
-        else:
-            P_avg = 0.0
+        P_avg = _read_axial_polarization(sim, result, fe_mask)
         P_vals.append(P_avg)
 
     P_arr = np.array(P_vals)
-    # Extract P at the end of U and D pulse hold plateaus.
-    # U plateau end: after pre-pol (3*seg + hold) + P (3*seg + hold) + U ramp+hold
-    # D plateau end: + D ramp+hold
-    n_pre = 3 * seg + pre_pol_hold     # pre-polarization segment length
-    n_pulse = 3 * seg + pre_pol_hold   # each P/U/D segment length
-    idx_U = min(2 * n_pre + n_pulse - 1, len(P_arr) - 1)   # end of U hold
-    idx_D = min(3 * n_pre + 2 * n_pulse - 1, len(P_arr) - 1)  # end of D hold
+    # Extract P at the end of the U and D *hold plateaus*, before each return
+    # ramp to zero.  Every segment is ramp-up + hold + ramp-down, i.e.
+    # ``2*seg + pre_pol_hold`` samples.  The former 3*seg bookkeeping sampled
+    # the end of the zero-bias return ramp for U and clipped D to the final
+    # point, which could report Ps=Pr=0 despite successful switching.
+    n_segment = 2 * seg + pre_pol_hold
+    idx_U = 2 * n_segment + seg + pre_pol_hold - 1
+    idx_D = 3 * n_segment + seg + pre_pol_hold - 1
     P_U = P_arr[idx_U]
     P_D = P_arr[idx_D]
     Ps = 0.5 * (abs(P_U) + abs(P_D))
@@ -320,6 +354,9 @@ def run_retention(
     dt: float = 1e-6,
     max_iter: int = 50,
     tol: float = 1e-10,
+    trap_model=None,
+    temperature: float = 300.0,
+    program_width: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
     """Simulate retention: polarize, then monitor P decay at V=0.
 
@@ -347,40 +384,63 @@ def run_retention(
     dict with keys ``times`` [s], ``P`` [C/m^2], ``P_initial``, ``P_final``,
     ``retention_loss`` (fraction of initial P lost).
     """
-    if "fe_alpha" in sim.mesh.fields:
-        fe_mask = np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
-    else:
-        fe_mask = np.ones(sim.mesh.npts(), dtype=bool)
+    if n_steps < 1:
+        raise ValueError("n_steps must be >= 1")
+    if not np.isfinite(dt) or dt <= 0.0:
+        raise ValueError("retention dt must be finite and > 0")
+    fe_mask = _fe_mask(sim)
 
     def _read_P(result):
-        if "P" in result and result["P"] is not None:
-            Px = np.asarray(result["P"]).reshape(-1, 3)[:, 0]
-            return float(np.mean(Px[fe_mask])) if np.any(fe_mask) else float(np.mean(Px))
-        return 0.0
+        return _read_axial_polarization(sim, result, fe_mask)
+
+    if program_width is None:
+        program_width = dt
+    if not np.isfinite(program_width) or program_width <= 0.0:
+        raise ValueError("program_width must be finite and > 0")
 
     # 1. Program
     sim.update_contact(contact, V_program)
     result = sim.run(max_iter=max_iter, tol=tol)
+    result, qot = _advance_traps(
+        sim, result, trap_model, program_width, temperature,
+    )
+    if qot is not None:
+        # Re-solve once with the newly captured charge, making the program
+        # state self-consistent before the retention clock starts.
+        result = sim.run(max_iter=max_iter, tol=tol)
     P_initial = _read_P(result)
 
     # 2. Monitor at V=0
-    times = np.arange(n_steps) * dt
+    times = (np.arange(n_steps) + 1) * dt
     P_vals = []
+    qot_vals = []
+    occupancy_vals = []
     for i in range(n_steps):
+        if hasattr(sim, "set_ferroelectric_nls_dwell_time"):
+            sim.set_ferroelectric_nls_dwell_time(dt)
         sim.update_contact(contact, 0.0)
         result = sim.run(max_iter=max_iter, tol=tol)
+        result, qot = _advance_traps(sim, result, trap_model, dt, temperature)
+        if qot is not None:
+            result = sim.run(max_iter=max_iter, tol=tol)
+            qot_vals.append(float(np.mean(qot)))
+            occupancy_vals.append(float(np.mean(trap_model.occupancy)))
         P_vals.append(_read_P(result))
     P_arr = np.array(P_vals)
     P_final = P_arr[-1]
     retention_loss = abs(P_initial - P_final) / max(abs(P_initial), 1e-30)
 
-    return {
+    output = {
         "times": times,
         "P": P_arr,
         "P_initial": P_initial,
         "P_final": P_final,
         "retention_loss": retention_loss,
     }
+    if trap_model is not None:
+        output["Q_ot"] = np.asarray(qot_vals)
+        output["trap_occupancy"] = np.asarray(occupancy_vals)
+    return output
 
 
 def run_endurance(
@@ -395,23 +455,27 @@ def run_endurance(
     fatigue_Nc: float = 1e6,
     Q_ot_max: float = 1.0e5,
     E_bd: float = 6.0e8,
+    trap_model=None,
+    degradation_model=None,
+    pulse_width: float = 1.0e-6,
+    temperature: float = 300.0,
+    legacy_breakdown_scaling: bool = False,
 ) -> Dict[str, np.ndarray]:
     """Simulate endurance: cycle the device and measure Ps/Pr degradation.
 
     Applies ``n_cycles`` programming/erasing cycles (+/-V_pulse), measuring
     Ps/Pr every ``measure_every`` cycles via a PUND-like extraction.
 
-    The degradation is modelled as fatigue-driven trap charge accumulation:
+    Without explicit state objects, the backwards-compatible trap proxy is:
         Q_ot(N) = Q_ot_max * (1 - exp(-N / Nc))
-    where N is the cycle count and Nc is the characteristic fatigue cycle count.
-    The accumulated traps reduce the effective polarization switching (wake-up
-    followed by fatigue) and the memory window shrinks as cycling continues.
+    Pass ``trap_model=TrapKinetics(...)`` to replace it with capture/emission
+    dynamics, and ``degradation_model=CyclingDegradation(...)`` to evolve
+    competing wake-up/fatigue populations and the switchable polarization.
 
-    The field-dependent breakdown is also modelled: when the cycling field
-    |V_pulse / fe_thickness| exceeds E_bd, the device breaks down earlier
-    (proportional to the field excess). Thicker films have lower cycling
-    field at the same V_pulse, so they survive more cycles -- matching the
-    physical observation that thinner films degrade faster.
+    Breakdown should normally be enabled on ``Simulator`` so its irreversible
+    state, explicit filament current and Joule heat are used. The former
+    empirical E/E_bd polarization scaling is available only through
+    ``legacy_breakdown_scaling=True``.
 
     Parameters
     ----------
@@ -440,17 +504,21 @@ def run_endurance(
     dict with keys ``cycles``, ``Ps``, ``Pr``, ``memory_window`` [V],
     ``Q_ot`` (accumulated trap charge per cycle).
     """
-    if "fe_alpha" in sim.mesh.fields:
-        fe_mask = np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
-    else:
-        fe_mask = np.ones(sim.mesh.npts(), dtype=bool)
+    if n_cycles < 1:
+        raise ValueError("n_cycles must be >= 1")
+    if measure_every < 1:
+        raise ValueError("measure_every must be >= 1")
+    if not np.isfinite(fatigue_Nc) or fatigue_Nc <= 0.0:
+        raise ValueError("fatigue_Nc must be finite and > 0")
+    if not np.isfinite(fe_thickness) or fe_thickness <= 0.0:
+        raise ValueError("fe_thickness must be finite and > 0")
+    if not np.isfinite(pulse_width) or pulse_width <= 0.0:
+        raise ValueError("pulse_width must be finite and > 0")
+    fe_mask = _fe_mask(sim)
 
     # Initial Ps measurement (wake-up baseline)
     def _read_P(result):
-        if "P" in result and result["P"] is not None:
-            Px = np.asarray(result["P"]).reshape(-1, 3)[:, 0]
-            return float(np.mean(Px[fe_mask])) if np.any(fe_mask) else float(np.mean(Px))
-        return 0.0
+        return _read_axial_polarization(sim, result, fe_mask)
 
     # Measure initial Ps
     sim.update_contact(contact, V_pulse)
@@ -473,13 +541,34 @@ def run_endurance(
     Pr_list = []
     mw_list = []
     qot_list = []
+    active_fraction_list = []
+    trap_occupancy_list = []
 
     for cycle in range(1, n_cycles + 1):
+        # Feed fatigue-driven trapped charge back into Poisson before the
+        # electrical cycle.  Previously Q_ot was only reported and the solved
+        # device state was completely unaffected by endurance degradation.
+        Q_ot = Q_ot_max * (1.0 - np.exp(-cycle / fatigue_Nc))
+        if trap_model is None and hasattr(sim, "set_oxide_traps"):
+            sim.set_oxide_traps(Q_ot)
+        active_fraction = 1.0
+        if degradation_model is not None:
+            active_fraction = degradation_model.advance(1.0, E_cycle)
+            if hasattr(sim, "set_ferroelectric_active_fraction"):
+                sim.set_ferroelectric_active_fraction(active_fraction)
         # Program (+V) then erase (-V)
         sim.update_contact(contact, V_pulse)
-        sim.run(max_iter=max_iter, tol=tol)
+        r_program = sim.run(max_iter=max_iter, tol=tol)
+        _, qot_dynamic = _advance_traps(
+            sim, r_program, trap_model, pulse_width, temperature,
+        )
         sim.update_contact(contact, -V_pulse)
-        sim.run(max_iter=max_iter, tol=tol)
+        r_erase = sim.run(max_iter=max_iter, tol=tol)
+        _, qot_dynamic = _advance_traps(
+            sim, r_erase, trap_model, pulse_width, temperature,
+        )
+        if qot_dynamic is not None:
+            Q_ot = float(np.mean(qot_dynamic))
 
         if cycle % measure_every == 0 or cycle == n_cycles:
             # Measure: positive then negative P
@@ -493,12 +582,16 @@ def run_endurance(
             Pr_val = 0.5 * (abs(P_pos) - abs(P_neg))
 
             # Fatigue model: accumulated trap charge
-            Q_ot = Q_ot_max * (1.0 - np.exp(-cycle / fatigue_Nc))
-
             # Field-dependent breakdown: higher field => earlier failure
             # Breakdown factor reduces Ps when E_cycle approaches/exceeds E_bd
-            breakdown_factor = max(0.0, 1.0 - (E_cycle / E_bd) *
-                                   (1.0 - np.exp(-cycle / (fatigue_Nc * 0.3))))
+            # Historical compatibility only. The default no longer invents a
+            # polarization loss from E/E_bd: actual breakdown is represented
+            # by the solver's irreversible conductive state and explicit
+            # J_bd. Users reproducing old curves may opt into this proxy.
+            breakdown_factor = 1.0
+            if legacy_breakdown_scaling:
+                breakdown_factor = max(0.0, 1.0 - (E_cycle / E_bd) *
+                                       (1.0 - np.exp(-cycle / (fatigue_Nc * 0.3))))
 
             # Effective Ps reduced by fatigue + breakdown
             Ps_eff = Ps_val * max(breakdown_factor, 0.01)
@@ -513,14 +606,24 @@ def run_endurance(
             Pr_list.append(Pr_val * max(breakdown_factor, 0.01))
             mw_list.append(mw_val)
             qot_list.append(Q_ot)
+            active_fraction_list.append(active_fraction)
+            if trap_model is not None:
+                trap_occupancy_list.append(float(np.mean(trap_model.occupancy)))
 
-    return {
+    output = {
         "cycles": np.array(cycles_list),
         "Ps": np.array(Ps_list),
         "Pr": np.array(Pr_list),
         "memory_window": np.array(mw_list),
         "Q_ot": np.array(qot_list),
     }
+    if degradation_model is not None:
+        output["active_fraction"] = np.asarray(active_fraction_list)
+        output["wakeup_state"] = float(degradation_model.wakeup_state)
+        output["fatigue_state"] = float(degradation_model.fatigue_state)
+    if trap_model is not None:
+        output["trap_occupancy"] = np.asarray(trap_occupancy_list)
+    return output
 
 
 def run_pulse_width_sweep(
@@ -561,47 +664,46 @@ def run_pulse_width_sweep(
     """
     if pulse_widths is None:
         pulse_widths = np.logspace(-9, -4, 10).tolist()
+    if len(pulse_widths) == 0:
+        raise ValueError("pulse_widths must contain at least one value")
+    if not np.all(np.isfinite(pulse_widths)) or np.any(np.asarray(pulse_widths) <= 0.0):
+        raise ValueError("pulse_widths must be finite and > 0")
 
-    if "fe_alpha" in sim.mesh.fields:
-        fe_mask = np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
-    else:
-        fe_mask = np.ones(sim.mesh.npts(), dtype=bool)
+    fe_mask = _fe_mask(sim)
 
     def _read_P(result):
-        if "P" in result and result["P"] is not None:
-            Px = np.asarray(result["P"]).reshape(-1, 3)[:, 0]
-            return float(np.mean(Px[fe_mask])) if np.any(fe_mask) else float(np.mean(Px))
-        return 0.0
+        return _read_axial_polarization(sim, result, fe_mask)
 
     mw_values = []
     ps_values = []
 
     for pw in pulse_widths:
         # Set NLS dwell time = pulse width (controls switching completeness)
-        if hasattr(sim._sim, 'set_ferroelectric_nls'):
-            # tau0 and E0 from material, dt = pulse width
-            sim._sim.set_ferroelectric_nls(1e-6, 2e9, pw)
+        if hasattr(sim, "set_ferroelectric_nls_dwell_time"):
+            sim.set_ferroelectric_nls_dwell_time(pw)
 
         # Program with +V
         sim.update_contact(contact, V_pulse)
-        sim.run(max_iter=max_iter, tol=tol)
         P_pos = _read_P(sim.run(max_iter=max_iter, tol=tol))
 
         # Erase with -V
         sim.update_contact(contact, -V_pulse)
-        sim.run(max_iter=max_iter, tol=tol)
         P_neg = _read_P(sim.run(max_iter=max_iter, tol=tol))
 
         Ps_val = 0.5 * (abs(P_pos) + abs(P_neg))
-        # Memory window estimate from polarization switching
-        mw = abs(V_pulse) * (Ps_val / max(0.5 * (abs(P_pos) + abs(P_neg)), 1e-30))
-        mw_values.append(mw)
         ps_values.append(Ps_val)
+
+    # Scale the saturated 2*Vc window by switching completeness.  The old
+    # expression divided Ps_val by itself and therefore returned exactly
+    # |V_pulse| for every pulse width, hiding all NLS speed dependence.
+    ps_arr = np.asarray(ps_values, dtype=float)
+    ps_sat = max(float(np.max(ps_arr)), 1e-30)
+    mw_values = 2.0 * abs(V_pulse) * ps_arr / ps_sat
 
     return {
         "pulse_widths": np.array(pulse_widths),
-        "memory_window": np.array(mw_values),
-        "Ps": np.array(ps_values),
+        "memory_window": np.asarray(mw_values),
+        "Ps": ps_arr,
     }
 
 

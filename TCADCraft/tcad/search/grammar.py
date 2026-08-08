@@ -383,7 +383,7 @@ def validate(tree: DeviceTree) -> List[str]:
 
     # Contact name whitelist.
     known = {
-        "source", "drain", "gate", "bs_power",
+        "source", "drain", "gate", "gate_b", "gate_l", "gate_r", "bs_power",
         "p_contact", "n_contact", "anode", "cathode",
     }
     for c in tree.contacts:
@@ -401,6 +401,8 @@ def _pnjunction_tree(
     L: float = 1e-6, W: float = 1e-6, H: float = 1e-6,
     x_junction: float = 0.5e-6, Na: float = 1e16, Nd: float = 1e16,
 ) -> DeviceTree:
+    t_contact = min(0.1e-6, 0.05 * L,
+                    0.25 * x_junction, 0.25 * (L - x_junction))
     return DeviceTree(
         name="pn_junction",
         region_nodes=(
@@ -410,8 +412,8 @@ def _pnjunction_tree(
                        SILICON, DopingSpec(Nd=Nd)),
         ),
         contacts=(
-            ContactSpec("p_contact", (0, 0.1e-6, 0, W, -0.01e-6, 0), 0.0),
-            ContactSpec("n_contact", (L - 0.1e-6, L, 0, W, -0.01e-6, 0), 0.0),
+            ContactSpec("p_contact", (0, t_contact, 0, W, -1e-9, H + 1e-9), 0.0),
+            ContactSpec("n_contact", (L - t_contact, L, 0, W, -1e-9, H + 1e-9), 0.0),
         ),
     )
 
@@ -493,7 +495,9 @@ def _finfet_tree(
         contacts=(
             ContactSpec("source", (0, Lsd, 0, tsi, -5e-9, 0), Vs),
             ContactSpec("drain", (x_total - Lsd, x_total, 0, tsi, -5e-9, 0), Vd),
-            ContactSpec("gate", (Lsd, Lsd + Lg, -tox - tgate, tsi + tox + tgate, -5e-9, 0), Vg),
+            ContactSpec("gate", (Lsd, Lsd + Lg, -tox - tgate, -tox, -5e-9, Hfin), Vg),
+            ContactSpec("gate_r", (Lsd, Lsd + Lg, tsi + tox, tsi + tox + tgate,
+                                   -5e-9, Hfin), Vg),
         ),
         gate_meta=GateStackMeta(wrap=WRAP_DOUBLE_Y, layer_kinds=(KIND_OXIDE, KIND_METAL)),
     )
@@ -588,10 +592,16 @@ def _gaa_tree(
         name="gaa",
         region_nodes=tuple(nodes),
         contacts=(
-            ContactSpec("source", (0, Lsd, 0, W_sheet, -5e-9, 0), Vs),
-            ContactSpec("drain", (Lsd + Lg, x_total, 0, W_sheet, -5e-9, 0), Vd),
+            ContactSpec("source", (0, Lsd, 0, W_sheet, 0, t_sheet), Vs),
+            ContactSpec("drain", (Lsd + Lg, x_total, 0, W_sheet, 0, t_sheet), Vd),
             ContactSpec("gate", (gate_x[0], gate_x[1], -tox - t_gate, W_sheet + tox + t_gate,
                                  t_sheet + tox, t_sheet + tox + 5e-9), Vg),
+            ContactSpec("gate_b", (gate_x[0], gate_x[1], -tox, W_sheet + tox,
+                                   -tox - t_gate, -tox), Vg),
+            ContactSpec("gate_l", (gate_x[0], gate_x[1], -tox - t_gate, -tox,
+                                   -tox - t_gate, t_sheet + tox + t_gate), Vg),
+            ContactSpec("gate_r", (gate_x[0], gate_x[1], W_sheet + tox, W_sheet + tox + t_gate,
+                                   -tox - t_gate, t_sheet + tox + t_gate), Vg),
         ),
         gate_meta=GateStackMeta(wrap=WRAP_FOUR_SIDE, layer_kinds=(KIND_OXIDE, KIND_METAL)),
     )

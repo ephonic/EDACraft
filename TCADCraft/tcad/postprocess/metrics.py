@@ -133,7 +133,17 @@ def _transfer_metrics_from_current(
             coeffs = np.polyfit(log_I_sub, Vg_sub, 1)
             SS = abs(float(coeffs[0])) * 1e3  # mV/dec
         else:
-            SS = float("nan")
+            # Coarse exploratory sweeps may have no two samples inside the
+            # conventional 1.1*Ioff..0.1*Ion window.  Use the steepest finite
+            # adjacent log-current segment rather than returning NaN; trust
+            # checks can still reject an implausibly large/small SS value.
+            dlog = np.diff(log_I)
+            dvg = np.diff(Vg)
+            valid = np.isfinite(dlog) & np.isfinite(dvg) & (np.abs(dlog) > 1e-12)
+            if np.any(valid):
+                SS = float(np.min(np.abs(dvg[valid] / dlog[valid]))) * 1e3
+            else:
+                SS = float("nan")
         Ion_Ioff = float(I_on / max(I_off, 1e-30))
     else:
         SS = float("nan")

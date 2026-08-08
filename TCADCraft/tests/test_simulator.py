@@ -1,5 +1,6 @@
 """Tests for tcad.simulator and C++ core integration."""
 
+import warnings
 import numpy as np
 import pytest
 
@@ -21,6 +22,18 @@ class TestSimulator:
         sim = Simulator(mesh)
         sim.set_material_from_mesh()
         # Should not raise; internal arrays populated
+
+    def test_set_charge_volume_fraction(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=5, nz=5)
+        sim = Simulator(mesh)
+        sim.set_charge_volume_fraction(np.full(mesh.npts(), 0.6))
+        with pytest.raises(ValueError, match="expected"):
+            sim.set_charge_volume_fraction(np.ones(mesh.npts() - 1))
+        with pytest.raises(ValueError, match="finite"):
+            invalid = np.ones(mesh.npts())
+            invalid[0] = np.nan
+            sim.set_charge_volume_fraction(invalid)
 
     def test_set_contact(self):
         dev = Device.pnjunction()
@@ -52,11 +65,17 @@ class TestSimulator:
         sim.set_material_from_mesh()
         sim.set_contact("p_contact", voltage=0.0)
         sim.set_contact("n_contact", voltage=0.0)
-        results = sim.run(max_iter=10, tol=1e-6)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            results = sim.run(max_iter=10, tol=1e-6)
         assert "phi" in results
         assert "n" in results
         assert "p" in results
+        assert "Qn" in results
+        assert "Qp" in results
         assert results["phi"].size == mesh.npts()
+        assert results["Qn"].size == mesh.npts()
+        assert np.all(results["Qn"] == 0.0)
 
     def test_to_mesh_fields(self):
         dev = Device.pnjunction(L=1e-6, W=1e-6, H=1e-6)
@@ -65,7 +84,9 @@ class TestSimulator:
         sim.set_material_from_mesh()
         sim.set_contact("p_contact", voltage=0.0)
         sim.set_contact("n_contact", voltage=0.0)
-        sim.run(max_iter=10, tol=1e-6)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            sim.run(max_iter=10, tol=1e-6)
         fields = sim.to_mesh_fields()
         for key in ["phi", "n", "p", "Ex", "Ey", "Ez"]:
             assert key in fields
@@ -303,5 +324,3 @@ class TestCutCell:
         dev = Device.pnjunction(L=100e-9, W=50e-9, H=50e-9,
                                 x_junction=50e-9, Na=1e16, Nd=1e16)
         return structured_mesh_from_device(dev, resolution=(20e-9, 20e-9, 20e-9))
-
-

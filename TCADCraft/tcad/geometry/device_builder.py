@@ -53,6 +53,15 @@ class Material:
     # [C/m^3] after infinite cycling. fatigue_Nc = characteristic cycle count.
     Q_ot_max: float = 0.0
     fatigue_Nc: float = 1.0e6
+    # Disordered-semiconductor extensions (IGZO and related oxides).
+    tail_DOS: float = 0.0            # exponential tail DOS [cm^-3 eV^-1]
+    urbach_energy: float = 0.0       # tail characteristic energy [eV]
+    percolation_energy: float = 0.0  # mobility activation energy [eV]
+    # Positive-bias-temperature-instability trap defaults.
+    pbti_Nt: float = 0.0             # active bulk trap density [cm^-3]
+    pbti_Et: float = 0.0             # trap energy from intrinsic level [eV]
+    pbti_capture_tau: float = 1.0     # reference capture time [s]
+    pbti_emission_tau: float = 1.0e4  # reference emission time [s]
     # Avalanche impact-ionization Chynoweth coefficients (M7a). alpha(E)=A*exp(-B/|E|)
     # with |E| in [V/m]. 0.0 = use the solver default (silicon). Stored in SI
     # (1/m, V/m) — literature 1/cm & V/cm values must be x100 before passing.
@@ -101,15 +110,19 @@ class Device:
     def __init__(self, name: str = "device"):
         self.name = name
         self.regions: List[Region] = []
-        self.contacts: Dict[str, Tuple[Shape, float]] = {}  # name -> (shape, workfunction/V)
+        self.contacts: Dict[str, Tuple[Shape, float]] = {}  # name -> (shape, voltage)
+        self.contact_workfunctions: Dict[str, float] = {}
 
     def add_region(self, region: Region) -> Device:
         self.regions.append(region)
         return self
 
-    def add_contact(self, name: str, shape: Shape, voltage: float = 0.0, workfunction: float = 4.0) -> Device:
+    def add_contact(self, name: str, shape: Shape, voltage: float = 0.0,
+                    workfunction: Optional[float] = None) -> Device:
         """Add an electrode/contact.  voltage [V], workfunction [eV]."""
         self.contacts[name] = (shape, voltage)
+        if workfunction is not None:
+            self.contact_workfunctions[name] = float(workfunction)
         return self
 
     def bbox(self) -> Tuple[Tuple[float, float], Tuple[float, float], Tuple[float, float]]:
@@ -152,6 +165,13 @@ class Device:
             "fe_E_bi": np.zeros(x.shape, dtype=float),
             "Dit": np.zeros(x.shape, dtype=float),
             "Q_ot": np.zeros(x.shape, dtype=float),
+            "tail_DOS": np.zeros(x.shape, dtype=float),
+            "urbach_energy": np.zeros(x.shape, dtype=float),
+            "percolation_energy": np.zeros(x.shape, dtype=float),
+            "pbti_Nt": np.zeros(x.shape, dtype=float),
+            "pbti_Et": np.zeros(x.shape, dtype=float),
+            "pbti_capture_tau": np.zeros(x.shape, dtype=float),
+            "pbti_emission_tau": np.zeros(x.shape, dtype=float),
         }
         for rid, region in enumerate(self.regions):
             mask = region.shape.contains(x, y, z)
@@ -182,6 +202,13 @@ class Device:
             # Interface/oxide traps (P6)
             out["Dit"][mask] = region.material.Dit
             out["Q_ot"][mask] = region.material.Q_ot
+            out["tail_DOS"][mask] = region.material.tail_DOS
+            out["urbach_energy"][mask] = region.material.urbach_energy
+            out["percolation_energy"][mask] = region.material.percolation_energy
+            out["pbti_Nt"][mask] = region.material.pbti_Nt
+            out["pbti_Et"][mask] = region.material.pbti_Et
+            out["pbti_capture_tau"][mask] = region.material.pbti_capture_tau
+            out["pbti_emission_tau"][mask] = region.material.pbti_emission_tau
         # 2026-08 fix: uncovered nodes (material_id == -1) previously kept ALL
         # ZEROS (epsilon=0, mu=0, Eg=0), making the Poisson equation singular
         # (zero Laplacian rows) and the Newton Jacobian factorization fail
@@ -508,6 +535,12 @@ class Device:
         dev.add_contact("drain", Box(Lsd + Lg, x_total, 0, W_sheet, 0, t_sheet), voltage=Vd)
         dev.add_contact("gate", Box(Lsd, Lsd + Lg, -tox - t_gate, W_sheet + tox + t_gate,
                                      t_sheet + tox, t_sheet + tox + 5e-9), voltage=Vg)
+        dev.add_contact("gate_b", Box(Lsd, Lsd + Lg, -tox, W_sheet + tox,
+                                       -tox - t_gate, -tox), voltage=Vg)
+        dev.add_contact("gate_l", Box(Lsd, Lsd + Lg, -tox - t_gate, -tox,
+                                       -tox - t_gate, t_sheet + tox + t_gate), voltage=Vg)
+        dev.add_contact("gate_r", Box(Lsd, Lsd + Lg, W_sheet + tox, W_sheet + tox + t_gate,
+                                       -tox - t_gate, t_sheet + tox + t_gate), voltage=Vg)
 
         return dev
 
@@ -1023,6 +1056,94 @@ class Device:
         dev.add_contact("drain", Box(Lsd + Lg, x_total, 0, 1e-9, -5e-9, 0), voltage=Vd)
         dev.add_contact("gate", Box(0, x_total, 0, 1e-9,
                                      t_ch + t_ox + t_fe, t_ch + t_ox + t_fe + 5e-9), voltage=Vg)
+        return dev
+
+    @staticmethod
+    def igzo_tft(
+        Lg: float = 10e-6,
+        Lsd: float = 2e-6,
+        W: float = 10e-6,
+        t_ch: float = 20e-9,
+        tox: float = 50e-9,
+        Vg: float = 0.0,
+        Vd: float = 0.0,
+        Vs: float = 0.0,
+    ) -> Device:
+        """Top-gate amorphous-IGZO TFT with tail/PBTI metadata."""
+        from tcad.material.library import amorphous_igzo, sio2
+
+        dev = Device("igzo_tft")
+        x_total = 2.0 * Lsd + Lg
+        igzo = amorphous_igzo()
+        oxide = sio2()
+        metal = Material("GateMetal", epsilon_r=1.0, Eg=0.0, mu_n=0.0, mu_p=0.0)
+        dev.add_region(Region(
+            "channel", Box(0, x_total, 0, W, 0, t_ch), igzo,
+            DopingProfile(Nd=1e16),
+        ))
+        dev.add_region(Region(
+            "source", Box(0, Lsd, 0, W, 0, t_ch), igzo,
+            DopingProfile(Nd=5e18),
+        ))
+        dev.add_region(Region(
+            "drain", Box(Lsd + Lg, x_total, 0, W, 0, t_ch), igzo,
+            DopingProfile(Nd=5e18),
+        ))
+        dev.add_region(Region(
+            "gate_oxide", Box(Lsd, Lsd + Lg, 0, W, t_ch, t_ch + tox), oxide,
+        ))
+        dev.add_region(Region(
+            "gate_metal", Box(Lsd, Lsd + Lg, 0, W,
+                               t_ch + tox, t_ch + tox + 10e-9), metal,
+        ))
+        dev.add_contact("source", Box(0, Lsd, 0, W, -5e-9, 0), voltage=Vs)
+        dev.add_contact("drain", Box(Lsd + Lg, x_total, 0, W, -5e-9, 0), voltage=Vd)
+        dev.add_contact("gate", Box(Lsd, Lsd + Lg, 0, W,
+                                     t_ch + tox, t_ch + tox + 5e-9), voltage=Vg)
+        return dev
+
+    @staticmethod
+    def wse2_schottky_fet(
+        Lg: float = 100e-9,
+        Lsd: float = 30e-9,
+        W: float = 20e-9,
+        t_ch: float = 2e-9,
+        tox: float = 5e-9,
+        source_workfunction: float = 4.6,
+        drain_workfunction: float = 4.6,
+        Vg: float = 0.0,
+        Vd: float = 0.0,
+        Vs: float = 0.0,
+    ) -> Device:
+        """Ambipolar WSe2 FET with explicit Schottky source/drain barriers."""
+        from tcad.material.library import hfo2, wse2_channel
+
+        dev = Device("wse2_schottky_fet")
+        x_total = 2.0 * Lsd + Lg
+        channel = wse2_channel()
+        oxide = hfo2()
+        metal = Material("GateMetal", epsilon_r=1.0, Eg=0.0, mu_n=0.0, mu_p=0.0)
+        dev.add_region(Region(
+            "channel", Box(0, x_total, 0, W, 0, t_ch), channel,
+            DopingProfile(),
+        ))
+        dev.add_region(Region(
+            "gate_oxide", Box(Lsd, Lsd + Lg, 0, W, t_ch, t_ch + tox), oxide,
+        ))
+        dev.add_region(Region(
+            "gate_metal", Box(Lsd, Lsd + Lg, 0, W,
+                               t_ch + tox, t_ch + tox + 10e-9), metal,
+        ))
+        dev.add_contact(
+            "source", Box(0, Lsd, 0, W, -2e-9, 0), voltage=Vs,
+            workfunction=source_workfunction,
+        )
+        dev.add_contact(
+            "drain", Box(Lsd + Lg, x_total, 0, W, -2e-9, 0), voltage=Vd,
+            workfunction=drain_workfunction,
+        )
+        dev.add_contact("gate", Box(Lsd, Lsd + Lg, 0, W,
+                                     t_ch + tox, t_ch + tox + 5e-9), voltage=Vg)
         return dev
 
     @staticmethod

@@ -12,16 +12,13 @@ Components
    solver stores only the combined Bernoulli flux (``current.sg_current_density_1d``
    returns Jn, Jp totals); here we re-derive the classical split
    ``Jn_drift = -q*mu_n*n_avg*d(phi)/dx``, ``Jn_diff = q*mu_n*VT*d(n)/dx``
-   which sums (in magnitude) to the SG total on each edge.
+   whose signed sum approaches the conventional SG total on each edge.
 
-2. **BTBT generation** (local Kane model, recomputed from the E-field because
-   ``simulate_sweep`` does not expose the solver's internal G_btbt and does
-   not auto-enable BTBT).  Uses the corrected ``B_kane=2.0e9`` V/m (the
-   ``tfet.py`` default ``2.0e7`` is a known stale V/cm-convention value).
+2. **BTBT generation** from the solver's explicit ``G_btbt`` source when
+   available, with an SI-correct local Kane fallback for legacy results.
 
-3. **FE polarization charge** magnitude from ``result["P"][:,0]`` (the
-   in-plane Px component; FE nodes identified by ``|Px|>1e-30``, matching
-   ``discovery._px_at_vg0``).
+3. **FE polarization charge** magnitude along the dominant polar axis, so
+   x-, y-, and z-stacked ferroelectric devices share the same truth chain.
 
 The four magnitudes are normalized into a **mechanism-fraction vector**
 ``[drift, diffusion, btbt, fe]`` (sums to 1); the argmax is the dominant
@@ -64,9 +61,9 @@ def drift_diffusion_split_1d(
     Classical decomposition (valid away from degenerate limits):
         Jn_drift = -q * mu_n * n_avg * d(phi)/dx
         Jn_diff  =  q * mu_n * VT * d(n)/dx
-    with ``n_avg = (n[i]+n[i+1])/2`` and node-upwind mobility ``mu_n[i]``
-    (matching ``sg_current_density_1d``).  ``|Jn_drift| + |Jn_diff|`` agrees
-    with ``|Jn_total|`` from the Bernoulli form in the drift-diffusion limit.
+    with ``n_avg = (n[i]+n[i+1])/2`` and harmonic edge mobility (matching
+    ``sg_current_density_1d`` and the C++ solver).  The signed component sum
+    agrees with the SG current in the drift-diffusion limit.
 
     Returns per-edge arrays of length ``len(phi)-1``:
     ``Jn_drift, Jn_diff, Jp_drift, Jp_diff``.
@@ -82,8 +79,8 @@ def drift_diffusion_split_1d(
     dp = (p[1:] - p[:-1]) / dx
     n_avg = 0.5 * (n[:-1] + n[1:])
     p_avg = 0.5 * (p[:-1] + p[1:])
-    mu_n_e = mu_n[:-1]   # node-upwind
-    mu_p_e = mu_p[:-1]
+    mu_n_e = 2.0 * mu_n[:-1] * mu_n[1:] / (mu_n[:-1] + mu_n[1:] + 1e-30)
+    mu_p_e = 2.0 * mu_p[:-1] * mu_p[1:] / (mu_p[:-1] + mu_p[1:] + 1e-30)
 
     Jn_drift = -QE * mu_n_e * n_avg * dphi
     Jn_diff = QE * mu_n_e * VT * dn
@@ -110,14 +107,21 @@ def btbt_generation(
     converted to m^-3; B in V/m).  Fields below ``BTBT_FIELD_FLOOR`` are zeroed
     (no tunneling at negligible field).  ``I_btbt = q * sum(G * dV)``.
     """
-    Ex = np.asarray(result.get("Ex", np.zeros(mesh.npts())), dtype=float)
-    Ey = np.asarray(result.get("Ey", np.zeros(mesh.npts())), dtype=float)
-    Ez = np.asarray(result.get("Ez", np.zeros(mesh.npts())), dtype=float)
-    E_mag = np.sqrt(Ex**2 + Ey**2 + Ez**2)
-    E_safe = np.maximum(E_mag, BTBT_FIELD_FLOOR)
-    # A in cm^-3 -> m^-3 via *1e6
-    G = (A_kane * 1e6) * E_safe**D * np.exp(-B_kane / E_safe)  # m^-3 s^-1
-    G[E_mag < BTBT_FIELD_FLOOR] = 0.0
+    if "G_btbt" in result:
+        G = np.asarray(result["G_btbt"], dtype=float).ravel()
+        if G.size != mesh.npts():
+            raise ValueError(
+                f"G_btbt size {G.size} does not match mesh npts={mesh.npts()}"
+            )
+    else:
+        Ex = np.asarray(result.get("Ex", np.zeros(mesh.npts())), dtype=float)
+        Ey = np.asarray(result.get("Ey", np.zeros(mesh.npts())), dtype=float)
+        Ez = np.asarray(result.get("Ez", np.zeros(mesh.npts())), dtype=float)
+        E_mag = np.sqrt(Ex**2 + Ey**2 + Ez**2)
+        E_safe = np.maximum(E_mag, BTBT_FIELD_FLOOR)
+        # A in cm^-3 -> m^-3 via *1e6
+        G = (A_kane * 1e6) * E_safe**D * np.exp(-B_kane / E_safe)
+        G[E_mag < BTBT_FIELD_FLOOR] = 0.0
     g = mesh.to_cxx_grid()
     dV = g["dx"] * g["dy"] * g["dz"]
     I_btbt = float(QE * G.sum() * dV)
@@ -131,19 +135,20 @@ def btbt_generation(
 def fe_polarization_charge(result: Dict) -> Tuple[float, np.ndarray]:
     """Representative FE polarization magnitude and the FE-node mask.
 
-    Reads ``result["P"][:,0]`` (Px).  FE nodes are those with ``|Px|>1e-30``
-    (matching ``discovery._px_at_vg0``).  Returns
-    ``(P_mag, fe_mask)`` where ``P_mag`` is the mean ``|Px|`` over FE nodes
+    Selects the component with the largest mean magnitude. FE nodes are those
+    with nonzero polarization on that component. Returns
+    ``(P_mag, fe_mask)`` where ``P_mag`` is the mean magnitude over FE nodes
     (0.0 if no FE nodes).
     """
     P = np.asarray(result.get("P", np.zeros((0, 3))), dtype=float)
     if P.size == 0:
         return 0.0, np.zeros(0, dtype=bool)
-    Px = P[:, 0]
-    fe_mask = np.abs(Px) > 1e-30
+    axis = int(np.argmax(np.mean(np.abs(P), axis=0)))
+    P_axis = P[:, axis]
+    fe_mask = np.abs(P_axis) > 1e-30
     if not fe_mask.any():
         return 0.0, fe_mask
-    P_mag = float(np.mean(np.abs(Px[fe_mask])))
+    P_mag = float(np.mean(np.abs(P_axis[fe_mask])))
     return P_mag, fe_mask
 
 

@@ -32,6 +32,25 @@ class TestPyDeviceSimulator:
         bc = {0: 0.0, 1: 1.0}
         sim.set_dirichlet_potential(bc)
 
+    def test_nonuniform_positions_are_validated(self):
+        sim = PyDeviceSimulator(3, 1, 4, 1.0, 1.0, 1.0)
+        sim.set_x_positions(np.array([0.0, 0.25, 1.0], dtype=float))
+        sim.set_z_positions(np.array([0.0, 0.1, 0.4, 1.0], dtype=float))
+        with pytest.raises(ValueError, match="position count mismatch"):
+            sim.set_z_positions(np.array([0.0, 1.0], dtype=float))
+        with pytest.raises(ValueError, match="strictly increasing"):
+            sim.set_x_positions(np.array([0.0, 0.5, 0.5], dtype=float))
+
+    def test_charge_volume_fraction_is_validated(self):
+        sim = PyDeviceSimulator(3, 1, 4, 1.0, 1.0, 1.0)
+        sim.set_charge_volume_fraction(np.ones(12, dtype=float))
+        with pytest.raises(ValueError, match="size mismatch"):
+            sim.set_charge_volume_fraction(np.ones(11, dtype=float))
+        invalid = np.ones(12, dtype=float)
+        invalid[3] = 1.01
+        with pytest.raises(ValueError, match=r"\[0,1\]"):
+            sim.set_charge_volume_fraction(invalid)
+
     def test_solve_trivial(self):
         """Solve on a tiny grid with trivial boundary conditions."""
         sim = PyDeviceSimulator(3, 3, 3, 1.0, 1.0, 1.0)

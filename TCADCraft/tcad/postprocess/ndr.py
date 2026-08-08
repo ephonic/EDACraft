@@ -5,33 +5,56 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 
+def _current_observable(result: Dict, contact_name: str) -> float:
+    for key in ("_terminal_currents", "terminal_currents"):
+        currents = result.get(key)
+        if isinstance(currents, dict) and contact_name in currents:
+            return abs(float(currents[contact_name]))
+    for key in (f"I_{contact_name}", "current"):
+        if key in result and np.isscalar(result[key]):
+            return abs(float(result[key]))
+    if "Jn_x" in result and "Jp_x" in result:
+        J = np.asarray(result["Jn_x"], dtype=float) + np.asarray(
+            result["Jp_x"], dtype=float,
+        )
+        active = np.isfinite(J) & (np.abs(J) > 0.0)
+        if np.any(active):
+            return float(np.mean(np.abs(J[active])))
+    n = np.asarray(result.get("n", np.zeros(1)), dtype=float)
+    return float(np.max(np.abs(n))) if n.size else 0.0
+
+
 def extract_btb_current(
     results: Dict[str, np.ndarray],
     mesh,
     A_kane: float = 3.1e21,
-    B_kane: float = 2.0e7,
+    B_kane: float = 2.0e9,
     D: int = 2,
 ) -> float:
     """Extract BTBT generation current from simulation results.
 
     Same approach as TFET: integrate Kane's BTBT generation rate over volume.
     """
-    Ex = results.get("Ex", np.zeros(mesh.npts()))
-    Ey = results.get("Ey", np.zeros(mesh.npts()))
-    Ez = results.get("Ez", np.zeros(mesh.npts()))
-
-    E_mag = np.sqrt(Ex**2 + Ey**2 + Ez**2)
-
-    E_safe = np.maximum(E_mag, 1e4)
-    G_btb = A_kane * E_safe**D * np.exp(-B_kane / E_safe)
-    G_btb[E_mag < 1e4] = 0.0
+    if "G_btbt" in results:
+        G_btb_m = np.asarray(results["G_btbt"], dtype=float).ravel()
+        if G_btb_m.size != mesh.npts():
+            raise ValueError(
+                f"G_btbt size {G_btb_m.size} does not match mesh npts={mesh.npts()}"
+            )
+    else:
+        Ex = results.get("Ex", np.zeros(mesh.npts()))
+        Ey = results.get("Ey", np.zeros(mesh.npts()))
+        Ez = results.get("Ez", np.zeros(mesh.npts()))
+        E_mag = np.sqrt(Ex**2 + Ey**2 + Ez**2)
+        E_safe = np.maximum(E_mag, 1e4)
+        G_btb = A_kane * E_safe**D * np.exp(-B_kane / E_safe)
+        G_btb[E_mag < 1e4] = 0.0
+        G_btb_m = G_btb * 1e6
 
     dx = mesh.to_cxx_grid()["dx"]
     dy = mesh.to_cxx_grid()["dy"]
     dz = mesh.to_cxx_grid()["dz"]
     dV = dx * dy * dz
-
-    G_btb_m = G_btb * 1e6
 
     total_G = G_btb_m.sum() * dV
 
@@ -55,14 +78,13 @@ def extract_ndr_metrics(
     Returns
     -------
     dict
-        Keys: Vp (peak voltage), Ip (peak current proxy),
+        Keys: Vp (peak voltage), Ip (peak current/current-density observable),
         Vv (valley voltage), Iv (valley current proxy),
         PVR (peak-valley ratio = Ip/Iv),
         V_ndr_start, V_ndr_end (NDR region voltage bounds).
     """
     V = np.array([r["_voltages"][contact_name] for r in sweep_results])
-    # Use max electron density as current proxy
-    I = np.array([r["n"].max() for r in sweep_results])
+    I = np.array([_current_observable(r, contact_name) for r in sweep_results])
 
     I_safe = np.maximum(I, 1e-30)
 

@@ -32,8 +32,6 @@ def test_basic_framework():
     
     # 创建验证框架
     framework = ValidationFramework(device_builder, name="测试框架")
-    
-    # 添加一些测试
     framework.add_boundedness_test()
     
     # 运行测试
@@ -48,7 +46,7 @@ def test_basic_framework():
     print(f"通过: {sum(1 for r in results if r.passed)}")
     print(f"失败: {sum(1 for r in results if not r.passed)}")
     
-    return len(results) > 0
+    assert len(results) > 0
 
 
 def test_validation_result():
@@ -71,7 +69,8 @@ def test_validation_result():
     print(f"  消息: {result2.message}")
     print(f"  详情: {result2.details}")
     
-    return True
+    assert result1.passed is True
+    assert result2.passed is False
 
 
 def test_report_generation():
@@ -102,7 +101,9 @@ def test_report_generation():
     print(f"  失败: {summary['failed']}")
     print(f"  通过率: {summary['pass_rate']:.1f}%")
     
-    return True
+    assert summary["total_tests"] == 3
+    assert summary["passed"] == 2
+    assert summary["failed"] == 1
 
 
 def test_convergence_test():
@@ -136,7 +137,7 @@ def test_convergence_test():
     if result.details:
         print(f"详情: {result.details}")
     
-    return True
+    assert isinstance(result, ValidationResult)
 
 
 def test_conservation_test():
@@ -167,7 +168,7 @@ def test_conservation_test():
     print(f"通过: {result.passed}")
     print(f"消息: {result.message}")
     
-    return True
+    assert isinstance(result, ValidationResult)
 
 
 def test_symmetry_test():
@@ -198,7 +199,7 @@ def test_symmetry_test():
     print(f"通过: {result.passed}")
     print(f"消息: {result.message}")
     
-    return True
+    assert isinstance(result, ValidationResult)
 
 
 def main():
@@ -220,7 +221,7 @@ def main():
     for name, test_func in tests:
         try:
             result = test_func()
-            results.append((name, result))
+            results.append((name, result is not False))
         except Exception as e:
             print(f"\n测试失败: {name}")
             print(f"错误: {e}")

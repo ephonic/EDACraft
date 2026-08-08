@@ -44,6 +44,11 @@ _M_STAR_METAL = 1.0       # nominal for TiN/W
 _M_STAR_GRAPHENE = 0.5    # conservative (true Dirac mass is regime-dependent)
 _M_STAR_MOS2_N = 0.45
 _M_STAR_MOS2_P = 0.60
+_M_STAR_IGZO_N = 0.34
+_M_STAR_WSE2_N = 0.35
+_M_STAR_WSE2_P = 0.45
+_M_STAR_GAN_N = 0.20
+_M_STAR_GAN_P = 0.80
 
 
 def silicon() -> Material:
@@ -73,6 +78,31 @@ def silicon() -> Material:
         ii_B_n=1.231e8,   # [V/m]
         ii_A_p=1.58e8,    # holes [1/m]
         ii_B_p=2.036e8,   # [V/m]
+    )
+
+
+def gallium_nitride() -> Material:
+    """Wurtzite GaN baseline aligned to the Sentaurus W-2024.09 benchmark.
+
+    The electron affinity (3.9358 eV) makes a 4.80 eV metal a 0.8642 eV
+    Schottky barrier, as extracted from the thermionic branch of the checked-in
+    calibration deck.  Mobility and lifetime match ``schottky.par``.  These
+    are synthetic-reference defaults and should be overridden by process data
+    when a specific epitaxial stack is known.
+    """
+    return Material(
+        name="GaN",
+        epsilon_r=9.5,
+        Eg=3.40,
+        chi=3.93579972,
+        Nc=2.3e18,
+        Nv=4.6e19,
+        mu_n=1800.0,
+        mu_p=150.0,
+        tau_n=1.0e-9,
+        tau_p=1.0e-9,
+        b_n=dg_coefficient(_M_STAR_GAN_N),
+        b_p=dg_coefficient(_M_STAR_GAN_P),
     )
 
 
@@ -343,4 +373,58 @@ def mos2_channel() -> Material:
         tau_p=1e-7,
         b_n=dg_coefficient(_M_STAR_MOS2_N),
         b_p=dg_coefficient(_M_STAR_MOS2_P),
+    )
+
+
+def amorphous_igzo() -> Material:
+    """Room-temperature a-IGZO channel with tail/percolation metadata.
+
+    The numerical values are representative starting points, not a process
+    calibration. Call :meth:`Simulator.set_disordered_transport` to activate
+    the exponential-tail DOS and temperature-dependent percolation mobility,
+    and :meth:`Simulator.create_pbti_trap_model` for stateful PBTI stress.
+    """
+    return Material(
+        name="a-IGZO",
+        epsilon_r=10.0,
+        Eg=3.05,
+        chi=4.16,
+        Nc=5.0e18,
+        Nv=1.0e20,
+        mu_n=15.0,
+        mu_p=1.0e-4,
+        tau_n=1.0e-6,
+        tau_p=1.0e-8,
+        b_n=dg_coefficient(_M_STAR_IGZO_N),
+        b_p=dg_coefficient(1.0),
+        tail_DOS=1.0e20,
+        urbach_energy=0.05,
+        percolation_energy=0.075,
+        pbti_Nt=5.0e18,
+        pbti_Et=0.35,
+        pbti_capture_tau=1.0,
+        pbti_emission_tau=1.0e4,
+    )
+
+
+def wse2_channel() -> Material:
+    """Monolayer-like WSe2 channel baseline for ambipolar Schottky FETs.
+
+    Contact barriers must be supplied explicitly with
+    ``Simulator.set_contact(..., workfunction=...)``. The ideal thermionic
+    boundary does not silently assume an ohmic source/drain.
+    """
+    return Material(
+        name="WSe2",
+        epsilon_r=7.0,
+        Eg=1.65,
+        chi=3.9,
+        Nc=1.5e19,
+        Nv=1.8e19,
+        mu_n=50.0,
+        mu_p=150.0,
+        tau_n=1.0e-7,
+        tau_p=1.0e-7,
+        b_n=dg_coefficient(_M_STAR_WSE2_N),
+        b_p=dg_coefficient(_M_STAR_WSE2_P),
     )

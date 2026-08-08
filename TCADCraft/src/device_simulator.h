@@ -20,6 +20,9 @@ struct SimulationResult {
     std::vector<real_t> p;      // Hole concentration [m^-3]
     std::vector<real_t> Ex, Ey, Ez; // Electric field [V/m]
     std::vector<real_t> temperature; // Lattice temperature [K]
+    // Final density-gradient quantum potentials [V]. Always length npts;
+    // identically zero for a classical solve.
+    std::vector<real_t> Qn, Qp;
     // Edge-centered SG current densities [A/m^2], computed in __float128 at
     // full solver precision (post-convergence) and downcast to real_t.  These
     // avoid the catastrophic cancellation that plagues Python re-derivation
@@ -29,6 +32,18 @@ struct SimulationResult {
     // Zero entries indicate domain-boundary or insulator edges.  (Audit §20.)
     std::vector<real_t> Jn_x, Jn_y, Jn_z;  // electron current density
     std::vector<real_t> Jp_x, Jp_y, Jp_z;  // hole current density
+    // Edge-centered dielectric leakage current density [A/m^2].  PF is
+    // represented as a field-dependent conductivity and FN as a tunnelling
+    // current; both are projected onto each edge.  These currents are kept
+    // separate from mobile-carrier Jn/Jp so gate leakage can be audited.
+    std::vector<real_t> Jleak_x, Jleak_y, Jleak_z;
+    // Band-to-band pair generation rate [m^-3 s^-1] evaluated on the final
+    // potential with the exact local-Kane/non-local-WKB model used by the
+    // continuity equations.  Always length npts (zeros when BTBT is disabled).
+    std::vector<real_t> G_btbt;
+    // Impact-ionization pair generation [m^-3 s^-1], evaluated at the final
+    // state with the same edge Chynoweth model used by the carrier equations.
+    std::vector<real_t> G_ii;
     bool converged = false;
     size_t iterations = 0;
     // Convergence-honesty diagnostics (P0-3): final Poisson residual (-1 = not
@@ -52,6 +67,7 @@ public:
                                const std::vector<real_t>& z_minus);
     void set_mobility(const std::vector<real_t>& mu_n, const std::vector<real_t>& mu_p);
     void set_doping(const std::vector<real_t>& Nd_minus_Na);
+    void set_charge_volume_fraction(const std::vector<real_t>& fraction);
     void set_optical_generation(const std::vector<real_t>& G_opt);
     void set_recombination(const std::vector<real_t>& tau_n, const std::vector<real_t>& tau_p);
     void set_thermal_voltage(real_t VT);
@@ -65,8 +81,8 @@ public:
 
     // Simulation control
     void set_quantum_enabled(bool enable);
-    void set_grid_z(const std::vector<real_t>& z_pos) { g_.zx = z_pos; }
-    void set_grid_x(const std::vector<real_t>& x_pos) { g_.xx = x_pos; }
+    void set_grid_z(const std::vector<real_t>& z_pos);
+    void set_grid_x(const std::vector<real_t>& x_pos);
     void set_phi_freezing_enabled(bool enable);
     // C档: Newton freeze flags — pin a block (phi/n/p) to its current value so
     // the Newton solve reduces to the other blocks. freeze_phi enables an
@@ -116,12 +132,10 @@ public:
     void set_auger_enabled(bool enable);
     void set_auger_params(real_t Cn, real_t Cp);
 
-    // Dielectric breakdown (M7b, audit §22).  Flags dielectric nodes whose
-    // |E| exceeds the material breakdown field E_bd and applies a soft-
-    // breakdown leakage term sigma_bd [F/m^3] there (added to the Poisson
-    // diagonal, same units as eps/dx^2, locally relaxing phi toward 0 so a
-    // gate leak develops).  The breakdown state is IRREVERSIBLE and persisted
-    // across solve() calls (like fe_polarization_).
+    // Dielectric breakdown (M7b, audit §22). Flags dielectric nodes whose
+    // |E| exceeds E_bd. On subsequent solves, edges touching a failed node
+    // carry the explicit conventional current J_bd=sigma_bd*E [A/m^2]. The
+    // state is irreversible and persisted across solve() calls.
     void set_breakdown_enabled(bool enable);
     void set_breakdown_params(const std::vector<char>& bd_mask,
                               const std::vector<real_t>& E_bd,
@@ -138,8 +152,8 @@ public:
     void set_ferroelectric_model(int model);
     // FE polar axis: 0=x, 1=y, 2=z (P0-1)
     void set_ferroelectric_polar_axis(int axis);
-    // Preisach parameters (M7c, used only when model == 1). Escale=0 => Ec/3
-    // (P1.3); a smaller Escale lets |P| approach the named saturation Ps.
+    // Preisach parameters (M7c, used only when model == 1). Escale=0 => Ec;
+    // a smaller Escale lets |P| approach the named saturation Ps.
     void set_ferroelectric_preisach(real_t ps, real_t ec, real_t escale);
     // Internal field / Imprint offset (P2.1). Shifts E_eff = E - E_bi; 0 => symmetric.
     void set_ferroelectric_builtin_field(real_t E_bi);
@@ -210,6 +224,7 @@ private:
     std::vector<real_t> mu_n_, mu_p_;
     std::vector<real_t> tau_n_, tau_p_;
     std::vector<real_t> Nd_minus_Na_;
+    std::vector<real_t> charge_volume_fraction_;
     std::vector<real_t> G_opt_;
     std::vector<real_t> Nc_, Nv_, Eg_;
     std::map<size_t, real_t> phi_bc_, n_bc_, p_bc_;
@@ -217,7 +232,11 @@ private:
     std::vector<real_t> init_phi_, init_n_, init_p_;
     bool quantum_enabled_ = false;
     size_t max_iter_ = 100;   // raised from 50 for correct div(P) coupling
-    real_t tol_ = 1e-25Q;
+    // A relative update tolerance below float64/linear-solver accuracy made
+    // otherwise valid bias sweeps hit max_iter and then restart from thermal
+    // equilibrium at the next point.  1e-6 is the production default used by
+    // the high-level API and is tight enough for terminal-current extraction.
+    real_t tol_ = 1e-6Q;
     real_t VT_ = 0.02585Q;
     SolverType poisson_solver_type_ = SolverType::DENSE_DIRECT;
     SolverType continuity_solver_type_ = SolverType::DENSE_DIRECT;
@@ -248,7 +267,7 @@ private:
     // BTBT
     bool btbt_enabled_ = false;
     real_t btbt_A_ = 3.1e21Q;
-    real_t btbt_B_ = 2.0e7Q;
+    real_t btbt_B_ = 2.0e9Q;  // V/m (SI; 2e7 V/cm)
     int btbt_D_ = 2;
     bool btbt_use_nonlocal_ = false;
     // Avalanche impact ionization (SI units; defaults = silicon, see
@@ -266,7 +285,7 @@ private:
     bool bd_enabled_ = false;
     std::vector<char> bd_mask_;       // which nodes participate (dielectric) [npts]
     std::vector<real_t> E_bd_;        // per-node breakdown field [V/m] [npts]
-    real_t sigma_bd_ = 1.0e-2Q;   // soft-breakdown leakage term [F/m^3] (A档)
+    real_t sigma_bd_ = 1.0e-2Q;   // post-breakdown filament conductivity [S/m]
     std::vector<char> bd_state_;      // 1 = node broken down (irreversible) [npts]
     bool bd_state_init_ = false;
     // Ferroelectric

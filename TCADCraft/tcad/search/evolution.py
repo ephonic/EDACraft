@@ -336,6 +336,10 @@ def crowding_distance(front: List[Candidate]) -> List[float]:
 
 def tournament_select(pop: List[Candidate], rng: random.Random) -> Candidate:
     """Binary tournament: lower front rank wins; ties broken by crowding."""
+    if not pop:
+        raise ValueError("tournament_select requires a non-empty population")
+    if len(pop) == 1:
+        return pop[0]
     i, j = rng.sample(range(len(pop)), 2)
     # Lower front index is better; we approximate by direct dominance.
     if _dominates(pop[i], pop[j]):
@@ -457,8 +461,17 @@ def evolve(
     population.append(base_cand)
     archive.append(base_cand)
 
-    # Generate initial population by parameter mutation.
-    while len(population) < population_size:
+    # Generate initial population by parameter mutation.  Keep this loop
+    # bounded: a restrictive validation/law gate (or a mutation operator that
+    # repeatedly returns the same invalid topology) may reject every child.
+    # The previous unbounded loop hung forever in that case.  A smaller initial
+    # population containing the evaluated seed is still a valid search state
+    # and the generation loop can continue producing candidates.
+    init_attempts = 0
+    max_init_attempts = max(population_size * 6, 1)
+    while (len(population) < population_size and
+           init_attempts < max_init_attempts):
+        init_attempts += 1
         parent = rng.choice(population)
         new_tree = _mutate_for_search(
             parent.tree, rng,

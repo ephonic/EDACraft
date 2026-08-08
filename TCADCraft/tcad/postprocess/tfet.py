@@ -5,11 +5,39 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 
+def _transport_current_observable(result: Dict, contact_name: str = "drain") -> float:
+    """Return an actual-current observable, with legacy density fallback.
+
+    High-level sweep results may carry an explicitly integrated terminal
+    current; otherwise TCADCraft always exposes full-precision edge SG current
+    densities.  The mean magnitude on active x edges is proportional to drain
+    current for the x-transport TFET templates and, unlike ``n.max()``, is not
+    pinned by the ohmic-contact carrier boundary condition.
+    """
+    for key in ("_terminal_currents", "terminal_currents"):
+        currents = result.get(key)
+        if isinstance(currents, dict) and contact_name in currents:
+            return abs(float(currents[contact_name]))
+    for key in (f"I_{contact_name}", "I_drain", "current"):
+        if key in result and np.isscalar(result[key]):
+            return abs(float(result[key]))
+    if "Jn_x" in result and "Jp_x" in result:
+        J = np.asarray(result["Jn_x"], dtype=float) + np.asarray(
+            result["Jp_x"], dtype=float,
+        )
+        active = np.isfinite(J) & (np.abs(J) > 0.0)
+        if np.any(active):
+            return float(np.mean(np.abs(J[active])))
+    # Backward compatibility for external/synthetic legacy dictionaries.
+    n = np.asarray(result.get("n", np.zeros(1)), dtype=float)
+    return float(np.max(np.abs(n))) if n.size else 0.0
+
+
 def extract_btb_tbt_current(
     results: Dict[str, np.ndarray],
     mesh,
     A_kane: float = 3.1e21,
-    B_kane: float = 2.0e7,
+    B_kane: float = 2.0e9,
     D: int = 2,
 ) -> float:
     """Extract BTBT generation current from simulation results.
@@ -36,26 +64,29 @@ def extract_btb_tbt_current(
     float
         Total BTBT current [A/m] (per unit width for 2D, total for 3D).
     """
-    Ex = results.get("Ex", np.zeros(mesh.npts()))
-    Ey = results.get("Ey", np.zeros(mesh.npts()))
-    Ez = results.get("Ez", np.zeros(mesh.npts()))
-
-    E_mag = np.sqrt(Ex**2 + Ey**2 + Ez**2)
-
-    # Kane's model: G = A * |E|^D * exp(-B / |E|) [cm^-3 s^-1]
-    # Avoid division by zero
-    E_safe = np.maximum(E_mag, 1e4)  # minimum field to avoid exp(-inf)
-    G_btb = A_kane * E_safe**D * np.exp(-B_kane / E_safe)  # cm^-3 s^-1
-    G_btb[E_mag < 1e4] = 0.0  # zero BTBT for negligible fields
+    # Prefer the exact source used by continuity.  This preserves local-vs-
+    # non-local model selection instead of replacing WKB with a local proxy.
+    if "G_btbt" in results:
+        G_btb_m = np.asarray(results["G_btbt"], dtype=float).ravel()
+        if G_btb_m.size != mesh.npts():
+            raise ValueError(
+                f"G_btbt size {G_btb_m.size} does not match mesh npts={mesh.npts()}"
+            )
+    else:
+        Ex = results.get("Ex", np.zeros(mesh.npts()))
+        Ey = results.get("Ey", np.zeros(mesh.npts()))
+        Ez = results.get("Ez", np.zeros(mesh.npts()))
+        E_mag = np.sqrt(Ex**2 + Ey**2 + Ez**2)
+        E_safe = np.maximum(E_mag, 1e4)
+        G_btb = A_kane * E_safe**D * np.exp(-B_kane / E_safe)
+        G_btb[E_mag < 1e4] = 0.0
+        G_btb_m = G_btb * 1e6
 
     # Integrate over volume: each cell has volume = dx * dy * dz
     dx = mesh.to_cxx_grid()["dx"]
     dy = mesh.to_cxx_grid()["dy"]
     dz = mesh.to_cxx_grid()["dz"]
     dV = dx * dy * dz  # m^3
-
-    # Convert G from cm^-3 s^-1 to m^-3 s^-1
-    G_btb_m = G_btb * 1e6
 
     # Total BTBT generation rate
     total_G = G_btb_m.sum() * dV  # s^-1
@@ -68,6 +99,7 @@ def extract_tfet_metrics(
     sweep_results: List[Dict[str, np.ndarray]],
     gate_contact: str = "gate",
     Vdd: float = 0.5,
+    drain_contact: str = "drain",
 ) -> Dict[str, float]:
     """Extract TFET-specific performance metrics from a Vg sweep.
 
@@ -79,6 +111,8 @@ def extract_tfet_metrics(
         Name of the gate contact.
     Vdd : float
         Supply voltage [V].
+    drain_contact : str
+        Drain terminal name used when integrated terminal currents are present.
 
     Returns
     -------
@@ -88,8 +122,9 @@ def extract_tfet_metrics(
         (current at Vg=0), energy_per_switch.
     """
     Vg = np.array([r["_voltages"][gate_contact] for r in sweep_results])
-    # Use max electron density as current proxy (since we don't have terminal current)
-    I_proxy = np.array([r["n"].max() for r in sweep_results])
+    I_proxy = np.array([
+        _transport_current_observable(r, drain_contact) for r in sweep_results
+    ])
 
     # Clamp to avoid log(0)
     I_safe = np.maximum(I_proxy, 1e-30)

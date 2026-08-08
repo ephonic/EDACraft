@@ -4,6 +4,7 @@
 #include "sparse_matrix.h"
 #include "linear_solver.h"
 #include <vector>
+#include <set>
 #include <functional>
 
 namespace tcad {
@@ -73,6 +74,12 @@ public:
     // Set fixed charge (Nd - Na)
     void set_doping(const std::vector<real_t>& Nd_minus_Na);
 
+    // Fraction of each node-centred control volume occupied by the material
+    // carrying p-n+doping charge. Defaults to one. Cut-cell/interface meshes
+    // use values in [0,1] so a semiconductor interface node does not smear
+    // mobile charge into the dielectric half of its control volume.
+    void set_charge_volume_fraction(const std::vector<real_t>& fraction);
+
     // Set boundary conditions: Dirichlet (value) at specific indices
     // Map: global_index -> potential_value
     void set_dirichlet(const std::map<size_t, real_t>& bc);
@@ -123,11 +130,9 @@ public:
     // axis 2 is required there; default 0 = legacy x-only behavior.
     void set_ferroelectric_polar_axis(int axis);
 
-    // Leakage current (Poole-Frenkel / Fowler-Nordheim) (P2.2). Sets the leaky
-    // node mask and PF/FN coefficients. During assemble(), a field-dependent
-    // conductance sigma_leak(|E|) is added to the Poisson diagonal of masked
-    // nodes, modelling a residual leakage path that prevents P-V loop closure
-    // at V=0. Empty mask or zero coefficients disable the term.
+    // Leakage parameters are retained here because Gummel owns the Poisson
+    // object and caches the field. PF/FN is no longer added to Poisson;
+    // DeviceSimulator evaluates the explicit A/m^2 edge flux after solve().
     // Stabilized-Gummel Boltzmann linearization (plan0728 §1.2): when
     // enabled, assemble() adds the carrier-charge linearization
     // -(q/VT)(n+p) to the Poisson diagonal and -(q/VT)(n+p)*phi_old to the
@@ -195,15 +200,9 @@ public:
     // Set ferroelectric gamma for transient LK dynamics: E = alpha*P + beta*P^3 + gamma*dP/dt
     void set_ferroelectric_gamma(real_t gamma);
 
-    // Dielectric breakdown (M7b, audit §22).  Injects the irreversible breakdown
-    // state (1 = node has broken down) and the soft-breakdown leakage term
-    // sigma_bd [F/m^3] — an effective added permittivity-density (same units as
-    // the Poisson Laplacian diagonal eps/dx^2).  In assemble(), a broken-down
-    // dielectric node gets +sigma_bd on the Poisson diagonal and +0 on the RHS,
-    // locally relaxing phi toward 0 (soft short) so a gate leak develops.
-    // (A档: was documented [S/m], which is dimensionally inconsistent with the
-    //  [F/m^3] diagonal; redefined to [F/m^3] for dimensional self-consistency.)
-    // Empty state disables the leakage term.  Call before assemble() each solve().
+    // Compatibility/debug injection of the persistent breakdown state.
+    // sigma_bd is a conductivity [S/m]; DeviceSimulator evaluates its explicit
+    // edge current. Poisson deliberately ignores both values.
     void set_breakdown_state(const std::vector<char>& bd_state, real_t sigma_bd);
 
     // Transient LK time step: P^{k+1} = P^k + (dt/gamma)*(E - alpha*P^k - beta*(P^k)^3)
@@ -260,6 +259,7 @@ private:
     std::vector<real_t> edge_eps_z_plus_;
     std::vector<real_t> edge_eps_z_minus_;
     std::vector<real_t> Nd_minus_Na_;
+    std::vector<real_t> charge_volume_fraction_;
     std::map<size_t, real_t> dirichlet_bc_;
     std::vector<char> is_dirichlet_;
 
@@ -277,7 +277,7 @@ private:
     bool fe_enabled_ = false;
 
     // Ferroelectric model selection + Preisach params (M7c).
-    int fe_model_ = 0;            // 0 = LK, 1 = PREISACH
+    int fe_model_ = 0;            // 0=LK, 1=play Preisach, 2=NLS, 3=Sentaurus Preisach
     real_t fe_ps_ = 0.2Q;         // Preisach saturation polarization [C/m^2]
     real_t fe_ec_ = 1.0e9Q;       // Preisach coercive field [V/m]
     real_t fe_escale_ = 0.0Q;     // Preisach tanh width [V/m]; 0 => Ec (default)
@@ -296,13 +296,13 @@ private:
     real_t fe_nls_tau0_ = 1.0e-6Q;   // characteristic switching time [s]
     real_t fe_nls_E0_ = 2.0e9Q;      // Merz activation field [V/m]
     real_t fe_nls_dt_ = 1.0e-6Q;     // effective dwell time per bias step [s]
-    // Play-operator internal state: length npts, one "memory" value per node
-    // (the play operator's internal level). Empty under L-K.
+    // Preisach internal state. Model 1 uses npts play levels. Model 3 uses
+    // 2*npts entries: previous field followed by branch state (-2/+2 virgin,
+    // -1/+1 major-loop direction). Empty under L-K/NLS.
     std::vector<real_t> fe_play_state_;
 
-    // Dielectric breakdown state (M7b, audit §22).  bd_state_[i]==1 marks a
-    // node that has irreversibly broken down; assemble() adds sigma_bd_ to its
-    // Poisson diagonal (soft short -> gate leak).  Empty = disabled.
+    // Dielectric breakdown state retained for API compatibility/debugging.
+    // It is not assembled into the electrostatic equation.
     std::vector<char> bd_state_;
     real_t sigma_bd_ = 0.0Q;
 
@@ -315,9 +315,8 @@ private:
     real_t trap_E_t_ = 0.0Q;      // trap energy level [eV] (rel. intrinsic)
     std::vector<real_t> Q_ot_;    // bulk oxide trap charge [C/m^3]
 
-    // Leakage current (PF/FN) state (P2.2). leak_mask_[i]==1 marks a node that
-    // carries field-dependent leakage; assemble() adds sigma_leak(|E|) to its
-    // Poisson diagonal. Empty mask or C_pf=C_fn=0 disables the term.
+    // Leakage-current metadata (PF/FN). Poisson only caches the field for
+    // compatibility; DeviceSimulator evaluates the explicit edge flux.
     std::vector<char> leak_mask_;
     real_t leak_C_pf_ = 0.0Q, leak_B_pf_ = 0.0Q, leak_phi_t_ = 0.0Q;
     real_t leak_C_fn_ = 0.0Q, leak_B_fn_ = 0.0Q, leak_phi_b_ = 0.0Q;

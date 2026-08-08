@@ -6,6 +6,7 @@ namespace tcad {
 PoissonSolver::PoissonSolver(const Grid3D& grid)
     : g_(grid), eps_(grid.npts(), EPS0 * 11.7Q), // Default: Silicon
       Nd_minus_Na_(grid.npts(), 0.0Q),
+      charge_volume_fraction_(grid.npts(), 1.0Q),
       is_dirichlet_(grid.npts(), 0),
       solver_(LinearSolver(LinearSolver::default_poisson_options())) {}
 
@@ -44,6 +45,17 @@ void PoissonSolver::set_edge_permittivity(const std::vector<real_t>& x_plus,
 void PoissonSolver::set_doping(const std::vector<real_t>& Nd_minus_Na) {
     if (Nd_minus_Na.size() != g_.npts()) throw std::invalid_argument("Doping size mismatch");
     Nd_minus_Na_ = Nd_minus_Na;
+}
+
+void PoissonSolver::set_charge_volume_fraction(
+    const std::vector<real_t>& fraction) {
+    if (fraction.size() != g_.npts())
+        throw std::invalid_argument("Charge volume fraction size mismatch");
+    for (real_t value : fraction) {
+        if (value < 0.0Q || value > 1.0Q)
+            throw std::invalid_argument("Charge volume fraction must be in [0,1]");
+    }
+    charge_volume_fraction_ = fraction;
 }
 
 void PoissonSolver::set_solver_options(const SolverOptions& opt) {
@@ -182,7 +194,9 @@ void PoissonSolver::assemble(const std::vector<real_t>& n, const std::vector<rea
                 if (c != 0.0Q) { A_.add_entry(idx, idx - g_.nx * g_.ny, c); center -= c; }
 
                 A_.add_entry(idx, idx, center);
-                rhs_[idx] = -QE * (p[idx] - n[idx] + Nd_minus_Na_[idx]);
+                const real_t charge_fraction = charge_volume_fraction_[idx];
+                rhs_[idx] = -QE * charge_fraction *
+                    (p[idx] - n[idx] + Nd_minus_Na_[idx]);
 
                 // Ohmic contact: replace frozen n,p with Boltzmann n(phi_old).
                 // At Ohmic nodes, n=NSD from continuity BC is physically wrong
@@ -202,7 +216,8 @@ void PoissonSolver::assemble(const std::vector<real_t>& n, const std::vector<rea
                     if (arg_p < -50.0Q) arg_p = -50.0Q;
                     real_t n_ohmic = ohmic_ni_ * exp_q(arg_n);
                     real_t p_ohmic = ohmic_ni_ * exp_q(arg_p);
-                    rhs_[idx] = -QE * (p_ohmic - n_ohmic + Nd_minus_Na_[idx]);
+                    rhs_[idx] = -QE * charge_fraction *
+                        (p_ohmic - n_ohmic + Nd_minus_Na_[idx]);
                 }
 
                 // Stabilized-Gummel Boltzmann linearization (plan0728 §1.2):
@@ -218,7 +233,7 @@ void PoissonSolver::assemble(const std::vector<real_t>& n, const std::vector<rea
                 // Nd=1e22 junction, oscillation localised at the junction
                 // node; plain damping 1/256 and Anderson(1) both failed).
                 if (boltzmann_lin_ && !leak_phi_.empty()) {
-                    real_t D = (QE / VT_) * (n[idx] + p[idx]);
+                    real_t D = charge_fraction * (QE / VT_) * (n[idx] + p[idx]);
                     A_.add_entry(idx, idx, -D);
                     rhs_[idx] -= D * leak_phi_[idx];
                 }
@@ -302,56 +317,12 @@ void PoissonSolver::assemble(const std::vector<real_t>& n, const std::vector<rea
                     rhs_[idx] -= divP;
                 }
 
-                // Dielectric soft-breakdown leakage (M7b, audit §22).  A node
-                // that has irreversibly broken down gets +sigma_bd on the
-                // Poisson diagonal (and +0 RHS), locally relaxing phi toward 0
-                // — a soft short that develops a gate leak.  Physically this
-                // models the post-breakdown conductive filament raising the
-                // local oxide permittivity-density.
-                // (A档: sigma_bd is [F/m^3], the SAME units as the Laplacian
-                //  diagonal eps/dx^2 — adding it is dimensionally consistent.
-                //  Was previously documented [S/m], which was wrong by ~1e9.)
-                if (!bd_state_.empty() && idx < bd_state_.size() && bd_state_[idx] &&
-                    sigma_bd_ > 0.0Q) {
-                    A_.add_entry(idx, idx, sigma_bd_);
-                    // RHS unchanged (drives phi -> 0, i.e. soft ground).
-                }
-
-                // Leakage current (PF/FN) field-dependent conductance (P2.2).
-                // Adds sigma_leak(|E|) to the Poisson diagonal of leaky nodes,
-                // modelling a residual conduction path across the dielectric.
-                // This relaxes phi slightly at the leaky layer so the P-V loop
-                // does NOT close at V=0 (reproducing the experimental 0V
-                // non-closure and off-state gate leakage). sigma_leak is a
-                // fraction of the local Laplacian diagonal eps/dx^2 — so the
-                // PF/FN prefactors C_pf/C_fn are normalised to the dielectric
-                // scale and need not be tuned to absolute current units.
-                if (!leak_mask_.empty() && idx < leak_mask_.size() && leak_mask_[idx] &&
-                    idx < leak_E_mag_.size()) {
-                    real_t E_mag = leak_E_mag_[idx];
-                    if (E_mag > leak_E_floor_) {
-                        // Reference conductance = local Laplacian diagonal eps/dx^2.
-                        real_t g_ref = eps_[idx] / (g_.dx * g_.dx);
-                        real_t frac = 0.0Q;
-                        if (leak_C_pf_ > 0.0Q && leak_phi_t_ > 0.0Q) {
-                            // Poole-Frenkel: J = C_pf * |E| * exp(-B_pf*sqrt(phi_t/|E|))
-                            // Normalised to a diagonal fraction.
-                            real_t arg = leak_B_pf_ * sqrt_q(leak_phi_t_ / E_mag);
-                            frac += leak_C_pf_ * E_mag * exp_q(-arg) / E_mag;
-                        }
-                        if (leak_C_fn_ > 0.0Q && leak_phi_b_ > 0.0Q) {
-                            // Fowler-Nordheim: J = C_fn * |E|^2 * exp(-B_fn*phi_b^(3/2)/|E|)
-                            real_t arg = leak_B_fn_ * pow_q(leak_phi_b_, 1.5Q) / E_mag;
-                            frac += leak_C_fn_ * E_mag * E_mag * exp_q(-arg) / E_mag;
-                        }
-                        real_t sigma_leak = frac * g_ref;
-                        // Cap to avoid dominating the Laplacian diagonal.
-                        if (sigma_leak > leak_sigma_cap_ * g_ref)
-                            sigma_leak = leak_sigma_cap_ * g_ref;
-                        if (sigma_leak > 0.0Q)
-                            A_.add_entry(idx, idx, sigma_leak);
-                    }
-                }
+                // Dielectric PF/FN and post-breakdown filament conduction are
+                // transport currents [A/m^2], not electrostatic charge. Both
+                // are evaluated on dielectric edges after the solve and
+                // exposed as Jleak_{x,y,z}. Do not add a conductance to the
+                // Poisson diagonal: that would create a mesh-dependent,
+                // fictitious connection to zero volts.
             }
         }
     }
@@ -421,6 +392,98 @@ void PoissonSolver::set_ferroelectric(const std::vector<char>& fe_mask,
 
 void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>& phi) {
     if (!fe_enabled_) return;
+
+    // ---- Sentaurus-compatible Preisach saturation-loop path ----
+    // Sentaurus Device W-2024.09, User Guide Eq. 986-987:
+    //   P = Ps*tanh(w*(E +/- Ec)),
+    //   w = log((Ps+Pr)/(Ps-Pr))/(2*Ec).
+    // fe_escale_ stores 1/w so the existing public Ps/Ec/Escale API remains
+    // ABI compatible. Unlike the legacy one-play model below, this permits
+    // saturation Ps and remanence Pr to be calibrated independently. The
+    // first monotonic excursion uses a centered virgin branch; after the
+    // first reversal, the two major-loop branches follow Eq. 986 exactly.
+    if (fe_model_ == 3) {
+        const size_t N = g_.npts();
+        if (fe_play_state_.size() != 2 * N)
+            fe_play_state_.assign(2 * N, 0.0Q);
+        if (fe_polarization_.size() != 3 * N)
+            fe_polarization_.assign(3 * N, 0.0Q);
+        const real_t Ps = fe_ps_;
+        const real_t Ec = fe_ec_;
+        const real_t Escale = (fe_escale_ > 0.0Q) ? fe_escale_
+                            : ((Ec > 0.0Q) ? Ec : 1.0Q);
+
+        real_t E = 0.0Q, P_old = 0.0Q, E_previous = 0.0Q;
+        real_t branch_accum = 0.0Q;
+        size_t n_fe = 0;
+        for (size_t k = 0; k < g_.nz; ++k)
+            for (size_t j = 0; j < g_.ny; ++j)
+                for (size_t i = 0; i < g_.nx; ++i) {
+                    const size_t idx = g_.index(i, j, k);
+                    if (!fe_mask_[idx]) continue;
+                    E += e_field_component(phi, i, j, k, fe_axis_);
+                    P_old += fe_polarization_[3 * idx + fe_axis_];
+                    E_previous += fe_play_state_[idx];
+                    branch_accum += fe_play_state_[N + idx];
+                    ++n_fe;
+                }
+        if (n_fe == 0) return;
+        E /= (real_t)n_fe;
+        P_old /= (real_t)n_fe;
+        E_previous /= (real_t)n_fe;
+        E -= fe_E_bi_;
+        if (fe_eps_fe_ > 0.0Q) {
+            const real_t eps0 = 8.854187817e-12Q;
+            E -= P_old / (fe_eps_fe_ * eps0);
+        }
+
+        int branch = 0;
+        if (branch_accum > 0.5Q * (real_t)n_fe) branch = 1;
+        else if (branch_accum < -0.5Q * (real_t)n_fe) branch = -1;
+        // Virgin states are encoded as +/-2. Recover them from the average.
+        if (branch_accum > 1.5Q * (real_t)n_fe) branch = 2;
+        else if (branch_accum < -1.5Q * (real_t)n_fe) branch = -2;
+
+        const real_t field_tol = std::max(1.0Q, abs_q(E) * 1.0e-12Q);
+        const real_t delta = E - E_previous;
+        if (branch == 0 && abs_q(delta) > field_tol)
+            branch = (delta > 0.0Q) ? 2 : -2;
+        else if (branch == 2 && delta < -field_tol) branch = -1;
+        else if (branch == -2 && delta > field_tol) branch = 1;
+        else if (branch == 1 && delta < -field_tol) branch = -1;
+        else if (branch == -1 && delta > field_tol) branch = 1;
+
+        real_t P_target = P_old;
+        if (abs_q(delta) > field_tol || branch == 0) {
+            if (branch == 2 || branch == -2) {
+                // Centered initial curve: deterministic P(0)=0 and the same
+                // saturation limits as the major loop.
+                P_target = Ps * tanh_q(E / (2.0Q * Escale));
+            } else if (branch > 0) {
+                P_target = Ps * tanh_q((E - Ec) / Escale);
+            } else if (branch < 0) {
+                P_target = Ps * tanh_q((E + Ec) / Escale);
+            }
+        }
+        const real_t P = fe_relax_ * P_target + (1.0Q - fe_relax_) * P_old;
+        for (size_t idx = 0; idx < N; ++idx) {
+            if (!fe_mask_[idx]) {
+                fe_polarization_[3 * idx + 0] = 0.0Q;
+                fe_polarization_[3 * idx + 1] = 0.0Q;
+                fe_polarization_[3 * idx + 2] = 0.0Q;
+                fe_play_state_[idx] = 0.0Q;
+                fe_play_state_[N + idx] = 0.0Q;
+                continue;
+            }
+            fe_polarization_[3 * idx + fe_axis_] = P;
+            for (int component = 0; component < 3; ++component)
+                if (component != fe_axis_)
+                    fe_polarization_[3 * idx + component] = 0.0Q;
+            fe_play_state_[idx] = E;
+            fe_play_state_[N + idx] = (real_t)branch;
+        }
+        return;
+    }
 
     // ---- Preisach (play-operator) path (M7c) ----
     // Classical scalar Preisach realised as a moving (play) model: each node
@@ -532,61 +595,66 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
         // not a physical time but a relaxation strength parameter: larger =>
         // faster (more vertical) switching. Default 1e-6 s gives moderate slope.
         const real_t dt_eff = fe_nls_dt_;
-        for (size_t k = 0; k < g_.nz; ++k) {
-            for (size_t j = 0; j < g_.ny; ++j) {
+        // NLS is a domain-ensemble (volume-averaged) switching model, not a
+        // phase-field model.  Advancing every mesh node from its local field
+        // let tiny discretisation variations create artificial domains; their
+        // bound charge then reversed the local field on the return branch and
+        // drove P back to +Ps under a negative applied voltage.  Use the FE
+        // volume-average drive and state, as in compact NLS formulations, and
+        // write one uniform ensemble polarization into the FE region.
+        real_t E = 0.0Q, E_abs_peak = 0.0Q, P_old = 0.0Q;
+        size_t n_fe = 0;
+        for (size_t k = 0; k < g_.nz; ++k)
+            for (size_t j = 0; j < g_.ny; ++j)
                 for (size_t i = 0; i < g_.nx; ++i) {
                     size_t idx = g_.index(i, j, k);
-                    if (!fe_mask_[idx]) {
-                        fe_polarization_[3*idx+0] = 0.0Q;
-                        fe_polarization_[3*idx+1] = 0.0Q;
-                        fe_polarization_[3*idx+2] = 0.0Q;
-                        continue;
-                    }
-                    // E = -grad(phi) along the polar axis fe_axis_ (scalar
-                    // NLS); apply E_bi offset. (P0-1 fix: was hard-wired to x.)
-                    real_t E = e_field_component(phi, i, j, k, fe_axis_);
-                    E -= fe_E_bi_;   // imprint / built-in offset (P2.1)
-                    // Depolarization field (comments2.docx P3).
-                    if (fe_eps_fe_ > 0.0Q) {
-                        real_t P_cur = fe_polarization_[3*idx+fe_axis_];
-                        real_t eps0 = 8.854187817e-12Q;
-                        E -= P_cur / (fe_eps_fe_ * eps0);
-                    }
-
-                    real_t P_old = fe_polarization_[3*idx+fe_axis_];
-                    real_t P_target;
-                    if (E > 0.0Q)       P_target = Ps;
-                    else if (E < 0.0Q)  P_target = -Ps;
-                    else                P_target = P_old;  // no field -> hold
-
-                    // Merz switching time tau(E) = tau0 * exp(E0/|E|).
-                    // Below the coercive field switching is exponentially slow
-                    // (f->0, P holds); well above it tau->tau0 (fast switching).
-                    real_t Eabs = abs_q(E);
-                    real_t f;   // fractional relaxation toward target
-                    if (Eabs > Ec * 0.1Q) {
-                        real_t tau = tau0 * exp_q(E0 / Eabs);
-                        // f = 1 - exp(-dt_eff/tau): bounded in [0, 1].
-                        real_t r = dt_eff / tau;
-                        if (r > 50.0Q) f = 1.0Q;            // saturated (fast switch)
-                        else            f = 1.0Q - exp_q(-r);
-                    } else {
-                        f = 0.0Q;   // sub-threshold: P frozen (memory)
-                    }
-                    // Only relax if the target opposes the current state (switching
-                    // direction); if aligned, P is already near the well.
-                    real_t P_step = P_old + f * (P_target - P_old);
-                    // Under-relaxation (comments2.docx): blend new and old P.
-                    real_t P = fe_relax_ * P_step + (1.0Q - fe_relax_) * P_old;
-                    // Smooth saturation: P must stay in [-Ps, +Ps].
-                    if (P > Ps) P = Ps;
-                    if (P < -Ps) P = -Ps;
-                    fe_polarization_[3*idx+fe_axis_] = P;
-                    // Off-axis components stay 0 (scalar NLS along fe_axis_).
-                    for (int c = 0; c < 3; ++c)
-                        if (c != fe_axis_) fe_polarization_[3*idx+c] = 0.0Q;
+                    if (!fe_mask_[idx]) continue;
+                    real_t E_local = e_field_component(phi, i, j, k, fe_axis_);
+                    E += E_local;
+                    if (abs_q(E_local) > E_abs_peak) E_abs_peak = abs_q(E_local);
+                    P_old += fe_polarization_[3*idx+fe_axis_];
+                    ++n_fe;
                 }
+        if (n_fe == 0) return;
+        E /= (real_t)n_fe;
+        P_old /= (real_t)n_fe;
+        real_t uniform_field_offset = fe_E_bi_;
+        E -= fe_E_bi_;
+        if (fe_eps_fe_ > 0.0Q) {
+            const real_t eps0 = 8.854187817e-12Q;
+            real_t E_dep = P_old / (fe_eps_fe_ * eps0);
+            E -= E_dep;
+            uniform_field_offset += E_dep;
+        }
+
+        real_t P_target = (E > 0.0Q) ? Ps : ((E < 0.0Q) ? -Ps : P_old);
+        // Fringing fields in a finite FeFET partly cancel in the signed
+        // volume average.  NLS is nucleation-limited: the highest-field part
+        // of the film sets the Merz nucleation rate, while the volume-average
+        // sign selects the favored branch.
+        real_t E_peak_eff = E_abs_peak - abs_q(uniform_field_offset);
+        if (E_peak_eff < 0.0Q) E_peak_eff = 0.0Q;
+        real_t Eabs = std::max(abs_q(E), E_peak_eff);
+        real_t f = 0.0Q;
+        if (Eabs > Ec * 0.1Q) {
+            real_t tau = tau0 * exp_q(E0 / Eabs);
+            real_t r = dt_eff / tau;
+            f = (r > 50.0Q) ? 1.0Q : 1.0Q - exp_q(-r);
+        }
+        real_t P_step = P_old + f * (P_target - P_old);
+        real_t P = fe_relax_ * P_step + (1.0Q - fe_relax_) * P_old;
+        if (P > Ps) P = Ps;
+        if (P < -Ps) P = -Ps;
+        for (size_t idx = 0; idx < N; ++idx) {
+            if (!fe_mask_[idx]) {
+                fe_polarization_[3*idx+0] = 0.0Q;
+                fe_polarization_[3*idx+1] = 0.0Q;
+                fe_polarization_[3*idx+2] = 0.0Q;
+                continue;
             }
+            fe_polarization_[3*idx+fe_axis_] = P;
+            for (int c = 0; c < 3; ++c)
+                if (c != fe_axis_) fe_polarization_[3*idx+c] = 0.0Q;
         }
         return;
     }
@@ -601,6 +669,70 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
     // the opposite spinodal (-Ec), where Newton snaps to the other well.
     // (A4: supersedes the signed-scalar "dominant component E_drive" form; the
     //  1D scalar behavior is recovered as the special case where only Px!=0.)
+    {
+        const size_t N = g_.npts();
+        const real_t Ps = sqrt_q(-fe_alpha_ / fe_beta_);
+        const real_t P_sp = sqrt_q(-fe_alpha_ / (3.0Q * fe_beta_));
+        const real_t Ec = (2.0Q / 3.0Q) * abs_q(fe_alpha_) * P_sp;
+
+        // This is a single-domain LK compact model, not a phase-field/domain-
+        // wall solver.  Per-node branch updates amplified round-off into
+        // alternating mesh domains whose artificial div(P) locked the branch.
+        // Use the volume-average field and state independently for all three
+        // vector components, and write one deterministic domain state to the
+        // FE film.  This retains simultaneous Px/Py response in a 2-D field.
+        real_t E[3] = {0.0Q, 0.0Q, 0.0Q};
+        real_t P_old[3] = {0.0Q, 0.0Q, 0.0Q};
+        size_t n_fe = 0;
+        for (size_t k = 0; k < g_.nz; ++k)
+            for (size_t j = 0; j < g_.ny; ++j)
+                for (size_t i = 0; i < g_.nx; ++i) {
+                    size_t idx = g_.index(i, j, k);
+                    if (!fe_mask_[idx]) continue;
+                    for (int c = 0; c < 3; ++c) {
+                        E[c] += e_field_component(phi, i, j, k, c);
+                        P_old[c] += fe_polarization_[3*idx + c];
+                    }
+                    ++n_fe;
+                }
+        if (n_fe == 0) return;
+        for (int c = 0; c < 3; ++c) {
+            E[c] /= (real_t)n_fe;
+            P_old[c] /= (real_t)n_fe;
+        }
+        E[fe_axis_] -= fe_E_bi_;
+        if (fe_eps_fe_ > 0.0Q)
+            E[fe_axis_] -= P_old[fe_axis_] / (fe_eps_fe_ * 8.854187817e-12Q);
+
+        real_t P[3];
+        for (int c = 0; c < 3; ++c) {
+            P[c] = P_old[c];
+            if (abs_q(P[c]) < 1.0e-18Q) {
+                if (E[c] > 1.0Q) P[c] = Ps;
+                else if (E[c] < -1.0Q) P[c] = -Ps;
+            } else if (Ec > 0.0Q && abs_q(E[c]) > Ec && P[c] * E[c] < 0.0Q) {
+                P[c] = (E[c] > 0.0Q) ? Ps : -Ps;
+            }
+            for (int iter = 0; iter < 20; ++iter) {
+                real_t f = fe_alpha_ * P[c] + fe_beta_ * P[c] * P[c] * P[c] - E[c];
+                real_t df = fe_alpha_ + 3.0Q * fe_beta_ * P[c] * P[c];
+                if (abs_q(df) < 1e-30Q) break;
+                real_t dP = f / df;
+                P[c] -= dP;
+                if (abs_q(dP) < 1e-15Q * std::max(abs_q(P[c]), 1.0Q)) break;
+            }
+            if (P[c] > Ps) P[c] = Ps;
+            if (P[c] < -Ps) P[c] = -Ps;
+            P[c] = fe_relax_ * P[c] + (1.0Q - fe_relax_) * P_old[c];
+        }
+
+        for (size_t idx = 0; idx < N; ++idx) {
+            for (int c = 0; c < 3; ++c)
+                fe_polarization_[3*idx + c] = fe_mask_[idx] ? P[c] : 0.0Q;
+        }
+        return;
+    }
+
     const real_t Ps = sqrt_q(-fe_alpha_ / fe_beta_);  // double-well minimum
     for (size_t k = 0; k < g_.nz; ++k) {
         for (size_t j = 0; j < g_.ny; ++j) {
@@ -657,6 +789,14 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
                 // branch.  (FE-coupling fix, audit §21.)
                 const real_t P_sp = sqrt_q(-fe_alpha_ / (3.0Q * fe_beta_));
                 const real_t Ec = (2.0Q / 3.0Q) * abs_q(fe_alpha_) * P_sp;
+                // Do not nucleate a pristine domain from round-off in an
+                // otherwise zero-field Poisson solution.  Previously an
+                // O(1e-20 V) mesh perturbation selected random +/- wells at
+                // different nodes; their artificial bound charge then locked
+                // the slab into a mesh-dependent multidomain state.  One V/m
+                // is far below any physical FE switching field while safely
+                // above the numerical field floor.
+                const real_t field_seed_floor = 1.0Q;
                 for (int c = 0; c < 3; ++c) {
                     real_t E_i = Ei[c];
                     // Initial guess: continue from the previous P_i (path dependence).
@@ -667,9 +807,10 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
                     // matching the prior scalar behavior with no spurious off-axis P.
                     real_t P = fe_polarization_[3*idx + c];
                     if (P == 0.0Q) {
-                        if (E_i > 0.0Q)       P = Ps;
-                        else if (E_i < 0.0Q)  P = -Ps;
-                        // E_i == 0: leave P = 0 (no off-axis polarization seeded)
+                        if (E_i > field_seed_floor)       P = Ps;
+                        else if (E_i < -field_seed_floor) P = -Ps;
+                        // Numerically zero field: leave P=0, including all
+                        // un-driven off-axis components.
                     } else if (Ec > 0.0Q) {
                         // Switching test: drive opposes P and exceeds coercive field.
                         // Re-seed to the opposite well so Newton crosses the barrier.
@@ -706,8 +847,9 @@ void PoissonSolver::set_ferroelectric_gamma(real_t gamma) {
 }
 
 void PoissonSolver::set_breakdown_state(const std::vector<char>& bd_state, real_t sigma_bd) {
-    // bd_state is length npts (1 = node broken down).  Empty disables the
-    // leakage term.  sigma_bd is the soft-breakdown conductance [S/m].
+    // Retained for API compatibility/debugging. Breakdown conduction is an
+    // explicit edge current evaluated by DeviceSimulator and never belongs in
+    // the electrostatic Poisson equation.
     bd_state_ = bd_state;
     sigma_bd_ = sigma_bd;
 }

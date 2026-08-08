@@ -37,6 +37,19 @@ class Simulator:
         self._sim = PyDeviceSimulator(g["nx"], g["ny"], g["nz"],
                                       g["dx"], g["dy"], g["dz"])
         self.results: Optional[Dict[str, np.ndarray]] = None
+        self._contact_voltages: Dict[str, float] = {}
+        self._contact_workfunctions: Dict[str, float] = {}
+        self._schottky_contact_models: Dict[str, object] = {}
+        self._pending_contact_ramps: Dict[str, Tuple[float, float]] = {}
+        self._btbt_enabled = False
+        self._fe_polar_axis = 0
+        self._fe_nls_tau0 = 1.0e-6
+        self._fe_nls_E0 = 2.0e9
+        self._fe_nls_dt = 1.0e-6
+        self._fe_model_int = 0
+        self._fe_base_ps = 0.0
+        self._fe_ec = 0.0
+        self._fe_escale = 0.0
 
         # Default arrays
         npts = mesh.npts()
@@ -67,16 +80,108 @@ class Simulator:
             )
         if "Eg" in self.mesh.fields:
             self._sim.set_bandgap(self.mesh.fields["Eg"].astype(float))
+        if "charge_volume_fraction" in self.mesh.fields:
+            self.set_charge_volume_fraction(
+                self.mesh.fields["charge_volume_fraction"]
+            )
+
+    def set_charge_volume_fraction(self, fraction) -> None:
+        """Set charged-material occupancy of node-centred control volumes.
+
+        Values are dimensionless in ``[0, 1]``. The default is one. Use a
+        fractional value only for an explicitly constructed cut cell whose
+        control volume straddles a semiconductor/dielectric interface; it
+        scales mobile and dopant charge in Poisson without changing transport
+        density or mobility.
+        """
+        values = np.ascontiguousarray(fraction, dtype=float).ravel()
+        if values.size != self.mesh.npts():
+            raise ValueError(
+                f"charge volume fraction has {values.size} values; "
+                f"expected {self.mesh.npts()}"
+            )
+        if not np.all(np.isfinite(values)):
+            raise ValueError("charge volume fraction must be finite")
+        self._sim.set_charge_volume_fraction(values)
+
+    def set_disordered_transport(self, enabled: bool = True,
+                                 reference_temperature: float = 300.0) -> None:
+        """Apply exponential-tail DOS and percolation mobility metadata.
+
+        This opt-in model is intended for amorphous oxide semiconductors such
+        as a-IGZO. The integrated tail DOS ``g_tail*E_U`` augments ``Nc`` and
+        the mobility follows an Arrhenius percolation law normalized to the
+        material's stated value at ``reference_temperature``. Nodes without
+        disorder metadata are unchanged.
+        """
+        required = ("mu_n", "mu_p", "Nc", "Nv", "tail_DOS",
+                    "urbach_energy", "percolation_energy")
+        missing = [name for name in required if name not in self.mesh.fields]
+        if missing:
+            raise RuntimeError(f"mesh lacks disordered-transport fields: {missing}")
+        if not np.isfinite(reference_temperature) or reference_temperature <= 0.0:
+            raise ValueError("reference_temperature must be finite and > 0")
+        mu_n = self.mesh.fields["mu_n"].astype(float).ravel().copy()
+        mu_p = self.mesh.fields["mu_p"].astype(float).ravel().copy()
+        Nc = self.mesh.fields["Nc"].astype(float).ravel().copy()
+        Nv = self.mesh.fields["Nv"].astype(float).ravel().copy()
+        if enabled:
+            tail = self.mesh.fields["tail_DOS"].astype(float).ravel()
+            eu = self.mesh.fields["urbach_energy"].astype(float).ravel()
+            ea = self.mesh.fields["percolation_energy"].astype(float).ravel()
+            disordered = (tail > 0.0) & (eu > 0.0)
+            Nc[disordered] += tail[disordered] * eu[disordered]
+            exponent = -ea / 8.617333262e-5 * (
+                1.0 / self.temperature - 1.0 / reference_temperature
+            )
+            mu_n[disordered] *= np.exp(np.clip(exponent[disordered], -50.0, 50.0))
+        self._sim.set_mobility(mu_n, mu_p)
+        self._sim.set_effective_dos(Nc * 1e6, Nv * 1e6)
+
+    def create_pbti_trap_model(self, field_acceleration: float = 0.0):
+        """Create a stateful :class:`TrapKinetics` from mesh PBTI metadata."""
+        from tcad.physics.reliability import TrapKinetics
+
+        required = ("pbti_Nt", "pbti_Et", "pbti_capture_tau", "pbti_emission_tau")
+        missing = [name for name in required if name not in self.mesh.fields]
+        if missing:
+            raise RuntimeError(f"mesh lacks PBTI fields: {missing}")
+        nt = self.mesh.fields["pbti_Nt"].astype(float).ravel()
+        mask = nt > 0.0
+        if not np.any(mask):
+            raise RuntimeError("mesh contains no material with pbti_Nt > 0")
+        return TrapKinetics(
+            density=float(np.median(nt[mask])) * 1e6,
+            trap_energy=float(np.median(self.mesh.fields["pbti_Et"].ravel()[mask])),
+            capture_tau=float(np.median(self.mesh.fields["pbti_capture_tau"].ravel()[mask])),
+            emission_tau=float(np.median(self.mesh.fields["pbti_emission_tau"].ravel()[mask])),
+            field_acceleration=float(field_acceleration),
+            mask=mask,
+        )
 
     def set_contact(self, name: str, voltage: float, workfunction: Optional[float] = None):
         """
         Apply Dirichlet BC to a named contact.
         The mesh must contain a field ``contact_<name>``.
+
+        Supplying ``workfunction`` on a semiconductor source/drain enables an
+        ideal Schottky-Mott thermionic boundary. Omitting it keeps the ohmic
+        charge-neutral boundary. Image-force lowering, Fermi-level pinning and
+        contact tunnelling require calibrated extensions and are not implied.
         """
         field_name = f"contact_{name}"
         if field_name not in self.mesh.fields:
             raise KeyError(f"Contact '{name}' not found in mesh fields. Available: {list(self.mesh.fields.keys())}")
-        mask = self.mesh.fields[field_name].astype(bool)
+        # A wrap gate is represented by several disjoint contact shapes
+        # (gate, gate_r, gate_l, gate_b).  Treat setting the canonical "gate"
+        # voltage as setting the complete equipotential electrode; requiring
+        # callers to remember every face left FinFET/GAA side gates floating.
+        gate_fields = ([key for key in self.mesh.fields
+                        if key == "contact_gate" or key.startswith("contact_gate_")]
+                       if name == "gate" else [field_name])
+        mask = np.zeros(self.mesh.npts(), dtype=bool)
+        for key in gate_fields:
+            mask |= self.mesh.fields[key].astype(bool).ravel()
         indices = np.nonzero(mask.ravel())[0].astype(np.int64)
         # B档修复 (Bug 4): a contact that hits zero mesh nodes (thinner than a
         # cell, or outside the region bbox) would leave phi_bc empty and the C++
@@ -89,9 +194,13 @@ class Simulator:
                 f"likely thinner than one cell or lies outside the device bbox; "
                 f"refine the mesh or widen the contact region.")
 
-        # Equilibrium carrier densities at contacts (Boltzmann approx)
+        # Equilibrium carrier densities at contacts. A supplied metal
+        # workfunction selects an ideal thermionic Schottky boundary on a
+        # semiconductor contact; otherwise the legacy ohmic boundary is used.
         if "doping" not in self.mesh.fields:
             raise RuntimeError("Doping field required to set carrier BCs")
+        if workfunction is not None and "chi" not in self.mesh.fields:
+            raise RuntimeError("Electron-affinity field 'chi' is required for Schottky contacts")
         doping = self.mesh.fields["doping"].astype(float) * 1e6  # m^-3
         VT = self.VT
         # Per-node Nc, Nv, Eg for accurate contact ni
@@ -103,14 +212,29 @@ class Simulator:
         phi_bc = {}
         # Metal/insulator contacts (mu_n == 0) only get potential BCs,
         # not carrier BCs, since carriers are not defined in those regions.
-        mu_n_contact = self.mesh.fields.get("mu_n", np.ones_like(doping))
+        mu_n_contact = self.mesh.fields.get("mu_n", np.ones_like(doping)).ravel()
         is_metal = mu_n_contact[mask].astype(float).mean() < 1e-12
         for idx in indices:
             idx_i = int(idx)
             C = doping[idx_i]
             # Intrinsic concentration at this node
             ni = float(np.sqrt(Nc[idx_i] * Nv[idx_i]) * np.exp(-Eg[idx_i] / (2 * VT)))
-            if C > 0:  # n-type
+            if workfunction is not None and not is_metal:
+                # Schottky-Mott barriers (before image-force lowering or
+                # tunnelling): phi_bn=Phi_m-chi, phi_bp=Eg-phi_bn. Negative
+                # barriers are clamped to zero, i.e. an accumulation/ohmic
+                # limit rather than an unphysical density above the DOS.
+                phi_bn = max(float(workfunction) - float(self.mesh.fields["chi"].ravel()[idx_i]), 0.0)
+                phi_bp = max(float(Eg[idx_i]) - phi_bn, 0.0)
+                n_bc[idx_i] = float(Nc[idx_i] * np.exp(np.clip(-phi_bn / VT, -80.0, 0.0)))
+                p_bc[idx_i] = float(Nv[idx_i] * np.exp(np.clip(-phi_bp / VT, -80.0, 0.0)))
+                intrinsic_wf = (
+                    float(self.mesh.fields["chi"].ravel()[idx_i])
+                    + 0.5 * float(Eg[idx_i])
+                    - 0.5 * VT * np.log(max(float(Nv[idx_i] / Nc[idx_i]), 1e-300))
+                )
+                phi_eq = intrinsic_wf - float(workfunction)
+            elif C > 0:  # n-type
                 n_bc[idx_i] = float(C)
                 p_bc[idx_i] = float(ni * ni / max(C, 1.0))
                 # Equilibrium potential: phi_eq = VT * ln(n/ni)
@@ -128,10 +252,77 @@ class Simulator:
         if not is_metal:
             self._sim.set_electron_bc(n_bc)
             self._sim.set_hole_bc(p_bc)
+        self._contact_voltages[name] = float(voltage)
+        if workfunction is not None:
+            self._contact_workfunctions[name] = float(workfunction)
 
     def set_quantum(self, enabled: bool = True):
         """Enable/disable density-gradient quantum correction."""
         self._sim.set_quantum_enabled(enabled)
+
+    def set_schottky_tunneling(
+        self,
+        name: str,
+        effective_mass_ratio: float,
+        area_m2: float,
+        tunneling_barrier_lowering_eV: float,
+        series_resistance_ohm: float = 0.0,
+        ideality_factor: float = 1.0,
+        richardson_multiplier: float = 1.0,
+        tunneling_window_center_eV: Optional[float] = None,
+        tunneling_window_width_eV: float = 0.025,
+    ):
+        """Attach a calibrated NLM-equivalent injection model to a contact.
+
+        Call :meth:`set_contact` with a workfunction first.  The Schottky-Mott
+        barrier is then derived from that workfunction and the semiconductor
+        electron affinity at the contact.  The returned model evaluates
+        thermionic-only and thermionic+tunnelling terminal currents without
+        changing the drift--diffusion boundary state.
+        """
+        from tcad.physics.contact import SchottkyContactModel
+
+        if name not in self._contact_workfunctions:
+            raise RuntimeError(
+                f"Contact '{name}' has no workfunction; call set_contact(..., "
+                "workfunction=...) before enabling Schottky tunnelling"
+            )
+        field = f"contact_{name}"
+        mask = self.mesh.fields[field].astype(bool).ravel()
+        chi = self.mesh.fields.get("chi")
+        if chi is None:
+            raise RuntimeError("Electron-affinity field 'chi' is required")
+        barrier = max(
+            self._contact_workfunctions[name]
+            - float(np.median(np.asarray(chi).ravel()[mask])),
+            0.0,
+        )
+        model = SchottkyContactModel(
+            barrier_height_eV=barrier,
+            effective_mass_ratio=effective_mass_ratio,
+            area_m2=area_m2,
+            series_resistance_ohm=series_resistance_ohm,
+            ideality_factor=ideality_factor,
+            richardson_multiplier=richardson_multiplier,
+            tunneling_barrier_lowering_eV=tunneling_barrier_lowering_eV,
+            tunneling_window_center_eV=tunneling_window_center_eV,
+            tunneling_window_width_eV=tunneling_window_width_eV,
+        )
+        self._schottky_contact_models[name] = model
+        return model
+
+    def schottky_contact_current(
+        self, name: str, voltage_V: Optional[float] = None,
+        include_tunneling: bool = True,
+    ) -> float:
+        """Evaluate a configured Schottky terminal current [A]."""
+        if name not in self._schottky_contact_models:
+            raise KeyError(f"No Schottky tunnelling model configured for '{name}'")
+        if voltage_V is None:
+            voltage_V = self._contact_voltages.get(name, 0.0)
+        return self._schottky_contact_models[name].current(
+            float(voltage_V), self.temperature, include_tunneling
+        )
 
     def set_optical_generation(self, G_opt: np.ndarray):
         """Set optical generation rate [m^-3 s^-1] on the mesh.
@@ -154,8 +345,16 @@ class Simulator:
         """
         if self.results is None:
             raise RuntimeError("No previous results. Call set_contact() or run() first.")
+        old_voltage = self._contact_voltages.get(name, float(voltage))
+        # Large bias jumps are deferred to run(), which inserts electronic
+        # continuation points.  This is particularly important for FeFET,
+        # GAA and tunnelling devices: a multi-volt jump can leave the previous
+        # carrier state outside both the Gummel and Newton convergence basins.
+        ramp_threshold = 0.1 if self._btbt_enabled else 1.0
+        if abs(float(voltage) - old_voltage) > ramp_threshold:
+            self._pending_contact_ramps[name] = (old_voltage, float(voltage))
         # Re-apply contact BC with new voltage
-        self.set_contact(name, voltage)
+        self.set_contact(name, voltage, self._contact_workfunctions.get(name))
         # Propagate previous solution as initial guess
         self._sim.set_initial_guess(
             self.results["phi"].astype(np.float64),
@@ -337,6 +536,7 @@ class Simulator:
         self._sim.set_btbt_enabled(enabled)
         self._sim.set_btbt_params(A_kane, B_kane, int(D))
         self._sim.set_btbt_use_nonlocal(use_nonlocal)
+        self._btbt_enabled = bool(enabled)
 
     def set_impact_ionization(self, enabled: bool = True,
                               A_n: float = 7.03e7,
@@ -412,14 +612,12 @@ class Simulator:
                       sigma_bd: float = 1.0e-2) -> None:
         """Enable dielectric breakdown modelling (M7b, audit §22).
 
-        After each converged solve, dielectric-region nodes whose electric
-        field magnitude ``|E|`` exceeds the material breakdown field ``E_bd``
-        are flagged as *soft-broken*. On subsequent solves a leakage term
-        ``sigma_bd`` is added to the Poisson diagonal at those nodes (same
-        units as the Laplacian diagonal ``eps/dx^2``), locally relaxing
-        ``phi`` toward 0 (a soft short) so a gate leak develops. The breakdown
-        is **irreversible** — once a node breaks down it stays broken down,
-        modelling the conductive filament.
+        After each converged solve, dielectric nodes whose field exceeds the
+        material ``E_bd`` are flagged as broken. On subsequent solves, every
+        dielectric edge touching a failed node carries the explicit current
+        ``J_bd = sigma_bd * E`` in ``Jleak_x/y/z``. The breakdown is
+        irreversible and does not introduce a fictitious Poisson connection
+        to zero volts.
 
         The breakdown field ``E_bd`` is read per-node from the mesh's
         ``E_bd`` field, which ``Device.sample_on_grid`` populates from each
@@ -431,13 +629,10 @@ class Simulator:
         enabled : bool
             Turn breakdown detection on/off.
         sigma_bd : float
-            Soft-breakdown leakage term [F/m^3] — an effective added
-            permittivity-density added to the Poisson diagonal at broken nodes
-            (same units as ``eps/dx^2``, so dimensionally consistent with the
-            Laplacian). Default 1e-2 (~10% of a typical oxide diagonal
-            ``eps_SiO2/dx^2`` for a 2 nm oxide; raise for a harder short,
-            e.g. 1e0 dominates the diagonal and pins phi≈0).
-            (A档: was documented [S/m], which was dimensionally wrong.)
+            Post-breakdown filament conductivity [S/m]. Default 1e-2; increase
+            it for a more conductive filament. The resulting current remains
+            proportional to local field and participates in terminal-current
+            integration and Joule heating.
 
         Notes
         -----
@@ -530,6 +725,22 @@ class Simulator:
         """
         axis = self._resolve_polar_axis(polar_axis, np.zeros(0, dtype=np.int8))
         self._sim.set_ferroelectric_polar_axis(axis)
+        self._fe_polar_axis = axis
+
+    def set_ferroelectric_nls_dwell_time(self, dt: float) -> None:
+        """Set the physical dwell time of one NLS bias/pulse step [s].
+
+        The configured Merz-law ``tau0`` and ``E0`` are preserved.  This is
+        used by retention and pulse-width drivers; calling the private Cython
+        setter with hard-coded defaults previously changed the material model
+        whenever the pulse width was swept.
+        """
+        if not np.isfinite(dt) or dt <= 0.0:
+            raise ValueError("NLS dwell time dt must be finite and > 0")
+        self._fe_nls_dt = float(dt)
+        self._sim.set_ferroelectric_nls(
+            self._fe_nls_tau0, self._fe_nls_E0, self._fe_nls_dt,
+        )
 
     def set_ferroelectric(self, enabled: bool = True,
                           alpha: float = -5.0e8,
@@ -545,7 +756,7 @@ class Simulator:
                           fe_mask_override: Optional[np.ndarray] = None) -> None:
         """Enable ferroelectric polarization.
 
-        Three models are supported (M7c + P3):
+        Four models are supported (M7c + P3 + Sentaurus calibration):
 
         - ``"landau_khalatnikov"`` (default): the cubic L-K model
           ``alpha*P + beta*P^3 = E``. Hysteresis arises from per-component
@@ -555,6 +766,8 @@ class Simulator:
           parameterised DIRECTLY by saturation polarization ``Ps`` [C/m^2] and
           coercive field ``Ec`` [V/m]. This sidesteps the L-K alpha/beta
           dimensional ambiguity and produces a natural memory loop.
+        - ``"sentaurus_preisach"``: Sentaurus-compatible Ps/Pr/Fc major-loop
+          branches. Set ``Escale=2*Ec/log((Ps+Pr)/(Ps-Pr))``.
         - ``"nls"``: Nucleation-Limited Switching (Merz law
           ``tau(E)=tau0·exp(E0/|E|)``), suited to wurtzite ferroelectrics like
           AlScN whose switching is domain-nucleation-limited. Produces a finite-
@@ -576,7 +789,8 @@ class Simulator:
             (-5e8 / 1.5e10). When the mesh carries a ``fe_alpha`` field the
             per-node alpha/beta are read from it, overriding these scalars.
         model : str
-            ``"landau_khalatnikov"`` or ``"preisach"``.
+            ``"landau_khalatnikov"``, ``"preisach"``, ``"nls"``, or
+            ``"sentaurus_preisach"``.
         Ps : float
             Preisach saturation polarization [C/m^2]. When the mesh carries a
             ``fe_ps`` field with nonzero values, those are used instead.
@@ -597,7 +811,12 @@ class Simulator:
             auto-detection when provided.
         """
         self._sim.set_ferroelectric_enabled(enabled)
-        model_map = {"landau_khalatnikov": 0, "preisach": 1, "nls": 2}
+        model_map = {
+            "landau_khalatnikov": 0,
+            "preisach": 1,
+            "nls": 2,
+            "sentaurus_preisach": 3,
+        }
         # issues0719 §5.4: fail fast on a misspelled model instead of
         # silently mapping it to Landau-Khalatnikov.
         if model.lower() not in model_map:
@@ -606,6 +825,7 @@ class Simulator:
                 f"expected one of {sorted(model_map)}")
         model_int = model_map[model.lower()]
         self._sim.set_ferroelectric_model(model_int)
+        self._fe_model_int = model_int
 
         # --- Determine the FE node mask (P1.1: material-driven) ---
         npts = self.mesh.npts()
@@ -629,7 +849,7 @@ class Simulator:
         if "fe_alpha" in self.mesh.fields and np.any(fe_mask):
             alpha = float(self.mesh.fields["fe_alpha"].ravel()[fe_mask.astype(bool)][0])
             beta = float(self.mesh.fields["fe_beta"].ravel()[fe_mask.astype(bool)][0])
-        if model_int == 1 or model_int == 2:
+        if model_int in (1, 2, 3):
             # Resolve Preisach/NLS Ps/Ec from material field when available.
             if "fe_ps" in self.mesh.fields and np.any(fe_mask):
                 ps_field = self.mesh.fields["fe_ps"].ravel()[fe_mask.astype(bool)]
@@ -639,15 +859,22 @@ class Simulator:
                 if np.any(np.abs(ec_field) > 0.0):
                     Ec = float(ec_field[np.abs(ec_field) > 0.0][0])
             self._sim.set_ferroelectric_preisach(Ps, Ec, Escale)
+            self._fe_base_ps = float(Ps)
+            self._fe_ec = float(Ec)
+            self._fe_escale = float(Escale)
             if model_int == 2:
                 # NLS Merz-law parameters (P3).
                 self._sim.set_ferroelectric_nls(nls_tau0, nls_E0, nls_dt)
+                self._fe_nls_tau0 = float(nls_tau0)
+                self._fe_nls_E0 = float(nls_E0)
+                self._fe_nls_dt = float(nls_dt)
         self._sim.set_ferroelectric_params(fe_mask, alpha, beta)
         # P0-1: wire the polar axis — scalar Preisach/NLS drive E·axis and
         # write P along axis; without this the z-stacked FeFET template was
         # driven by Ex~0 and stayed at P=0 (issues0719 P0-1).
-        self._sim.set_ferroelectric_polar_axis(
-            self._resolve_polar_axis(polar_axis, fe_mask))
+        axis = self._resolve_polar_axis(polar_axis, fe_mask)
+        self._sim.set_ferroelectric_polar_axis(axis)
+        self._fe_polar_axis = axis
         # Internal field / Imprint offset (P2.1): read from material field.
         if "fe_E_bi" in self.mesh.fields and np.any(fe_mask):
             ebi = self.mesh.fields["fe_E_bi"].ravel()[fe_mask.astype(bool)]
@@ -671,7 +898,8 @@ class Simulator:
         Parameters
         ----------
         model : str
-            ``"landau_khalatnikov"``, ``"preisach"``, or ``"nls"``.
+            ``"landau_khalatnikov"``, ``"preisach"``, ``"nls"``, or
+            ``"sentaurus_preisach"``.
         Ps, Ec : float
             Saturation polarization [C/m^2] and coercive field [V/m] (used by
             the Preisach and NLS models).
@@ -685,18 +913,46 @@ class Simulator:
             NLS effective dwell time per bias step [s] — controls the loop
             slope (larger => faster, more vertical switching).
         """
-        model_map = {"landau_khalatnikov": 0, "preisach": 1, "nls": 2}
+        model_map = {
+            "landau_khalatnikov": 0,
+            "preisach": 1,
+            "nls": 2,
+            "sentaurus_preisach": 3,
+        }
         if model.lower() not in model_map:
             raise ValueError(
                 f"Unknown ferroelectric model '{model}'; "
                 f"expected one of {sorted(model_map)}")
         model_int = model_map[model.lower()]
         self._sim.set_ferroelectric_model(model_int)
-        if model_int == 1:
+        self._fe_model_int = model_int
+        if model_int in (1, 3):
             self._sim.set_ferroelectric_preisach(Ps, Ec, Escale)
         if model_int == 2:
             self._sim.set_ferroelectric_preisach(Ps, Ec, Escale)
             self._sim.set_ferroelectric_nls(nls_tau0, nls_E0, nls_dt)
+        if model_int in (1, 2, 3):
+            self._fe_base_ps = float(Ps)
+            self._fe_ec = float(Ec)
+            self._fe_escale = float(Escale)
+
+    def set_ferroelectric_active_fraction(self, fraction: float) -> None:
+        """Apply wake-up/fatigue to the switchable Preisach/NLS population.
+
+        This changes the active saturation polarization while preserving the
+        solver's persistent play/NLS state. It is intentionally unavailable
+        for the LK model, whose Landau coefficients require a separate
+        calibrated degradation law.
+        """
+        if not np.isfinite(fraction) or fraction < 0.0:
+            raise ValueError("active fraction must be finite and >= 0")
+        if self._fe_model_int not in (1, 2, 3) or self._fe_base_ps <= 0.0:
+            raise RuntimeError(
+                "active-fraction degradation requires a configured Preisach/NLS model"
+            )
+        self._sim.set_ferroelectric_preisach(
+            self._fe_base_ps * float(fraction), self._fe_ec, self._fe_escale,
+        )
 
     def set_ferroelectric_builtin_field(self, E_bi: float = 0.0) -> None:
         """Set the internal/imprint field offset (P2.1).
@@ -735,36 +991,34 @@ class Simulator:
                     leak_mask_override: Optional[np.ndarray] = None) -> None:
         """Enable leakage current (Poole-Frenkel / Fowler-Nordheim) (P2.2).
 
-        Leakage provides a field-dependent conductive path across the
-        ferroelectric/insulator stack. This relaxes the internal potential
-        slightly at the leaky layer so the P-V loop does NOT close at V=0
-        — reproducing the experimentally observed "0V non-closure" and the
-        off-state gate leakage in FeFETs.
+        Leakage provides an explicit field-dependent conventional current
+        across the ferroelectric/insulator stack. The returned result contains
+        edge fluxes ``Jleak_x/y/z`` in A/m². Leakage is not inserted into the
+        Poisson charge equation.
 
         The leaky nodes default to the ferroelectric nodes (auto-detected from
         the material's ``fe_alpha`` field); pass ``leak_mask_override`` to
         force a specific node mask.
 
-        The PF/FN conductance is added to the Poisson diagonal **normalised to
-        the local Laplacian diagonal** ``eps/dx²``, so ``pf_C``/``fn_C`` are
-        dimensionless fractions (e.g. 0.02 ≈ 2% of the dielectric conductance at
-        high field). This makes the model grid-independent.
+        ``pf_C`` is a conductivity prefactor in S/m. ``fn_C`` is the FN
+        current prefactor in A/V². ``sigma_cap`` limits the combined
+        field-dependent conductivity in S/m.
 
         Parameters
         ----------
         enabled : bool
             Turn leakage on/off.
         pf_C, pf_B, pf_phi_t : float
-            Poole-Frenkel prefactor (fraction of ``eps/dx²``), barrier
+            Poole-Frenkel conductivity prefactor [S/m], barrier
             coefficient, and trap ionization energy [eV].
             ``frac_pf = pf_C·exp(-pf_B·sqrt(pf_phi_t/|E|))``.
         fn_C, fn_B, fn_phi_b : float
-            Fowler-Nordheim prefactor, exponent coefficient, and barrier height
+            Fowler-Nordheim prefactor [A/V²], exponent coefficient, and barrier height
             [eV]. ``frac_fn = fn_C·|E|·exp(-fn_B·fn_phi_b^1.5/|E|)``.
         E_floor : float
             Field below which leakage is negligible [V/m].
         sigma_cap : float
-            Cap on added conductance as a fraction of ``eps/dx²``.
+            Cap on total dielectric conductivity [S/m].
         leak_mask_override : np.ndarray, optional
             Explicit int8 node mask (1 = leaky). Defaults to the FE mask.
         """
@@ -820,6 +1074,44 @@ class Simulator:
             qot = self.mesh.fields["Q_ot"].ravel()
             if np.any(np.abs(qot) > 0.0):
                 self._sim.set_oxide_traps(qot.astype(float))
+
+    def set_oxide_traps(self, Q_ot) -> None:
+        """Set bulk oxide/ferroelectric trap charge density [C/m^3].
+
+        ``Q_ot`` may be a scalar (applied to dielectric nodes identified by
+        ``Dit``/``fe_alpha``) or a node-sized array.  This public API lets
+        endurance drivers feed accumulated fatigue charge back into Poisson
+        instead of applying degradation only as a post-processing scale.
+        """
+        npts = self.mesh.npts()
+        if np.isscalar(Q_ot):
+            mask = np.zeros(npts, dtype=bool)
+            if "Dit" in self.mesh.fields:
+                mask |= np.abs(self.mesh.fields["Dit"].ravel()) > 0.0
+            if "fe_alpha" in self.mesh.fields:
+                mask |= np.abs(self.mesh.fields["fe_alpha"].ravel()) > 0.0
+            # Generic dielectric fallback for new materials that do not yet
+            # carry Dit/FE metadata: zero mobility plus a finite bandgap marks
+            # an insulating region while excluding uncovered vacuum nodes.
+            if all(k in self.mesh.fields for k in ("mu_n", "mu_p", "Eg")):
+                mask |= (
+                    (np.abs(self.mesh.fields["mu_n"].ravel()) < 1e-30)
+                    & (np.abs(self.mesh.fields["mu_p"].ravel()) < 1e-30)
+                    & (self.mesh.fields["Eg"].ravel() > 1.0)
+                )
+            if not np.any(mask):
+                mask[:] = True
+            values = np.zeros(npts, dtype=float)
+            values[mask] = float(Q_ot)
+        else:
+            values = np.asarray(Q_ot, dtype=float).ravel()
+            if values.size != npts:
+                raise ValueError(
+                    f"Q_ot size {values.size} does not match mesh npts={npts}"
+                )
+        if not np.all(np.isfinite(values)):
+            raise ValueError("Q_ot must contain only finite values")
+        self._sim.set_oxide_traps(values)
 
     def set_mobility_model(self, model: str = "constant") -> None:
         """Set mobility model for temperature/doping-dependent mobility.
@@ -954,13 +1246,84 @@ class Simulator:
         Returns
         -------
         dict
-            Arrays: phi, n, p, Ex, Ey, Ez, temperature (if thermal coupling enabled),
+            Arrays: phi, n, p, Ex, Ey, Ez, Qn, Qp,
+            temperature (if thermal coupling enabled),
             plus metadata converged, iterations.
         """
         self._sim.set_gummel_max_iter(max_iter)
         self._sim.set_tolerance(tol)
         self._apply_cut_cell()
-        self.results = self._sim.solve()
+        pending = self._pending_contact_ramps
+        self._pending_contact_ramps = {}
+        continuation_steps = 1
+        continuation_retries = 0
+        continuation_steps_completed = 0
+        # A first solve at a finite terminal bias previously started directly
+        # from the equilibrium carrier guess.  That is fragile for DSFET/TFET
+        # and wrap-gate devices even at sub-volt bias.  Mirror Sentaurus'
+        # Quasistationary workflow: solve the zero-applied-bias state first,
+        # then advance every terminal in lock-step by at most 0.1 V.
+        if self.results is None and self._contact_voltages:
+            targets = dict(self._contact_voltages)
+            max_initial = max(abs(v) for v in targets.values())
+            if max_initial > 0.25:
+                for name in targets:
+                    self.set_contact(
+                        name, 0.0, self._contact_workfunctions.get(name)
+                    )
+                self.results = self._sim.solve()
+                pending = {name: (0.0, target)
+                           for name, target in targets.items()
+                           if abs(target) > 0.0}
+        if pending:
+            max_delta = max(abs(v1 - v0) for v0, v1 in pending.values())
+            # Junction and tunnelling devices can leave the continuity
+            # convergence basin at 0.25 V increments; use 0.1 V after a
+            # converged state has been established.
+            step_limit = 0.1 if self.results is not None else 0.25
+            continuation_steps = max(2, int(np.ceil(max_delta / step_limit)))
+            # The target BC was already installed by update_contact().  Walk
+            # back to the first intermediate point and advance all changed
+            # contacts in lock-step, keeping the converged carrier state as
+            # the next initial guess.  FE memory advances once per physical
+            # continuation point, matching a quasi-static voltage ramp.
+            for step in range(1, continuation_steps + 1):
+                alpha = step / continuation_steps
+                for name, (v0, v1) in pending.items():
+                    self.set_contact(
+                        name,
+                        v0 + alpha * (v1 - v0),
+                        self._contact_workfunctions.get(name),
+                    )
+                if self.results is not None:
+                    self._sim.set_initial_guess(
+                        self.results["phi"].astype(np.float64),
+                        self.results["n"].astype(np.float64),
+                        self.results["p"].astype(np.float64),
+                    )
+                self.results = self._sim.solve()
+                # Never advance a quasistationary ramp from an unconverged
+                # intermediate state.  Continue iterating at the same bias;
+                # the C++ solve result is a much better initial guess than the
+                # previous voltage point, especially for junction/BTBT cases.
+                for _ in range(2):
+                    if self.results.get("converged", False):
+                        break
+                    continuation_retries += 1
+                    self._sim.set_initial_guess(
+                        self.results["phi"].astype(np.float64),
+                        self.results["n"].astype(np.float64),
+                        self.results["p"].astype(np.float64),
+                    )
+                    self.results = self._sim.solve()
+                continuation_steps_completed = step
+                if not self.results.get("converged", False):
+                    break
+        else:
+            self.results = self._sim.solve()
+        self.results["continuation_steps"] = continuation_steps
+        self.results["continuation_steps_completed"] = continuation_steps_completed
+        self.results["continuation_retries"] = continuation_retries
         # P0-3: every result carries an explicit validity flag; callers must
         # not silently consume a non-converged state as physical data.
         self.results["valid"] = bool(self.results.get("converged", False))
@@ -980,7 +1343,7 @@ class Simulator:
         if self.results is None:
             raise RuntimeError("No results. Call run() first.")
         fields = {}
-        for key in ["phi", "n", "p", "Ex", "Ey", "Ez", "temperature"]:
+        for key in ["phi", "n", "p", "Ex", "Ey", "Ez", "Qn", "Qp", "temperature"]:
             arr = self.results[key]
             if arr.size > 0:
                 fields[key] = self.mesh.to_3d(arr)
@@ -1118,12 +1481,13 @@ def simulate_device(
         name: float(voltage)
         for name, (shape, voltage) in device.contacts.items()
     }
+    contact_workfunctions = getattr(device, "contact_workfunctions", {})
     ramped_names = [n for n, v in contact_targets.items() if abs(v) > 1e-12]
 
     # If no ramping needed or only one step, do standard single solve
     if ramp_steps <= 1 or not ramped_names:
         for name, voltage in contact_targets.items():
-            sim.set_contact(name, voltage)
+            sim.set_contact(name, voltage, contact_workfunctions.get(name))
         sim.set_quantum(quantum)
         sim.set_solver_type(poisson_solver, continuity_solver)
         results = sim.run(**sim_kwargs)
@@ -1131,7 +1495,7 @@ def simulate_device(
 
     # Voltage ramping: start with all contacts at 0 V
     for name in contact_targets:
-        sim.set_contact(name, 0.0)
+        sim.set_contact(name, 0.0, contact_workfunctions.get(name))
     sim.set_quantum(quantum)
     sim.set_solver_type(poisson_solver, continuity_solver)
 
@@ -1146,7 +1510,7 @@ def simulate_device(
         for name in ramped_names:
             v = ramp_arrays[name][step]
             if step == 0:
-                sim.set_contact(name, v)
+                sim.set_contact(name, v, contact_workfunctions.get(name))
             else:
                 sim.update_contact(name, v)
         results = sim.run(**sim_kwargs)
@@ -1286,8 +1650,9 @@ def simulate_sweep(
         for name, voltage in all_contact_targets.items()
         if name not in sweep_contacts
     }
+    contact_workfunctions = getattr(base_device, "contact_workfunctions", {})
     for name, voltage in fixed_contacts.items():
-        sim.set_contact(name, voltage)
+        sim.set_contact(name, voltage, contact_workfunctions.get(name))
 
     # Pre-compute ramp arrays for each swept contact
     ramp_arrays = {}
@@ -1322,7 +1687,7 @@ def simulate_sweep(
                 for name in sweep_contacts:
                     v = prev_voltages[name] + alpha * (target_voltages[name] - prev_voltages[name])
                     if idx == 0 and step == 0:
-                        sim.set_contact(name, v)
+                        sim.set_contact(name, v, contact_workfunctions.get(name))
                     else:
                         sim.update_contact(name, v)
                 result = sim.run(**sim_kwargs)
@@ -1333,7 +1698,7 @@ def simulate_sweep(
             # Single-step: set or update contact
             for name, voltage in target_voltages.items():
                 if idx == 0:
-                    sim.set_contact(name, voltage)
+                    sim.set_contact(name, voltage, contact_workfunctions.get(name))
                 else:
                     sim.update_contact(name, voltage)
             result = sim.run(**sim_kwargs)

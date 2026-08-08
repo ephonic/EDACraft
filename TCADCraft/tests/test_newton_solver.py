@@ -54,6 +54,48 @@ class TestNewtonConvergence:
         assert results["n"].max() > 1e16
         assert results["p"].max() > 1e16
 
+    def test_newton_primary_auger_reduces_high_injection(self):
+        """Newton-primary must not silently drop the enabled Auger model."""
+        def run(enable_auger):
+            sim, mesh = _make_1d_sim(vbias_p=0.0, use_newton=True)
+            sim._sim.set_newton_primary(True)
+            sim._sim.set_auger_enabled(enable_auger)
+            if enable_auger:
+                # Deliberately strong coefficient makes the regression
+                # observable on this tiny mesh; production defaults are
+                # independently calibrated against Sentaurus.
+                sim._sim.set_auger_params(1e-38, 1e-38)
+            sim.set_optical_generation(np.full(mesh.npts(), 1e34))
+            result = sim.run(max_iter=200, tol=1e-8)
+            assert result["converged"]
+            # Auger acts on electron-hole pairs; majority charge is pinned by
+            # doping/contacts, so compare the pair-limited minority density.
+            return float(np.mean(np.minimum(result["n"], result["p"])[1:-1]))
+
+        without_auger = run(False)
+        with_auger = run(True)
+        assert with_auger < without_auger * 0.999
+
+    def test_newton_primary_does_not_inherit_skipped_gummel_success(self):
+        """A skipped Gummel stage must not mask primary-Newton failure."""
+        sim, _ = _make_1d_sim(vbias_p=0.1, use_newton=True)
+        sim._sim.set_newton_primary(True)
+        # Zero iterations deterministically makes the primary Newton stage
+        # fail.  Before this regression fix, gummel_ok started as true even
+        # though Gummel was skipped, so this result was falsely converged.
+        results = sim.run(max_iter=0, tol=1e-8)
+        assert not results["converged"]
+
+    def test_newton_primary_preserves_coupled_state_kcl(self):
+        """Post-processing must not re-solve phi apart from converged n,p."""
+        sim, _ = _make_1d_sim(vbias_p=0.0, use_newton=True)
+        sim._sim.set_newton_primary(True)
+        results = sim.run(max_iter=120, tol=1e-8)
+        assert results["converged"]
+        current = (np.asarray(results["Jn_x"]) + np.asarray(results["Jp_x"]))[:-1]
+        spread = float(np.max(current) - np.min(current))
+        assert spread < 1e-8, f"primary-Newton state was changed after convergence: {spread:g} A/m2"
+
 
 class TestNewtonGummelAgreement:
     """Verify Newton and Gummel produce identical physical solutions."""

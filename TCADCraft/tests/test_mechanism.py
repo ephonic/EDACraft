@@ -6,7 +6,7 @@ synthetic fields, independent of the Newton solver:
 1. **Drift/diffusion split** — in the drift-diffusion limit (small ``dphi/VT``)
    the signed sum of the split parts reproduces the Scharfetter-Gummel edge
    flux from ``current.sg_current_density_1d``:
-       Jn_drift + Jn_diff ≈ -Jn_SG   (electron sign convention)
+       Jn_drift + Jn_diff ≈ +Jn_SG   (conventional current)
        Jp_drift + Jp_diff ≈ +Jp_SG
    plus the limiting cases: zero field → drift = 0, zero gradient → diff = 0.
 
@@ -64,7 +64,7 @@ def _make_mesh(nx=5, ny=1, nz=1, with_mu=True):
 
 class TestDriftDiffusionSplit:
     def test_signed_sum_matches_sg_electrons(self):
-        """In the DD limit, Jn_drift + Jn_diff ≈ -Jn_SG (electron sign)."""
+        """In the DD limit, Jn_drift + Jn_diff ≈ Jn_SG."""
         VT, dx = 0.02585, 1e-9
         # Small dphi so dphi/VT << 1 keeps the Bernoulli expansion accurate.
         phi = np.array([0.0, 0.001, 0.002, 0.0015])
@@ -76,7 +76,7 @@ class TestDriftDiffusionSplit:
         Jn_sg, _ = sg_current_density_1d(phi, n, p, dx, mu_n, mu_p, VT)
         split = drift_diffusion_split_1d(phi, n, p, dx, mu_n, mu_p, VT)
         signed = split["Jn_drift"] + split["Jn_diff"]
-        np.testing.assert_allclose(signed, -Jn_sg, rtol=2e-3)
+        np.testing.assert_allclose(signed, Jn_sg, rtol=2e-3)
 
     def test_signed_sum_matches_sg_holes(self):
         """In the DD limit, Jp_drift + Jp_diff ≈ +Jp_SG (hole sign)."""
@@ -175,6 +175,16 @@ class TestBtbtGeneration:
         assert np.max(G) == pytest.approx(0.0, abs=0.0)
         assert I == pytest.approx(0.0, abs=0.0)
 
+    def test_prefers_solver_reported_generation(self):
+        """Explicit G_btbt preserves local/non-local solver selection."""
+        mesh = _make_mesh(nx=3)
+        supplied = np.array([1.0, 2.0, 3.0]) * 1e20
+        G, I = btbt_generation(
+            {"G_btbt": supplied, "Ex": np.full(3, 9e9)}, mesh,
+        )
+        assert np.array_equal(G, supplied)
+        assert I > 0.0
+
 
 # ===========================================================================
 # 3. fe_polarization_charge
@@ -203,14 +213,21 @@ class TestFePolarization:
         assert P_mag == pytest.approx((1e-5 + 2e-5 + 3e-5) / 3)
         assert int(mask.sum()) == 3
 
-    def test_py_pz_ignored(self):
-        """Only Px (column 0) identifies FE nodes."""
-        P = np.zeros((2, 3))
-        P[0, 1] = 1e-5  # Py, not Px
-        P[1, 2] = 1e-5  # Pz, not Px
+    def test_uses_dominant_z_polar_component(self):
+        P = np.zeros((3, 3))
+        P[:, 2] = [0.1, -0.2, 0.3]
         P_mag, mask = fe_polarization_charge({"P": P})
-        assert P_mag == 0.0
-        assert mask.sum() == 0
+        assert P_mag == pytest.approx(0.2)
+        assert mask.all()
+
+    def test_non_dominant_components_do_not_set_axis(self):
+        """A small off-axis component must not override the polar direction."""
+        P = np.zeros((2, 3))
+        P[0, 1] = 1e-6
+        P[:, 2] = [1e-5, -2e-5]
+        P_mag, mask = fe_polarization_charge({"P": P})
+        assert P_mag == pytest.approx(1.5e-5)
+        assert mask.all()
 
 
 # ===========================================================================

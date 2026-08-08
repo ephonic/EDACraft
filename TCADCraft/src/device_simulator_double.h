@@ -21,6 +21,7 @@ public:
                                const std::vector<double>& z_minus);
     void set_mobility(const std::vector<double>& mu_n, const std::vector<double>& mu_p);
     void set_doping(const std::vector<double>& Nd_minus_Na);
+    void set_charge_volume_fraction(const std::vector<double>& fraction);
     void set_optical_generation(const std::vector<double>& G_opt);
     void set_recombination(const std::vector<double>& tau_n, const std::vector<double>& tau_p);
     void set_thermal_voltage(double VT);
@@ -83,6 +84,7 @@ public:
     void set_ferroelectric_builtin_field(double E_bi);   // P2.1
     void set_ferroelectric_depol(double eps_fe);   // comments2.docx P3
     void set_ferroelectric_nls(double tau0, double E0, double dt);  // P3
+    void set_ferroelectric_polar_axis(int axis);  // 0=x, 1=y, 2=z
     void set_leakage(const std::vector<signed char>& mask,
                      double C_pf, double B_pf, double phi_t,
                      double C_fn, double B_fn, double phi_b,
@@ -117,6 +119,8 @@ public:
     std::vector<double> solve_Ey();
     std::vector<double> solve_Ez();
     std::vector<double> solve_temperature();
+    std::vector<double> solve_Qn();
+    std::vector<double> solve_Qp();
     // Edge-centered SG current densities [A/m^2], full-precision (Audit §20).
     std::vector<double> solve_Jn_x();
     std::vector<double> solve_Jn_y();
@@ -124,6 +128,11 @@ public:
     std::vector<double> solve_Jp_x();
     std::vector<double> solve_Jp_y();
     std::vector<double> solve_Jp_z();
+    std::vector<double> solve_Jleak_x();
+    std::vector<double> solve_Jleak_y();
+    std::vector<double> solve_Jleak_z();
+    std::vector<double> solve_G_btbt();
+    std::vector<double> solve_G_ii();
     bool solve_converged() const;
     size_t solve_iterations() const;
 

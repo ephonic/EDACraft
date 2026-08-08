@@ -1,4 +1,5 @@
 import os
+import platform
 import sys
 import subprocess
 import numpy as np
@@ -37,10 +38,21 @@ class build_ext(_build_ext):
 
 # Platform detection
 is_macos = sys.platform == "darwin"
-is_arm64 = os.uname().machine in ("arm64", "aarch64")
+is_windows = sys.platform == "win32"
+machine = platform.machine().lower()
+is_arm64 = machine in ("arm64", "aarch64")
+use_lapack = os.environ.get("TCAD_USE_LAPACK", "0") == "1"
+
+if is_windows:
+    raise RuntimeError(
+        "Native Windows builds are not supported because the extended-precision "
+        "core requires GCC/Clang; use WSL2 or a Linux build host."
+    )
 
 extra_link_args = []
 extra_compile_args = ["-std=c++17", "-O3"]
+if use_lapack:
+    extra_compile_args.append("-DTCAD_USE_LAPACK")
 
 # --- PETSc detection and configuration ---
 petsc_available = False
@@ -105,7 +117,7 @@ if is_macos:
     
     # Accelerate framework linking skipped when using GCC (PETSc path)
     # Native dense direct solver is self-contained; no BLAS/LAPACK calls
-    if not petsc_available:
+    if not petsc_available and use_lapack:
         extra_link_args.append("-framework")
         extra_link_args.append("Accelerate")
     
@@ -116,19 +128,22 @@ if is_macos:
     if not is_arm64:
         extra_link_args.append("-lquadmath")
 else:
-    # Linux / other
-    extra_compile_args.append("-march=native")
+    # Linux / other Unix.  Release wheels are portable by default; developers
+    # may opt into host-specific vector instructions for local benchmarking.
+    if os.environ.get("TCAD_NATIVE_OPT", "0") == "1":
+        extra_compile_args.append("-march=native")
     # GCC needs -fext-numeric-literals to accept __float128 'Q' suffix literals
     extra_compile_args.append("-fext-numeric-literals")
     extra_link_args.append("-lquadmath")
-    extra_link_args.append("-llapack")
-    extra_link_args.append("-lblas")
+    if use_lapack:
+        extra_link_args.append("-llapack")
+        extra_link_args.append("-lblas")
 
 if os.environ.get("TCAD_DEBUG"):
     extra_compile_args = ["-std=c++17", "-O0", "-g", "-fno-omit-frame-pointer"]
     if is_macos:
         extra_compile_args.append("-arch")
-        extra_compile_args.append(os.uname().machine)
+        extra_compile_args.append(machine)
 
 sources = [
     "tcad/core/_bindings.pyx",

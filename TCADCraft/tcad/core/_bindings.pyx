@@ -45,6 +45,7 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
                                    const vector[double]& z_minus)
         void set_mobility(const vector[double]& mu_n, const vector[double]& mu_p)
         void set_doping(const vector[double]& Nd_minus_Na)
+        void set_charge_volume_fraction(const vector[double]& fraction) except +
         void set_optical_generation(const vector[double]& G_opt)
         void set_recombination(const vector[double]& tau_n, const vector[double]& tau_p)
         void set_thermal_voltage(double VT)
@@ -54,8 +55,8 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_electron_bc(const map[size_t, double]& bc)
         void set_hole_bc(const map[size_t, double]& bc)
         void set_quantum_enabled(cbool enable)
-        void set_z_positions(const vector[double]& z_pos)
-        void set_x_positions(const vector[double]& x_pos)
+        void set_z_positions(const vector[double]& z_pos) except +
+        void set_x_positions(const vector[double]& x_pos) except +
         void set_gummel_max_iter(size_t max_iter)
         void set_tolerance(double tol)
         void set_poisson_solver_type(int type)
@@ -100,6 +101,7 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_ferroelectric_builtin_field(double E_bi)
         void set_ferroelectric_depol(double eps_fe)
         void set_ferroelectric_nls(double tau0, double E0, double dt)
+        void set_ferroelectric_polar_axis(int axis)
         void set_leakage(const vector[signed char]& mask,
                          double C_pf, double B_pf, double phi_t,
                          double C_fn, double B_fn, double phi_b,
@@ -130,12 +132,19 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         vector[double] solve_Ey()
         vector[double] solve_Ez()
         vector[double] solve_temperature()
+        vector[double] solve_Qn()
+        vector[double] solve_Qp()
         vector[double] solve_Jn_x()
         vector[double] solve_Jn_y()
         vector[double] solve_Jn_z()
         vector[double] solve_Jp_x()
         vector[double] solve_Jp_y()
         vector[double] solve_Jp_z()
+        vector[double] solve_Jleak_x()
+        vector[double] solve_Jleak_y()
+        vector[double] solve_Jleak_z()
+        vector[double] solve_G_btbt()
+        vector[double] solve_G_ii()
         cbool solve_converged()
 
         void reset_solved()
@@ -189,6 +198,10 @@ cdef class PyDeviceSimulator:
 
     def set_doping(self, np.ndarray[np.float64_t, ndim=1, mode="c"] Nd_minus_Na not None):
         self._sim.set_doping(np_to_vec(Nd_minus_Na))
+
+    def set_charge_volume_fraction(
+            self, np.ndarray[np.float64_t, ndim=1, mode="c"] fraction not None):
+        self._sim.set_charge_volume_fraction(np_to_vec(fraction))
 
     def set_optical_generation(self, np.ndarray[np.float64_t, ndim=1, mode="c"] G_opt not None):
         self._sim.set_optical_generation(np_to_vec(G_opt))
@@ -374,6 +387,9 @@ cdef class PyDeviceSimulator:
         # P3: NLS Merz-law tau(E)=tau0*exp(E0/|E|); dt = dwell time per step.
         self._sim.set_ferroelectric_nls(tau0, E0, dt)
 
+    def set_ferroelectric_polar_axis(self, int axis):
+        self._sim.set_ferroelectric_polar_axis(axis)
+
     def set_leakage(self, np.ndarray[np.int8_t, ndim=1, mode="c"] mask not None,
                     double C_pf, double B_pf, double phi_t,
                     double C_fn, double B_fn, double phi_b,
@@ -433,12 +449,19 @@ cdef class PyDeviceSimulator:
         cdef vector[double] Ey  = self._sim.solve_Ey()
         cdef vector[double] Ez  = self._sim.solve_Ez()
         cdef vector[double] T   = self._sim.solve_temperature()
+        cdef vector[double] Qn  = self._sim.solve_Qn()
+        cdef vector[double] Qp  = self._sim.solve_Qp()
         cdef vector[double] Jn_x = self._sim.solve_Jn_x()
         cdef vector[double] Jn_y = self._sim.solve_Jn_y()
         cdef vector[double] Jn_z = self._sim.solve_Jn_z()
         cdef vector[double] Jp_x = self._sim.solve_Jp_x()
         cdef vector[double] Jp_y = self._sim.solve_Jp_y()
         cdef vector[double] Jp_z = self._sim.solve_Jp_z()
+        cdef vector[double] Jleak_x = self._sim.solve_Jleak_x()
+        cdef vector[double] Jleak_y = self._sim.solve_Jleak_y()
+        cdef vector[double] Jleak_z = self._sim.solve_Jleak_z()
+        cdef vector[double] G_btbt = self._sim.solve_G_btbt()
+        cdef vector[double] G_ii = self._sim.solve_G_ii()
         cdef vector[double] P   = self._sim.fe_polarization()
         cdef cbool conv = self._sim.solve_converged()
         cdef size_t iters = self._sim.solve_iterations()
@@ -458,12 +481,19 @@ cdef class PyDeviceSimulator:
             "Ey": np.array(Ey, dtype=np.float64),
             "Ez": np.array(Ez, dtype=np.float64),
             "temperature": np.array(T, dtype=np.float64),
+            "Qn": np.array(Qn, dtype=np.float64),
+            "Qp": np.array(Qp, dtype=np.float64),
             "Jn_x": np.array(Jn_x, dtype=np.float64),
             "Jn_y": np.array(Jn_y, dtype=np.float64),
             "Jn_z": np.array(Jn_z, dtype=np.float64),
             "Jp_x": np.array(Jp_x, dtype=np.float64),
             "Jp_y": np.array(Jp_y, dtype=np.float64),
             "Jp_z": np.array(Jp_z, dtype=np.float64),
+            "Jleak_x": np.array(Jleak_x, dtype=np.float64),
+            "Jleak_y": np.array(Jleak_y, dtype=np.float64),
+            "Jleak_z": np.array(Jleak_z, dtype=np.float64),
+            "G_btbt": np.array(G_btbt, dtype=np.float64),
+            "G_ii": np.array(G_ii, dtype=np.float64),
             "P": P_arr,
             "converged": bool(conv),
             "iterations": int(iters),

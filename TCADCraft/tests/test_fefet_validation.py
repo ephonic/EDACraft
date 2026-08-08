@@ -12,6 +12,10 @@ import numpy as np
 import pytest
 
 from tcad.core import PyDeviceSimulator
+from tcad.postprocess.fe_loops import (
+    run_endurance, run_pulse_width_sweep, run_pund_sequence, run_pv_sweep,
+    run_retention,
+)
 
 QE = 1.602176634e-19
 EPS0 = 8.854187817e-12
@@ -155,6 +159,126 @@ class TestRetentionEndurance:
             Ps_vals.append(0.5 * (abs(P_pos) + abs(P_neg)))
         Ps_arr = np.array(Ps_vals)
         assert np.all(Ps_arr > 0), "Cycling should produce nonzero Ps"
+
+
+class _FakeFESimulator:
+    """Fast stateful stand-in for high-level FE protocol-driver tests."""
+
+    class _Mesh:
+        fields = {"fe_alpha": np.ones(4), "Dit": np.ones(4)}
+
+        @staticmethod
+        def npts():
+            return 4
+
+    def __init__(self):
+        self.mesh = self._Mesh()
+        self._fe_polar_axis = 2
+        self.voltage = 0.0
+        self.dwell = 1e-9
+        self.qot_history = []
+        self.active_fraction = 1.0
+
+    def update_contact(self, _name, voltage):
+        self.voltage = float(voltage)
+
+    def set_ferroelectric_nls_dwell_time(self, dt):
+        self.dwell = float(dt)
+
+    def set_oxide_traps(self, qot):
+        self.qot_history.append(float(np.mean(np.asarray(qot))))
+
+    def set_ferroelectric_active_fraction(self, fraction):
+        self.active_fraction = float(fraction)
+
+    def run(self, **_kwargs):
+        # Switching completeness grows monotonically with log pulse width.
+        completeness = np.clip(
+            (np.log10(self.dwell) + 9.0) / 5.0 + 0.05, 0.05, 1.0,
+        )
+        sign = np.sign(self.voltage)
+        P = np.zeros((4, 3))
+        P[:, 2] = sign * completeness * self.active_fraction
+        return {
+            "P": P, "phi": np.full(4, self.voltage),
+            "Ex": np.full(4, abs(self.voltage) * 1e8),
+            "Ey": np.zeros(4), "Ez": np.zeros(4),
+            "converged": True, "valid": True,
+        }
+
+
+class TestRetentionEnduranceDrivers:
+    """Regression tests for protocol bookkeeping independent of C++ cost."""
+
+    def test_pv_sweep_reads_configured_z_polar_axis(self):
+        sim = _FakeFESimulator()
+        _, P, _ = run_pv_sweep(sim, "gate", Vmax=1.0, n_pts=3)
+        assert np.max(np.abs(P)) > 0.0, (
+            "z-directed polarization must not be silently read as Px=0"
+        )
+
+    def test_pulse_width_changes_memory_window(self):
+        sim = _FakeFESimulator()
+        result = run_pulse_width_sweep(
+            sim, "gate", V_pulse=1.0, fe_thickness=10e-9,
+            pulse_widths=[1e-9, 1e-7, 1e-5],
+        )
+        assert np.all(np.diff(result["Ps"]) > 0.0)
+        assert np.all(np.diff(result["memory_window"]) > 0.0), (
+            "memory window must retain NLS pulse-width dependence"
+        )
+
+    def test_pund_samples_hold_plateaus(self):
+        sim = _FakeFESimulator()
+        result = run_pund_sequence(
+            sim, "gate", V_pulse=1.0, fe_thickness=10e-9,
+            n_points=50, pre_pol_hold=3,
+        )
+        assert result["P_U"] > 0.0
+        assert result["P_D"] < 0.0
+        assert result["Ps"] > 0.0
+
+    def test_endurance_feeds_qot_back_into_solver(self):
+        sim = _FakeFESimulator()
+        result = run_endurance(
+            sim, "gate", V_pulse=1.0, fe_thickness=10e-9,
+            n_cycles=4, measure_every=2, fatigue_Nc=2.0, Q_ot_max=1e5,
+        )
+        assert len(sim.qot_history) == 4
+        assert np.all(np.diff(sim.qot_history) > 0.0)
+        assert np.allclose(result["Q_ot"], np.asarray(sim.qot_history)[[1, 3]])
+
+    def test_retention_advances_dynamic_traps_and_reports_charge(self):
+        from tcad.physics.reliability import TrapKinetics
+        sim = _FakeFESimulator()
+        traps = TrapKinetics(
+            density=1e24, capture_tau=1e-6, emission_tau=1e-3,
+            mask=np.ones(4, dtype=bool),
+        )
+        result = run_retention(
+            sim, "gate", V_program=1.0, n_steps=4, dt=1e-6,
+            trap_model=traps,
+        )
+        assert result["Q_ot"].shape == (4,)
+        assert result["trap_occupancy"].shape == (4,)
+        assert len(sim.qot_history) == 5  # program + four retention steps
+        assert np.all(np.isfinite(result["Q_ot"]))
+
+    def test_endurance_applies_wakeup_fatigue_state(self):
+        from tcad.physics.reliability import CyclingDegradation
+        sim = _FakeFESimulator()
+        degradation = CyclingDegradation(
+            wakeup_cycles=1.0, fatigue_cycles=3.0,
+            wakeup_gain=0.2, fatigue_loss=0.9,
+            reference_field=1e8, field_exponent=1.0,
+        )
+        result = run_endurance(
+            sim, "gate", V_pulse=1.0, fe_thickness=10e-9,
+            n_cycles=6, measure_every=1, degradation_model=degradation,
+        )
+        assert result["active_fraction"].shape == (6,)
+        assert result["fatigue_state"] > 0.0
+        assert sim.active_fraction == result["active_fraction"][-1]
 
 
 class TestPolarAxis:

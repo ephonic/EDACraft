@@ -41,6 +41,11 @@ void DeviceSimulatorDouble::set_doping(const std::vector<double>& Nd_minus_Na) {
     sim_.set_doping(to_real_t(Nd_minus_Na));
 }
 
+void DeviceSimulatorDouble::set_charge_volume_fraction(
+    const std::vector<double>& fraction) {
+    sim_.set_charge_volume_fraction(to_real_t(fraction));
+}
+
 void DeviceSimulatorDouble::set_optical_generation(const std::vector<double>& G_opt) {
     sim_.set_optical_generation(to_real_t(G_opt));
 }
@@ -249,6 +254,10 @@ void DeviceSimulatorDouble::set_ferroelectric_nls(double tau0, double E0, double
     sim_.set_ferroelectric_nls((real_t)tau0, (real_t)E0, (real_t)dt);   // P3
 }
 
+void DeviceSimulatorDouble::set_ferroelectric_polar_axis(int axis) {
+    sim_.set_ferroelectric_polar_axis(axis);
+}
+
 void DeviceSimulatorDouble::set_leakage(const std::vector<signed char>& mask,
                                         double C_pf, double B_pf, double phi_t,
                                         double C_fn, double B_fn, double phi_b,
@@ -350,6 +359,16 @@ std::vector<double> DeviceSimulatorDouble::solve_temperature() {
     return to_double(last_result_.temperature);
 }
 
+std::vector<double> DeviceSimulatorDouble::solve_Qn() {
+    if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
+    return to_double(last_result_.Qn);
+}
+
+std::vector<double> DeviceSimulatorDouble::solve_Qp() {
+    if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
+    return to_double(last_result_.Qp);
+}
+
 std::vector<double> DeviceSimulatorDouble::solve_Jn_x() {
     if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
     return to_double(last_result_.Jn_x);
@@ -373,6 +392,26 @@ std::vector<double> DeviceSimulatorDouble::solve_Jp_y() {
 std::vector<double> DeviceSimulatorDouble::solve_Jp_z() {
     if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
     return to_double(last_result_.Jp_z);
+}
+std::vector<double> DeviceSimulatorDouble::solve_Jleak_x() {
+    if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
+    return to_double(last_result_.Jleak_x);
+}
+std::vector<double> DeviceSimulatorDouble::solve_Jleak_y() {
+    if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
+    return to_double(last_result_.Jleak_y);
+}
+std::vector<double> DeviceSimulatorDouble::solve_Jleak_z() {
+    if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
+    return to_double(last_result_.Jleak_z);
+}
+std::vector<double> DeviceSimulatorDouble::solve_G_btbt() {
+    if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
+    return to_double(last_result_.G_btbt);
+}
+std::vector<double> DeviceSimulatorDouble::solve_G_ii() {
+    if (!solved_) { last_result_ = sim_.solve(); solved_ = true; }
+    return to_double(last_result_.G_ii);
 }
 
 std::vector<double> DeviceSimulatorDouble::fe_polarization() {

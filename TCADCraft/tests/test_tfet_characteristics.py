@@ -4,15 +4,14 @@ TFETs (Tunnel FETs) use band-to-band tunneling (BTBT) as the carrier injection
 mechanism instead of thermionic emission. This enables sub-60 mV/dec subthreshold
 swing and ultra-low-voltage operation.
 
-Note: The current local BTBT model (Kane's G = A*|E|^D*exp(-B/|E|)) overestimates
-tunneling at sharp p+/n+ junctions, producing unphysical carrier densities. Commercial
-TCAD tools use non-local BTBT (path integral) to fix this. The TFET templates and
-DD-solver validation below remain correct; BTBT-converged results require a non-local
-tunneling model as a future enhancement.
+The local Kane model and the non-local path-integral WKB model are both available.
+The validation below inspects the solver's explicit ``G_btbt`` result, avoiding
+contact-pinned carrier extrema as a proxy for tunnelling generation.
 """
 
 import numpy as np
 import pytest
+from functools import lru_cache
 
 from tcad.geometry.device_builder import Device
 from tcad.mesh.generator import structured_mesh_from_device
@@ -22,6 +21,7 @@ from tcad.postprocess.tfet import (
     extract_tfet_metrics,
     extract_btb_tbt_current,
     compare_tfet_vs_mosfet,
+    _transport_current_observable,
 )
 
 
@@ -125,16 +125,22 @@ class TestTFETDriftDiffusion:
         sim, dev, mesh = self._build_tfet_sim()
         sim.run(max_iter=80, tol=1e-8)
 
-        n_values = []
+        X = mesh.X.ravel()
+        channel = (X >= 0.5e-6) & (X <= 1.5e-6)
+        for name in ("contact_source", "contact_drain", "contact_gate"):
+            if name in mesh.fields:
+                channel &= ~mesh.fields[name].astype(bool).ravel()
+        phi_values = []
         for vg in np.linspace(0.0, 0.8, 5):
             sim.update_contact("gate", vg)
             r = sim.run(max_iter=80, tol=1e-8)
             assert r["converged"], f"TFET Vg={vg:.1f}V did not converge"
-            n_values.append(r["n"].max())
+            phi_values.append(float(np.mean(r["phi"][channel])))
 
-        # Gate should modulate carrier density
-        assert max(n_values) > min(n_values) * 1.1, (
-            "TFET should show gate-dependent carrier density"
+        # Global max(n) is fixed by the heavily doped ohmic contacts.  Verify
+        # gate control on the internal channel electrostatic potential instead.
+        assert max(phi_values) - min(phi_values) > 0.02, (
+            "TFET gate did not modulate the internal channel potential"
         )
 
     def test_tfet_dd_field_profile(self):
@@ -156,28 +162,24 @@ class TestTFETDriftDiffusion:
 
 
 class TestTFETvsMOSFETComparison:
-    """Compare TFET and MOSFET DD characteristics.
+    """Compare converged TFET/MOSF DD sweeps using full-precision SG current.
 
-    NOTE (Phase 2.1, audit0618.md §10.3).  These tests previously passed by
-    relying on the Gummel ``cont_damping`` bug that the Phase 2.1 fix
-    (undamped continuity polish in ``GummelSolver::solve``) removed.  The old
-    under-relaxed (n,p) artificially inflated the reported n_max at the n+
-    source/drain (doping 1e20 cm^-3); the polish returns the physically
-    correct continuity solution, which has a smaller n_max and a different
-    Vg-dependence.  The assertions below therefore no longer hold.
-
-    Rather than silently rewrite the test's physical claim, the three
-    methods are marked xfail(strict=True) so the change is documented and so
-    any future reworking of the assertion will surface automatically.  The
-    test body is unchanged; only the pass/fail expectation is flipped.
+    Contact carrier maxima are fixed by ohmic boundary conditions and are not
+    a transfer-current observable.  The shared sweep is cached so the three
+    checks exercise one physical integration run rather than repeating it.
     """
 
-    def _run_dd_comparison(self):
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _run_dd_comparison():
         """Run DD-only comparison (no BTBT) between TFET and MOSFET."""
-        resolution = (100e-9, 100e-9, 100e-9)
+        # Resolve the 1.5-nm oxide while keeping this integration comparison
+        # small.  The former 1-um device used a 100-nm z step, so the gate
+        # contact matched zero nodes and all three tests xfailed before solve.
+        resolution = (5e-9, 2.5e-9, 1e-9)
 
         tfet_dev = Device.tfet(
-            Lg=1.0e-6, Lsd=0.5e-6, t_sheet=0.5e-6, W_sheet=0.5e-6,
+            Lg=20e-9, Lsd=10e-9, t_sheet=5e-9, W_sheet=5e-9,
             Vg=0.0, Vd=0.1, Vs=0.0,
         )
         tfet_mesh = structured_mesh_from_device(tfet_dev, resolution=resolution)
@@ -188,7 +190,7 @@ class TestTFETvsMOSFETComparison:
         tfet_sim.set_contact("gate", 0.0)
 
         mosfet_dev = Device.mosfet(
-            Lg=1.0e-6, tox=1.5e-9, tsi=0.5e-6, W=0.5e-6, Lsd=0.5e-6,
+            Lg=20e-9, tox=1.5e-9, tsi=5e-9, W=5e-9, Lsd=10e-9,
             Vg=0.0, Vd=0.1, Vs=0.0,
         )
         mosfet_mesh = structured_mesh_from_device(mosfet_dev, resolution=resolution)
@@ -221,30 +223,19 @@ class TestTFETvsMOSFETComparison:
         return tfet_results, mosfet_results, Vg_points
 
     def test_tfet_vs_mosfet_gate_response(self):
-        """Both TFET and MOSFET should show gate-dependent response."""
-        pytest.xfail(
-            "Relies on the Gummel cont_damping bug removed in Phase 2.1 "
-            "(see audit0618.md §10.3).  The fix returns physically correct "
-            "(smaller) n_max at the n+ S/D; the old assertion "
-            "`mosfet_n[-1] > mosfet_n[0]*0.5` encoded the bug's inflation. "
-            "Rewrite the physical claim against the corrected solver."
-        )
+        """Both devices converge and their transport current responds to gate."""
         tfet_results, mosfet_results, Vg = self._run_dd_comparison()
 
-        tfet_n = np.array([r["n"].max() for r in tfet_results])
-        mosfet_n = np.array([r["n"].max() for r in mosfet_results])
+        assert all(r["converged"] and r.get("valid", True)
+                   for r in tfet_results + mosfet_results)
+        tfet_I = np.array([_transport_current_observable(r) for r in tfet_results])
+        mosfet_I = np.array([_transport_current_observable(r) for r in mosfet_results])
 
-        assert tfet_n[-1] > tfet_n[0] * 0.5, "TFET should respond to gate"
-        assert mosfet_n[-1] > mosfet_n[0] * 0.5, "MOSFET should respond to gate"
+        assert tfet_I[-1] > tfet_I[0] * 1.2, "TFET current should respond to gate"
+        assert mosfet_I[-1] > mosfet_I[0] * 1.2, "MOSFET current should respond to gate"
 
     def test_tfet_extraction_metrics(self):
         """TFET metrics extraction should work."""
-        pytest.xfail(
-            "Shares _run_dd_comparison with test_tfet_vs_mosfet_gate_response, "
-            "whose Vg-sweep output changed after the Phase 2.1 Gummel fix "
-            "(audit0618.md §10.3).  Skipped to avoid the 100s sweep cost; "
-            "re-enable once the gate-response assertion is rewritten."
-        )
         tfet_results, mosfet_results, Vg = self._run_dd_comparison()
 
         tfet_metrics = extract_tfet_metrics(tfet_results, Vdd=0.3)
@@ -253,12 +244,12 @@ class TestTFETvsMOSFETComparison:
         assert "min_SS" in tfet_metrics
         assert "Ion_Ioff" in tfet_metrics
         assert "E_switch" in tfet_metrics
+        assert np.isfinite(tfet_metrics["min_SS"])
+        assert tfet_metrics["Ion_Ioff"] > 1.0
+        assert mosfet_metrics["Ion_Ioff"] > 1.0
 
     def test_comparison_table(self):
         """Comparison table generation should work."""
-        pytest.xfail(
-            "Shares _run_dd_comparison; see test_tfet_vs_mosfet_gate_response."
-        )
         tfet_results, mosfet_results, Vg = self._run_dd_comparison()
 
         tfet_metrics = extract_tfet_metrics(tfet_results, Vdd=0.3)
@@ -301,48 +292,92 @@ class TestHeterojunctionTFET:
         I_btb = extract_btb_tbt_current(results, mesh)
         assert I_btb >= 0, f"BTBT current should be >= 0, got {I_btb}"
 
+    def test_btb_current_integrates_solver_generation(self):
+        """Postprocessing must not replace non-local G_btbt with local Kane."""
+        dev = Device.tfet(
+            Lg=1.0e-6, Lsd=0.5e-6, t_sheet=0.5e-6, W_sheet=0.5e-6,
+        )
+        mesh = structured_mesh_from_device(
+            dev, resolution=(200e-9, 200e-9, 200e-9),
+        )
+        G = np.full(mesh.npts(), 2.5e20)
+        result = {
+            "G_btbt": G,
+            # Deliberately conflicting field: using local recomputation would
+            # produce a completely different answer.
+            "Ex": np.full(mesh.npts(), 9e9),
+        }
+        g = mesh.to_cxx_grid()
+        expected = 1.602176634e-19 * G.sum() * g["dx"] * g["dy"] * g["dz"]
+        assert extract_btb_tbt_current(result, mesh) == pytest.approx(expected)
+
+    def test_metrics_use_edge_current_before_contact_density(self):
+        sweep = []
+        for vg, current in zip([0.0, 0.2, 0.4], [1e-9, 1e-6, 1e-3]):
+            sweep.append({
+                "_voltages": {"gate": vg},
+                "n": np.full(4, 1e25),  # deliberately contact-pinned/constant
+                "Jn_x": np.full(4, current),
+                "Jp_x": np.zeros(4),
+            })
+        metrics = extract_tfet_metrics(sweep)
+        assert metrics["Ion_Ioff"] == pytest.approx(1e6)
+        assert np.isfinite(metrics["min_SS"])
+
 
 class TestBTBTValidation:
     """Validate BTBT model on simple devices where it converges well."""
 
-    def test_btb_on_uniform_device(self):
-        """BTBT should converge on a simple n-type device under bias."""
+    @staticmethod
+    def _run_uniform_high_field(*, use_nonlocal=False):
+        """Solve a small 20-nm slab at 1 V (|E| ~= 5e7 V/m).
+
+        The transverse mesh is intentionally coarse because the problem is
+        one-dimensional.  The former 1-um/0.5-V test had negligible physical
+        Kane generation (exp(-B/E) underflow with B=2e9 V/m) and needlessly
+        crossed the large-grid iterative-solver threshold.
+        """
         from tcad.geometry.device_builder import Material, Region, Box, DopingProfile
 
-        dev = Device("test_btb")
+        Lx = 20e-9
+        width = 0.5e-6
+        dev = Device("test_btb_high_field")
         si = Material("Silicon", epsilon_r=11.7, Eg=1.12)
-        dev.add_region(Region("bulk", Box(0, 1e-6, 0, 0.5e-6, 0, 0.5e-6),
-                              si, DopingProfile(Nd=1e18, Na=0)))
-        dev.add_contact("left", Box(0, 0.1e-6, 0, 0.5e-6, -0.01e-6, 0), voltage=0.0)
-        dev.add_contact("right", Box(0.9e-6, 1e-6, 0, 0.5e-6, -0.01e-6, 0), voltage=0.5)
-
-        mesh = structured_mesh_from_device(dev, resolution=(50e-9, 50e-9, 50e-9))
-
-        # Without BTBT
+        dev.add_region(Region(
+            "bulk", Box(0, Lx, 0, width, 0, width), si,
+            DopingProfile(Nd=1e18, Na=0),
+        ))
+        dev.add_contact(
+            "left", Box(-0.01 * Lx, 0, 0, width, 0, width), voltage=0.0,
+        )
+        dev.add_contact(
+            "right", Box(Lx, 1.01 * Lx, 0, width, 0, width), voltage=1.0,
+        )
+        mesh = structured_mesh_from_device(
+            dev, resolution=(1e-9, width, width),
+        )
         sim = Simulator(mesh, temperature=300.0)
         sim.set_material_from_mesh()
         sim.set_contact("left", 0.0)
-        sim.set_contact("right", 0.5)
-        r0 = sim.run(max_iter=50, tol=1e-8)
-        assert r0["converged"]
+        sim.set_contact("right", 1.0)
+        sim.set_btbt(enabled=True, use_nonlocal=use_nonlocal)
+        return mesh, sim.run(max_iter=100, tol=1e-8)
 
-        # With BTBT (using previous solution)
-        sim2 = Simulator(mesh, temperature=300.0)
-        sim2.set_material_from_mesh()
-        sim2.set_contact("left", 0.0)
-        sim2.set_contact("right", 0.5)
-        sim2.set_btbt(enabled=True)
-        sim2._sim.set_initial_guess(
-            r0["phi"].astype(np.float64),
-            r0["n"].astype(np.float64),
-            r0["p"].astype(np.float64),
+    def test_btb_on_uniform_device(self):
+        """Local BTBT converges and exposes the exact Kane source term."""
+        _, result = self._run_uniform_high_field(use_nonlocal=False)
+        assert result["converged"]
+
+        G = result["G_btbt"]
+        E = np.sqrt(result["Ex"]**2 + result["Ey"]**2 + result["Ez"]**2)
+        expected = np.zeros_like(E)
+        active = E >= 1.0e4
+        expected[active] = 3.1e21 * 1.0e6 * E[active]**2 * np.exp(
+            -2.0e9 / E[active]
         )
-        r1 = sim2.run(max_iter=60, tol=1e-8)
-        assert r1["converged"]
-
-        # BTBT should increase carrier density
-        assert r1["n"].max() > r0["n"].max(), (
-            "BTBT should increase carrier generation"
+        assert np.all(np.isfinite(G)) and G.max() > 0.0
+        assert np.allclose(G, expected, rtol=2e-10, atol=0.0), (
+            "reported G_btbt must be the Kane source used by continuity"
         )
 
 
@@ -350,44 +385,25 @@ class TestNonLocalBTBT:
     """Validate non-local (path-integral WKB) BTBT tunneling model."""
 
     def test_nonlocal_btbt_on_uniform_device(self):
-        """Non-local BTBT should converge on a simple device under bias."""
-        from tcad.geometry.device_builder import Material, Region, Box, DopingProfile
-
-        dev = Device("test_nl_btbt")
-        si = Material("Silicon", epsilon_r=11.7, Eg=1.12)
-        dev.add_region(Region("bulk", Box(0, 1e-6, 0, 0.5e-6, 0, 0.5e-6),
-                              si, DopingProfile(Nd=1e18, Na=0)))
-        dev.add_contact("left", Box(0, 0.1e-6, 0, 0.5e-6, -0.01e-6, 0), voltage=0.0)
-        dev.add_contact("right", Box(0.9e-6, 1e-6, 0, 0.5e-6, -0.01e-6, 0), voltage=0.5)
-
-        mesh = structured_mesh_from_device(dev, resolution=(50e-9, 50e-9, 50e-9))
-
-        # Without BTBT (baseline)
-        sim = Simulator(mesh, temperature=300.0)
-        sim.set_material_from_mesh()
-        sim.set_contact("left", 0.0)
-        sim.set_contact("right", 0.5)
-        r0 = sim.run(max_iter=50, tol=1e-8)
-        assert r0["converged"]
-
-        # With non-local BTBT
-        sim2 = Simulator(mesh, temperature=300.0)
-        sim2.set_material_from_mesh()
-        sim2.set_contact("left", 0.0)
-        sim2.set_contact("right", 0.5)
-        sim2.set_btbt(enabled=True, use_nonlocal=True)
-        sim2._sim.set_initial_guess(
-            r0["phi"].astype(np.float64),
-            r0["n"].astype(np.float64),
-            r0["p"].astype(np.float64),
+        """Non-local BTBT converges and reports its WKB source explicitly."""
+        mesh, result = TestBTBTValidation._run_uniform_high_field(
+            use_nonlocal=True,
         )
-        r1 = sim2.run(max_iter=60, tol=1e-8)
-        assert r1["converged"], "Non-local BTBT should converge"
+        assert result["converged"], "Non-local BTBT should converge"
 
-        # Non-local BTBT should increase carrier density
-        assert r1["n"].max() > r0["n"].max(), (
-            "Non-local BTBT should increase carrier generation"
-        )
+        G = result["G_btbt"]
+        assert G.shape == (mesh.npts(),)
+        assert np.all(np.isfinite(G)) and np.all(G >= 0.0)
+        assert G.max() > 0.0, "high-field WKB generation must be nonzero"
+
+        # Boundary nodes have no representable tunnelling path (available
+        # distance is zero), while interior nodes do.  This checks that the
+        # exposed result is the non-local path model rather than local Kane.
+        nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
+        G3 = G.reshape(nz, ny, nx)
+        assert np.all(G3[:, :, 0] == 0.0)
+        assert np.all(G3[:, :, -1] == 0.0)
+        assert np.any(G3[:, :, 1:-1] > 0.0)
 
     def test_nonlocal_vs_local_btbt(self):
         """Non-local BTBT should produce smaller generation than local at same bias.
@@ -436,27 +452,16 @@ class TestNonLocalBTBT:
 
     def test_nonlocal_btbt_physical_range(self):
         """Non-local BTBT should produce physically reasonable carrier densities."""
-        from tcad.geometry.device_builder import Material, Region, Box, DopingProfile
+        # Reuse the resolved 20-nm high-field slab. The former 1-um coarse 3-D
+        # deck added no independent physics and did not converge, so its
+        # conditional assertion silently skipped the range check.
+        _, r = TestBTBTValidation._run_uniform_high_field(use_nonlocal=True)
 
-        dev = Device("test_nl_physical")
-        si = Material("Silicon", epsilon_r=11.7, Eg=1.12)
-        dev.add_region(Region("bulk", Box(0, 1e-6, 0, 0.5e-6, 0, 0.5e-6),
-                              si, DopingProfile(Nd=1e18, Na=0)))
-        dev.add_contact("left", Box(0, 0.1e-6, 0, 0.5e-6, -0.01e-6, 0), voltage=0.0)
-        dev.add_contact("right", Box(0.9e-6, 1e-6, 0, 0.5e-6, -0.01e-6, 0), voltage=1.0)
-
-        mesh = structured_mesh_from_device(dev, resolution=(50e-9, 50e-9, 50e-9))
-
-        sim = Simulator(mesh, temperature=300.0)
-        sim.set_material_from_mesh()
-        sim.set_contact("left", 0.0)
-        sim.set_contact("right", 1.0)
-        sim.set_btbt(enabled=True, use_nonlocal=True)
-        r = sim.run(max_iter=60, tol=1e-8)
-
-        if r["converged"]:
-            # Carrier density should be in a physically reasonable range
-            # (not exceeding ~10^27 m^-3, the atomic density limit of Si)
-            assert r["n"].max() < 1e28, (
-                f"Non-local BTBT produced unphysical carrier density: {r['n'].max():.3e}"
-            )
+        assert r["converged"] and r.get("valid") is True, (
+            "non-local BTBT physical-range deck must converge before its "
+            "carrier density can be accepted")
+        # Carrier density should be in a physically reasonable range
+        # (not exceeding ~10^27 m^-3, the atomic density limit of Si)
+        assert r["n"].max() < 1e28, (
+            f"Non-local BTBT produced unphysical carrier density: {r['n'].max():.3e}"
+        )

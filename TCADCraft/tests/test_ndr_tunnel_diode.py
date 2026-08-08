@@ -99,10 +99,13 @@ class TestNDRPhysics:
         """Tunnel diode should show bias-dependent carrier response."""
         results, mesh = self._run_bias_sweep(v_max=0.3, n_steps=6)
 
-        n_values = [r["n"].max() for r in results]
-        # Should show variation with bias (not flat)
-        assert max(n_values) > min(n_values) * 1.05, (
-            "Tunnel diode should show bias-dependent carrier density"
+        # Global max(n) is pinned by the 5e20 cm^-3 ohmic-contact BC and
+        # therefore cannot measure bias modulation.  The junction field is an
+        # internal observable and must respond to the cathode sweep.
+        fields = [np.sqrt(r["Ex"]**2 + r["Ey"]**2 + r["Ez"]**2).max()
+                  for r in results]
+        assert max(fields) > min(fields) * 1.05, (
+            "Tunnel diode junction field should respond to cathode bias"
         )
 
     def test_tunnel_diode_field_at_junction(self):
@@ -139,6 +142,17 @@ class TestNDRMetrics:
         I_btb = extract_btb_current(results, mesh)
         assert I_btb >= 0, f"BTBT current should be >= 0, got {I_btb}"
 
+    def test_btb_current_uses_solver_generation(self):
+        dev = Device.tunnel_diode(Lp=40e-9, Ln=40e-9, W=40e-9, H=40e-9)
+        mesh = structured_mesh_from_device(
+            dev, resolution=(10e-9, 10e-9, 10e-9),
+        )
+        G = np.full(mesh.npts(), 1.25e20)
+        result = {"G_btbt": G, "Ex": np.full(mesh.npts(), 9e9)}
+        g = mesh.to_cxx_grid()
+        expected = 1.602176634e-19 * G.sum() * g["dx"] * g["dy"] * g["dz"]
+        assert extract_btb_current(result, mesh) == pytest.approx(expected)
+
     def test_ndr_metrics_extraction(self):
         """NDR metrics extraction should work on synthetic I-V data."""
         # Create synthetic NDR-like data: peak then valley
@@ -159,6 +173,20 @@ class TestNDRMetrics:
         assert "Iv" in metrics
         assert "PVR" in metrics
         assert metrics["PVR"] > 1.0, "PVR should be > 1 for NDR behavior"
+
+    def test_ndr_metrics_prefer_edge_current(self):
+        V = [0.0, 0.1, 0.2, 0.3]
+        J = [1.0, 10.0, 2.0, 4.0]
+        results = [{
+            "n": np.full(4, 1e25),
+            "Jn_x": np.full(4, j),
+            "Jp_x": np.zeros(4),
+            "_voltages": {"cathode": v},
+        } for v, j in zip(V, J)]
+        metrics = extract_ndr_metrics(results, contact_name="cathode")
+        assert metrics["Vp"] == pytest.approx(0.1)
+        assert metrics["Vv"] == pytest.approx(0.2)
+        assert metrics["PVR"] == pytest.approx(5.0)
 
     @pytest.mark.skip(reason="matplotlib font rendering causes bus error on this system")
     def test_ndr_plot_generation(self):

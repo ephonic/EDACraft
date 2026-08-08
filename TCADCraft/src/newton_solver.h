@@ -48,7 +48,7 @@ struct NewtonOptions {
     // Band-to-band tunneling
     bool enable_btbt = false;
     real_t btbt_A = 3.1e21Q;
-    real_t btbt_B = 2.0e7Q;
+    real_t btbt_B = 2.0e9Q;  // V/m (SI; 2e7 V/cm)
     int btbt_D = 2;
     // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
     // G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q.  Defaults are silicon (SI units,
@@ -60,6 +60,13 @@ struct NewtonOptions {
     real_t ii_A_p = 1.58e8Q;     // [1/m]
     real_t ii_B_p = 2.036e8Q;    // [V/m]
     real_t ii_E_floor = 1.0e5Q;  // [V/m]
+    // Auger recombination (Sentaurus Si defaults, SI units).  This must be
+    // present in the fully coupled Newton path as well as Gummel; otherwise a
+    // Newton-primary avalanche solve silently drops its dominant high-
+    // injection recombination mechanism.
+    bool enable_auger = false;
+    real_t auger_Cn = 2.8e-43Q;   // [m^6/s]
+    real_t auger_Cp = 9.9e-44Q;   // [m^6/s]
     // Temperature and statistics
     real_t temperature = 300.0Q;
     StatisticsType statistics_type = StatisticsType::BOLTZMANN;
@@ -104,6 +111,7 @@ public:
     void set_permittivity(const std::vector<real_t>& eps);
     void set_mobility(const std::vector<real_t>& mu_n, const std::vector<real_t>& mu_p);
     void set_doping(const std::vector<real_t>& Nd_minus_Na);
+    void set_charge_volume_fraction(const std::vector<real_t>& fraction);
     void set_recombination(const std::vector<real_t>& tau_n, const std::vector<real_t>& tau_p);
     void set_optical_generation(const std::vector<real_t>& G_opt);
     void set_thermal_voltage(real_t VT);
@@ -175,6 +183,7 @@ private:
     std::vector<real_t> eps_;
     std::vector<real_t> mu_n_, mu_p_;
     std::vector<real_t> Nd_minus_Na_;
+    std::vector<real_t> charge_volume_fraction_;
     std::vector<real_t> tau_n_, tau_p_;
     std::vector<real_t> G_opt_;
     std::vector<real_t> Nc_, Nv_, Eg_;
@@ -226,6 +235,16 @@ private:
     // convention as GummelSolver::compute_impact_ionization).
     real_t compute_ii_at(const real_t* phi, const real_t* n,
                          const real_t* p, size_t idx) const;
+
+    // Add the exact piecewise-smooth derivatives of the Chynoweth source to
+    // one carrier-continuity row.  Both electron and hole equations contain
+    // -G_ii, so the same block is inserted in each row.  Omitting these terms
+    // turns Newton into a Picard iteration precisely where avalanche feedback
+    // becomes critical and was the main source of breakdown-sweep stalls.
+    void add_ii_jacobian_row(SparseMatrix& J, size_t row,
+                             const real_t* phi, const real_t* n,
+                             const real_t* p, size_t idx,
+                             real_t source_scale) const;
 };
 
 } // namespace tcad

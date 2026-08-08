@@ -112,10 +112,10 @@ def test1_pv_loop_shape():
     sim, N = build_alscn_slab(Lx=40e-9, model=1, eps_depol=ALSCN_EPS_R)
     V, P = bipolar_sweep(sim, N, Vmax=20, n_pts=30)
 
-    P_uC = P * 1e4  # C/m^2 -> uC/cm^2 (1 C/m^2 = 1e4 uC/cm^2)
+    P_uC = P * 100.0  # C/m^2 -> uC/cm^2 (1 C/m^2 = 100 uC/cm^2)
 
     print(f"  P range: [{P_uC.min():.1f}, {P_uC.max():.1f}] uC/cm^2")
-    print(f"  Expected: ~[-{ALSCN_PS*1e4:.0f}, +{ALSCN_PS*1e4:.0f}] uC/cm^2")
+    print(f"  Expected: ~[-{ALSCN_PS*100:.0f}, +{ALSCN_PS*100:.0f}] uC/cm^2")
 
     # 检查1: P 值在物理范围内
     max_abs_P = max(abs(P.min()), abs(P.max()))
@@ -171,7 +171,7 @@ def test2_thickness_window():
         V, P = bipolar_sweep(sim, N, Vmax=Vmax, n_pts=30)
         mw = extract_memory_window(V, P)
         windows.append(mw)
-        P_uC = P * 1e4
+        P_uC = P * 100.0
         print(f"    Vmax = {Vmax:.1f} V")
         print(f"    P range: [{P_uC.min():.1f}, {P_uC.max():.1f}] uC/cm^2")
         print(f"    Memory window = {mw:.2f} V")
@@ -212,7 +212,7 @@ def test3_retention():
     sim.set_dirichlet_potential({0: 20.0, N - 1: 0.0})
     r = sim.solve()
     P_program = r["P"][mid][0]
-    print(f"  Programmed P = {P_program:.4f} C/m^2 ({P_program*1e4:.1f} uC/cm^2)")
+    print(f"  Programmed P = {P_program:.4f} C/m^2 ({P_program*100:.1f} uC/cm^2)")
 
     # 在 V=0 下保持
     P_retention = []
@@ -225,13 +225,13 @@ def test3_retention():
     P_final = P_retention[-1]
     retention_loss = abs(P_program - P_final) / max(abs(P_program), 1e-10)
 
-    print(f"  Retention P_final = {P_final:.4f} C/m^2 ({P_final*1e4:.1f} uC/cm^2)")
+    print(f"  Retention P_final = {P_final:.4f} C/m^2 ({P_final*100:.1f} uC/cm^2)")
     print(f"  Retention loss = {retention_loss*100:.1f}%")
 
     # 绘图
     fig, ax = plt.subplots(figsize=(7, 5))
     times = np.arange(len(P_retention))
-    ax.plot(times, P_retention * 1e4, 'o-', lw=2, ms=6)
+    ax.plot(times, P_retention * 100.0, 'o-', lw=2, ms=6)
     ax.set_xlabel("Time step")
     ax.set_ylabel(r"Polarization [$\mu$C/cm$^2$]")
     ax.set_title("Retention Characteristics (V=0 after programming)")
