@@ -1,8 +1,0 @@
-! 2-port S-parameter test file
-! Format: RI (Real-Imaginary), 50 ohm reference
-! Frequency range: 1 MHz to 100 MHz
-! More realistic S-parameters (representing a simple attenuator)
-# MHz S RI R 50
-1.0  0.50 0.0  0.40 0.0  0.40 0.0  0.50 0.0
-10.0  0.48 0.0  0.42 0.0  0.42 0.0  0.48 0.0
-100.0  0.45 0.0  0.45 0.0  0.45 0.0  0.45 0.0
