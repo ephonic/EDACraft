@@ -100,6 +100,16 @@ def check_mixed_material_dashboard(dashboard_path: Path) -> list[str]:
                 f"mixed dashboard WSe2 diagnostic status changed for {key[1]}: "
                 f"{row.get('status')!r}"
             )
+    wse2_gap = rows.get(("WSe2", "compact_full_device_gap_audit"))
+    if wse2_gap is None:
+        errors.append("mixed dashboard WSe2 compact/full-device gap audit row missing")
+    elif wse2_gap.get("passed"):
+        errors.append("mixed dashboard WSe2 compact/full-device gap audit unexpectedly passed")
+    elif wse2_gap.get("status") != "diagnostic_gap_open":
+        errors.append(
+            "mixed dashboard WSe2 compact/full-device gap audit status changed: "
+            f"{wse2_gap.get('status')!r}"
+        )
     return errors
 
 
