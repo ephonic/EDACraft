@@ -19,6 +19,41 @@ K_B_EV = 8.617333262e-5       # Boltzmann constant [eV/K]
 RICHARDSON_M0 = 1.20173e6     # 4*pi*q*m0*kB^2/h^3 [A/(m^2 K^2)]
 
 
+def pinned_schottky_barrier_height(
+    workfunction_eV: float,
+    electron_affinity_eV: float,
+    *,
+    pinning_factor: float = 1.0,
+    charge_neutrality_level_eV: Optional[float] = None,
+) -> float:
+    """Return an electron Schottky barrier with optional Fermi-level pinning.
+
+    ``pinning_factor`` is the usual interface-slope parameter ``S``:
+
+    * ``S=1`` gives the Schottky-Mott limit ``Phi_m - chi``.
+    * ``S=0`` pins the electron barrier to
+      ``charge_neutrality_level_eV - chi``.
+
+    Energies are referenced to the vacuum level.  The result is clamped to the
+    accumulation/ohmic limit at zero barrier, matching the existing contact
+    boundary behavior.
+    """
+    values = (workfunction_eV, electron_affinity_eV, pinning_factor)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("workfunction, electron affinity and pinning factor must be finite")
+    if not 0.0 <= pinning_factor <= 1.0:
+        raise ValueError("pinning_factor must be in [0, 1]")
+    if charge_neutrality_level_eV is None:
+        charge_neutrality_level_eV = workfunction_eV
+    if not math.isfinite(charge_neutrality_level_eV):
+        raise ValueError("charge_neutrality_level_eV must be finite")
+    effective_workfunction = (
+        pinning_factor * workfunction_eV
+        + (1.0 - pinning_factor) * charge_neutrality_level_eV
+    )
+    return max(effective_workfunction - electron_affinity_eV, 0.0)
+
+
 @dataclass(frozen=True)
 class SchottkyContactModel:
     """Thermionic/NLM-equivalent Schottky terminal-current model.
@@ -43,6 +78,9 @@ class SchottkyContactModel:
     tunneling_barrier_lowering_eV: float = 0.0
     tunneling_window_center_eV: Optional[float] = None
     tunneling_window_width_eV: float = 0.025
+    transport_saturation_current_A: Optional[float] = None
+    tunneling_cutoff_energy_eV: Optional[float] = None
+    tunneling_decay_exponent: float = 1.0
 
     def __post_init__(self) -> None:
         finite = (
@@ -54,6 +92,7 @@ class SchottkyContactModel:
             self.richardson_multiplier,
             self.tunneling_barrier_lowering_eV,
             self.tunneling_window_width_eV,
+            self.tunneling_decay_exponent,
         )
         if not all(math.isfinite(value) for value in finite):
             raise ValueError("Schottky contact parameters must be finite")
@@ -79,6 +118,20 @@ class SchottkyContactModel:
                 )
         if self.tunneling_window_width_eV <= 0.0:
             raise ValueError("tunneling_window_width_eV must be > 0")
+        if self.transport_saturation_current_A is not None:
+            if (not math.isfinite(self.transport_saturation_current_A)
+                    or self.transport_saturation_current_A <= 0.0):
+                raise ValueError(
+                    "transport_saturation_current_A must be finite and > 0"
+                )
+        if self.tunneling_cutoff_energy_eV is not None:
+            if (not math.isfinite(self.tunneling_cutoff_energy_eV)
+                    or self.tunneling_cutoff_energy_eV <= 0.0):
+                raise ValueError(
+                    "tunneling_cutoff_energy_eV must be finite and > 0"
+                )
+        if self.tunneling_decay_exponent <= 0.0:
+            raise ValueError("tunneling_decay_exponent must be > 0")
 
     @property
     def richardson_constant(self) -> float:
@@ -107,20 +160,64 @@ class SchottkyContactModel:
             * math.exp(max(exponent, -745.0))
         )
 
+    def _bulk_voltage_drop(self, current_A: float) -> float:
+        """Return the drift-region drop including velocity saturation.
+
+        For the common first-order high-field mobility law
+
+        ``v = mu*E / (1 + mu*E/vsat)``,
+
+        eliminating ``E`` gives ``Vbulk = I*R0/(1-I/Isat)``.  The optional
+        current limit is therefore a physical ``q*n*vsat*area`` parameter,
+        not a hard numerical current clip.  Reverse bias retains the low-field
+        resistance because the present calibration exercises forward
+        injection only.
+        """
+        if current_A < 0.0 or self.transport_saturation_current_A is None:
+            return current_A * self.series_resistance_ohm
+        fraction = current_A / self.transport_saturation_current_A
+        return (
+            current_A * self.series_resistance_ohm
+            / max(1.0 - fraction, 1.0e-15)
+        )
+
     def _diode_current(self, voltage_V: float, temperature_K: float,
                        saturation: float) -> float:
-        """Solve one thermionic diode branch with series resistance."""
+        """Solve one thermionic diode branch with bulk transport loss."""
         thermal_voltage = K_B_EV * temperature_K * self.ideality_factor
         resistance = self.series_resistance_ohm
-        if resistance == 0.0:
+        transport_limit = self.transport_saturation_current_A
+        if resistance == 0.0 or transport_limit is None:
+            if resistance != 0.0:
+                # Retain the historical constant-series-resistance path
+                # bit-for-bit when high-field transport is not configured.
+                lower = -saturation
+                upper = max(voltage_V / resistance, 0.0)
+                for _ in range(100):
+                    current = 0.5 * (lower + upper)
+                    argument = (
+                        voltage_V - current * resistance
+                    ) / thermal_voltage
+                    argument = max(min(argument, 700.0), -745.0)
+                    residual = saturation * math.expm1(argument) - current
+                    if residual > 0.0:
+                        lower = current
+                    else:
+                        upper = current
+                return 0.5 * (lower + upper)
             argument = max(min(voltage_V / thermal_voltage, 700.0), -745.0)
             return saturation * math.expm1(argument)
 
         lower = -saturation
-        upper = max(voltage_V / resistance, 0.0)
+        upper = min(
+            max(voltage_V / resistance, 0.0),
+            transport_limit * (1.0 - 1.0e-12),
+        )
         for _ in range(100):
             current = 0.5 * (lower + upper)
-            argument = (voltage_V - current * resistance) / thermal_voltage
+            argument = (
+                voltage_V - self._bulk_voltage_drop(current)
+            ) / thermal_voltage
             argument = max(min(argument, 700.0), -745.0)
             residual = saturation * math.expm1(argument) - current
             if residual > 0.0:
@@ -149,6 +246,30 @@ class SchottkyContactModel:
         )
         if not include_tunneling or self.tunneling_barrier_lowering_eV == 0.0:
             return thermionic
+        if self.tunneling_cutoff_energy_eV is not None:
+            # q*V in eV is numerically V in volts.  As the contact drive fills
+            # the sub-barrier energy interval, the energy-integrated NLM
+            # correction contracts continuously to the thermionic limit.
+            available = max(
+                1.0 - max(voltage_V, 0.0)
+                / self.tunneling_cutoff_energy_eV,
+                0.0,
+            )
+            lowering = (
+                self.tunneling_barrier_lowering_eV
+                * available ** self.tunneling_decay_exponent
+            )
+            barrier = max(self.barrier_height_eV - lowering, 0.0)
+            enhanced_saturation = (
+                self.richardson_constant
+                * temperature_K * temperature_K
+                * self.area_m2
+                * math.exp(max(-barrier / (K_B_EV * temperature_K), -745.0))
+            )
+            return self._diode_current(
+                voltage_V, temperature_K, enhanced_saturation
+            )
+
         enhanced = self._diode_current(
             voltage_V, temperature_K,
             self.saturation_current(temperature_K, True),
@@ -179,3 +300,270 @@ class SchottkyContactModel:
             "tunneling_increment_A": total - thermionic,
             "total_A": total,
         }
+
+
+@dataclass(frozen=True)
+class WSe2CompactContactModel:
+    """Gate-controlled WSe2 Schottky/NLM compact contact proxy.
+
+    This model couples a pinned electron Schottky barrier to a smooth
+    gate-controlled channel term.  It is intended as an intermediate
+    calibration object between a pure contact law and a full drift-diffusion
+    WSe2 Schottky FET solve.
+    """
+
+    workfunction_eV: float = 4.6
+    electron_affinity_eV: float = 3.9
+    pinning_factor: float = 0.55
+    charge_neutrality_level_eV: float = 4.35
+    gate_barrier_coupling: float = 0.30
+    channel_turn_on_V: float = 0.20
+    channel_smoothing_V: float = 0.08
+    channel_gain: float = 0.30
+    bandgap_eV: float = 1.65
+    effective_mass_ratio: float = 0.36
+    hole_effective_mass_ratio: float = 0.45
+    area_m2: float = 20.0e-9 * 1.0e-6
+    tunneling_barrier_lowering_eV: float = 0.06
+    hole_tunneling_barrier_lowering_eV: float = 0.0
+    hole_gate_barrier_coupling: float = 0.0
+    hole_drain_barrier_coupling: float = 0.0
+    hole_current_scale: float = 0.0
+    tunneling_decay_exponent: float = 0.5
+    high_gate_rolloff_start_V: float = 1.0e9
+    high_gate_rolloff_smoothing_V: float = 0.10
+    high_gate_rolloff_decades_per_V: float = 0.0
+    ambipolar_notch_center_V: float = 1.0e9
+    ambipolar_notch_width_V: float = 0.25
+    ambipolar_notch_depth_decades: float = 0.0
+    ambipolar_recovery_center_V: float = 1.0e9
+    ambipolar_recovery_width_V: float = 0.25
+    ambipolar_recovery_gain_decades: float = 0.0
+    current_scale_A_per_um: float = 0.3120162936636294
+
+    def __post_init__(self) -> None:
+        finite = (
+            self.workfunction_eV,
+            self.electron_affinity_eV,
+            self.pinning_factor,
+            self.charge_neutrality_level_eV,
+            self.gate_barrier_coupling,
+            self.channel_turn_on_V,
+            self.channel_smoothing_V,
+            self.channel_gain,
+            self.bandgap_eV,
+            self.effective_mass_ratio,
+            self.hole_effective_mass_ratio,
+            self.area_m2,
+            self.tunneling_barrier_lowering_eV,
+            self.hole_tunneling_barrier_lowering_eV,
+            self.hole_gate_barrier_coupling,
+            self.hole_drain_barrier_coupling,
+            self.hole_current_scale,
+            self.tunneling_decay_exponent,
+            self.high_gate_rolloff_start_V,
+            self.high_gate_rolloff_smoothing_V,
+            self.high_gate_rolloff_decades_per_V,
+            self.ambipolar_notch_center_V,
+            self.ambipolar_notch_width_V,
+            self.ambipolar_notch_depth_decades,
+            self.ambipolar_recovery_center_V,
+            self.ambipolar_recovery_width_V,
+            self.ambipolar_recovery_gain_decades,
+            self.current_scale_A_per_um,
+        )
+        if not all(math.isfinite(value) for value in finite):
+            raise ValueError("WSe2 compact contact parameters must be finite")
+        if self.channel_smoothing_V <= 0.0:
+            raise ValueError("channel_smoothing_V must be > 0")
+        if self.effective_mass_ratio <= 0.0:
+            raise ValueError("effective_mass_ratio must be > 0")
+        if self.hole_effective_mass_ratio <= 0.0:
+            raise ValueError("hole_effective_mass_ratio must be > 0")
+        if self.bandgap_eV <= 0.0:
+            raise ValueError("bandgap_eV must be > 0")
+        if self.area_m2 <= 0.0:
+            raise ValueError("area_m2 must be > 0")
+        if self.tunneling_barrier_lowering_eV < 0.0:
+            raise ValueError("tunneling_barrier_lowering_eV must be >= 0")
+        if self.hole_tunneling_barrier_lowering_eV < 0.0:
+            raise ValueError("hole_tunneling_barrier_lowering_eV must be >= 0")
+        if self.hole_gate_barrier_coupling < 0.0:
+            raise ValueError("hole_gate_barrier_coupling must be >= 0")
+        if self.hole_drain_barrier_coupling < 0.0:
+            raise ValueError("hole_drain_barrier_coupling must be >= 0")
+        if self.hole_current_scale < 0.0:
+            raise ValueError("hole_current_scale must be >= 0")
+        if self.tunneling_decay_exponent <= 0.0:
+            raise ValueError("tunneling_decay_exponent must be > 0")
+        if self.high_gate_rolloff_smoothing_V <= 0.0:
+            raise ValueError("high_gate_rolloff_smoothing_V must be > 0")
+        if self.high_gate_rolloff_decades_per_V < 0.0:
+            raise ValueError("high_gate_rolloff_decades_per_V must be >= 0")
+        if self.ambipolar_notch_width_V <= 0.0:
+            raise ValueError("ambipolar_notch_width_V must be > 0")
+        if self.ambipolar_notch_depth_decades < 0.0:
+            raise ValueError("ambipolar_notch_depth_decades must be >= 0")
+        if self.ambipolar_recovery_width_V <= 0.0:
+            raise ValueError("ambipolar_recovery_width_V must be > 0")
+        if self.ambipolar_recovery_gain_decades < 0.0:
+            raise ValueError("ambipolar_recovery_gain_decades must be >= 0")
+        if self.current_scale_A_per_um <= 0.0:
+            raise ValueError("current_scale_A_per_um must be > 0")
+
+    @staticmethod
+    def _softplus(value: float) -> float:
+        if value > 40.0:
+            return value
+        if value < -40.0:
+            return math.exp(value)
+        return math.log1p(math.exp(value))
+
+    @property
+    def nominal_barrier_height_eV(self) -> float:
+        return pinned_schottky_barrier_height(
+            self.workfunction_eV,
+            self.electron_affinity_eV,
+            pinning_factor=self.pinning_factor,
+            charge_neutrality_level_eV=self.charge_neutrality_level_eV,
+        )
+
+    def effective_barrier_height_eV(self, gate_voltage_V: float) -> float:
+        """Return the gate-controlled electron injection barrier."""
+        if not math.isfinite(gate_voltage_V):
+            raise ValueError("gate_voltage_V must be finite")
+        gate = max(gate_voltage_V, 0.0)
+        channel_lowering = (
+            self.channel_gain
+            * self.channel_smoothing_V
+            * self._softplus((gate - self.channel_turn_on_V) / self.channel_smoothing_V)
+        )
+        return max(
+            self.nominal_barrier_height_eV
+            - self.gate_barrier_coupling * gate
+            + channel_lowering,
+            0.0,
+        )
+
+    def contact_model(self, gate_voltage_V: float) -> SchottkyContactModel:
+        barrier = self.effective_barrier_height_eV(gate_voltage_V)
+        return SchottkyContactModel(
+            barrier_height_eV=barrier,
+            effective_mass_ratio=self.effective_mass_ratio,
+            area_m2=self.area_m2,
+            tunneling_barrier_lowering_eV=min(
+                self.tunneling_barrier_lowering_eV, barrier
+            ),
+            tunneling_cutoff_energy_eV=max(barrier, 1.0e-6),
+            tunneling_decay_exponent=self.tunneling_decay_exponent,
+        )
+
+    @property
+    def nominal_hole_barrier_height_eV(self) -> float:
+        return max(self.bandgap_eV - self.nominal_barrier_height_eV, 0.0)
+
+    def effective_hole_barrier_height_eV(
+        self, gate_voltage_V: float, drain_voltage_V: float
+    ) -> float:
+        """Return the compact hole-injection barrier."""
+        if not math.isfinite(gate_voltage_V) or not math.isfinite(drain_voltage_V):
+            raise ValueError("gate_voltage_V and drain_voltage_V must be finite")
+        gate_drive = max(-gate_voltage_V, 0.0)
+        drain_drive = max(abs(drain_voltage_V), 0.0)
+        return max(
+            self.nominal_hole_barrier_height_eV
+            - self.hole_gate_barrier_coupling * gate_drive
+            - self.hole_drain_barrier_coupling * drain_drive,
+            0.0,
+        )
+
+    def hole_contact_model(
+        self, gate_voltage_V: float, drain_voltage_V: float
+    ) -> SchottkyContactModel:
+        barrier = self.effective_hole_barrier_height_eV(
+            gate_voltage_V, drain_voltage_V
+        )
+        return SchottkyContactModel(
+            barrier_height_eV=barrier,
+            effective_mass_ratio=self.hole_effective_mass_ratio,
+            area_m2=self.area_m2,
+            tunneling_barrier_lowering_eV=min(
+                self.hole_tunneling_barrier_lowering_eV, barrier
+            ),
+            tunneling_cutoff_energy_eV=max(barrier, 1.0e-6),
+            tunneling_decay_exponent=self.tunneling_decay_exponent,
+        )
+
+    def high_gate_rolloff_factor(self, gate_voltage_V: float) -> float:
+        """Return optional high-gate current suppression factor."""
+        if not math.isfinite(gate_voltage_V):
+            raise ValueError("gate_voltage_V must be finite")
+        if self.high_gate_rolloff_decades_per_V == 0.0:
+            return 1.0
+        excess = (
+            self.high_gate_rolloff_smoothing_V
+            * self._softplus(
+                (gate_voltage_V - self.high_gate_rolloff_start_V)
+                / self.high_gate_rolloff_smoothing_V
+            )
+        )
+        return 10.0 ** (-self.high_gate_rolloff_decades_per_V * excess)
+
+    def ambipolar_notch_factor(self, gate_voltage_V: float) -> float:
+        """Return optional valley/filter suppression around an ambipolar crossover."""
+        if not math.isfinite(gate_voltage_V):
+            raise ValueError("gate_voltage_V must be finite")
+        if self.ambipolar_notch_depth_decades == 0.0:
+            return 1.0
+        normalized = (
+            (gate_voltage_V - self.ambipolar_notch_center_V)
+            / self.ambipolar_notch_width_V
+        )
+        depth = self.ambipolar_notch_depth_decades * math.exp(
+            -0.5 * normalized * normalized
+        )
+        return 10.0 ** (-depth)
+
+    def ambipolar_recovery_factor(self, gate_voltage_V: float) -> float:
+        """Return optional post-valley recovery/lobe gain."""
+        if not math.isfinite(gate_voltage_V):
+            raise ValueError("gate_voltage_V must be finite")
+        if self.ambipolar_recovery_gain_decades == 0.0:
+            return 1.0
+        arg = (
+            (gate_voltage_V - self.ambipolar_recovery_center_V)
+            / self.ambipolar_recovery_width_V
+        )
+        arg = max(min(arg, 80.0), -80.0)
+        recovery = 1.0 / (1.0 + math.exp(-arg))
+        return 10.0 ** (self.ambipolar_recovery_gain_decades * recovery)
+
+    def abs_current_A_per_um(
+        self,
+        gate_voltage_V: float,
+        drain_voltage_V: float,
+        temperature_K: float,
+        *,
+        include_tunneling: bool = True,
+    ) -> float:
+        """Return the calibrated compact contact/channel current in A/um."""
+        model = self.contact_model(gate_voltage_V)
+        current_A = abs(
+            model.current(drain_voltage_V, temperature_K, include_tunneling)
+        )
+        electron_current = (
+            current_A
+            / 1.0e6
+            * self.current_scale_A_per_um
+            * self.high_gate_rolloff_factor(gate_voltage_V)
+            * self.ambipolar_notch_factor(gate_voltage_V)
+            * self.ambipolar_recovery_factor(gate_voltage_V)
+        )
+        if self.hole_current_scale == 0.0:
+            return electron_current
+        hole_A = abs(
+            self.hole_contact_model(gate_voltage_V, drain_voltage_V).current(
+                abs(drain_voltage_V), temperature_K, include_tunneling
+            )
+        )
+        return electron_current + hole_A / 1.0e6 * self.hole_current_scale

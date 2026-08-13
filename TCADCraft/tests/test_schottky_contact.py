@@ -5,12 +5,18 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import pytest
 
 from tcad.material import gallium_nitride
 from tcad.geometry.device_builder import Device, DopingProfile, Region
 from tcad.geometry.shapes import Box
 from tcad.mesh.generator import structured_mesh_from_device
-from tcad.physics.contact import K_B_EV, SchottkyContactModel
+from tcad.physics.contact import (
+    K_B_EV,
+    SchottkyContactModel,
+    WSe2CompactContactModel,
+    pinned_schottky_barrier_height,
+)
 from tcad.simulator import Simulator
 
 
@@ -75,12 +81,54 @@ def test_nlm_energy_window_removes_false_high_bias_tail():
     assert increment_high_bias < 1.0e-2 * increment_near_peak
 
 
+def test_high_field_bulk_drop_and_subbarrier_window_are_physical():
+    model = SchottkyContactModel(
+        barrier_height_eV=0.8642,
+        effective_mass_ratio=0.2,
+        area_m2=1.0e-13,
+        series_resistance_ohm=460.0,
+        transport_saturation_current_A=360.0e-6,
+        tunneling_barrier_lowering_eV=0.107,
+        tunneling_cutoff_energy_eV=0.815,
+        tunneling_decay_exponent=0.33,
+    )
+    thermionic_high = model.current(10.0, 300.0, False)
+    assert 0.0 < thermionic_high < model.transport_saturation_current_A
+
+    low = model.components(0.05, 300.0)
+    middle = model.components(0.60, 300.0)
+    cutoff = model.components(0.815, 300.0)
+    assert low["tunneling_increment_A"] > 0.0
+    assert middle["tunneling_increment_A"] > 0.0
+    assert cutoff["tunneling_increment_A"] == 0.0
+    assert (
+        low["total_A"] / low["thermionic_A"]
+        > middle["total_A"] / middle["thermionic_A"]
+        > 1.0
+    )
+
+
 def test_gan_reference_barrier_matches_calibration_deck():
     gan = gallium_nitride()
     assert gan.name == "GaN"
     assert math.isclose(4.80 - gan.chi, 0.86420028, abs_tol=1e-10)
     assert gan.mu_n == 1800.0
     assert gan.mu_p == 150.0
+
+
+def test_pinned_schottky_barrier_interpolates_to_charge_neutrality_level():
+    schottky_mott = pinned_schottky_barrier_height(
+        4.8, 3.9, pinning_factor=1.0, charge_neutrality_level_eV=4.2
+    )
+    pinned = pinned_schottky_barrier_height(
+        4.8, 3.9, pinning_factor=0.0, charge_neutrality_level_eV=4.2
+    )
+    midpoint = pinned_schottky_barrier_height(
+        4.8, 3.9, pinning_factor=0.5, charge_neutrality_level_eV=4.2
+    )
+    assert math.isclose(schottky_mott, 0.9, abs_tol=1e-14)
+    assert math.isclose(pinned, 0.3, abs_tol=1e-14)
+    assert math.isclose(midpoint, 0.6, abs_tol=1e-14)
 
 
 def test_simulator_configures_contact_model_from_workfunction_and_affinity():
@@ -110,9 +158,109 @@ def test_simulator_configures_contact_model_from_workfunction_and_affinity():
         series_resistance_ohm=1360.0,
         tunneling_window_center_eV=0.768,
         tunneling_window_width_eV=0.011,
+        transport_saturation_current_A=360.0e-6,
+        tunneling_cutoff_energy_eV=0.815,
+        tunneling_decay_exponent=0.33,
     )
     assert math.isclose(model.barrier_height_eV, 0.86420028, abs_tol=1e-10)
+    assert model.transport_saturation_current_A == 360.0e-6
     assert sim.schottky_contact_current("top") > 0.0
+
+
+def test_wse2_schottky_contact_accepts_fermi_level_pinning():
+    device = Device.wse2_schottky_fet(
+        Lg=40e-9,
+        Lsd=10e-9,
+        W=5e-9,
+        t_ch=2e-9,
+        tox=3e-9,
+        source_workfunction=4.8,
+        drain_workfunction=4.8,
+    )
+    mesh = structured_mesh_from_device(device, nx=7, ny=1, nz=3)
+    sim = Simulator(mesh, temperature=300.0)
+    sim.set_material_from_mesh()
+    sim.set_contact("source", 0.2, workfunction=4.8)
+    ideal = sim.set_wse2_schottky_contact("source", area_m2=1.0e-15)
+    pinned = sim.set_wse2_schottky_contact(
+        "source",
+        area_m2=1.0e-15,
+        pinning_factor=0.0,
+        charge_neutrality_level_eV=4.2,
+        tunneling_barrier_lowering_eV=0.05,
+    )
+    assert math.isclose(ideal.barrier_height_eV, 0.9, abs_tol=1e-12)
+    assert math.isclose(pinned.barrier_height_eV, 0.3, abs_tol=1e-12)
+    assert pinned.current(0.2, 300.0, True) > ideal.current(0.2, 300.0, False)
+
+
+def test_wse2_compact_contact_gate_controls_barrier_and_current():
+    model = WSe2CompactContactModel()
+    barrier_off = model.effective_barrier_height_eV(0.0)
+    barrier_on = model.effective_barrier_height_eV(2.0)
+    assert barrier_on < barrier_off
+    assert (
+        model.abs_current_A_per_um(2.0, 0.05, 300.0)
+        > model.abs_current_A_per_um(0.0, 0.05, 300.0)
+    )
+
+
+def test_wse2_compact_contact_optional_hole_branch_is_explicit():
+    electron_only = WSe2CompactContactModel()
+    ambipolar = WSe2CompactContactModel(
+        hole_current_scale=1.0,
+        hole_drain_barrier_coupling=1.0,
+        hole_tunneling_barrier_lowering_eV=0.05,
+    )
+    assert ambipolar.nominal_hole_barrier_height_eV > 0.0
+    assert (
+        ambipolar.effective_hole_barrier_height_eV(1.0, 0.5)
+        < ambipolar.nominal_hole_barrier_height_eV
+    )
+    assert (
+        ambipolar.abs_current_A_per_um(1.0, 0.5, 300.0)
+        > electron_only.abs_current_A_per_um(1.0, 0.5, 300.0)
+    )
+
+
+def test_wse2_compact_contact_optional_ambipolar_notch_is_explicit():
+    base = WSe2CompactContactModel()
+    notch = WSe2CompactContactModel(
+        ambipolar_notch_center_V=1.0,
+        ambipolar_notch_width_V=0.2,
+        ambipolar_notch_depth_decades=2.0,
+    )
+    assert math.isclose(base.ambipolar_notch_factor(1.0), 1.0, abs_tol=0.0)
+    assert notch.ambipolar_notch_factor(1.0) < 0.02
+    assert notch.ambipolar_notch_factor(0.0) > notch.ambipolar_notch_factor(1.0)
+    assert (
+        notch.abs_current_A_per_um(1.0, 0.05, 300.0)
+        < base.abs_current_A_per_um(1.0, 0.05, 300.0)
+    )
+
+
+def test_wse2_compact_contact_optional_ambipolar_recovery_is_explicit():
+    base = WSe2CompactContactModel(
+        ambipolar_notch_center_V=0.8,
+        ambipolar_notch_width_V=0.3,
+        ambipolar_notch_depth_decades=2.0,
+    )
+    recovery = WSe2CompactContactModel(
+        ambipolar_notch_center_V=0.8,
+        ambipolar_notch_width_V=0.3,
+        ambipolar_notch_depth_decades=2.0,
+        ambipolar_recovery_center_V=1.2,
+        ambipolar_recovery_width_V=0.1,
+        ambipolar_recovery_gain_decades=2.0,
+    )
+
+    assert math.isclose(base.ambipolar_recovery_factor(2.0), 1.0, abs_tol=0.0)
+    assert recovery.ambipolar_recovery_factor(0.0) == pytest.approx(1.0, abs=1e-4)
+    assert recovery.ambipolar_recovery_factor(2.0) > 90.0
+    assert (
+        recovery.abs_current_A_per_um(2.0, 0.5, 300.0)
+        > base.abs_current_A_per_um(2.0, 0.5, 300.0)
+    )
 
 
 def test_automatic_continuation_preserves_schottky_workfunction():

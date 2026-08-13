@@ -17,6 +17,9 @@ REQUIRED_CALIBRATIONS = {
     "si_trap_occupation_v1",
     "gan_schottky_nlm_v1",
     "quantum_confinement_mos_v1",
+    "si_finfet8_nonplanar_v1",
+    "nmos_idvg_idvd_v1",
+    "gaa_idvg_idvd_v1",
     "electrothermal_breakdown_v1",
 }
 
@@ -57,12 +60,60 @@ def check_calibrations(calibration_root: Path) -> list[str]:
     return errors
 
 
+def check_mixed_material_dashboard(dashboard_path: Path) -> list[str]:
+    if not dashboard_path.is_file():
+        return [f"mixed material dashboard not found: {dashboard_path}"]
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    rows = {
+        (row.get("material"), row.get("layer")): row
+        for row in dashboard.get("rows", [])
+    }
+    errors = []
+    if not dashboard.get("overall_release_baseline", {}).get("passed"):
+        errors.append("mixed material release baseline is not passed")
+
+    response = rows.get(("IGZO/WSe2", "sentaurus_response_replay"))
+    if not response or not response.get("passed"):
+        errors.append("mixed dashboard response replay row is not passed")
+    elif float(response.get("rmse_log_current_decades", 99.0)) > 0.25:
+        errors.append("mixed dashboard response replay RMSE exceeds 0.25 decade")
+
+    igzo = rows.get(("IGZO", "full_dd_tail_selector"))
+    if not igzo or not igzo.get("passed"):
+        errors.append("mixed dashboard IGZO full-DD selector row is not passed")
+    elif int(igzo.get("branches") or 0) < 6:
+        errors.append("mixed dashboard IGZO selector has fewer than 6 branches")
+    elif float(igzo.get("worst_branch_rmse_log_current_decades", 99.0)) > 0.25:
+        errors.append("mixed dashboard IGZO selector error exceeds 0.25 decade")
+
+    for key in (
+        ("WSe2", "compact_contact_channel_scan"),
+        ("WSe2", "wf4p9_vd0p5_notch_recovery"),
+    ):
+        row = rows.get(key)
+        if row is None:
+            errors.append(f"mixed dashboard WSe2 diagnostic row missing: {key[1]}")
+        elif row.get("passed"):
+            errors.append(f"mixed dashboard WSe2 diagnostic unexpectedly passed: {key[1]}")
+        elif row.get("status") != "diagnostic_not_full_device_pass":
+            errors.append(
+                f"mixed dashboard WSe2 diagnostic status changed for {key[1]}: "
+                f"{row.get('status')!r}"
+            )
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--calibration-root",
         type=Path,
         help="Repository root containing bench/calibration/manifest.json",
+    )
+    parser.add_argument(
+        "--mixed-material-dashboard",
+        type=Path,
+        help="Path to tcadcraft_mixed_material_calibration_dashboard.json",
     )
     args = parser.parse_args()
 
@@ -87,6 +138,8 @@ def main() -> int:
 
     if args.calibration_root:
         errors.extend(check_calibrations(args.calibration_root.resolve()))
+    if args.mixed_material_dashboard:
+        errors.extend(check_mixed_material_dashboard(args.mixed_material_dashboard.resolve()))
 
     if errors:
         for error in errors:
@@ -94,7 +147,11 @@ def main() -> int:
         return 1
 
     calibration = "checked" if args.calibration_root else "not requested"
-    print(f"PASS: TCADCraft {version} release metadata; calibration={calibration}")
+    mixed_dashboard = "checked" if args.mixed_material_dashboard else "not requested"
+    print(
+        f"PASS: TCADCraft {version} release metadata; "
+        f"calibration={calibration}; mixed_dashboard={mixed_dashboard}"
+    )
     return 0
 
 
