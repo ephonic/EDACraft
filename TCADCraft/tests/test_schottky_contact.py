@@ -285,6 +285,34 @@ def test_wse2_transport_window_has_gate_temperature_and_drain_controls():
     assert math.isclose(high_drain / centered, 2.0, rel_tol=1e-12)
 
 
+def test_wse2_transport_window_supports_asymmetry_and_notch():
+    symmetric = WSe2TransportWindow(
+        center_gate_V=1.0,
+        width_V=0.2,
+        peak_current_A_per_um=1.0e-9,
+    )
+    asymmetric = WSe2TransportWindow(
+        center_gate_V=1.0,
+        width_V=0.2,
+        left_width_V=0.6,
+        right_width_V=0.1,
+        peak_current_A_per_um=1.0e-9,
+    )
+    notched = WSe2TransportWindow(
+        center_gate_V=1.0,
+        width_V=0.5,
+        peak_current_A_per_um=1.0e-9,
+        notch_center_gate_V=1.2,
+        notch_width_V=0.05,
+        notch_depth_decades=3.0,
+    )
+
+    assert asymmetric.gate_weight(0.5) > symmetric.gate_weight(0.5)
+    assert asymmetric.gate_weight(1.4) < symmetric.gate_weight(1.4)
+    assert notched.gate_weight(1.2) < 2.0e-3 * symmetric.gate_weight(1.2)
+    assert notched.gate_weight(0.6) > notched.gate_weight(1.2)
+
+
 def test_wse2_two_window_transfer_exposes_electron_hole_components():
     model = WSe2TwoWindowTransferModel(
         electron_window=WSe2TransportWindow(
