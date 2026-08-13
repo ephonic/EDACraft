@@ -15,6 +15,8 @@ from tcad.physics.contact import (
     K_B_EV,
     SchottkyContactModel,
     WSe2CompactContactModel,
+    WSe2TransportWindow,
+    WSe2TwoWindowTransferModel,
     pinned_schottky_barrier_height,
 )
 from tcad.simulator import Simulator
@@ -261,6 +263,54 @@ def test_wse2_compact_contact_optional_ambipolar_recovery_is_explicit():
         recovery.abs_current_A_per_um(2.0, 0.5, 300.0)
         > base.abs_current_A_per_um(2.0, 0.5, 300.0)
     )
+
+
+def test_wse2_transport_window_has_gate_temperature_and_drain_controls():
+    window = WSe2TransportWindow(
+        center_gate_V=1.5,
+        width_V=0.25,
+        peak_current_A_per_um=1.0e-8,
+        floor_current_A_per_um=1.0e-20,
+        temperature_activation_eV=0.08,
+        drain_exponent=1.0,
+        drain_reference_V=0.5,
+    )
+    centered = window.current_A_per_um(1.5, 0.5, 300.0)
+    off_center = window.current_A_per_um(0.5, 0.5, 300.0)
+    high_temp = window.current_A_per_um(1.5, 0.5, 400.0)
+    high_drain = window.current_A_per_um(1.5, 1.0, 300.0)
+
+    assert centered > off_center
+    assert high_temp > centered
+    assert math.isclose(high_drain / centered, 2.0, rel_tol=1e-12)
+
+
+def test_wse2_two_window_transfer_exposes_electron_hole_components():
+    model = WSe2TwoWindowTransferModel(
+        electron_window=WSe2TransportWindow(
+            center_gate_V=1.6,
+            width_V=0.2,
+            peak_current_A_per_um=1.0e-7,
+            floor_current_A_per_um=1.0e-25,
+        ),
+        hole_window=WSe2TransportWindow(
+            center_gate_V=-0.8,
+            width_V=0.3,
+            peak_current_A_per_um=1.0e-8,
+            floor_current_A_per_um=1.0e-25,
+        ),
+        valley_floor_A_per_um=1.0e-18,
+        component_coupling=0.5,
+    )
+
+    electron_side = model.components_A_per_um(1.6, 0.5, 300.0)
+    hole_side = model.components_A_per_um(-0.8, 0.5, 300.0)
+    valley = model.components_A_per_um(0.4, 0.5, 300.0)
+
+    assert electron_side["electron_A_per_um"] > electron_side["hole_A_per_um"]
+    assert hole_side["hole_A_per_um"] > hole_side["electron_A_per_um"]
+    assert valley["total_A_per_um"] >= model.valley_floor_A_per_um
+    assert electron_side["total_A_per_um"] > valley["total_A_per_um"]
 
 
 def test_automatic_continuation_preserves_schottky_workfunction():

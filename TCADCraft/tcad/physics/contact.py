@@ -567,3 +567,156 @@ class WSe2CompactContactModel:
             )
         )
         return electron_current + hole_A / 1.0e6 * self.hole_current_scale
+
+
+@dataclass(frozen=True)
+class WSe2TransportWindow:
+    """One calibrated WSe2 electron/hole transfer window.
+
+    The window is a smooth log-current lobe in gate voltage.  It is designed to
+    be fitted against Sentaurus local band/quasi-Fermi/current profiles:
+    ``center_gate_V`` identifies the transport window, ``width_V`` sets the
+    gate-bias energy spread, and ``temperature_activation_eV`` represents the
+    effective thermal barrier of that window.  The object is not a replacement
+    for a full 2-D drift-diffusion solve; it is the next calibration layer
+    between pure response replay and full-device physics.
+    """
+
+    center_gate_V: float
+    width_V: float
+    peak_current_A_per_um: float
+    floor_current_A_per_um: float = 1.0e-30
+    skew: float = 0.0
+    temperature_reference_K: float = 300.0
+    temperature_activation_eV: float = 0.0
+    drain_exponent: float = 1.0
+    drain_reference_V: float = 0.5
+    polarity: int = 1
+
+    def __post_init__(self) -> None:
+        values = (
+            self.center_gate_V,
+            self.width_V,
+            self.peak_current_A_per_um,
+            self.floor_current_A_per_um,
+            self.skew,
+            self.temperature_reference_K,
+            self.temperature_activation_eV,
+            self.drain_exponent,
+            self.drain_reference_V,
+        )
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("WSe2 transport window parameters must be finite")
+        if self.width_V <= 0.0:
+            raise ValueError("width_V must be > 0")
+        if self.peak_current_A_per_um <= 0.0:
+            raise ValueError("peak_current_A_per_um must be > 0")
+        if self.floor_current_A_per_um <= 0.0:
+            raise ValueError("floor_current_A_per_um must be > 0")
+        if self.floor_current_A_per_um > self.peak_current_A_per_um:
+            raise ValueError("floor_current_A_per_um must be <= peak_current_A_per_um")
+        if self.temperature_reference_K <= 0.0:
+            raise ValueError("temperature_reference_K must be > 0")
+        if self.temperature_activation_eV < 0.0:
+            raise ValueError("temperature_activation_eV must be >= 0")
+        if self.drain_exponent < 0.0:
+            raise ValueError("drain_exponent must be >= 0")
+        if self.drain_reference_V <= 0.0:
+            raise ValueError("drain_reference_V must be > 0")
+        if self.polarity not in (-1, 1):
+            raise ValueError("polarity must be -1 or 1")
+
+    def gate_weight(self, gate_voltage_V: float) -> float:
+        if not math.isfinite(gate_voltage_V):
+            raise ValueError("gate_voltage_V must be finite")
+        normalized = (gate_voltage_V - self.center_gate_V) / self.width_V
+        skew_term = 1.0 + self.skew * normalized
+        return math.exp(-0.5 * normalized * normalized) * max(skew_term, 0.0)
+
+    def temperature_factor(self, temperature_K: float) -> float:
+        if not math.isfinite(temperature_K) or temperature_K <= 0.0:
+            raise ValueError("temperature_K must be finite and > 0")
+        if self.temperature_activation_eV == 0.0:
+            return 1.0
+        exponent = -self.temperature_activation_eV / K_B_EV * (
+            1.0 / temperature_K - 1.0 / self.temperature_reference_K
+        )
+        return math.exp(max(min(exponent, 700.0), -745.0))
+
+    def drain_factor(self, drain_voltage_V: float) -> float:
+        if not math.isfinite(drain_voltage_V):
+            raise ValueError("drain_voltage_V must be finite")
+        if self.drain_exponent == 0.0:
+            return 1.0
+        drive = max(abs(drain_voltage_V), 1.0e-30) / self.drain_reference_V
+        return drive ** self.drain_exponent
+
+    def current_A_per_um(
+        self,
+        gate_voltage_V: float,
+        drain_voltage_V: float,
+        temperature_K: float,
+    ) -> float:
+        peak = (
+            self.peak_current_A_per_um
+            * self.temperature_factor(temperature_K)
+            * self.drain_factor(drain_voltage_V)
+        )
+        signal = peak * self.gate_weight(gate_voltage_V)
+        return max(self.floor_current_A_per_um, signal)
+
+
+@dataclass(frozen=True)
+class WSe2TwoWindowTransferModel:
+    """Two-window WSe2 transfer model with explicit electron/hole components."""
+
+    electron_window: WSe2TransportWindow
+    hole_window: WSe2TransportWindow
+    valley_floor_A_per_um: float = 1.0e-30
+    component_coupling: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.valley_floor_A_per_um) or self.valley_floor_A_per_um <= 0.0:
+            raise ValueError("valley_floor_A_per_um must be finite and > 0")
+        if not math.isfinite(self.component_coupling) or self.component_coupling < 0.0:
+            raise ValueError("component_coupling must be finite and >= 0")
+
+    @staticmethod
+    def _log_sum_currents(currents: tuple[float, ...]) -> float:
+        logs = [math.log(max(current, 1.0e-300)) for current in currents]
+        base = max(logs)
+        return math.exp(base) * sum(math.exp(value - base) for value in logs)
+
+    def components_A_per_um(
+        self,
+        gate_voltage_V: float,
+        drain_voltage_V: float,
+        temperature_K: float,
+    ) -> dict[str, float]:
+        electron = self.electron_window.current_A_per_um(
+            gate_voltage_V, drain_voltage_V, temperature_K
+        )
+        hole = self.hole_window.current_A_per_um(
+            gate_voltage_V, drain_voltage_V, temperature_K
+        )
+        coupled = self.component_coupling * math.sqrt(electron * hole)
+        total = self._log_sum_currents(
+            (electron, hole, coupled, self.valley_floor_A_per_um)
+        )
+        return {
+            "electron_A_per_um": electron,
+            "hole_A_per_um": hole,
+            "coupled_A_per_um": coupled,
+            "floor_A_per_um": self.valley_floor_A_per_um,
+            "total_A_per_um": total,
+        }
+
+    def abs_current_A_per_um(
+        self,
+        gate_voltage_V: float,
+        drain_voltage_V: float,
+        temperature_K: float,
+    ) -> float:
+        return self.components_A_per_um(
+            gate_voltage_V, drain_voltage_V, temperature_K
+        )["total_A_per_um"]
