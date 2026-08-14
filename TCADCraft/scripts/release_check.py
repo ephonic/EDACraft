@@ -7,6 +7,7 @@ import argparse
 import ast
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -57,6 +58,24 @@ def check_calibrations(calibration_root: Path) -> list[str]:
             errors.append(
                 f"required calibration {case_id} is {case.get('tcadcraft_status')!r}, expected 'passed'"
             )
+    manifest_gate = calibration_root / "bench" / "tools" / "check_calibration_manifest.py"
+    if not manifest_gate.is_file():
+        errors.append(f"calibration manifest gate not found: {manifest_gate}")
+    else:
+        completed = subprocess.run(
+            [sys.executable, str(manifest_gate), "--root", str(calibration_root)],
+            cwd=calibration_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            output = "\n".join(
+                line
+                for line in (completed.stdout + completed.stderr).splitlines()
+                if line.strip()
+            )
+            errors.append(f"calibration manifest gate failed:\n{output}")
     return errors
 
 
