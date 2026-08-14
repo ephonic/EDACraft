@@ -101,6 +101,28 @@ def check_calibrations(calibration_root: Path) -> list[str]:
                 if line.strip()
             )
             errors.append(f"device-family calibration gate failed:\n{output}")
+    device_family_compare_gate = (
+        calibration_root / "bench" / "tools" / "verify_device_family_compare_gates.py"
+    )
+    if not device_family_compare_gate.is_file():
+        errors.append(
+            f"device-family comparison verifier not found: {device_family_compare_gate}"
+        )
+    else:
+        completed = subprocess.run(
+            [sys.executable, str(device_family_compare_gate)],
+            cwd=calibration_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            output = "\n".join(
+                line
+                for line in (completed.stdout + completed.stderr).splitlines()
+                if line.strip()
+            )
+            errors.append(f"device-family comparison verifier failed:\n{output}")
     return errors
 
 
