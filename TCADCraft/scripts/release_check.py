@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(str(__file__).replace("\\", "/")).resolve().parent.parent
 REQUIRED_CALIBRATIONS = {
     "fe_hfo2_hysteresis_v1",
     "si_trap_occupation_v1",
