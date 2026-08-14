@@ -588,6 +588,10 @@ class WSe2TransportWindow:
     floor_current_A_per_um: float = 1.0e-30
     left_width_V: Optional[float] = None
     right_width_V: Optional[float] = None
+    left_tail_fraction: float = 0.0
+    right_tail_fraction: float = 0.0
+    left_tail_smoothing_V: Optional[float] = None
+    right_tail_smoothing_V: Optional[float] = None
     skew: float = 0.0
     notch_center_gate_V: float = 1.0e9
     notch_width_V: float = 0.25
@@ -604,6 +608,8 @@ class WSe2TransportWindow:
             self.width_V,
             self.peak_current_A_per_um,
             self.floor_current_A_per_um,
+            self.left_tail_fraction,
+            self.right_tail_fraction,
             self.skew,
             self.notch_center_gate_V,
             self.notch_width_V,
@@ -613,7 +619,12 @@ class WSe2TransportWindow:
             self.drain_exponent,
             self.drain_reference_V,
         )
-        optional_values = (self.left_width_V, self.right_width_V)
+        optional_values = (
+            self.left_width_V,
+            self.right_width_V,
+            self.left_tail_smoothing_V,
+            self.right_tail_smoothing_V,
+        )
         if not all(math.isfinite(value) for value in values):
             raise ValueError("WSe2 transport window parameters must be finite")
         if not all(value is None or math.isfinite(value) for value in optional_values):
@@ -624,6 +635,14 @@ class WSe2TransportWindow:
             raise ValueError("left_width_V must be > 0")
         if self.right_width_V is not None and self.right_width_V <= 0.0:
             raise ValueError("right_width_V must be > 0")
+        if not 0.0 <= self.left_tail_fraction <= 1.0:
+            raise ValueError("left_tail_fraction must be in [0, 1]")
+        if not 0.0 <= self.right_tail_fraction <= 1.0:
+            raise ValueError("right_tail_fraction must be in [0, 1]")
+        if self.left_tail_smoothing_V is not None and self.left_tail_smoothing_V <= 0.0:
+            raise ValueError("left_tail_smoothing_V must be > 0")
+        if self.right_tail_smoothing_V is not None and self.right_tail_smoothing_V <= 0.0:
+            raise ValueError("right_tail_smoothing_V must be > 0")
         if self.peak_current_A_per_um <= 0.0:
             raise ValueError("peak_current_A_per_um must be > 0")
         if self.floor_current_A_per_um <= 0.0:
@@ -657,12 +676,30 @@ class WSe2TransportWindow:
         )
         normalized = (gate_voltage_V - self.center_gate_V) / width
         skew_term = 1.0 + self.skew * normalized
-        weight = math.exp(-0.5 * normalized * normalized) * max(skew_term, 0.0)
+        lobe = math.exp(-0.5 * normalized * normalized) * max(skew_term, 0.0)
+        left_tail = self.left_tail_fraction * self._sigmoid(
+            (self.center_gate_V - gate_voltage_V)
+            / (self.left_tail_smoothing_V or width)
+        )
+        right_tail = self.right_tail_fraction * self._sigmoid(
+            (gate_voltage_V - self.center_gate_V)
+            / (self.right_tail_smoothing_V or width)
+        )
+        tail_fraction = max(left_tail, right_tail)
+        weight = tail_fraction + (1.0 - tail_fraction) * lobe
         if self.notch_depth_decades == 0.0:
             return weight
         notch_x = (gate_voltage_V - self.notch_center_gate_V) / self.notch_width_V
         notch_depth = self.notch_depth_decades * math.exp(-0.5 * notch_x * notch_x)
         return weight * 10.0 ** (-notch_depth)
+
+    @staticmethod
+    def _sigmoid(value: float) -> float:
+        if value >= 40.0:
+            return 1.0
+        if value <= -40.0:
+            return 0.0
+        return 1.0 / (1.0 + math.exp(-value))
 
     def temperature_factor(self, temperature_K: float) -> float:
         if not math.isfinite(temperature_K) or temperature_K <= 0.0:

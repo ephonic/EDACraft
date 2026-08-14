@@ -313,6 +313,41 @@ def test_wse2_transport_window_supports_asymmetry_and_notch():
     assert notched.gate_weight(0.6) > notched.gate_weight(1.2)
 
 
+def test_wse2_transport_window_supports_sigmoid_plateau_tail():
+    base = WSe2TransportWindow(
+        center_gate_V=0.3,
+        width_V=0.08,
+        peak_current_A_per_um=1.0e-9,
+    )
+    plateau = WSe2TransportWindow(
+        center_gate_V=0.3,
+        width_V=0.08,
+        peak_current_A_per_um=1.0e-9,
+        right_tail_fraction=0.95,
+        right_tail_smoothing_V=0.02,
+    )
+
+    assert plateau.gate_weight(0.8) > 100.0 * base.gate_weight(0.8)
+    assert plateau.gate_weight(0.0) == pytest.approx(base.gate_weight(0.0), rel=1e-2)
+    assert plateau.gate_weight(0.8) == pytest.approx(0.95, rel=1e-3)
+
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        WSe2TransportWindow(
+            center_gate_V=0.3,
+            width_V=0.08,
+            peak_current_A_per_um=1.0e-9,
+            right_tail_fraction=1.1,
+        )
+    with pytest.raises(ValueError, match="right_tail_smoothing_V"):
+        WSe2TransportWindow(
+            center_gate_V=0.3,
+            width_V=0.08,
+            peak_current_A_per_um=1.0e-9,
+            right_tail_fraction=0.5,
+            right_tail_smoothing_V=0.0,
+        )
+
+
 def test_wse2_two_window_transfer_exposes_electron_hole_components():
     model = WSe2TwoWindowTransferModel(
         electron_window=WSe2TransportWindow(
