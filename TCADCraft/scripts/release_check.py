@@ -18,10 +18,12 @@ REQUIRED_CALIBRATIONS = {
     "si_trap_occupation_v1",
     "gan_schottky_nlm_v1",
     "quantum_confinement_mos_v1",
+    "quantum_confinement_mos_thickness_v1",
     "si_finfet8_nonplanar_v1",
     "nmos_idvg_idvd_v1",
     "gaa_idvg_idvd_v1",
     "electrothermal_breakdown_v1",
+    "dielectric_leakage_pf_fn_v1",
 }
 
 
