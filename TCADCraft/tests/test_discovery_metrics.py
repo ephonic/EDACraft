@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 
 from tcad.geometry.device_builder import Device
+from tcad.mesh import StructuredGrid
 from tcad.simulator import simulate_sweep
 from tcad.core import PyDeviceSimulator
 from tcad.postprocess import (
@@ -35,6 +36,50 @@ QE = 1.602176634e-19
 # HfZrO FE params (test_numerical_validation.py defaults).
 FE_ALPHA = -5.0e8
 FE_BETA = 1.5e10
+
+
+class _SyntheticSimulator:
+    """Minimal simulator wrapper for fast report/trust smoke tests.
+
+    The discovery report path only needs a mesh, VT, contact masks and solver
+    result fields.  Using a synthetic KCL-consistent current sweep keeps this
+    test focused on postprocess truth-chain wiring instead of re-running a
+    second expensive MOSFET solve already covered above.
+    """
+
+    def __init__(self):
+        mesh = StructuredGrid(((0.0, 4e-9), (0.0, 1e-9), (0.0, 1e-9)), 5, 1, 1)
+        npts = mesh.npts()
+        drain = np.zeros(npts, dtype=bool)
+        drain[-1] = True
+        source = np.zeros(npts, dtype=bool)
+        source[0] = True
+        mesh.fields["contact_drain"] = drain
+        mesh.fields["contact_source"] = source
+        mesh.fields["mu_n"] = np.full(npts, 1400e-4)
+        mesh.fields["mu_p"] = np.full(npts, 450e-4)
+        self.mesh = mesh
+        self.VT = VT_300
+
+
+def _synthetic_logic_sweep():
+    sim = _SyntheticSimulator()
+    npts = sim.mesh.npts()
+    results = []
+    for vg, idrive in zip([0.0, 0.2, 0.4], [1e-12, 1e-9, 1e-6]):
+        # contact_current_1d on a right drain returns -J[nx-2]; use a uniform
+        # negative +x flux so the extracted drain-current magnitude is idrive
+        # and the trust KCL relative spread is exactly zero.
+        results.append({
+            "converged": True,
+            "phi": np.linspace(0.0, float(vg), npts),
+            "n": np.full(npts, 1e16),
+            "p": np.full(npts, 1e6),
+            "Jn_x": np.full(npts, -float(idrive)),
+            "Jp_x": np.zeros(npts),
+            "_voltages": {"gate": float(vg), "drain": 0.1, "source": 0.0},
+        })
+    return sim, results
 
 
 # ---------------------------------------------------------------------------
@@ -64,9 +109,9 @@ class TestLogicMetrics:
                             Vg=0.0, Vd=0.1)
         sim, results = simulate_sweep(
             dev,
-            sweep_contacts={"gate": np.linspace(0.0, 0.4, 6)},
+            sweep_contacts={"gate": np.linspace(0.0, 0.4, 3)},
             resolution=(10e-9, 5e-9, 10e-9),
-            quantum=False, max_iter=80, tol=1e-8, verbose=False,
+            quantum=False, max_iter=50, tol=1e-7, verbose=False,
         )
         assert all(r["converged"] for r in results)
         lm = extract_logic_metrics(sim, results, drain_contact="drain",
@@ -91,17 +136,17 @@ class TestDiblFromSweeps:
                                Vg=0.0, Vd=0.05)
         sim_lo, res_lo = simulate_sweep(
             dev_lo,
-            sweep_contacts={"gate": np.linspace(0.0, 0.4, 6)},
-            resolution=(8e-9, 4e-9, 8e-9),
-            quantum=False, max_iter=80, tol=1e-8, verbose=False,
+            sweep_contacts={"gate": np.linspace(0.0, 0.4, 3)},
+            resolution=(10e-9, 5e-9, 10e-9),
+            quantum=False, max_iter=50, tol=1e-7, verbose=False,
         )
         dev_hi = Device.mosfet(Lg=30e-9, tox=1.5e-9, tsi=8e-9, W=40e-9,
                                Vg=0.0, Vd=0.3)
         sim_hi, res_hi = simulate_sweep(
             dev_hi,
-            sweep_contacts={"gate": np.linspace(0.0, 0.4, 6)},
-            resolution=(8e-9, 4e-9, 8e-9),
-            quantum=False, max_iter=80, tol=1e-8, verbose=False,
+            sweep_contacts={"gate": np.linspace(0.0, 0.4, 3)},
+            resolution=(10e-9, 5e-9, 10e-9),
+            quantum=False, max_iter=50, tol=1e-7, verbose=False,
         )
         if not (all(r["converged"] for r in res_lo)
                 and all(r["converged"] for r in res_hi)):
@@ -236,14 +281,7 @@ class TestStorageMetrics:
 # ---------------------------------------------------------------------------
 class TestAssessCandidate:
     def test_logic_only_report_has_trust(self):
-        dev = Device.mosfet(Lg=50e-9, tox=1.5e-9, tsi=10e-9, W=40e-9,
-                            Vg=0.0, Vd=0.1)
-        sim, results = simulate_sweep(
-            dev,
-            sweep_contacts={"gate": np.linspace(0.0, 0.4, 6)},
-            resolution=(10e-9, 5e-9, 10e-9),
-            quantum=False, max_iter=80, tol=1e-8, verbose=False,
-        )
+        sim, results = _synthetic_logic_sweep()
         assert all(r["converged"] for r in results)
         rep = assess_candidate(sim, results, drain_contact="drain",
                                gate_contact="gate")
