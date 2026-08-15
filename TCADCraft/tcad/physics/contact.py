@@ -333,6 +333,11 @@ class WSe2CompactContactModel:
     high_gate_rolloff_start_V: float = 1.0e9
     high_gate_rolloff_smoothing_V: float = 0.10
     high_gate_rolloff_decades_per_V: float = 0.0
+    source_drain_electron_barrier_asymmetry_eV: float = 0.0
+    electron_barrier_asymmetry_coupling: float = 0.0
+    electron_barrier_asymmetry_start_V: float = 1.2
+    electron_barrier_asymmetry_smoothing_V: float = 0.20
+    electron_barrier_asymmetry_max_decades: float = 12.0
     ambipolar_notch_center_V: float = 1.0e9
     ambipolar_notch_width_V: float = 0.25
     ambipolar_notch_depth_decades: float = 0.0
@@ -365,6 +370,11 @@ class WSe2CompactContactModel:
             self.high_gate_rolloff_start_V,
             self.high_gate_rolloff_smoothing_V,
             self.high_gate_rolloff_decades_per_V,
+            self.source_drain_electron_barrier_asymmetry_eV,
+            self.electron_barrier_asymmetry_coupling,
+            self.electron_barrier_asymmetry_start_V,
+            self.electron_barrier_asymmetry_smoothing_V,
+            self.electron_barrier_asymmetry_max_decades,
             self.ambipolar_notch_center_V,
             self.ambipolar_notch_width_V,
             self.ambipolar_notch_depth_decades,
@@ -401,6 +411,14 @@ class WSe2CompactContactModel:
             raise ValueError("high_gate_rolloff_smoothing_V must be > 0")
         if self.high_gate_rolloff_decades_per_V < 0.0:
             raise ValueError("high_gate_rolloff_decades_per_V must be >= 0")
+        if self.source_drain_electron_barrier_asymmetry_eV < 0.0:
+            raise ValueError("source_drain_electron_barrier_asymmetry_eV must be >= 0")
+        if self.electron_barrier_asymmetry_coupling < 0.0:
+            raise ValueError("electron_barrier_asymmetry_coupling must be >= 0")
+        if self.electron_barrier_asymmetry_smoothing_V <= 0.0:
+            raise ValueError("electron_barrier_asymmetry_smoothing_V must be > 0")
+        if self.electron_barrier_asymmetry_max_decades < 0.0:
+            raise ValueError("electron_barrier_asymmetry_max_decades must be >= 0")
         if self.ambipolar_notch_width_V <= 0.0:
             raise ValueError("ambipolar_notch_width_V must be > 0")
         if self.ambipolar_notch_depth_decades < 0.0:
@@ -522,6 +540,47 @@ class WSe2CompactContactModel:
         )
         return 10.0 ** (-self.high_gate_rolloff_decades_per_V * excess)
 
+    def electron_barrier_asymmetry_factor(
+        self,
+        gate_voltage_V: float,
+        temperature_K: float,
+    ) -> float:
+        """Return source/drain electron-barrier asymmetry suppression.
+
+        Sentaurus WSe2 local profiles show that the hardest high-workfunction
+        branches are electron-current dominated at both contacts, but with a
+        large source/drain electron-barrier asymmetry.  This opt-in factor
+        converts that local barrier mismatch into a high-gate transport
+        bottleneck without using a branch-local residual LUT.
+        """
+        if not math.isfinite(gate_voltage_V) or not math.isfinite(temperature_K):
+            raise ValueError("gate_voltage_V and temperature_K must be finite")
+        if temperature_K <= 0.0:
+            raise ValueError("temperature_K must be > 0")
+        if (
+            self.source_drain_electron_barrier_asymmetry_eV == 0.0
+            or self.electron_barrier_asymmetry_coupling == 0.0
+            or self.electron_barrier_asymmetry_max_decades == 0.0
+        ):
+            return 1.0
+        arg = (
+            (gate_voltage_V - self.electron_barrier_asymmetry_start_V)
+            / self.electron_barrier_asymmetry_smoothing_V
+        )
+        arg = max(min(arg, 80.0), -80.0)
+        high_gate_weight = 1.0 / (1.0 + math.exp(-arg))
+        barrier_eV = (
+            self.source_drain_electron_barrier_asymmetry_eV
+            * self.electron_barrier_asymmetry_coupling
+            * high_gate_weight
+        )
+        suppression_decades = barrier_eV / (K_B_EV * temperature_K * math.log(10.0))
+        suppression_decades = min(
+            max(suppression_decades, 0.0),
+            self.electron_barrier_asymmetry_max_decades,
+        )
+        return 10.0 ** (-suppression_decades)
+
     def ambipolar_notch_factor(self, gate_voltage_V: float) -> float:
         """Return optional valley/filter suppression around an ambipolar crossover."""
         if not math.isfinite(gate_voltage_V):
@@ -605,6 +664,7 @@ class WSe2CompactContactModel:
             / 1.0e6
             * self.current_scale_A_per_um
             * self.high_gate_rolloff_factor(gate_voltage_V)
+            * self.electron_barrier_asymmetry_factor(gate_voltage_V, temperature_K)
             * self.ambipolar_notch_factor(gate_voltage_V)
             * self.ambipolar_recovery_factor(gate_voltage_V)
         )

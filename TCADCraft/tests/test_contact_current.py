@@ -54,6 +54,22 @@ class TestWSe2CompactContactResidualLut:
             rel=1e-12,
         )
 
+    def test_electron_barrier_asymmetry_is_opt_in_high_gate_suppression(self):
+        base = WSe2CompactContactModel()
+        asymmetric = WSe2CompactContactModel(
+            source_drain_electron_barrier_asymmetry_eV=0.5,
+            electron_barrier_asymmetry_coupling=0.1,
+            electron_barrier_asymmetry_start_V=1.0,
+            electron_barrier_asymmetry_smoothing_V=0.05,
+        )
+        assert asymmetric.abs_current_A_per_um(0.0, 0.5, 300.0) == pytest.approx(
+            base.abs_current_A_per_um(0.0, 0.5, 300.0),
+            rel=1e-6,
+        )
+        assert asymmetric.abs_current_A_per_um(1.5, 0.5, 300.0) < (
+            0.2 * base.abs_current_A_per_um(1.5, 0.5, 300.0)
+        )
+
 
 # ---------------------------------------------------------------------------
 # 1. SG analytic: uniform field drift current
