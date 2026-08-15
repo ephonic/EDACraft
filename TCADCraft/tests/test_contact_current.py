@@ -91,6 +91,21 @@ class TestWSe2CompactContactResidualLut:
             10.0 * base.abs_current_A_per_um(2.0, 0.5, 300.0)
         )
 
+    def test_second_electron_contact_bottleneck_is_independent(self):
+        base = WSe2CompactContactModel()
+        bottleneck = WSe2CompactContactModel(
+            electron_contact_bottleneck2_center_V=1.75,
+            electron_contact_bottleneck2_width_V=0.05,
+            electron_contact_bottleneck2_depth_decades=2.0,
+        )
+        assert bottleneck.abs_current_A_per_um(1.0, 0.5, 300.0) == pytest.approx(
+            base.abs_current_A_per_um(1.0, 0.5, 300.0),
+            rel=1e-6,
+        )
+        assert bottleneck.abs_current_A_per_um(1.75, 0.5, 300.0) < (
+            0.02 * base.abs_current_A_per_um(1.75, 0.5, 300.0)
+        )
+
     def test_electron_current_limit_smoothly_caps_high_current(self):
         base = WSe2CompactContactModel()
         low_gate_current = base.abs_current_A_per_um(0.0, 0.5, 300.0)
