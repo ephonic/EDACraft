@@ -152,6 +152,28 @@ def check_mixed_material_dashboard(dashboard_path: Path) -> list[str]:
     elif float(igzo.get("worst_branch_rmse_log_current_decades", 99.0)) > 0.25:
         errors.append("mixed dashboard IGZO selector error exceeds 0.25 decade")
 
+    wse2_compact = rows.get(("WSe2", "compact_contact_channel_scan"))
+    wse2_branch_selector = rows.get(("WSe2", "compact_branch_selector"))
+    if wse2_branch_selector is None:
+        errors.append("mixed dashboard WSe2 compact branch-selector row missing")
+    elif wse2_branch_selector.get("passed"):
+        errors.append("mixed dashboard WSe2 compact branch-selector unexpectedly passed")
+    elif wse2_branch_selector.get("status") != "compact_branch_selector_gap_open":
+        errors.append(
+            "mixed dashboard WSe2 compact branch-selector status changed: "
+            f"{wse2_branch_selector.get('status')!r}"
+        )
+    elif wse2_compact is not None and (
+        float(wse2_branch_selector.get("rmse_log_current_decades", 99.0))
+        >= float(wse2_compact.get("rmse_log_current_decades", -1.0))
+    ):
+        errors.append("mixed dashboard WSe2 compact branch-selector does not improve global RMSE")
+    elif wse2_compact is not None and (
+        float(wse2_branch_selector.get("worst_branch_rmse_log_current_decades", 99.0))
+        >= float(wse2_compact.get("worst_branch_rmse_log_current_decades", -1.0))
+    ):
+        errors.append("mixed dashboard WSe2 compact branch-selector does not improve worst-branch RMSE")
+
     wse2_compact_surrogate = rows.get(("WSe2", "compact_profile_surrogate"))
     if wse2_compact_surrogate is None:
         errors.append("mixed dashboard WSe2 compact/profile surrogate row missing")
@@ -167,10 +189,7 @@ def check_mixed_material_dashboard(dashboard_path: Path) -> list[str]:
     elif float(wse2_compact_surrogate.get("worst_branch_rmse_log_current_decades", 99.0)) > 0.25:
         errors.append("mixed dashboard WSe2 compact/profile surrogate exceeds worst-branch RMSE gate")
 
-    for key in (
-        ("WSe2", "compact_contact_channel_scan"),
-        ("WSe2", "wf4p9_vd0p5_notch_recovery"),
-    ):
+    for key in (("WSe2", "wf4p9_vd0p5_notch_recovery"),):
         row = rows.get(key)
         if row is None:
             errors.append(f"mixed dashboard WSe2 diagnostic row missing: {key[1]}")
@@ -181,6 +200,15 @@ def check_mixed_material_dashboard(dashboard_path: Path) -> list[str]:
                 f"mixed dashboard WSe2 diagnostic status changed for {key[1]}: "
                 f"{row.get('status')!r}"
             )
+    if wse2_compact is None:
+        errors.append("mixed dashboard WSe2 diagnostic row missing: compact_contact_channel_scan")
+    elif wse2_compact.get("passed"):
+        errors.append("mixed dashboard WSe2 diagnostic unexpectedly passed: compact_contact_channel_scan")
+    elif wse2_compact.get("status") != "diagnostic_not_full_device_pass":
+        errors.append(
+            "mixed dashboard WSe2 diagnostic status changed for compact_contact_channel_scan: "
+            f"{wse2_compact.get('status')!r}"
+        )
     wse2_gap = rows.get(("WSe2", "compact_full_device_gap_audit"))
     if wse2_gap is None:
         errors.append("mixed dashboard WSe2 compact/full-device gap audit row missing")
