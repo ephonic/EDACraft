@@ -338,6 +338,13 @@ class WSe2CompactContactModel:
     electron_barrier_asymmetry_start_V: float = 1.2
     electron_barrier_asymmetry_smoothing_V: float = 0.20
     electron_barrier_asymmetry_max_decades: float = 12.0
+    electron_contact_bottleneck_center_V: float = 1.0e9
+    electron_contact_bottleneck_width_V: float = 0.20
+    electron_contact_bottleneck_depth_decades: float = 0.0
+    electron_contact_bottleneck_recovery_center_V: float = 1.0e9
+    electron_contact_bottleneck_recovery_width_V: float = 0.12
+    electron_contact_bottleneck_recovery_gain_decades: float = 0.0
+    electron_current_limit_A_per_um: float = 1.0e300
     ambipolar_notch_center_V: float = 1.0e9
     ambipolar_notch_width_V: float = 0.25
     ambipolar_notch_depth_decades: float = 0.0
@@ -375,6 +382,13 @@ class WSe2CompactContactModel:
             self.electron_barrier_asymmetry_start_V,
             self.electron_barrier_asymmetry_smoothing_V,
             self.electron_barrier_asymmetry_max_decades,
+            self.electron_contact_bottleneck_center_V,
+            self.electron_contact_bottleneck_width_V,
+            self.electron_contact_bottleneck_depth_decades,
+            self.electron_contact_bottleneck_recovery_center_V,
+            self.electron_contact_bottleneck_recovery_width_V,
+            self.electron_contact_bottleneck_recovery_gain_decades,
+            self.electron_current_limit_A_per_um,
             self.ambipolar_notch_center_V,
             self.ambipolar_notch_width_V,
             self.ambipolar_notch_depth_decades,
@@ -419,6 +433,20 @@ class WSe2CompactContactModel:
             raise ValueError("electron_barrier_asymmetry_smoothing_V must be > 0")
         if self.electron_barrier_asymmetry_max_decades < 0.0:
             raise ValueError("electron_barrier_asymmetry_max_decades must be >= 0")
+        if self.electron_contact_bottleneck_width_V <= 0.0:
+            raise ValueError("electron_contact_bottleneck_width_V must be > 0")
+        if self.electron_contact_bottleneck_depth_decades < 0.0:
+            raise ValueError("electron_contact_bottleneck_depth_decades must be >= 0")
+        if self.electron_contact_bottleneck_depth_decades > 12.0:
+            raise ValueError("electron_contact_bottleneck_depth_decades must be <= 12")
+        if self.electron_contact_bottleneck_recovery_width_V <= 0.0:
+            raise ValueError("electron_contact_bottleneck_recovery_width_V must be > 0")
+        if self.electron_contact_bottleneck_recovery_gain_decades < 0.0:
+            raise ValueError("electron_contact_bottleneck_recovery_gain_decades must be >= 0")
+        if self.electron_contact_bottleneck_recovery_gain_decades > 12.0:
+            raise ValueError("electron_contact_bottleneck_recovery_gain_decades must be <= 12")
+        if self.electron_current_limit_A_per_um <= 0.0:
+            raise ValueError("electron_current_limit_A_per_um must be > 0")
         if self.ambipolar_notch_width_V <= 0.0:
             raise ValueError("ambipolar_notch_width_V must be > 0")
         if self.ambipolar_notch_depth_decades < 0.0:
@@ -581,6 +609,52 @@ class WSe2CompactContactModel:
         )
         return 10.0 ** (-suppression_decades)
 
+    def electron_contact_bottleneck_factor(self, gate_voltage_V: float) -> float:
+        """Return optional local electron contact-window bottleneck factor.
+
+        This second, opt-in gate window is separate from the ambipolar notch.
+        Sentaurus WSe2 profiles show hard high-workfunction branches with a
+        mid/high-gate electron contact valley followed by recovery.  The
+        Gaussian bottleneck plus logistic recovery captures that local contact
+        window without requiring a branch-local residual LUT.
+        """
+        if not math.isfinite(gate_voltage_V):
+            raise ValueError("gate_voltage_V must be finite")
+        correction_decades = 0.0
+        if self.electron_contact_bottleneck_depth_decades != 0.0:
+            normalized = (
+                (gate_voltage_V - self.electron_contact_bottleneck_center_V)
+                / self.electron_contact_bottleneck_width_V
+            )
+            correction_decades -= (
+                self.electron_contact_bottleneck_depth_decades
+                * math.exp(-0.5 * normalized * normalized)
+            )
+        if self.electron_contact_bottleneck_recovery_gain_decades != 0.0:
+            arg = (
+                (
+                    gate_voltage_V
+                    - self.electron_contact_bottleneck_recovery_center_V
+                )
+                / self.electron_contact_bottleneck_recovery_width_V
+            )
+            arg = max(min(arg, 80.0), -80.0)
+            correction_decades += (
+                self.electron_contact_bottleneck_recovery_gain_decades
+                / (1.0 + math.exp(-arg))
+            )
+        return 10.0 ** correction_decades
+
+    def electron_current_limit(self, electron_current_A_per_um: float) -> float:
+        """Apply an optional smooth contact/series current limit."""
+        if electron_current_A_per_um < 0.0:
+            raise ValueError("electron_current_A_per_um must be >= 0")
+        if self.electron_current_limit_A_per_um >= 1.0e299:
+            return electron_current_A_per_um
+        return electron_current_A_per_um / (
+            1.0 + electron_current_A_per_um / self.electron_current_limit_A_per_um
+        )
+
     def ambipolar_notch_factor(self, gate_voltage_V: float) -> float:
         """Return optional valley/filter suppression around an ambipolar crossover."""
         if not math.isfinite(gate_voltage_V):
@@ -665,9 +739,11 @@ class WSe2CompactContactModel:
             * self.current_scale_A_per_um
             * self.high_gate_rolloff_factor(gate_voltage_V)
             * self.electron_barrier_asymmetry_factor(gate_voltage_V, temperature_K)
+            * self.electron_contact_bottleneck_factor(gate_voltage_V)
             * self.ambipolar_notch_factor(gate_voltage_V)
             * self.ambipolar_recovery_factor(gate_voltage_V)
         )
+        electron_current = self.electron_current_limit(electron_current)
         if self.hole_current_scale == 0.0:
             return electron_current * self.residual_lut_factor(gate_voltage_V)
         hole_A = abs(

@@ -70,6 +70,40 @@ class TestWSe2CompactContactResidualLut:
             0.2 * base.abs_current_A_per_um(1.5, 0.5, 300.0)
         )
 
+    def test_electron_contact_bottleneck_is_local_and_recovers(self):
+        base = WSe2CompactContactModel()
+        bottleneck = WSe2CompactContactModel(
+            electron_contact_bottleneck_center_V=1.6,
+            electron_contact_bottleneck_width_V=0.1,
+            electron_contact_bottleneck_depth_decades=3.0,
+            electron_contact_bottleneck_recovery_center_V=1.85,
+            electron_contact_bottleneck_recovery_width_V=0.08,
+            electron_contact_bottleneck_recovery_gain_decades=2.0,
+        )
+        assert bottleneck.abs_current_A_per_um(0.5, 0.5, 300.0) == pytest.approx(
+            base.abs_current_A_per_um(0.5, 0.5, 300.0),
+            rel=1e-6,
+        )
+        assert bottleneck.abs_current_A_per_um(1.6, 0.5, 300.0) < (
+            2.0e-3 * base.abs_current_A_per_um(1.6, 0.5, 300.0)
+        )
+        assert bottleneck.abs_current_A_per_um(2.0, 0.5, 300.0) > (
+            10.0 * base.abs_current_A_per_um(2.0, 0.5, 300.0)
+        )
+
+    def test_electron_current_limit_smoothly_caps_high_current(self):
+        base = WSe2CompactContactModel()
+        low_gate_current = base.abs_current_A_per_um(0.0, 0.5, 300.0)
+        high_gate_current = base.abs_current_A_per_um(2.0, 0.5, 300.0)
+        limited = WSe2CompactContactModel(
+            electron_current_limit_A_per_um=0.5 * high_gate_current,
+        )
+        low_ratio = limited.abs_current_A_per_um(0.0, 0.5, 300.0) / low_gate_current
+        high_ratio = limited.abs_current_A_per_um(2.0, 0.5, 300.0) / high_gate_current
+        assert 0.75 < low_ratio < 1.0
+        assert high_ratio == pytest.approx(1.0 / 3.0, rel=1e-12)
+        assert high_ratio < low_ratio
+
 
 # ---------------------------------------------------------------------------
 # 1. SG analytic: uniform field drift current
