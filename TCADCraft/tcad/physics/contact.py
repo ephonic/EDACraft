@@ -339,6 +339,7 @@ class WSe2CompactContactModel:
     ambipolar_recovery_center_V: float = 1.0e9
     ambipolar_recovery_width_V: float = 0.25
     ambipolar_recovery_gain_decades: float = 0.0
+    log_residual_lut: tuple[tuple[float, float], ...] = ()
     current_scale_A_per_um: float = 0.3120162936636294
 
     def __post_init__(self) -> None:
@@ -410,6 +411,18 @@ class WSe2CompactContactModel:
             raise ValueError("ambipolar_recovery_gain_decades must be >= 0")
         if self.current_scale_A_per_um <= 0.0:
             raise ValueError("current_scale_A_per_um must be > 0")
+        previous_gate = -math.inf
+        for gate_voltage, correction_decades in self.log_residual_lut:
+            if not (
+                math.isfinite(gate_voltage)
+                and math.isfinite(correction_decades)
+            ):
+                raise ValueError("log_residual_lut entries must be finite")
+            if gate_voltage <= previous_gate:
+                raise ValueError("log_residual_lut gate voltages must be strictly increasing")
+            if abs(correction_decades) > 12.0:
+                raise ValueError("log_residual_lut corrections must be within +/-12 decades")
+            previous_gate = gate_voltage
 
     @staticmethod
     def _softplus(value: float) -> float:
@@ -538,6 +551,42 @@ class WSe2CompactContactModel:
         recovery = 1.0 / (1.0 + math.exp(-arg))
         return 10.0 ** (self.ambipolar_recovery_gain_decades * recovery)
 
+    def residual_lut_correction_decades(self, gate_voltage_V: float) -> float:
+        """Return branch-local Sentaurus residual correction in log-current space.
+
+        The LUT is intentionally explicit and opt-in.  It is useful for
+        profile-calibrated WSe2 deck replay, but it should not be interpreted
+        as a transferable physics model outside the calibrated branch grid.
+        """
+        if not math.isfinite(gate_voltage_V):
+            raise ValueError("gate_voltage_V must be finite")
+        if not self.log_residual_lut:
+            return 0.0
+        points = self.log_residual_lut
+        if gate_voltage_V <= points[0][0]:
+            return points[0][1]
+        if gate_voltage_V >= points[-1][0]:
+            return points[-1][1]
+        lo = 0
+        hi = len(points) - 1
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if points[mid][0] <= gate_voltage_V:
+                lo = mid
+            else:
+                hi = mid
+        x0, y0 = points[lo]
+        x1, y1 = points[hi]
+        if x1 <= x0:
+            return 0.5 * (y0 + y1)
+        fraction = (gate_voltage_V - x0) / (x1 - x0)
+        return y0 + fraction * (y1 - y0)
+
+    def residual_lut_factor(self, gate_voltage_V: float) -> float:
+        """Return the multiplicative factor from the log residual LUT."""
+        correction = self.residual_lut_correction_decades(gate_voltage_V)
+        return 10.0 ** correction
+
     def abs_current_A_per_um(
         self,
         gate_voltage_V: float,
@@ -560,13 +609,14 @@ class WSe2CompactContactModel:
             * self.ambipolar_recovery_factor(gate_voltage_V)
         )
         if self.hole_current_scale == 0.0:
-            return electron_current
+            return electron_current * self.residual_lut_factor(gate_voltage_V)
         hole_A = abs(
             self.hole_contact_model(gate_voltage_V, drain_voltage_V).current(
                 abs(drain_voltage_V), temperature_K, include_tunneling
             )
         )
-        return electron_current + hole_A / 1.0e6 * self.hole_current_scale
+        total = electron_current + hole_A / 1.0e6 * self.hole_current_scale
+        return total * self.residual_lut_factor(gate_voltage_V)
 
 
 @dataclass(frozen=True)

@@ -152,6 +152,21 @@ def check_mixed_material_dashboard(dashboard_path: Path) -> list[str]:
     elif float(igzo.get("worst_branch_rmse_log_current_decades", 99.0)) > 0.25:
         errors.append("mixed dashboard IGZO selector error exceeds 0.25 decade")
 
+    wse2_compact_surrogate = rows.get(("WSe2", "compact_profile_surrogate"))
+    if wse2_compact_surrogate is None:
+        errors.append("mixed dashboard WSe2 compact/profile surrogate row missing")
+    elif not wse2_compact_surrogate.get("passed"):
+        errors.append("mixed dashboard WSe2 compact/profile surrogate is not passed")
+    elif wse2_compact_surrogate.get("status") != "deck_local_surrogate_pass":
+        errors.append(
+            "mixed dashboard WSe2 compact/profile surrogate status changed: "
+            f"{wse2_compact_surrogate.get('status')!r}"
+        )
+    elif float(wse2_compact_surrogate.get("rmse_log_current_decades", 99.0)) > 0.25:
+        errors.append("mixed dashboard WSe2 compact/profile surrogate exceeds global RMSE gate")
+    elif float(wse2_compact_surrogate.get("worst_branch_rmse_log_current_decades", 99.0)) > 0.25:
+        errors.append("mixed dashboard WSe2 compact/profile surrogate exceeds worst-branch RMSE gate")
+
     for key in (
         ("WSe2", "compact_contact_channel_scan"),
         ("WSe2", "wf4p9_vd0p5_notch_recovery"),

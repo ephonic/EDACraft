@@ -27,9 +27,32 @@ from tcad.postprocess import (
     contact_current_1d,
     extract_transfer_characteristics_current,
 )
+from tcad.physics.contact import WSe2CompactContactModel
 
 QE = 1.602176634e-19
 VT_300 = 8.617333262e-5 * 300.0
+
+
+class TestWSe2CompactContactResidualLut:
+    def test_empty_residual_lut_preserves_default_current(self):
+        base = WSe2CompactContactModel()
+        explicit_empty = WSe2CompactContactModel(log_residual_lut=())
+        for vg in (0.0, 0.5, 1.0):
+            assert explicit_empty.abs_current_A_per_um(vg, 0.5, 300.0) == pytest.approx(
+                base.abs_current_A_per_um(vg, 0.5, 300.0),
+                rel=1e-15,
+            )
+
+    def test_log_residual_lut_interpolates_in_decades(self):
+        base = WSe2CompactContactModel()
+        corrected = WSe2CompactContactModel(
+            log_residual_lut=((0.0, 0.0), (1.0, 2.0)),
+        )
+        assert corrected.residual_lut_correction_decades(0.5) == pytest.approx(1.0)
+        assert corrected.abs_current_A_per_um(0.5, 0.5, 300.0) == pytest.approx(
+            10.0 * base.abs_current_A_per_um(0.5, 0.5, 300.0),
+            rel=1e-12,
+        )
 
 
 # ---------------------------------------------------------------------------
