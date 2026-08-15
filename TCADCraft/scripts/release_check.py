@@ -170,22 +170,40 @@ def check_mixed_material_dashboard(dashboard_path: Path) -> list[str]:
     if wse2_gap is None:
         errors.append("mixed dashboard WSe2 compact/full-device gap audit row missing")
     elif wse2_gap.get("passed"):
-        errors.append("mixed dashboard WSe2 compact/full-device gap audit unexpectedly passed")
-    elif wse2_gap.get("status") != "diagnostic_gap_open":
+        errors.append("mixed dashboard WSe2 legacy compact/full-device gap audit unexpectedly passed")
+    elif wse2_gap.get("status") != "diagnostic_not_full_device_pass":
         errors.append(
-            "mixed dashboard WSe2 compact/full-device gap audit status changed: "
+            "mixed dashboard WSe2 legacy compact/full-device gap audit status changed: "
             f"{wse2_gap.get('status')!r}"
         )
+    wse2_profile_gap = rows.get(("WSe2", "profile_constrained_gap_audit"))
+    if wse2_profile_gap is None:
+        errors.append("mixed dashboard WSe2 profile-constrained gap audit row missing")
+    elif not wse2_profile_gap.get("passed"):
+        errors.append("mixed dashboard WSe2 profile-constrained gap audit is not passed")
+    elif wse2_profile_gap.get("status") != "closed":
+        errors.append(
+            "mixed dashboard WSe2 profile-constrained gap audit status is not closed: "
+            f"{wse2_profile_gap.get('status')!r}"
+        )
+    elif float(wse2_profile_gap.get("rmse_log_current_decades", 99.0)) > 0.25:
+        errors.append("mixed dashboard WSe2 profile-constrained gap audit exceeds global RMSE gate")
+    elif float(wse2_profile_gap.get("worst_branch_rmse_log_current_decades", 99.0)) > 0.25:
+        errors.append("mixed dashboard WSe2 profile-constrained gap audit exceeds worst-branch RMSE gate")
     wse2_two_window = rows.get(("WSe2", "two_window_terminal_fit"))
     if wse2_two_window is None:
-        errors.append("mixed dashboard WSe2 two-window diagnostic row missing")
-    elif wse2_two_window.get("passed"):
-        errors.append("mixed dashboard WSe2 two-window diagnostic unexpectedly passed")
-    elif wse2_two_window.get("status") != "diagnostic_not_full_device_pass":
+        errors.append("mixed dashboard WSe2 two-window row missing")
+    elif not wse2_two_window.get("passed"):
+        errors.append("mixed dashboard WSe2 two-window row is not passed")
+    elif wse2_two_window.get("status") != "passed":
         errors.append(
-            "mixed dashboard WSe2 two-window diagnostic status changed: "
+            "mixed dashboard WSe2 two-window passed row has non-passed status: "
             f"{wse2_two_window.get('status')!r}"
         )
+    elif float(wse2_two_window.get("rmse_log_current_decades", 99.0)) > 0.25:
+        errors.append("mixed dashboard WSe2 two-window row exceeds global RMSE gate")
+    elif float(wse2_two_window.get("worst_branch_rmse_log_current_decades", 99.0)) > 0.25:
+        errors.append("mixed dashboard WSe2 two-window row exceeds worst-branch RMSE gate")
     return errors
 
 
