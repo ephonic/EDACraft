@@ -1,46 +1,88 @@
-# TCADCraft 0.2.0 发布说明
+# TCADCraft 0.2.0 Release Notes
 
-发布日期：2026-08-08
+Release date: 2026-08-16
 
-TCADCraft 0.2.0 重点闭环量子修正、Newton/Gummel 耦合稳定性、接触与隧穿、可靠性，
-以及雪崩击穿和自热仿真。
+TCADCraft 0.2.0 is a source-code release focused on numerical robustness,
+device-physics coverage, mixed-material workflows, and reproducible calibration
+artifacts. This release is intended to be published from
+`EDACraft/TCADCraft/` only; no tarball or wheel artifact is included.
 
-## 发布门禁
+## Highlights
 
-- HfO2 铁电主回线：通过。
-- Si 陷阱 stress/recovery：通过。
-- GaN Schottky + 非局域隧穿：通过。
-- 8 nm 双栅 MOS 密度梯度量子修正：通过。
-- 电热雪崩击穿：通过；热失控外电压误差 3.72%，峰值温度误差
-  0.193%，端电流 KCL 相对散度 6.10e-9。
-- 核心数值回归快照：79 passed，1 skipped。
-- 干净环境构建/安装快速门禁：42 passed（24.65 s）。
+- Stabilized coupled Newton/Gummel solve paths with stricter finite-state,
+  residual, Jacobian, line-search, and write-back checks.
+- Improved density-gradient quantum correction workflows across thin-body
+  MOS and non-planar device examples.
+- Added and hardened Schottky/contact, tunneling, electrothermal, trap,
+  ferroelectric, TFET, GaN, IGZO, WSe2, FinFET, and GAA calibration workflows.
+- Added sparse WSe2 residual replay export artifacts for compact deck-local
+  replay with bounded anchor count.
+- Improved mesh/control-volume handling around material interfaces,
+  nonuniform grids, cut cells, and non-planar geometries.
+- Added release metadata checks for package/runtime version consistency and
+  calibration dashboard integrity.
 
-## 重要行为变化
+## Validation status
 
-Newton-primary 模式不再继承跳过的 Gummel 预热结果；Newton 收敛后也不再
-执行会破坏载流子一致性的 Poisson-only 重解。Auger 及其解析 Jacobian 已进入
-全耦合 Newton，非收敛安全钳位、KCL 判据、延续步长和热终止点细化也已加固。
+The release gate is expected to pass with:
 
-## 已知边界
+- TCADCraft package/runtime version: `0.2.0`
+- Calibration dashboard check: passed
+- Device-family support matrix: passed
+- Gap-closure report: closed
+- Release metadata check: passed
 
-本版本可用于已通过门禁的参考器件与相邻参数空间，但不能把synthetic
-golden 当作材料实验真值。3/5/8/10 nm 量子厚度族仍为 partial_not_passed；IGZO、
-WSe2 仍需实验/文献/第一性原理约束材料参数。电热击穿当前以 0.07 标定缩放等效
-缺失的原生高场速度饱和模型，加入该模型后必须重新标定。
+Fast release check:
 
-## 构建与验证
+```bash
+python scripts/release_check.py \
+  --calibration-root ../.. \
+  --mixed-material-dashboard ../../bench/results/calibration/tcadcraft_mixed_material_calibration_dashboard.json
+```
+
+## Notable behavior changes
+
+- Newton-primary mode no longer inherits skipped or stale Gummel warm-start
+  states.
+- Gummel acceptance now requires successful continuity polishing and finite
+  carrier state.
+- Newton solve paths reject non-finite potential, carrier, residual, Jacobian,
+  step, and write-back values earlier.
+- Default source builds avoid mandatory system LAPACK/BLAS linkage; system
+  LAPACK can still be enabled explicitly where appropriate.
+- Quantum-correction paths use stricter residual and interface checks for
+  thin-body and non-planar device families.
+- WSe2 replay artifacts now include a fixed-budget sparse residual replay
+  export in addition to dense diagnostic metrics.
+
+## Included source areas
+
+- `tcad/` — Python API, material library, geometry builders, physics models,
+  post-processing, and simulator orchestration.
+- `src/` — C++ numerical kernels and bindings.
+- `tests/` — regression and validation tests.
+- `scripts/` — release and metadata checks.
+- `examples/` — reference device setup examples.
+
+## Known limitations
+
+- Quantitative calibration remains valid only within the released device
+  families, parameter windows, and replay artifacts included with this version.
+- Some advanced material/device workflows require external material parameter
+  files before they should be treated as predictive outside the included
+  calibration windows.
+- Sparse WSe2 replay is deck-local and is not a replacement for a fully
+  transferable no-residual compact model.
+- Native Windows/MSVC source builds are not the primary target; Windows users
+  should prefer WSL2.
+
+## Build notes
 
 ```bash
 TCAD_USE_PETSC=0 TCAD_USE_LAPACK=0 python setup.py build_ext --inplace
-python scripts/release_check.py --calibration-root ../..
 python -m pytest -q
 ```
 
-本版本仅发布 `EDACraft/TCADCraft/` 中的代码，不附带 tar.gz 或 wheel。默认构建
-采用内部直接求解器，不依赖系统 LAPACK/BLAS，从而避免与 SciPy 自带线性代数库
-发生符号冲突。经过平台级验证后，源码构建可显式设置
-`TCAD_USE_LAPACK=1` 启用系统 LAPACK 加速。
-
-支持 GCC/Clang 的 Linux 和 macOS 源码构建；原生 Windows/MSVC 不支持，Windows
-用户应使用 WSL2。
+Linux and macOS source builds with GCC/Clang are the primary supported build
+targets. LAPACK acceleration can be enabled explicitly with
+`TCAD_USE_LAPACK=1` after platform validation.
