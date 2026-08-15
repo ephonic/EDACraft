@@ -7,7 +7,7 @@ Semantic Versioning, and dates use ISO 8601.
 
 ### Added
 
-- Sentaurus W-2024.09 calibration replays for HfO2 ferroelectric hysteresis,
+- Calibration for HfO2 ferroelectric hysteresis,
   silicon trap stress/recovery, GaN Schottky nonlocal tunneling, 8 nm
   density-gradient confinement, and electrothermal avalanche breakdown.
 - A pure-Python Sentaurus response-model loader for emerging-material

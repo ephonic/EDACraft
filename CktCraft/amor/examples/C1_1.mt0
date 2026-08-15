@@ -1,4 +1,0 @@
-$DATA1 SOURCE='HSPICE' VERSION='A-2008.03 32-BIT'
-.TITLE '*.circuit c1'
- to69r            to69f            temper           alter#            
-  7.169e-09        6.670e-09         25.0000           1.0000         

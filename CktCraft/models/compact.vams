@@ -1,2 +1,0 @@
-// compact.vams — 兼容层占位（ekv.va 引用； disciplines/constants 已覆盖其内容）
-// 老 VA 工具的标准定义文件，本编译器中 disciplines.vams + constants.vams 已提供等价定义。
