@@ -60,40 +60,148 @@ sim, results = simulate_device(
 )
 ```
 
-## Device Simulation Methods
+## Device Recipes
 
-### Planar MOSFET
+### Bulk MOSFET
 
-Use `Device.mosfet(...)` with `simulate_device()` for a single bias point or
-`simulate_sweep()` for `Id-Vg` / `Id-Vd` curves.
+Use `Device.mosfet(...)` for a planar body MOSFET. This is the easiest entry
+point for transfer curves and basic electrostatics.
 
-Recommended controls:
+Typical workflow:
 
-- `set_quantum(True)` for thin bodies
-- `set_newton_options(...)` for strong inversion
-- `ramp_steps > 1` for high bias sweeps
+```python
+import numpy as np
+from tcad import Device, simulate_sweep
+from tcad.postprocess.metrics import extract_transfer_characteristics_current
+from tcad.viz.plotter import plot_transfer
 
-### FinFET, GAA, BSPDN GAA
+dev = Device.mosfet(
+    Lg=50e-9, tox=1.5e-9, tsi=20e-9, W=100e-9, Lsd=50e-9,
+    Vd=0.5, Vs=0.0,
+)
+sim, sweep = simulate_sweep(
+    dev,
+    {"gate": np.linspace(0.0, 0.8, 17)},
+    resolution=(2e-9, 5e-9, 1e-9),
+    quantum=True,
+    ramp_steps=3,
+    max_iter=80,
+    tol=1e-8,
+)
+metrics = extract_transfer_characteristics_current(sim, sweep)
+plot_transfer(metrics["Vg"], metrics["Id"], Vth=metrics["Vth"])
+```
 
-Use `Device.finfet(...)`, `Device.gaa(...)`, `Device.gaa_highk(...)`, or
-`Device.bspdn_gaa(...)`.
+When you want a single bias point instead of a sweep, call `simulate_device()`
+with the same template and a fixed `Vg` / `Vd`.
 
-Recommended controls:
+### FinFET
 
-- `set_quantum(True)`
-- `set_density_gradient_silicon_multivalley(...)` for Si nanosheets
-- `enable_cut_cell(True)` when interfaces cut through a structured grid
-- `set_solver_type(...)` if you want to force a backend
+Use `Device.finfet(...)` for a double-gate fin device. The mesh should be
+finer across the fin thickness than along the channel.
+
+```python
+from tcad import Device, Simulator
+from tcad.mesh.generator import structured_mesh_from_device
+from tcad.viz.plotter import plot_mesh_slice
+
+device = Device.finfet(
+    Lg=30e-9, tox=1.5e-9, tsi=10e-9, Hfin=30e-9,
+    Lsd=30e-9, tgate=10e-9, Vg=0.7, Vd=0.1,
+)
+mesh = structured_mesh_from_device(device, resolution=(5e-9, 2.5e-9, 5e-9))
+sim = Simulator(mesh, temperature=300.0)
+sim.set_material_from_mesh()
+for name, (_, voltage) in device.contacts.items():
+    sim.set_contact(name, voltage)
+results = sim.run(max_iter=120, tol=1e-8)
+for name, data in sim.to_mesh_fields().items():
+    sim.mesh.add_field(name, sim.mesh.from_3d(data))
+plot_mesh_slice(sim.mesh, field="phi", axis="z", coord=15e-9)
+```
+
+For thin fins, keep `quantum=True` and consider `set_newton_options(...)` when
+the drain bias is high.
+
+### GAA And Nanosheet
+
+Use `Device.gaa(...)` for a silicon nanosheet and `Device.gaa_highk(...)` when
+you want a high-k gate stack. For silicon nanosheets, enable the multivalley
+density-gradient closure.
+
+```python
+from tcad import Device, Simulator
+from tcad.mesh.generator import structured_mesh_from_device
+
+device = Device.gaa(
+    Lg=20e-9, tox=1.5e-9, t_sheet=5e-9, W_sheet=30e-9,
+    Lsd=30e-9, Vg=0.7, Vd=0.05,
+)
+mesh = structured_mesh_from_device(device, resolution=(5e-9, 2.5e-9, 2.5e-9))
+sim = Simulator(mesh, temperature=300.0)
+sim.set_material_from_mesh()
+sim.set_quantum(True)
+sim.set_density_gradient_silicon_multivalley(True)
+sim.enable_cut_cell(True)
+for name, (_, voltage) in device.contacts.items():
+    sim.set_contact(name, voltage)
+results = sim.run(max_iter=120, tol=1e-8)
+```
+
+This is the right starting point for nanosheet transfer curves, DG comparison,
+and quantum confinement studies.
+
+### GaN
+
+TCADCraft currently provides GaN as a material library entry via
+`tcad.material.library.gallium_nitride()`. There is no one-line `Device.gan()`
+helper yet, so GaN devices are built as custom `Device` objects.
+
+The most direct workflow is a vertical Schottky diode or Schottky-contact
+stack:
+
+```python
+from tcad import Device, Simulator
+from tcad.geometry import Region
+from tcad.geometry.shapes import Box
+from tcad.material.library import gallium_nitride
+from tcad.mesh.generator import structured_mesh_from_device
+
+gan = gallium_nitride()
+device = Device("gan_schottky")
+device.add_region(Region("gan", Box(0, 100e-9, 0, 10e-9, 0, 10e-9), gan))
+device.add_contact("anode", Box(0, 100e-9, 0, 10e-9, 9e-9, 10e-9), voltage=0.0,
+                   workfunction=4.8)
+device.add_contact("cathode", Box(0, 100e-9, 0, 10e-9, -1e-9, 0.0), voltage=0.0)
+
+mesh = structured_mesh_from_device(device, nx=9, ny=3, nz=5)
+sim = Simulator(mesh, temperature=300.0)
+sim.set_material_from_mesh()
+sim.set_contact("anode", 0.3, workfunction=4.8)
+sim.set_contact("cathode", 0.0)
+sim.set_schottky_tunneling(
+    "anode",
+    effective_mass_ratio=0.20,
+    area_m2=1.0e-13,
+    tunneling_barrier_lowering_eV=0.0928,
+    series_resistance_ohm=1360.0,
+)
+results = sim.run(max_iter=80, tol=1e-8)
+```
+
+For GaN pn structures, use `gallium_nitride()` in custom `Region`s and apply
+the same `Simulator` / `simulate_device()` flow.
 
 ### TFET And Tunnel Diode
 
-Use `Device.tfet(...)` or `Device.tunnel_diode(...)`.
+Use `Device.tfet(...)` or `Device.tunnel_diode(...)` and keep voltage steps
+small.
 
 Recommended controls:
 
 - `set_btbt(enabled=True, use_nonlocal=True)` for source-channel tunneling
 - `set_btbt_weight(...)` if you want to gate the BTBT source region
-- `simulate_sweep(...)` with small voltage steps
+- `simulate_sweep(...)` with small voltage increments
 
 For tunnel diode NDR analysis, use `extract_ndr_metrics(...)`.
 
@@ -137,39 +245,6 @@ Recommended controls:
 - `run_adaptive(...)` for solve-refine-resolve loops
 - `set_transient(dt, t_final, fe_gamma=0.0)` plus `run_transient(...)`
 - `set_thermal_coupling(True, ...)` for self-heating studies
-
-## Common Recipes
-
-### Transfer Sweep
-
-```python
-import numpy as np
-from tcad import Device, simulate_sweep
-from tcad.postprocess.metrics import extract_transfer_characteristics_current
-
-dev = Device.mosfet(Vd=0.5)
-sim, sweep = simulate_sweep(
-    dev,
-    {"gate": np.linspace(0.0, 0.8, 17)},
-    resolution=(5e-9, 5e-9, 5e-9),
-    ramp_steps=3,
-    quantum=False,
-)
-
-metrics = extract_transfer_characteristics_current(sim, sweep)
-print(metrics["Vth"], metrics["SS"], metrics["Ion_Ioff"])
-```
-
-### Mesh Slices And Export
-
-```python
-from tcad.viz.plotter import plot_mesh_slice, plot_transfer
-
-fields = sim.to_mesh_fields()
-plot_mesh_slice(sim.mesh, field="phi", axis="y", coord=5e-9)
-plot_transfer(metrics["Vg"], metrics["Id"], Vth=metrics["Vth"])
-sim.save("mosfet.vtk")
-```
 
 ## How To View Results
 
@@ -258,5 +333,8 @@ Key `Simulator` methods:
 - The package version is `0.2.0`.
 - `simulate_device()` is the easiest entry point for single-device runs.
 - `simulate_sweep()` is the normal entry point for transfer curves.
+- Useful examples: `examples/mosfet_simulation.py`,
+  `examples/finfet_simulation.py`, `examples/finfet_gaa_simulation.py`,
+  `examples/pn_junction.py`, `examples/graphene_source_tfet.py`.
 - See `examples/` for device-specific scripts and `tests/` for regression
   coverage.
