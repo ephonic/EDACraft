@@ -153,6 +153,48 @@ class TestCutCellEdgePermittivity:
         # Same-material edges return the plain harmonic mean = eps (since equal).
         assert abs(ep[0] - eps_si) / eps_si < 1e-9
 
+    @staticmethod
+    def _half_space(boundary, include_left):
+        class HalfSpace:
+            def contains(self, x, y, z):
+                values = np.asarray(x)
+                return values <= boundary if include_left else values > boundary
+
+        return HalfSpace()
+
+    @pytest.mark.parametrize(
+        "boundary, expected_side",
+        ((0.0, "oxide"), (1.0e-9, "silicon")),
+    )
+    def test_material_side_endpoint_uses_whole_edge_material(
+        self, boundary, expected_side
+    ):
+        """An interface at an edge endpoint must not insert half a material."""
+        from tcad.mesh.cut_cell import compute_edge_permittivity
+
+        grid = StructuredGrid(
+            bbox=((0.0, 1.0e-9), (0.0, 0.1e-9), (0.0, 0.1e-9)),
+            nx=2,
+            ny=1,
+            nz=1,
+        )
+        eps0 = 8.854187817e-12
+        eps_si = 11.7 * eps0
+        eps_ox = 3.9 * eps0
+        eps = np.asarray([eps_si, eps_ox])
+        material_id = np.asarray([0, 1], dtype=np.int32)
+        shapes = [
+            (self._half_space(boundary, True), 0),
+            (self._half_space(boundary, False), 1),
+        ]
+
+        edge = compute_edge_permittivity(
+            grid, eps, material_id, shapes=shapes, n_samples=5
+        )
+        expected = eps_ox if expected_side == "oxide" else eps_si
+        assert edge["x_plus"][0] == pytest.approx(expected)
+        assert edge["x_minus"][1] == pytest.approx(expected)
+
 
 # ===========================================================================
 # Bug 3 regression: adaptive refiner axis correctness

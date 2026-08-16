@@ -162,6 +162,10 @@ class AdaptiveRefiner:
             for i in idx
         ]
         new_grid.build_node_array()
+        new_grid._material_shapes = [
+            (region.shape, rid)
+            for rid, region in enumerate(self.device.regions)
+        ]
 
         # Re-sample fields (node-ordered coords)
         sampled = self.device.sample_on_grid(new_grid._flat_x, new_grid._flat_y, new_grid._flat_z)
@@ -453,6 +457,10 @@ class AdaptiveRefiner:
             for i in idx
         ]
         new_grid.build_node_array()
+        new_grid._material_shapes = [
+            (region.shape, rid)
+            for rid, region in enumerate(self.device.regions)
+        ]
 
         # Re-sample device fields (node-ordered coords)
         sampled = self.device.sample_on_grid(new_grid._flat_x, new_grid._flat_y, new_grid._flat_z)

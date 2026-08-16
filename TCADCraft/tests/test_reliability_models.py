@@ -40,6 +40,25 @@ class TestTrapKinetics:
         fast.advance(np.ones(2), 1e8, 0.1)
         assert np.mean(fast.occupancy) > np.mean(slow.occupancy)
 
+    def test_poole_frenkel_barrier_lowering_uses_temperature_and_epsilon(self):
+        base = TrapKinetics(
+            1e23, capture_tau=10.0, emission_tau=10.0,
+            poole_frenkel_epsilon_r=3.9,
+        )
+        hot = TrapKinetics(
+            1e23, capture_tau=10.0, emission_tau=10.0,
+            poole_frenkel_epsilon_r=3.9,
+        )
+        high_k = TrapKinetics(
+            1e23, capture_tau=10.0, emission_tau=10.0,
+            poole_frenkel_epsilon_r=20.0,
+        )
+        base.advance(np.ones(2), 1e8, 0.1, temperature=300.0)
+        hot.advance(np.ones(2), 1e8, 0.1, temperature=400.0)
+        high_k.advance(np.ones(2), 1e8, 0.1, temperature=300.0)
+        assert np.mean(base.occupancy) > np.mean(hot.occupancy)
+        assert np.mean(base.occupancy) > np.mean(high_k.occupancy)
+
     def test_capture_and_emission_use_distinct_time_scales(self):
         capture = TrapKinetics(1e23, capture_tau=0.1, emission_tau=100.0)
         emission = TrapKinetics(1e23, capture_tau=0.1, emission_tau=100.0)

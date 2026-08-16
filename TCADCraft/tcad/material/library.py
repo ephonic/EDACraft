@@ -34,11 +34,13 @@ def dg_coefficient(m_star_ratio: float) -> float:
     return _HBAR * _HBAR / (6.0 * _QE * m_star_ratio * _M0)
 
 
-# Per-material DOS effective masses (multiples of m_0).
+# Per-material scalar DG closure masses (multiples of m_0). A simulator whose
+# reference model separates a DOS mass and gamma factor should use
+# Simulator.set_density_gradient_effective_masses instead.
 # Insulators/metals (μ=0) carry DG coefficients for completeness only; their
 # value is irrelevant because the solver skips them (mu_n < EPSILON).
-_M_STAR_SI_N = 0.26    # Si electron DOS mass
-_M_STAR_SI_P = 0.37    # Si hole DOS mass
+_M_STAR_SI_N = 0.26    # historical scalar electron DG closure mass
+_M_STAR_SI_P = 0.37    # historical scalar hole DG closure mass
 _M_STAR_INSULATOR = 0.5   # nominal for SiO2/HfO2/HfZrO/Al2O3
 _M_STAR_METAL = 1.0       # nominal for TiN/W
 _M_STAR_GRAPHENE = 0.5    # conservative (true Dirac mass is regime-dependent)

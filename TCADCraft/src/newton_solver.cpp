@@ -25,6 +25,63 @@ void NewtonSolver::set_permittivity(const std::vector<real_t>& eps) {
     eps_ = eps;
 }
 
+void NewtonSolver::set_edge_permittivity(
+    const std::vector<real_t>& x_plus,
+    const std::vector<real_t>& x_minus,
+    const std::vector<real_t>& y_plus,
+    const std::vector<real_t>& y_minus,
+    const std::vector<real_t>& z_plus,
+    const std::vector<real_t>& z_minus) {
+    const size_t N = g_.npts();
+    for (const auto* values : {&x_plus, &x_minus, &y_plus, &y_minus,
+                               &z_plus, &z_minus}) {
+        if (!values->empty() && values->size() != N)
+            throw std::invalid_argument("Newton edge permittivity size mismatch");
+    }
+    edge_eps_x_plus_ = x_plus;
+    edge_eps_x_minus_ = x_minus;
+    edge_eps_y_plus_ = y_plus;
+    edge_eps_y_minus_ = y_minus;
+    edge_eps_z_plus_ = z_plus;
+    edge_eps_z_minus_ = z_minus;
+}
+
+real_t NewtonSolver::edge_epsilon(
+    size_t idx, size_t nbr,
+    const std::vector<real_t>& override_values) const {
+    if (override_values.size() == g_.npts() && override_values[idx] > 0.0Q)
+        return override_values[idx];
+    return 2.0Q * eps_[idx] * eps_[nbr] /
+           (eps_[idx] + eps_[nbr] + 1e-30Q);
+}
+
+real_t NewtonSolver::active_carrier_width(
+    size_t idx, size_t j, size_t k, int axis,
+    const std::vector<real_t>& mobility) const {
+    // A node on a semiconductor/insulator interface belongs to the mobile
+    // material only on the semiconductor side.  Clip the transverse control
+    // volume at zero-mobility neighbours so Newton uses the same finite-volume
+    // geometry as Gummel and as terminal-current integration.
+    if (axis == 1) {
+        real_t width = g_.dy_cell(j);
+        if (j > 0 && mobility[idx - g_.nx] < EPSILON)
+            width -= 0.5Q * g_.dy_edge(j - 1);
+        if (j + 1 < g_.ny && mobility[idx + g_.nx] < EPSILON)
+            width -= 0.5Q * g_.dy_edge(j);
+        return width > EPSILON ? width : g_.dy_cell(j);
+    }
+    if (axis == 2) {
+        real_t width = g_.dz_cell(k);
+        const size_t z_stride = g_.nx * g_.ny;
+        if (k > 0 && mobility[idx - z_stride] < EPSILON)
+            width -= 0.5Q * g_.dz_edge(k - 1);
+        if (k + 1 < g_.nz && mobility[idx + z_stride] < EPSILON)
+            width -= 0.5Q * g_.dz_edge(k);
+        return width > EPSILON ? width : g_.dz_cell(k);
+    }
+    throw std::invalid_argument("active carrier width axis must be y or z");
+}
+
 void NewtonSolver::set_mobility(const std::vector<real_t>& mu_n, const std::vector<real_t>& mu_p) {
     mu_n_ = mu_n; mu_p_ = mu_p;
 }
@@ -122,14 +179,28 @@ real_t NewtonSolver::compute_btbt_at(const real_t* phi, size_t idx) const {
         Ez = -(phi[idx] - phi[g_.index(i, j, k-1)]) / g_.dz;
     }
 
-    real_t E_mag = sqrt_q(Ex*Ex + Ey*Ey + Ez*Ez);
+    real_t E_mag = 0.0Q;
+    if (opt_.btbt_field_mode == 1) {
+        E_mag = abs_q(Ex);
+    } else if (opt_.btbt_field_mode == 2) {
+        E_mag = abs_q(Ey);
+    } else if (opt_.btbt_field_mode == 3) {
+        E_mag = abs_q(Ez);
+    } else {
+        E_mag = sqrt_q(Ex*Ex + Ey*Ey + Ez*Ez);
+    }
+    if (opt_.btbt_field_cap > 0.0Q && E_mag > opt_.btbt_field_cap) {
+        E_mag = opt_.btbt_field_cap;
+    }
     if (E_mag < 1.0e4Q) return 0.0Q;
+    if (opt_.btbt_field_alpha != 0.0Q && opt_.btbt_field_ref > 0.0Q) {
+        E_mag *= pow_q(E_mag / opt_.btbt_field_ref, opt_.btbt_field_alpha);
+    }
 
     real_t A = opt_.btbt_A * 1.0e6Q;  // cm^-3 -> m^-3
     real_t B = opt_.btbt_B;
-    int D = opt_.btbt_D;
-    real_t E_D = 1.0Q;
-    for (int d = 0; d < D; ++d) E_D *= E_mag;
+    real_t D = opt_.btbt_D;
+    real_t E_D = pow_q(E_mag, D);
     return A * E_D * exp_q(-B / E_mag);
 }
 
@@ -308,6 +379,63 @@ void NewtonSolver::compute_srh_and_derivs(size_t idx, real_t n, real_t p, real_t
 }
 
 
+void NewtonSolver::refresh_lagged_quantum_potential(
+    const std::vector<real_t>& x) {
+    const size_t N = g_.npts();
+    const std::vector<real_t> old_Qn = lagged_Qn_;
+    const std::vector<real_t> old_Qp = lagged_Qp_;
+    if (!opt_.enable_quantum || semi_mask_.empty()) {
+        lagged_Qn_.clear();
+        lagged_Qp_.clear();
+        return;
+    }
+
+    std::vector<real_t> n(N), p(N);
+    for (size_t i = 0; i < N; ++i) {
+        if (opt_.use_log_space) {
+            n[i] = exp_q(x[n_idx(i)]);
+            p[i] = exp_q(x[p_idx(i)]);
+        } else {
+            n[i] = x[n_idx(i)];
+            p[i] = x[p_idx(i)];
+        }
+    }
+    DensityGradient dg_tmp(g_);
+    dg_tmp.set_coefficients(dg_bn_, dg_bp_);
+    dg_tmp.set_silicon_multivalley(
+        dg_silicon_multivalley_, dg_silicon_ml_, dg_silicon_mt_,
+        dg_silicon_subbands_);
+    dg_tmp.set_interface_distance_factor(dg_interface_distance_factor_);
+    dg_tmp.set_step_boundary(
+        dg_step_boundary_enabled_, dg_step_e_barrier_eV_,
+        dg_step_h_barrier_eV_, dg_step_e_mass_, dg_step_h_mass_,
+        dg_step_e_gamma_, dg_step_h_gamma_, dg_step_e_theta_,
+        dg_step_h_theta_);
+    dg_tmp.set_semiconductor_mask(semi_mask_);
+    dg_tmp.set_thermal_voltage(VT_);
+    std::vector<real_t> next_Qn, next_Qp;
+    dg_tmp.quantum_potential(n, p, next_Qn, next_Qp);
+    if (old_Qn.size() == N && old_Qp.size() == N) {
+        // Outer DG Picard damping.  A fully converged fixed-Q carrier state
+        // can imply a large undamped Q jump; applying that jump in one shot
+        // re-excites the same limit cycle Newton was asked to rescue.  Match
+        // the stable production Gummel quantum damping and let repeated
+        // residual-gated refreshes approach Q(n,p) transactionally.
+        constexpr real_t quantum_damping = 0.2Q;
+        lagged_Qn_.resize(N);
+        lagged_Qp_.resize(N);
+        for (size_t i = 0; i < N; ++i) {
+            lagged_Qn_[i] = old_Qn[i] +
+                quantum_damping * (next_Qn[i] - old_Qn[i]);
+            lagged_Qp_[i] = old_Qp[i] +
+                quantum_damping * (next_Qp[i] - old_Qp[i]);
+        }
+    } else {
+        lagged_Qn_ = std::move(next_Qn);
+        lagged_Qp_ = std::move(next_Qp);
+    }
+}
+
 void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<real_t>& F) {
     const size_t N = g_.npts();
     F.assign(3 * N, 0.0Q);
@@ -348,8 +476,25 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
     // which adds a few Newton iterations but avoids the 5-equation block.
     std::vector<real_t> Qn_dg, Qp_dg;
     std::vector<real_t> n_dg(N), p_dg(N);  // DG-corrected densities for Poisson
-    if (opt_.enable_quantum && !semi_mask_.empty()) {
+    if (opt_.enable_quantum && !semi_mask_.empty() &&
+        use_lagged_quantum_potential_ && lagged_Qn_.size() == N &&
+        lagged_Qp_.size() == N) {
+        Qn_dg = lagged_Qn_;
+        Qp_dg = lagged_Qp_;
+        n_dg.assign(n, n + N);
+        p_dg.assign(p, p + N);
+    } else if (opt_.enable_quantum && !semi_mask_.empty()) {
         DensityGradient dg_tmp(g_);
+        dg_tmp.set_coefficients(dg_bn_, dg_bp_);
+        dg_tmp.set_silicon_multivalley(
+            dg_silicon_multivalley_, dg_silicon_ml_, dg_silicon_mt_,
+            dg_silicon_subbands_);
+        dg_tmp.set_interface_distance_factor(dg_interface_distance_factor_);
+        dg_tmp.set_step_boundary(
+            dg_step_boundary_enabled_, dg_step_e_barrier_eV_,
+            dg_step_h_barrier_eV_, dg_step_e_mass_, dg_step_h_mass_,
+            dg_step_e_gamma_, dg_step_h_gamma_, dg_step_e_theta_,
+            dg_step_h_theta_);
         dg_tmp.set_semiconductor_mask(semi_mask_);
         dg_tmp.set_thermal_voltage(VT_);
         dg_tmp.quantum_potential(
@@ -386,18 +531,19 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                 }
                 // Finite difference Laplacian with position-dependent epsilon
                 real_t center = 0.0Q, sum = 0.0Q;
-                auto add_link = [&](size_t nbr, real_t dx) {
-                    real_t eps_avg = 2.0Q * eps_[idx] * eps_[nbr] / (eps_[idx] + eps_[nbr] + 1e-30Q);
-                    real_t c = eps_avg / (dx * dx);
+                auto add_link = [&](size_t nbr, real_t edge_cell,
+                                    const std::vector<real_t>& edge_values) {
+                    real_t eps_avg = edge_epsilon(idx, nbr, edge_values);
+                    real_t c = eps_avg / edge_cell;
                     center += c;
                     sum += c * phi[nbr];
                 };
-                if (i + 1 < g_.nx) add_link(idx + 1, g_.dx_edge(i));
-                if (i > 0)        add_link(idx - 1, g_.dx_edge(i-1));
-                if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy_edge(j));
-                if (j > 0)        add_link(idx - g_.nx, g_.dy_edge(j-1));
-                if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k));
-                if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz_edge(k-1));
+                if (i + 1 < g_.nx) add_link(idx + 1, g_.dx_edge(i) * g_.dx_cell(i), edge_eps_x_plus_);
+                if (i > 0)        add_link(idx - 1, g_.dx_edge(i-1) * g_.dx_cell(i), edge_eps_x_minus_);
+                if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy_edge(j) * g_.dy_cell(j), edge_eps_y_plus_);
+                if (j > 0)        add_link(idx - g_.nx, g_.dy_edge(j-1) * g_.dy_cell(j), edge_eps_y_minus_);
+                if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k) * g_.dz_cell(k), edge_eps_z_plus_);
+                if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz_edge(k-1) * g_.dz_cell(k), edge_eps_z_minus_);
                 real_t rhs_poisson = sum - center * phi[idx] +
                     QE * charge_volume_fraction_[idx] *
                     (p_dg[idx] - n_dg[idx] + Nd_minus_Na_[idx]);
@@ -481,6 +627,10 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     }
                     continue;
                 }
+                if (!inactive_n_.empty() && inactive_n_[idx]) {
+                    F[n_idx(idx)] = 0.0Q;
+                    continue;
+                }
                 if (opt_.freeze_n) {
                     // Frozen-n mode: pin n to its current value.  See
                     // NewtonOptions::freeze_n / audit §17.
@@ -488,18 +638,24 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     continue;
                 }
                 if (mu_n_[idx] < EPSILON) {
-                    // Insulator: pin carrier to floor (1e-30).  In log-space the
-                    // state is u=log(n), so the constraint is u = log(1e-30).
+                    // Insulator: pin carriers to the same global numerical
+                    // floor used by Gummel and by the linear-space positivity
+                    // clamp.  The former hard-coded 1e-30 target disagreed
+                    // with EPSILON=1e-20 by ten decades, so every oxide node
+                    // entered log-Newton with an artificial residual ln(1e10)
+                    // and dominated the line-search merit.
                     if (opt_.use_log_space) {
-                        F[n_idx(idx)] = x[n_idx(idx)] - log_q(1e-30Q);
+                        F[n_idx(idx)] = x[n_idx(idx)] - log_q(EPSILON);
                     } else {
-                        F[n_idx(idx)] = n[idx] - 1e-30Q; // insulator: freeze to epsilon
+                        F[n_idx(idx)] = n[idx] - EPSILON;
                     }
                     continue;
                 }
                 real_t center = 0.0Q, flux_sum = 0.0Q;
-                const real_t w_y = g_.dx_cell(i) / g_.dy_cell(j);
-                const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                const real_t w_y = g_.dx_cell(i) /
+                    active_carrier_width(idx, j, k, 1, mu_n_);
+                const real_t w_z = g_.dx_cell(i) /
+                    active_carrier_width(idx, j, k, 2, mu_n_);
                 auto add_link = [&](size_t nbr, real_t dx, real_t w) {
                     if (mu_n_[nbr] < EPSILON) return (real_t)0.0;
                     real_t dphi = (phi[nbr] + Qn_dg[nbr]) - (phi[idx] + Qn_dg[idx]);
@@ -525,7 +681,9 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                 real_t R = 0.0Q, dRdn, dRdp;
                 compute_srh_and_derivs(idx, n[idx], p[idx], ni[idx], R, dRdn, dRdp);
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
-                if (opt_.enable_btbt) G += compute_btbt_at(phi, idx);
+                if (opt_.enable_btbt) {
+                    G += opt_.btbt_continuity_scale * compute_btbt_at(phi, idx);
+                }
                 if (opt_.enable_ii)   G += compute_ii_at(phi, n, p, idx);
                 real_t source_scale = g_.dx_cell(i);
                 F[n_idx(idx)] = center * n[idx] + flux_sum - (G - R) * source_scale;
@@ -573,21 +731,27 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     }
                     continue;
                 }
+                if (!inactive_p_.empty() && inactive_p_[idx]) {
+                    F[p_idx(idx)] = 0.0Q;
+                    continue;
+                }
                 if (opt_.freeze_p) {
                     F[p_idx(idx)] = 0.0Q;
                     continue;
                 }
                 if (mu_p_[idx] < EPSILON) {
                     if (opt_.use_log_space) {
-                        F[p_idx(idx)] = x[p_idx(idx)] - log_q(1e-30Q);
+                        F[p_idx(idx)] = x[p_idx(idx)] - log_q(EPSILON);
                     } else {
-                        F[p_idx(idx)] = p[idx] - 1e-30Q;
+                        F[p_idx(idx)] = p[idx] - EPSILON;
                     }
                     continue;
                 }
                 real_t center = 0.0Q, flux_sum = 0.0Q;
-                const real_t w_y = g_.dx_cell(i) / g_.dy_cell(j);
-                const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                const real_t w_y = g_.dx_cell(i) /
+                    active_carrier_width(idx, j, k, 1, mu_p_);
+                const real_t w_z = g_.dx_cell(i) /
+                    active_carrier_width(idx, j, k, 2, mu_p_);
                 auto add_link = [&](size_t nbr, real_t dx, real_t w) {
                     if (mu_p_[nbr] < EPSILON) return (real_t)0.0;
                     real_t dphi = (phi[nbr] - Qp_dg[nbr]) - (phi[idx] - Qp_dg[idx]);
@@ -611,7 +775,9 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                 real_t R = 0.0Q, dRdn, dRdp;
                 compute_srh_and_derivs(idx, n[idx], p[idx], ni[idx], R, dRdn, dRdp);
                 real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
-                if (opt_.enable_btbt) G += compute_btbt_at(phi, idx);
+                if (opt_.enable_btbt) {
+                    G += opt_.btbt_continuity_scale * compute_btbt_at(phi, idx);
+                }
                 if (opt_.enable_ii)   G += compute_ii_at(phi, n, p, idx);
                 real_t source_scale = g_.dx_cell(i);
                 F[p_idx(idx)] = center * p[idx] + flux_sum - (G - R) * source_scale;
@@ -663,8 +829,23 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
     // residual.  dQ/dn is intentionally omitted (Picard/Newton hybrid), but
     // Bernoulli coefficients must use phi+/-Q for a consistent descent step.
     std::vector<real_t> Qn_dg(N, 0.0Q), Qp_dg(N, 0.0Q);
-    if (opt_.enable_quantum && !semi_mask_.empty()) {
+    if (opt_.enable_quantum && !semi_mask_.empty() &&
+        use_lagged_quantum_potential_ && lagged_Qn_.size() == N &&
+        lagged_Qp_.size() == N) {
+        Qn_dg = lagged_Qn_;
+        Qp_dg = lagged_Qp_;
+    } else if (opt_.enable_quantum && !semi_mask_.empty()) {
         DensityGradient dg_tmp(g_);
+        dg_tmp.set_coefficients(dg_bn_, dg_bp_);
+        dg_tmp.set_silicon_multivalley(
+            dg_silicon_multivalley_, dg_silicon_ml_, dg_silicon_mt_,
+            dg_silicon_subbands_);
+        dg_tmp.set_interface_distance_factor(dg_interface_distance_factor_);
+        dg_tmp.set_step_boundary(
+            dg_step_boundary_enabled_, dg_step_e_barrier_eV_,
+            dg_step_h_barrier_eV_, dg_step_e_mass_, dg_step_h_mass_,
+            dg_step_e_gamma_, dg_step_h_gamma_, dg_step_e_theta_,
+            dg_step_h_theta_);
         dg_tmp.set_semiconductor_mask(semi_mask_);
         dg_tmp.set_thermal_voltage(VT_);
         dg_tmp.quantum_potential(std::vector<real_t>(n, n + N),
@@ -689,18 +870,19 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                 } else {
                     // Poisson row
                     real_t center = 0.0Q;
-                    auto add_link = [&](size_t nbr, real_t dx) {
-                        real_t eps_avg = 2.0Q * eps_[idx] * eps_[nbr] / (eps_[idx] + eps_[nbr] + 1e-30Q);
-                        real_t c = eps_avg / (dx * dx);
+                    auto add_link = [&](size_t nbr, real_t edge_cell,
+                                        const std::vector<real_t>& edge_values) {
+                        real_t eps_avg = edge_epsilon(idx, nbr, edge_values);
+                        real_t c = eps_avg / edge_cell;
                         center += c;
                         J.add_entry(i_phi, phi_idx(nbr), c);
                     };
-                    if (i + 1 < g_.nx) add_link(idx + 1, g_.dx_edge(i));
-                    if (i > 0)        add_link(idx - 1, g_.dx_edge(i-1));
-                    if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy_edge(j));
-                    if (j > 0)        add_link(idx - g_.nx, g_.dy_edge(j-1));
-                    if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k));
-                    if (k > 0)        add_link(idx - g_.nx * g_.ny, (k > 0 ? g_.dz_edge(k-1) : g_.dz));
+                    if (i + 1 < g_.nx) add_link(idx + 1, g_.dx_edge(i) * g_.dx_cell(i), edge_eps_x_plus_);
+                    if (i > 0)        add_link(idx - 1, g_.dx_edge(i-1) * g_.dx_cell(i), edge_eps_x_minus_);
+                    if (j + 1 < g_.ny) add_link(idx + g_.nx, g_.dy_edge(j) * g_.dy_cell(j), edge_eps_y_plus_);
+                    if (j > 0)        add_link(idx - g_.nx, g_.dy_edge(j-1) * g_.dy_cell(j), edge_eps_y_minus_);
+                    if (k + 1 < g_.nz) add_link(idx + g_.nx * g_.ny, g_.dz_edge(k) * g_.dz_cell(k), edge_eps_z_plus_);
+                    if (k > 0)        add_link(idx - g_.nx * g_.ny, g_.dz_edge(k-1) * g_.dz_cell(k), edge_eps_z_minus_);
                     J.add_entry(i_phi, i_phi, -center);
                     // Poisson<>carrier coupling.  Chain rule in log-space:
                     // dF/du = dF/dn * n, dF/dv = dF/dp * p.  See audit §18.
@@ -723,6 +905,8 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                     if (!ohmic_nodes_.empty() && ohmic_nodes_.count(idx)) {
                         J.add_entry(i_n, i_phi, -1.0Q / VT_);
                     }
+                } else if (!inactive_n_.empty() && inactive_n_[idx]) {
+                    J.add_entry(i_n, i_n, 1.0Q);
                 } else if (opt_.freeze_n) {
                     J.add_entry(i_n, i_n, 1.0Q);
                 } else if (mu_n_[idx] < EPSILON) {
@@ -736,8 +920,10 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                     real_t sp = opt_.use_log_space ? p[idx] : 1.0Q;
                     real_t center = 0.0Q;
                     real_t dF_dphi_i = 0.0Q;
-                    const real_t w_y = g_.dx_cell(i) / g_.dy_cell(j);
-                    const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                    const real_t w_y = g_.dx_cell(i) /
+                        active_carrier_width(idx, j, k, 1, mu_n_);
+                    const real_t w_z = g_.dx_cell(i) /
+                        active_carrier_width(idx, j, k, 2, mu_n_);
                     auto add_link = [&](size_t nbr, real_t dx, real_t w) {
                         if (mu_n_[nbr] < EPSILON) return (real_t)0.0;
                         real_t dphi = (phi[nbr] + Qn_dg[nbr]) -
@@ -792,6 +978,8 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                     if (!ohmic_nodes_.empty() && ohmic_nodes_.count(idx)) {
                         J.add_entry(i_p, i_phi, 1.0Q / VT_);
                     }
+                } else if (!inactive_p_.empty() && inactive_p_[idx]) {
+                    J.add_entry(i_p, i_p, 1.0Q);
                 } else if (opt_.freeze_p) {
                     J.add_entry(i_p, i_p, 1.0Q);
                 } else if (mu_p_[idx] < EPSILON) {
@@ -803,8 +991,10 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                     real_t sp = opt_.use_log_space ? p[idx] : 1.0Q;
                     real_t center = 0.0Q;
                     real_t dF_dphi_i = 0.0Q;
-                    const real_t w_y = g_.dx_cell(i) / g_.dy_cell(j);
-                    const real_t w_z = g_.dx_cell(i) / g_.dz_cell(k);
+                    const real_t w_y = g_.dx_cell(i) /
+                        active_carrier_width(idx, j, k, 1, mu_p_);
+                    const real_t w_z = g_.dx_cell(i) /
+                        active_carrier_width(idx, j, k, 2, mu_p_);
                     auto add_link = [&](size_t nbr, real_t dx, real_t w) {
                         if (mu_p_[nbr] < EPSILON) return (real_t)0.0;
                         real_t dphi = (phi[nbr] - Qp_dg[nbr]) -
@@ -861,6 +1051,15 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
                          std::vector<real_t>& n,
                          std::vector<real_t>& p) {
     const size_t N = g_.npts();
+    auto finite_values = [](const std::vector<real_t>& values) {
+        return std::all_of(values.begin(), values.end(), [](real_t value) {
+            return std::isfinite((double)value);
+        });
+    };
+    if (!finite_values(phi) || !finite_values(n) || !finite_values(p)) {
+        std::cerr << "Newton rejected non-finite initial state\n";
+        return false;
+    }
     std::vector<real_t> x(3 * N);
     for (size_t i = 0; i < N; ++i) {
         x[phi_idx(i)] = phi[i];
@@ -875,6 +1074,46 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
         } else {
             x[n_idx(i)] = n[i];
             x[p_idx(i)] = p[i];
+        }
+    }
+
+    inactive_n_.clear();
+    inactive_p_.clear();
+    if (opt_.enable_quantum && opt_.use_log_space &&
+        semi_mask_.size() == N) {
+        real_t mobile_scale = 1.0Q;
+        for (size_t i = 0; i < N; ++i) {
+            if (!semi_mask_[i]) continue;
+            mobile_scale = std::max(mobile_scale, abs_q(n[i]));
+            mobile_scale = std::max(mobile_scale, abs_q(p[i]));
+        }
+        // Equivalent to a carrier ErrRef: below one part in 1e10 of the
+        // dominant mobile charge, a log-density correction has no resolvable
+        // effect on Poisson or terminal current but can make the Jacobian
+        // singular.  Preserve the accepted Gummel value at those nodes.
+        const real_t carrier_error_reference = 1.0e-10Q * mobile_scale;
+        inactive_n_.assign(N, 0);
+        inactive_p_.assign(N, 0);
+        size_t inactive_n_count = 0;
+        size_t inactive_p_count = 0;
+        for (size_t i = 0; i < N; ++i) {
+            if (!semi_mask_[i]) continue;
+            if (!opt_.freeze_n && !n_bc_.count(i) &&
+                n[i] < carrier_error_reference) {
+                inactive_n_[i] = 1;
+                ++inactive_n_count;
+            }
+            if (!opt_.freeze_p && !p_bc_.count(i) &&
+                p[i] < carrier_error_reference) {
+                inactive_p_[i] = 1;
+                ++inactive_p_count;
+            }
+        }
+        if (opt_.verbose) {
+            std::cout << "Newton quantum active set: ErrRef="
+                      << (double)carrier_error_reference
+                      << " inactive_n=" << inactive_n_count
+                      << " inactive_p=" << inactive_p_count << std::endl;
         }
     }
 
@@ -902,17 +1141,27 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
     // Write the Newton state x back to the output (phi, n, p).  In log-space
     // the carrier blocks hold u=log(n), v=log(p) and must be exponentiated on
     // exit.  See audit §18.
-    auto write_back = [&]() {
+    auto write_back = [&]() -> bool {
+        std::vector<real_t> phi_out(N), n_out(N), p_out(N);
         for (size_t i = 0; i < N; ++i) {
-            phi[i] = x[phi_idx(i)];
+            phi_out[i] = x[phi_idx(i)];
             if (opt_.use_log_space) {
-                n[i] = exp_q(x[n_idx(i)]);
-                p[i] = exp_q(x[p_idx(i)]);
+                n_out[i] = exp_q(x[n_idx(i)]);
+                p_out[i] = exp_q(x[p_idx(i)]);
             } else {
-                n[i] = x[n_idx(i)];
-                p[i] = x[p_idx(i)];
+                n_out[i] = x[n_idx(i)];
+                p_out[i] = x[p_idx(i)];
             }
         }
+        if (!finite_values(phi_out) || !finite_values(n_out) ||
+            !finite_values(p_out)) {
+            std::cerr << "Newton refused to write back non-finite state\n";
+            return false;
+        }
+        phi = std::move(phi_out);
+        n = std::move(n_out);
+        p = std::move(p_out);
+        return true;
     };
 
     // Independent physical convergence guard for steady one-dimensional
@@ -974,10 +1223,44 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
         return absolute_spread <= 1.0e-8Q || relative_spread <= 1.0e-2Q;
     };
 
+    use_lagged_quantum_potential_ = false;
+    lagged_Qn_.clear();
+    lagged_Qp_.clear();
+    size_t quantum_steps_since_refresh = 0;
+    bool quantum_refresh_pending = opt_.enable_quantum;
+    real_t quantum_carrier_trust = 5.0Q;
     for (size_t iter = 0; iter < opt_.max_iter; ++iter) {
+        // Q is a Picard variable in this three-block Newton formulation: the
+        // Jacobian contains derivatives with respect to phi/n/p but not dQ/dn.
+        // Freeze Q for the base residual, Jacobian and every backtracking
+        // trial so J*dx is a descent direction for the function actually used
+        // by the line search.  Keep it fixed across an inner Newton batch,
+        // then refresh and re-apply the physical convergence gate.
+        use_lagged_quantum_potential_ = false;
+        if (!opt_.enable_quantum || quantum_refresh_pending ||
+            lagged_Qn_.size() != N || lagged_Qp_.size() != N) {
+            refresh_lagged_quantum_potential(x);
+            quantum_steps_since_refresh = 0;
+            quantum_refresh_pending = false;
+        }
+        use_lagged_quantum_potential_ =
+            opt_.enable_quantum && lagged_Qn_.size() == N &&
+            lagged_Qp_.size() == N;
         assemble_residual(x, F);
 
+        if (!finite_values(F)) {
+            std::cerr << "Newton residual contains NaN/Inf at iteration "
+                      << iter << "\n";
+            return false;
+        }
+
         assemble_jacobian(x, J);
+
+        if (!finite_values(J.vals())) {
+            std::cerr << "Newton Jacobian contains NaN/Inf at iteration "
+                      << iter << "\n";
+            return false;
+        }
 
         // Per-BLOCK residual norms and per-block solution scales are computed
         // on the RAW residual below (convergence criteria keep original units).
@@ -997,8 +1280,25 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
             eq_scale.assign(3 * N, 1.0Q);
             for (size_t i = 0; i < 3 * N; ++i) {
                 real_t mx = 0.0Q;
-                for (size_t k = rp[i]; k < rp[i + 1]; ++k)
-                    mx = std::max(mx, abs_q(vals[k]));
+                const size_t row_block = i / N;
+                for (size_t k = rp[i]; k < rp[i + 1]; ++k) {
+                    const size_t column_block = cols[k] / N;
+                    // A frozen block has an identity equation and therefore
+                    // a zero Newton update.  Its cross derivatives remain in
+                    // J (the linear system is unchanged), but they must not
+                    // define the residual scale of an active row.  In the BE
+                    // minority-carrier problem, dF_p/dphi can be ~1e11 times
+                    // larger than the active dF_p/dp even though dphi is
+                    // constrained to zero; including it caused norm_F<tol at
+                    // iteration zero and froze the transient after ~20 steps.
+                    const bool frozen_cross =
+                        row_block != column_block &&
+                        ((column_block == 0 && opt_.freeze_phi) ||
+                         (column_block == 1 && opt_.freeze_n) ||
+                         (column_block == 2 && opt_.freeze_p));
+                    if (!frozen_cross)
+                        mx = std::max(mx, abs_q(vals[k]));
+                }
                 real_t inv = (mx > EPSILON) ? 1.0Q / mx : 1.0Q;
                 eq_scale[i] = inv;
                 for (size_t k = rp[i]; k < rp[i + 1]; ++k)
@@ -1024,11 +1324,23 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
             }
         }
 
+        if (!finite_values(F) || !finite_values(J.vals()) ||
+            !finite_values(eq_scale) || !finite_values(col_scale)) {
+            std::cerr << "Newton equilibration produced NaN/Inf at iteration "
+                      << iter << "\n";
+            return false;
+        }
+
         // Merit function: equilibrated L-inf for ALL problems (2026-08): the
         // worst scaled row, so a step is judged on every row's merit instead
         // of being dominated by the largest-magnitude rows.
         real_t norm_F = 0.0Q;
-        for (size_t i = 0; i < 3 * N; ++i) norm_F = std::max(norm_F, abs_q(F[i]));
+        real_t merit_F_sq = 0.0Q;
+        for (size_t i = 0; i < 3 * N; ++i) {
+            norm_F = std::max(norm_F, abs_q(F[i]));
+            merit_F_sq += F[i] * F[i];
+        }
+        const real_t merit_F = sqrt_q(merit_F_sq / (3.0Q * N));
         if (norm_F0 < 0.0Q) norm_F0 = (norm_F > EPSILON) ? norm_F : 1.0Q;
         // Per-BLOCK residual norms and per-block solution scales (issues0719
         // P0-3).  A single GLOBAL convergence test lets the largest-scale
@@ -1106,9 +1418,17 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
         // a huge initial residual can improve by 1e-6 and remain nonphysical.
         const bool equilibrated_ok = norm_F < opt_.tol;
         if ((all_abs || equilibrated_ok) && steady_1d_kcl_ok()) {
+            // A fixed-Q inner Newton solution is not yet a self-consistent DG
+            // solution if x has moved since Q was assembled.  Refresh Q and
+            // require the same physical residual gate once more.  Only a
+            // state that passes immediately after that refresh may return.
+            if (use_lagged_quantum_potential_ &&
+                quantum_steps_since_refresh > 0) {
+                quantum_refresh_pending = true;
+                continue;
+            }
             if (opt_.verbose) std::cout << "Newton converged in " << iter << " iterations.\n";
-            write_back();
-            return true;
+            return write_back();
         }
 
         // Solve J * dx = -F  (F already scaled above when transient)
@@ -1121,8 +1441,78 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
             std::cerr << "Newton linear solve failed: " << e.what() << std::endl;
             return false;
         }
+        // A Krylov iteration limit is not a usable Newton direction.  Some
+        // portable linear backends historically returned their best guess
+        // without signalling failure, which allowed enormous null-space-like
+        // log-density updates to reach the trust limiter and shrink every
+        // physical update to zero.  Audit the actual equilibrated system
+        // before undoing column scaling.  This also guards external solvers
+        // against a successful status paired with an inaccurate solution.
+        {
+            real_t relative_linear_error = 0.0Q;
+            size_t refinement_steps = 0;
+            const real_t linear_acceptance =
+                opt_.enable_quantum ? 1.0e-3Q : 1.0e-6Q;
+            for (; refinement_steps <= 3; ++refinement_steps) {
+                const Vector Jdx = J.apply(dx);
+                Vector correction_rhs(3 * N);
+                real_t linear_error = 0.0Q;
+                real_t rhs_scale = 0.0Q;
+                for (size_t i = 0; i < 3 * N; ++i) {
+                    const real_t defect = Jdx[i] + F[i];
+                    correction_rhs[i] = -defect;
+                    linear_error = std::max(linear_error, abs_q(defect));
+                    rhs_scale = std::max(rhs_scale, abs_q(F[i]));
+                }
+                relative_linear_error =
+                    linear_error / std::max(rhs_scale, EPSILON);
+                if (!std::isfinite((double)relative_linear_error) ||
+                    relative_linear_error <= linear_acceptance ||
+                    refinement_steps == 3) {
+                    break;
+                }
+                // Reuse the same sparse factorisation on the quad-computed
+                // defect.  This is mixed-precision iterative refinement: the
+                // external solve remains fast double precision, while the
+                // backward-error measurement and correction RHS retain the
+                // assembled real_t precision.
+                Vector correction(3 * N, 0.0Q);
+                try {
+                    lin_solver.solve(J, correction_rhs, correction);
+                } catch (const std::exception& e) {
+                    std::cerr << "Newton linear refinement failed: "
+                              << e.what() << std::endl;
+                    return false;
+                }
+                for (size_t i = 0; i < 3 * N; ++i)
+                    dx[i] += correction[i];
+            }
+            if (opt_.verbose) {
+                std::cout << "    [linear] relative_residual="
+                          << (double)relative_linear_error
+                          << "  refinements=" << refinement_steps
+                          << std::endl;
+            }
+            // PETSc/SuperLU operates in double precision after the quad
+            // assembly has been equilibrated.  Classical Newton retains a
+            // 1e-6 backward-error gate.  The active-set/trust-region quantum
+            // path permits a standard 1e-3 inexact-Newton forcing term because
+            // every trial is still accepted by the full nonlinear residual;
+            // silent Krylov failures are many orders larger.
+            if (!std::isfinite((double)relative_linear_error) ||
+                relative_linear_error > linear_acceptance) {
+                std::cerr << "Newton linear solve residual too large: "
+                          << (double)relative_linear_error << std::endl;
+                return false;
+            }
+        }
         // Undo column scaling: dx_unscaled[j] = dx_scaled[j] * col_scale[j]
         for (size_t j = 0; j < 3 * N; ++j) dx[j] *= col_scale[j];
+        if (!finite_values(dx)) {
+            std::cerr << "Newton step contains NaN/Inf at iteration "
+                      << iter << "\n";
+            return false;
+        }
         // Bank-Rose style log-space step clamp (issues0719 follow-up,
         // plan0728 §1.1): in log-space an unclamped carrier update du
         // explodes the linearised densities (n = exp(u)).  Far from the
@@ -1132,23 +1522,75 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
         // though the direction is a mathematically exact descent direction
         // (verified by FD Jacobian checks).  Clamping the carrier update
         // magnitude keeps exp(du) bounded so the direction becomes usable.
+        // Apply the trust bound per component.  A single near-null-space
+        // minority-carrier node must not shrink every physical phi/n/p update;
+        // the full residual line search below validates this inexact direction.
         if (opt_.use_log_space) {
             real_t du_max = 0.0Q;
-            for (size_t i = N; i < 3 * N; ++i)
-                du_max = std::max(du_max, abs_q(dx[i]));
+            size_t du_node = 0;
+            const char* du_block = "n";
+            for (size_t i = N; i < 3 * N; ++i) {
+                if (abs_q(dx[i]) > du_max) {
+                    du_max = abs_q(dx[i]);
+                    du_node = i % N;
+                    du_block = (i < 2 * N) ? "n" : "p";
+                }
+            }
             real_t dphi_max = 0.0Q;
-            for (size_t i = 0; i < N; ++i)
-                dphi_max = std::max(dphi_max, abs_q(dx[i]));
-            const real_t U_MAX = 5.0Q;     // max log-carrier change (~150x)
+            size_t dphi_node = 0;
+            for (size_t i = 0; i < N; ++i) {
+                if (abs_q(dx[i]) > dphi_max) {
+                    dphi_max = abs_q(dx[i]);
+                    dphi_node = i;
+                }
+            }
+            const real_t U_MAX = opt_.enable_quantum
+                ? quantum_carrier_trust : 5.0Q;
             const real_t PHI_MAX = 1.0Q;   // max electrostatic step [V]
-            real_t s = 1.0Q;
-            if (du_max > U_MAX) s = std::min(s, U_MAX / du_max);
-            if (dphi_max > PHI_MAX) s = std::min(s, PHI_MAX / dphi_max);
-            // Preserve the coupled Newton direction.  Scaling only the carrier
-            // blocks breaks J*dx=-F and is a direct cause of non-descent steps
-            // and alpha=0 line-search stalls.
-            if (s < 1.0Q)
-                for (size_t i = 0; i < 3 * N; ++i) dx[i] *= s;
+            size_t clipped_phi = 0;
+            size_t clipped_carrier = 0;
+            real_t global_scale = 1.0Q;
+            real_t phi_block_scale = 1.0Q;
+            if (opt_.enable_quantum) {
+                // Preserve the spatial Poisson direction: scale the complete
+                // phi block when its trust bound is exceeded.  Component-wise
+                // phi clipping flattened hundreds of nodes to +/-1 V and
+                // destroyed an otherwise valid coupled descent direction.
+                if (dphi_max > PHI_MAX) {
+                    phi_block_scale = PHI_MAX / dphi_max;
+                    for (size_t i = 0; i < N; ++i)
+                        dx[i] *= phi_block_scale;
+                    clipped_phi = N;
+                }
+                for (size_t i = N; i < 3 * N; ++i) {
+                    if (abs_q(dx[i]) > U_MAX) {
+                        dx[i] = (dx[i] < 0.0Q) ? -U_MAX : U_MAX;
+                        ++clipped_carrier;
+                    }
+                }
+            } else {
+                if (du_max > U_MAX)
+                    global_scale = std::min(global_scale, U_MAX / du_max);
+                if (dphi_max > PHI_MAX)
+                    global_scale = std::min(
+                        global_scale, PHI_MAX / dphi_max);
+                if (global_scale < 1.0Q) {
+                    for (size_t i = 0; i < 3 * N; ++i)
+                        dx[i] *= global_scale;
+                }
+            }
+            if (opt_.verbose &&
+                (clipped_phi || clipped_carrier || global_scale < 1.0Q)) {
+                std::cout << "    [trust] clipped_phi=" << clipped_phi
+                          << "  clipped_carrier=" << clipped_carrier
+                          << "  carrier_limit=" << (double)U_MAX
+                          << "  phi_scale=" << (double)phi_block_scale
+                          << "  global_scale=" << (double)global_scale
+                          << "  max_dphi=" << (double)dphi_max
+                          << "@" << dphi_node
+                          << "  max_d" << du_block << "=" << (double)du_max
+                          << "@" << du_node << std::endl;
+            }
         }
         // Helper: apply update (linear or exponential for carriers).
         // In log-space the carrier blocks already hold u=log(n), so a plain
@@ -1183,7 +1625,7 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
         real_t alpha = opt_.damping;
         if (opt_.use_line_search) {
             real_t best_alpha = 0.0Q;       // 0 = "take no step" if nothing helps
-            real_t best_norm = norm_F;       // must beat the current residual
+            real_t best_merit = merit_F;     // must beat the current RMS merit
             for (size_t ls = 0; ls < opt_.line_search_max; ++ls) {
                 std::vector<real_t> x_try(3 * N);
                 apply_update(alpha, x_try);
@@ -1198,14 +1640,30 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
                 }
                 std::vector<real_t> F_try(3 * N);
                 assemble_residual(x_try, F_try);
+                if (!finite_values(x_try) || !finite_values(F_try)) {
+                    alpha *= 0.5Q;
+                    if (alpha < opt_.min_damping) break;
+                    continue;
+                }
                 // Apply the SAME row-equilibration as the baseline so the
                 // trial norm is comparable to norm_F (2026-08: now always on).
                 for (size_t i = 0; i < 3 * N; ++i) F_try[i] *= eq_scale[i];
-                // Merit function: equilibrated L-inf for ALL problems.
+                // RMS globalization merit plus an L-inf growth guard.
                 real_t norm_try = 0.0Q;
-                for (size_t i = 0; i < 3 * N; ++i) norm_try = std::max(norm_try, abs_q(F_try[i]));
-                if (norm_try < best_norm) {
-                    best_norm = norm_try;
+                real_t merit_try_sq = 0.0Q;
+                for (size_t i = 0; i < 3 * N; ++i) {
+                    norm_try = std::max(norm_try, abs_q(F_try[i]));
+                    merit_try_sq += F_try[i] * F_try[i];
+                }
+                const real_t merit_try =
+                    sqrt_q(merit_try_sq / (3.0Q * N));
+                // Use RMS to make progress when one SG cancellation row sits
+                // on an L-inf plateau, but never permit the worst row to grow
+                // materially.  Final convergence remains the strict L-inf
+                // gate above, so this changes globalization, not accuracy.
+                if (merit_try < best_merit &&
+                    norm_try <= 1.05Q * norm_F) {
+                    best_merit = merit_try;
                     best_alpha = alpha;
                 }
                 alpha *= 0.5Q;
@@ -1228,13 +1686,30 @@ bool NewtonSolver::solve(std::vector<real_t>& phi,
                               << "  |F|/|F0|=" << (double)rel_res
                               << " < 3e-2 floor (line-search stall)." << std::endl;
                 }
-                write_back();
-                return true;
+                return write_back();
             }
         }
 
         // Apply final update (alpha=0 => no change, Newton stalls cleanly)
         apply_update(alpha, x);
+        if (!finite_values(x)) {
+            std::cerr << "Newton update produced NaN/Inf at iteration "
+                      << iter << "\n";
+            return false;
+        }
+        if (use_lagged_quantum_potential_ && alpha > 0.0Q) {
+            ++quantum_steps_since_refresh;
+            if (alpha >= 0.5Q) {
+                quantum_carrier_trust = std::min(
+                    5.0Q, 1.25Q * quantum_carrier_trust);
+            }
+        } else if (use_lagged_quantum_potential_ && alpha == 0.0Q) {
+            // Keep Q fixed and contract only the rejected carrier trust
+            // region.  Refreshing Q here changes the nonlinear target before
+            // the fixed-Q equations have converged and re-enters the DG cycle.
+            quantum_carrier_trust = std::max(
+                0.1Q, 0.5Q * quantum_carrier_trust);
+        }
         if (opt_.verbose) {
             real_t dx_max = 0.0Q;
             for (size_t i = 0; i < 3 * N; ++i) dx_max = std::max(dx_max, abs_q(dx[i]));

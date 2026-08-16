@@ -25,12 +25,38 @@ struct BTBTParams {
     // exp(-0.02)=0.98, i.e. the model reported almost no barrier).  2.0e9 V/m
     // is the SI-equivalent of the published 2.0e7 V/cm value.
     real_t B_kane = 2.0e9Q;    // Kane B coefficient [V/m] for Si (was 2.0e7 — unit bug)
-    int D = 2;                  // Exponent: 2 for direct, 2.5 for indirect tunneling
+    real_t D = 2.0Q;            // Exponent: 2 for direct, 2.5 for indirect tunneling
+    // 0 = |grad(phi)|, 1 = |Ex|, 2 = |Ey|, 3 = |Ez|.  The component modes
+    // support Sentaurus-style local-Hurkx TFET calibration where the junction
+    // path field is a better proxy than the total gate-normal electrostatic
+    // field.
+    int field_mode = 0;
+    // Optional high-field cap [V/m] for local BTBT field evaluation.  <=0 keeps
+    // the raw local field.  This is a calibrated local-Hurkx compatibility
+    // control for sharp-grid TFET junctions where a single-node field spike can
+    // dominate the volume integral.
+    real_t field_cap = 0.0Q;
+    // Optional calibrated field-shape correction for Sentaurus-Hurkx replay:
+    // E_eff = E * (max(E,E_floor)/field_ref)^field_alpha.  field_alpha=0 keeps
+    // the original Kane law.  Negative alpha reduces high-field over-slope.
+    real_t field_alpha = 0.0Q;
+    real_t field_ref = 1.0e8Q;
+    // Optional multiplier for the BTBT source inserted into the carrier
+    // continuity equations. It does not change the reported G_btbt array,
+    // which remains the physical volumetric generation for Sentaurus
+    // IntegratedBand2BandGeneration comparisons.
+    real_t continuity_scale = 1.0Q;
     bool enabled = false;
     // Non-local (path-integral WKB) tunneling:
     bool use_nonlocal = false;
-    real_t tunnel_path_frac = 0.5Q; // Fraction of grid spacing to search (source side)
-    size_t wkb_npts = 64;            // Number of points for WKB numerical integration
+    // Maximum non-local path length as a fraction of the simulated x span.
+    // A value <=0 disables this additional cap; the physical cap remains
+    // min(2*Eg/qE, available distance to the nearer x boundary).
+    real_t tunnel_path_frac = 0.5Q;
+    // Number of Simpson segments for WKB numerical integration.  The solver
+    // rounds odd values up internally because Simpson's rule requires an even
+    // segment count.
+    size_t wkb_npts = 64;
 };
 
 // Ferroelectric model selector (M7c). LANDAU_KHALATNIKOV is the legacy cubic
@@ -188,6 +214,7 @@ public:
     void set_mobility(const std::vector<real_t>& mu_n, const std::vector<real_t>& mu_p);
     void set_recombination(const std::vector<real_t>& tau_n, const std::vector<real_t>& tau_p);
     void set_optical_generation(const std::vector<real_t>& G_opt);
+    void set_btbt_weight(const std::vector<real_t>& weight);
     void set_doping(const std::vector<real_t>& Nd_minus_Na);
     void set_charge_volume_fraction(const std::vector<real_t>& fraction) {
         poisson_.set_charge_volume_fraction(fraction);
@@ -235,6 +262,40 @@ public:
     // Solver configuration
     void set_poisson_solver_type(SolverType type);
     void set_continuity_solver_type(SolverType type);
+    void set_density_gradient_coefficients(real_t bn, real_t bp) {
+        dg_.set_coefficients(bn, bp);
+        Qn_prev_.clear();
+        Qp_prev_.clear();
+    }
+    void set_density_gradient_silicon_multivalley(bool enable,
+                                                  real_t ml, real_t mt,
+                                                  size_t subbands) {
+        dg_.set_silicon_multivalley(enable, ml, mt, subbands);
+        Qn_prev_.clear();
+        Qp_prev_.clear();
+    }
+    void set_density_gradient_interface_distance_factor(real_t factor) {
+        dg_.set_interface_distance_factor(factor);
+        Qn_prev_.clear();
+        Qp_prev_.clear();
+    }
+    void set_density_gradient_potential_form(bool enable) {
+        dg_.set_potential_form(enable);
+        Qn_prev_.clear();
+        Qp_prev_.clear();
+    }
+    void set_density_gradient_step_boundary(
+        bool enable, real_t electron_barrier_eV, real_t hole_barrier_eV,
+        real_t electron_barrier_mass, real_t hole_barrier_mass,
+        real_t electron_gamma, real_t hole_gamma,
+        real_t electron_theta, real_t hole_theta) {
+        dg_.set_step_boundary(enable, electron_barrier_eV, hole_barrier_eV,
+                              electron_barrier_mass, hole_barrier_mass,
+                              electron_gamma, hole_gamma,
+                              electron_theta, hole_theta);
+        Qn_prev_.clear();
+        Qp_prev_.clear();
+    }
 
     // Main solve: self-consistent Poisson + Continuity (+ optional DG)
     // On input, phi, n, p should contain initial guesses
@@ -245,12 +306,36 @@ public:
     // Access residuals history
     const std::vector<real_t>& poisson_residuals() const { return poisson_res_; }
     const std::vector<real_t>& continuity_residuals() const { return cont_res_; }
+    real_t electron_update_final() const { return electron_update_final_; }
+    real_t hole_update_final() const { return hole_update_final_; }
+
+    // Quantum potentials used by the final continuity solve.  Density-gradient
+    // feedback is deliberately under-relaxed, so these generally differ from
+    // an undamped Q(n,p) recomputation at the returned carrier state.  Current
+    // post-processing must use the same transport potential as the discrete
+    // continuity equation to preserve edge-current/KCL consistency.
+    const std::vector<real_t>& transport_quantum_n() const { return Qn_prev_; }
+    const std::vector<real_t>& transport_quantum_p() const { return Qp_prev_; }
+    void set_transport_quantum_state(const std::vector<real_t>& Qn,
+                                     const std::vector<real_t>& Qp) {
+        if (Qn.size() != g_.npts() || Qp.size() != g_.npts())
+            throw std::invalid_argument(
+                "transport quantum state size mismatch");
+        Qn_prev_ = Qn;
+        Qp_prev_ = Qp;
+    }
 
     // Convergence-honesty diagnostics (P0-3 fix).
     // True relative Poisson equation residual ||A*phi - rhs|| / ||rhs|| at the
     // returned state, computed after the Gummel loop exits (converged or not);
     // -1 means "not computed" (early failure return).
     real_t poisson_residual_final() const { return poisson_residual_final_; }
+    // Carrier-weighted relative mismatch between the undamped Q(n,p) at the
+    // returned state and the lagged transport Q used by the final continuity
+    // solve. Local sqrt(n/(n+p)) and sqrt(p/(n+p)) weights prevent a
+    // numerically noisy minority species from masking the active DG channel.
+    // Zero for a classical solve; -1 means no valid diagnostic was produced.
+    real_t quantum_residual_final() const { return quantum_residual_final_; }
     // True if the limit-cycle stabiliser permanently pinned phi during the
     // last solve() (such a state only reports converged when the true update
     // norm at freeze time was already below poisson_tol).
@@ -288,6 +373,15 @@ public:
     }
 
 private:
+    // Equation (248) differs from equation (247) only for Fermi statistics.
+    // Under Boltzmann statistics use the algebraically equivalent density
+    // map so the discrete nonuniform-grid operator obeys the same chain rule
+    // instead of creating a mesh-dependent pseudo-physics branch.
+    bool use_potential_form_pde() const {
+        return dg_.potential_form_enabled() &&
+               opt_.statistics_type == StatisticsType::FERMI_DIRAC;
+    }
+
     Grid3D g_;
     GummelOptions opt_;
     PoissonSolver poisson_;
@@ -296,6 +390,11 @@ private:
     // factorization cache (Mat/KSP/symbolic) is reused across Gummel iters
     // for BOTH electron and hole solves, not just the Poisson solve.
     std::unique_ptr<LinearSolver> cont_e_solver_, cont_h_solver_;
+    // Once the honest residual gate proves that the selected iterative
+    // backend loses accuracy on this fixed narrow-band grid, avoid retrying
+    // the same unsuitable backend at every nonlinear iteration.
+    bool cont_e_use_banded_direct_ = false;
+    bool cont_h_use_banded_direct_ = false;
     // DG quantum potential damping (under-relaxation to stabilize the Qn->n->Qn
     // feedback loop that otherwise prevents Gummel convergence with DG).
     std::vector<real_t> Qn_prev_, Qp_prev_;
@@ -303,6 +402,7 @@ private:
     std::vector<real_t> mu_n_, mu_p_;
     std::vector<real_t> tau_n_, tau_p_;
     std::vector<real_t> G_opt_;
+    std::vector<real_t> btbt_weight_;
     std::vector<real_t> Nd_minus_Na_;
     std::vector<real_t> Nc_, Nv_, Eg_;
     std::map<size_t, real_t> n_bc_, p_bc_;
@@ -312,11 +412,19 @@ private:
 
     // Convergence-honesty state (P0-3 fix), reset at the top of each solve().
     real_t poisson_residual_final_ = -1.0Q;  // -1 = not computed
+    real_t quantum_residual_final_ = -1.0Q;
+    // Last accepted Gummel block-update norms, both normalized by the total
+    // mobile-charge scale.  The hybrid Newton hand-off uses these to freeze a
+    // genuinely settled minority block instead of exciting its near-null
+    // log-density direction.
+    real_t electron_update_final_ = -1.0Q;
+    real_t hole_update_final_ = -1.0Q;
     bool phi_was_frozen_ = false;
 
     bool solve_continuity(const std::vector<real_t>& phi,
                           std::vector<real_t>& n,
-                          std::vector<real_t>& p);
+                          std::vector<real_t>& p,
+                          real_t quantum_mix_scale);
 
     // Build and solve electron continuity: div(Jn) = R
     bool solve_electron_density(const std::vector<real_t>& phi,

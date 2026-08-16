@@ -16,6 +16,7 @@ import numpy as np
 
 Q_E = 1.602176634e-19
 K_B_EV = 8.617333262e-5
+EPS0 = 8.854187817e-12
 
 
 @dataclass
@@ -35,6 +36,8 @@ class TrapKinetics:
     emission_tau: float = 1.0e3
     activation_energy: float = 0.0
     field_acceleration: float = 0.0
+    poole_frenkel_epsilon_r: Optional[float] = None
+    poole_frenkel_multiplier: float = 1.0
     neutral_occupancy: float = 0.5
     reference_temperature: float = 300.0
     mask: Optional[np.ndarray] = None
@@ -52,6 +55,17 @@ class TrapKinetics:
                 raise ValueError(f"{name} must be finite and > 0")
         if not 0.0 <= self.neutral_occupancy <= 1.0:
             raise ValueError("neutral_occupancy must lie in [0, 1]")
+        if self.poole_frenkel_epsilon_r is not None:
+            if (
+                not np.isfinite(self.poole_frenkel_epsilon_r)
+                or self.poole_frenkel_epsilon_r <= 0.0
+            ):
+                raise ValueError("poole_frenkel_epsilon_r must be finite and > 0")
+        if (
+            not np.isfinite(self.poole_frenkel_multiplier)
+            or self.poole_frenkel_multiplier < 0.0
+        ):
+            raise ValueError("poole_frenkel_multiplier must be finite and >= 0")
         if self.mask is not None:
             self.mask = np.asarray(self.mask, dtype=bool).ravel()
 
@@ -103,7 +117,16 @@ class TrapKinetics:
         thermal_exponent = -self.activation_energy / K_B_EV * (
             1.0 / temperature - 1.0 / self.reference_temperature
         )
-        field_exponent = self.field_acceleration * np.sqrt(np.maximum(np.abs(field_mag), 0.0))
+        field_abs = np.maximum(np.abs(field_mag), 0.0)
+        field_exponent = self.field_acceleration * np.sqrt(field_abs)
+        if self.poole_frenkel_epsilon_r is not None:
+            delta_e_ev = np.sqrt(
+                Q_E * field_abs / (np.pi * EPS0 * self.poole_frenkel_epsilon_r)
+            )
+            field_exponent = field_exponent + (
+                self.poole_frenkel_multiplier * delta_e_ev
+                / (K_B_EV * temperature)
+            )
         acceleration = np.exp(np.clip(thermal_exponent + field_exponent, -50.0, 50.0))
         # Use the capture time when the Fermi target is filled and the emission
         # time when it is empty, with a smooth transition for partial

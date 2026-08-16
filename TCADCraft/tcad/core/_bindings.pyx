@@ -47,14 +47,26 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_doping(const vector[double]& Nd_minus_Na)
         void set_charge_volume_fraction(const vector[double]& fraction) except +
         void set_optical_generation(const vector[double]& G_opt)
+        void set_btbt_weight(const vector[double]& weight) except +
         void set_recombination(const vector[double]& tau_n, const vector[double]& tau_p)
         void set_thermal_voltage(double VT)
         void set_effective_dos(const vector[double]& Nc, const vector[double]& Nv)
         void set_bandgap(const vector[double]& Eg)
-        void set_dirichlet_potential(const map[size_t, double]& bc)
-        void set_electron_bc(const map[size_t, double]& bc)
-        void set_hole_bc(const map[size_t, double]& bc)
+        void set_dirichlet_potential(const map[size_t, double]& bc) except +
+        void set_electron_bc(const map[size_t, double]& bc) except +
+        void set_hole_bc(const map[size_t, double]& bc) except +
         void set_quantum_enabled(cbool enable)
+        void set_density_gradient_coefficients(double bn, double bp) except +
+        void set_density_gradient_silicon_multivalley(
+            cbool enable, double longitudinal_mass, double transverse_mass,
+            size_t subbands) except +
+        void set_density_gradient_interface_distance_factor(double factor) except +
+        void set_density_gradient_potential_form(cbool enable)
+        void set_density_gradient_step_boundary(
+            cbool enable, double electron_barrier_eV, double hole_barrier_eV,
+            double electron_barrier_mass, double hole_barrier_mass,
+            double electron_gamma, double hole_gamma,
+            double electron_theta, double hole_theta) except +
         void set_z_positions(const vector[double]& z_pos) except +
         void set_x_positions(const vector[double]& x_pos) except +
         void set_gummel_max_iter(size_t max_iter)
@@ -84,8 +96,13 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_ambient_temperature(double T_ambient)
         void set_thermal_dirichlet(const map[size_t, double]& bc)
         void set_btbt_enabled(cbool enable)
-        void set_btbt_params(double A, double B, int D)
+        void set_btbt_params(double A, double B, double D)
+        void set_btbt_field_mode(int mode)
+        void set_btbt_field_options(int mode, double cap)
+        void set_btbt_field_shape(int mode, double cap, double alpha, double ref)
+        void set_btbt_continuity_scale(double scale)
         void set_btbt_use_nonlocal(cbool enable)
+        void set_btbt_nonlocal_params(double tunnel_path_frac, size_t wkb_npts)
         void set_ii_enabled(cbool enable)
         void set_ii_params(double A_n, double B_n, double A_p, double B_p)
         void set_auger_enabled(cbool enable)
@@ -106,6 +123,8 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
                          double C_pf, double B_pf, double phi_t,
                          double C_fn, double B_fn, double phi_b,
                          double E_floor, double sigma_cap)
+        void set_leakage_fn_polarity(double C_positive, double B_positive,
+                                     double C_negative, double B_negative) except +
         void set_leakage_enabled(cbool enable)
         void set_interface_traps(const vector[signed char]& mask, double D_it, double E_t)
         void set_oxide_traps(const vector[double]& Q_ot)
@@ -149,6 +168,8 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
 
         void reset_solved()
         size_t solve_iterations()
+        double solve_poisson_residual()
+        double solve_quantum_residual()
 
         vector[vector[double]] solve_transient_phi()
         vector[vector[double]] solve_transient_n()
@@ -206,6 +227,9 @@ cdef class PyDeviceSimulator:
     def set_optical_generation(self, np.ndarray[np.float64_t, ndim=1, mode="c"] G_opt not None):
         self._sim.set_optical_generation(np_to_vec(G_opt))
 
+    def set_btbt_weight(self, np.ndarray[np.float64_t, ndim=1, mode="c"] weight not None):
+        self._sim.set_btbt_weight(np_to_vec(weight))
+
     def set_recombination(self, np.ndarray[np.float64_t, ndim=1, mode="c"] tau_n not None,
                           np.ndarray[np.float64_t, ndim=1, mode="c"] tau_p not None):
         self._sim.set_recombination(np_to_vec(tau_n), np_to_vec(tau_p))
@@ -240,6 +264,38 @@ cdef class PyDeviceSimulator:
 
     def set_quantum_enabled(self, bint enable):
         self._sim.set_quantum_enabled(enable)
+
+    def set_density_gradient_coefficients(self, double bn, double bp):
+        """Set electron/hole DG coefficients in V*m^2."""
+        self._sim.set_density_gradient_coefficients(bn, bp)
+
+    def set_density_gradient_silicon_multivalley(
+        self, bint enable, double longitudinal_mass=0.916,
+        double transverse_mass=0.190, size_t subbands=4
+    ):
+        """Configure the Si <100> Delta-valley/subband DG closure."""
+        self._sim.set_density_gradient_silicon_multivalley(
+            enable, longitudinal_mass, transverse_mass, subbands
+        )
+
+    def set_density_gradient_interface_distance_factor(self, double factor):
+        """Set the semiconductor-to-inactive-neighbor DG distance scale."""
+        self._sim.set_density_gradient_interface_distance_factor(factor)
+
+    def set_density_gradient_potential_form(self, bint enable):
+        """Select the opt-in Sentaurus potential-form DG solver."""
+        self._sim.set_density_gradient_potential_form(enable)
+
+    def set_density_gradient_step_boundary(
+            self, bint enable, double electron_barrier_eV,
+            double hole_barrier_eV, double electron_barrier_mass,
+            double hole_barrier_mass, double electron_gamma,
+            double hole_gamma, double electron_theta, double hole_theta):
+        """Configure the potential-form material-step DG boundary closure."""
+        self._sim.set_density_gradient_step_boundary(
+            enable, electron_barrier_eV, hole_barrier_eV,
+            electron_barrier_mass, hole_barrier_mass,
+            electron_gamma, hole_gamma, electron_theta, hole_theta)
 
     def set_z_positions(self, np.ndarray[np.float64_t, ndim=1, mode="c"] z_pos not None):
         """Set non-uniform z-node positions for local mesh refinement.
@@ -331,11 +387,26 @@ cdef class PyDeviceSimulator:
     def set_btbt_enabled(self, bint enable):
         self._sim.set_btbt_enabled(enable)
 
-    def set_btbt_params(self, double A, double B, int D):
+    def set_btbt_params(self, double A, double B, double D):
         self._sim.set_btbt_params(A, B, D)
+
+    def set_btbt_field_mode(self, int mode):
+        self._sim.set_btbt_field_mode(mode)
+
+    def set_btbt_field_options(self, int mode, double cap):
+        self._sim.set_btbt_field_options(mode, cap)
+
+    def set_btbt_field_shape(self, int mode, double cap, double alpha, double ref):
+        self._sim.set_btbt_field_shape(mode, cap, alpha, ref)
+
+    def set_btbt_continuity_scale(self, double scale):
+        self._sim.set_btbt_continuity_scale(scale)
 
     def set_btbt_use_nonlocal(self, bint enable):
         self._sim.set_btbt_use_nonlocal(enable)
+
+    def set_btbt_nonlocal_params(self, double tunnel_path_frac, size_t wkb_npts):
+        self._sim.set_btbt_nonlocal_params(tunnel_path_frac, wkb_npts)
 
     def set_ii_enabled(self, bint enable):
         self._sim.set_ii_enabled(enable)
@@ -397,6 +468,11 @@ cdef class PyDeviceSimulator:
         # P2.2: Poole-Frenkel / Fowler-Nordheim leakage current.
         self._sim.set_leakage(np_to_vec_char(mask),
                               C_pf, B_pf, phi_t, C_fn, B_fn, phi_b, E_floor, sigma_cap)
+
+    def set_leakage_fn_polarity(self, double C_positive, double B_positive,
+                                double C_negative, double B_negative):
+        self._sim.set_leakage_fn_polarity(
+            C_positive, B_positive, C_negative, B_negative)
 
     def set_leakage_enabled(self, bint enable):
         self._sim.set_leakage_enabled(enable)
@@ -465,6 +541,8 @@ cdef class PyDeviceSimulator:
         cdef vector[double] P   = self._sim.fe_polarization()
         cdef cbool conv = self._sim.solve_converged()
         cdef size_t iters = self._sim.solve_iterations()
+        cdef double poisson_residual = self._sim.solve_poisson_residual()
+        cdef double quantum_residual = self._sim.solve_quantum_residual()
 
         cdef size_t N = self._npts
         # fe_polarization() is empty when ferroelectric is disabled (never
@@ -497,6 +575,8 @@ cdef class PyDeviceSimulator:
             "P": P_arr,
             "converged": bool(conv),
             "iterations": int(iters),
+            "poisson_residual": poisson_residual,
+            "quantum_residual": quantum_residual,
         }
 
     def solve_transient(self):

@@ -38,7 +38,7 @@ def extract_btb_tbt_current(
     mesh,
     A_kane: float = 3.1e21,
     B_kane: float = 2.0e9,
-    D: int = 2,
+    D: float = 2.0,
 ) -> float:
     """Extract BTBT generation current from simulation results.
 
@@ -56,8 +56,8 @@ def extract_btb_tbt_current(
         Kane A coefficient [cm^-3 s^-1 V^-D].
     B_kane : float
         Kane B coefficient [V/m].
-    D : int
-        Kane exponent (2 for direct tunneling).
+    D : float
+        Kane exponent (2 for direct tunneling, 2.5 for indirect tunneling).
 
     Returns
     -------

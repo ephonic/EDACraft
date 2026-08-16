@@ -1,6 +1,7 @@
 #include "linear_solver.h"
 #include <iostream>
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 // Optional direct LAPACK/BLAS linkage (TCAD_USE_LAPACK=1 at build time).  It is
@@ -504,11 +505,162 @@ Vector DiagonalPreconditioner::apply(const Vector& r) const {
 
 size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector& x) {
     const size_t n = A.rows();
-    // Convert sparse to dense (flattened row-major)
-    std::vector<real_t> M(n * n, 0.0Q);
     const auto& vals = A.vals();
     const auto& cols = A.col_indices();
     const auto& rp = A.row_offsets();
+
+    // Portable narrow-band direct solve.  Structured 1-D/2-D device matrices
+    // just above the old 2,000-node cutoff have a small geometric bandwidth
+    // (the 3 nm MOS calibration is n=2,009, bw=41).  Sending these systems to
+    // an iterative fallback is both slower and less reliable, while expanding
+    // them to n*n defeats the point of a portable build.  A diagonally
+    // dominant Poisson/SG matrix needs no pivot interchange, so banded
+    // Gaussian elimination is O(n*bw^2) and stores O(n*bw).
+    size_t lower_bw = 0, upper_bw = 0;
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t entry = rp[i]; entry < rp[i + 1]; ++entry) {
+            const size_t j = cols[entry];
+            if (j < i) lower_bw = std::max(lower_bw, i - j);
+            else upper_bw = std::max(upper_bw, j - i);
+        }
+    }
+    const size_t band_width = lower_bw + upper_bw + 1;
+    auto candidate_backward_residual = [&](const Vector& candidate) {
+        if (candidate.size() != n) return 1.0e100Q;
+        const Vector applied = A.apply(candidate);
+        real_t worst = 0.0Q;
+        for (size_t i = 0; i < n; ++i) {
+            real_t scale = abs_q(b[i]);
+            for (size_t entry = rp[i]; entry < rp[i + 1]; ++entry)
+                scale += abs_q(vals[entry] * candidate[cols[entry]]);
+            const real_t relative =
+                abs_q(applied[i] - b[i]) / std::max(scale, 1.0Q);
+            if (!std::isfinite((double)relative)) return 1.0e100Q;
+            worst = std::max(worst, relative);
+        }
+        return worst;
+    };
+    [[maybe_unused]] auto candidate_is_acceptable = [&](const Vector& candidate) {
+        return candidate_backward_residual(candidate) <= 1.0e-8Q;
+    };
+    if (n > 32 && band_width <= 257 && 4 * band_width < n) {
+#ifdef TCAD_USE_LAPACK
+        // Try the optimized double-precision band factorization first.  Row
+        // equilibration is formed in float128 and the candidate is judged on
+        // the original float128 equations, so this fast path cannot weaken
+        // the continuity residual gate.  The portable float128 band solver
+        // below remains the accuracy fallback.
+        const int ni = static_cast<int>(n);
+        const int nrhsi = 1;
+        const int kli = static_cast<int>(lower_bw);
+        const int kui = static_cast<int>(upper_bw);
+        const int ldab = 2 * kli + kui + 1;
+        std::vector<real_t> row_scale(n, 1.0Q);
+        bool valid_rows = true;
+        for (size_t i = 0; i < n; ++i) {
+            real_t scale = 0.0Q;
+            for (size_t entry = rp[i]; entry < rp[i + 1]; ++entry)
+                scale = std::max(scale, abs_q(vals[entry]));
+            if (!(scale > 0.0Q)) {
+                valid_rows = false;
+                break;
+            }
+            row_scale[i] = scale;
+        }
+        if (valid_rows) {
+            const double shifts[] = {
+                0.0, 64.0 * std::numeric_limits<double>::epsilon(),
+                1.0e-12, 1.0e-10, 1.0e-8};
+            for (const double shift : shifts) {
+                std::vector<double> AB(
+                    static_cast<size_t>(ldab) * n, 0.0);
+                std::vector<double> B(n);
+                for (size_t i = 0; i < n; ++i) {
+                    B[i] = static_cast<double>(b[i] / row_scale[i]);
+                    for (size_t entry = rp[i]; entry < rp[i + 1]; ++entry) {
+                        const size_t j = cols[entry];
+                        const int row = static_cast<int>(
+                            lower_bw + upper_bw + i - j);
+                        AB[j * static_cast<size_t>(ldab) + row] =
+                            static_cast<double>(vals[entry] / row_scale[i]);
+                    }
+                    AB[i * static_cast<size_t>(ldab) + lower_bw + upper_bw]
+                        += shift;
+                }
+                std::vector<int> ipiv(n);
+                int info = 0;
+                dgbtrf_(&ni, &ni, &kli, &kui, AB.data(), &ldab,
+                        ipiv.data(), &info);
+                if (info == 0) {
+                    const char trans = 'N';
+                    dgbtrs_(&trans, &ni, &kli, &kui, &nrhsi, AB.data(),
+                            &ldab, ipiv.data(), B.data(), &ni, &info);
+                }
+                if (info != 0) continue;
+                Vector candidate(n);
+                for (size_t i = 0; i < n; ++i)
+                    candidate[i] = static_cast<real_t>(B[i]);
+                if (candidate_is_acceptable(candidate)) {
+                    x = std::move(candidate);
+                    return 1;
+                }
+                // A successful factorization with a poor original-system
+                // residual will not be improved by a larger diagonal shift.
+                break;
+            }
+        }
+#endif
+        std::vector<real_t> band(n * band_width, 0.0Q);
+        Vector rhs = b;
+        auto at = [&](size_t row, size_t col) -> real_t& {
+            return band[row * band_width + col + lower_bw - row];
+        };
+        for (size_t i = 0; i < n; ++i) {
+            real_t row_scale = 0.0Q;
+            for (size_t entry = rp[i]; entry < rp[i + 1]; ++entry)
+                row_scale = std::max(row_scale, abs_q(vals[entry]));
+            if (!(row_scale > EPSILON) ||
+                !std::isfinite((double)row_scale))
+                throw std::runtime_error("banded direct solver: invalid row");
+            for (size_t entry = rp[i]; entry < rp[i + 1]; ++entry)
+                at(i, cols[entry]) = vals[entry] / row_scale;
+            rhs[i] /= row_scale;
+        }
+        for (size_t k = 0; k < n; ++k) {
+            const real_t pivot = at(k, k);
+            if (abs_q(pivot) < 1.0e-28Q ||
+                !std::isfinite((double)pivot))
+                throw std::runtime_error(
+                    "banded direct solver: zero/non-finite pivot at row " +
+                    std::to_string(k));
+            const size_t i_end = std::min(n - 1, k + lower_bw);
+            const size_t j_end = std::min(n - 1, k + upper_bw);
+            for (size_t i = k + 1; i <= i_end; ++i) {
+                const real_t factor = at(i, k) / pivot;
+                at(i, k) = 0.0Q;
+                for (size_t j = k + 1; j <= j_end; ++j)
+                    at(i, j) -= factor * at(k, j);
+                rhs[i] -= factor * rhs[k];
+            }
+        }
+        x.assign(n, 0.0Q);
+        for (size_t reverse = n; reverse-- > 0;) {
+            real_t value = rhs[reverse];
+            const size_t j_end = std::min(n - 1, reverse + upper_bw);
+            for (size_t j = reverse + 1; j <= j_end; ++j)
+                value -= at(reverse, j) * x[j];
+            const real_t pivot = at(reverse, reverse);
+            if (abs_q(pivot) < 1.0e-28Q ||
+                !std::isfinite((double)pivot))
+                throw std::runtime_error(
+                    "banded direct solver: singular back substitution");
+            x[reverse] = value / pivot;
+        }
+        return 1;
+    }
+
+    // Convert sparse to dense (flattened row-major)
+    std::vector<real_t> M(n * n, 0.0Q);
     for (size_t i = 0; i < n; ++i) {
         for (size_t idx = rp[i]; idx < rp[i + 1]; ++idx) {
             M[i * n + cols[idx]] = vals[idx];
@@ -601,11 +753,13 @@ size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector
         const int ni = static_cast<int>(n);
         const int nrhsi = 1;
         int info = 0;
+        bool validate_lapack_candidate = false;
         std::vector<double> B(n);
-        for (size_t i = 0; i < n; ++i) B[i] = static_cast<double>(rhs[i]);
         const size_t bw = kl + ku + 1;
         if (getenv("TCAD_LIN_DEBUG")) { static long long c=0; if(++c<=8) std::cerr << "[LAPACK n=" << n << " bw=" << bw << " banded=" << (n>32 && 4*bw<n) << "]\n"; }
         if (n > 32 && 4 * bw < n) {
+            for (size_t i = 0; i < n; ++i)
+                B[i] = static_cast<double>(rhs[i]);
             // Banded: LAPACK column-major band storage AB[(2*kl+ku+1) x n].
             const int kli = static_cast<int>(kl);
             const int kui = static_cast<int>(ku);
@@ -626,17 +780,73 @@ size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector
                         ipiv.data(), B.data(), &ni, &info);
             }
         } else {
-            // General dense: column-major double copy.
-            std::vector<double> AD(n * n, 0.0);
-            for (size_t i = 0; i < n; ++i)
+            validate_lapack_candidate = true;
+            // General dense: equilibrate each row in float128 before casting
+            // to double.  Minority-carrier equations in depleted 3-D devices
+            // can be many orders smaller than contact rows; casting the raw
+            // matrix can make an otherwise solvable row numerically singular
+            // and trigger the O(n^3) float128 fallback below.
+            std::vector<real_t> row_scale(n, 1.0Q);
+            for (size_t i = 0; i < n; ++i) {
+                real_t scale = 0.0Q;
                 for (size_t idx = rp_csr[i]; idx < rp_csr[i + 1]; ++idx)
-                    AD[cols_csr[idx] * n + i] = static_cast<double>(vals[idx]);
-            std::vector<int> ipiv(n);
-            dgesv_(&ni, &nrhsi, AD.data(), &ni, ipiv.data(), B.data(), &ni, &info);
+                    scale = std::max(scale, abs_q(vals[idx]));
+                if (scale > 0.0Q) row_scale[i] = scale;
+            }
+            auto factor_scaled = [&](double diagonal_shift) {
+                std::vector<double> AD(n * n, 0.0);
+                for (size_t i = 0; i < n; ++i) {
+                    B[i] = static_cast<double>(rhs[i] / row_scale[i]);
+                    for (size_t idx = rp_csr[i]; idx < rp_csr[i + 1]; ++idx)
+                        AD[cols_csr[idx] * n + i] =
+                            static_cast<double>(vals[idx] / row_scale[i]);
+                    AD[i * n + i] += diagonal_shift;
+                }
+                std::vector<int> ipiv(n);
+                info = 0;
+                dgesv_(&ni, &nrhsi, AD.data(), &ni, ipiv.data(),
+                       B.data(), &ni, &info);
+            };
+            factor_scaled(0.0);
+            if (info > 0) {
+                // A rank-deficient quiet-carrier block can retain an exact
+                // zero pivot after equilibration.  Retry a bounded sequence
+                // of roundoff-scale shifts: a severely depleted 3-D block can
+                // need more than machine epsilon before double-precision
+                // pivoting sees full numerical rank.  Every successful
+                // candidate is still checked against the original float128
+                // equations below, so a larger shift cannot silently relax
+                // the physical residual gate.
+                const double shifts[] = {
+                    64.0 * std::numeric_limits<double>::epsilon(),
+                    1.0e-12, 1.0e-10, 1.0e-8};
+                for (const double shift : shifts) {
+                    factor_scaled(shift);
+                    if (info == 0) break;
+                }
+            }
         }
         if (info == 0) {
-            for (size_t i = 0; i < n; ++i) x[i] = static_cast<real_t>(B[i]);
-            return 1;
+            Vector candidate(n);
+            for (size_t i = 0; i < n; ++i)
+                candidate[i] = static_cast<real_t>(B[i]);
+            bool candidate_acceptable = true;
+            if (validate_lapack_candidate) {
+                // An equilibrated (and possibly shifted) solve is accepted
+                // only when it still solves the unmodified float128 equations.
+                // Small generic meshes can contain a genuine null block; for
+                // those, keep the original quad fallback instead of returning
+                // a row-scaled or regularized state with a poor backward error.
+                candidate_acceptable = candidate_is_acceptable(candidate);
+                if (!candidate_acceptable && getenv("TCAD_LIN_DEBUG"))
+                    std::cerr << "[LAPACK equilibrated residual rejected] "
+                              << "-> quad fallback\n";
+            }
+            if (candidate_acceptable) {
+                x = std::move(candidate);
+                return 1;
+            }
+            info = 1;
         }
         if (getenv("TCAD_LIN_DEBUG"))
             std::cerr << "[LAPACK info=" << info << " n=" << n << "] -> quad fallback\n";

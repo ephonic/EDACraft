@@ -76,10 +76,15 @@ def compute_edge_permittivity(
     }
 
     def _edge_eff(e1: float, e2: float, alpha: float) -> float:
+        # alpha is the fraction of the edge occupied by material 1. At a
+        # material-side node the interface may coincide with either endpoint:
+        # alpha=0 means the edge is wholly material 2, while alpha=1 means it
+        # is wholly material 1. Keep these limits consistent with the formula
+        # below (the historical implementation had the two sides reversed).
         if alpha <= 0.0:
-            return e1
-        if alpha >= 1.0:
             return e2
+        if alpha >= 1.0:
+            return e1
         return 1.0 / (alpha / e1 + (1.0 - alpha) / e2)
 
     def _detect_alpha(x_pts, y_pts, z_pts, mat_first):

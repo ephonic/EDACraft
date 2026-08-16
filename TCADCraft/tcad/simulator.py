@@ -260,6 +260,151 @@ class Simulator:
         """Enable/disable density-gradient quantum correction."""
         self._sim.set_quantum_enabled(enabled)
 
+    def set_density_gradient_coefficients(self, bn: float, bp: float):
+        """Set density-gradient coefficients ``b_n``/``b_p`` in V*m^2.
+
+        This supports reproducible Sentaurus calibration and material-specific
+        effective masses without rebuilding TCADCraft.  Both values must be
+        finite and strictly positive.
+        """
+        if not np.isfinite(bn) or not np.isfinite(bp) or bn <= 0.0 or bp <= 0.0:
+            raise ValueError("density-gradient coefficients must be finite and positive")
+        self._sim.set_density_gradient_coefficients(float(bn), float(bp))
+
+    def set_density_gradient_effective_masses(
+        self,
+        electron_dos_mass: float,
+        hole_dos_mass: float,
+        electron_gamma: float = 1.0,
+        hole_gamma: float = 1.0,
+    ) -> Tuple[float, float]:
+        """Configure DG from DOS masses and dimensionless fit factors.
+
+        Masses are relative to the free-electron mass.  The conversion is
+        ``b = gamma*hbar**2/(6*q*m_DOS)`` in V*m^2, matching the density form
+        of the Sentaurus quantum-potential equation for constant temperature
+        and Boltzmann statistics.  Returning the resolved coefficients makes
+        calibration metadata independent of hidden library defaults.
+        """
+        values = (
+            electron_dos_mass,
+            hole_dos_mass,
+            electron_gamma,
+            hole_gamma,
+        )
+        if any(not np.isfinite(value) or value <= 0.0 for value in values):
+            raise ValueError(
+                "density-gradient DOS masses and gamma factors must be "
+                "finite and positive"
+            )
+        hbar = 1.054571817e-34
+        elementary_charge = 1.602176634e-19
+        electron_mass = 9.1093837015e-31
+        prefactor = hbar * hbar / (
+            6.0 * elementary_charge * electron_mass
+        )
+        bn = prefactor * float(electron_gamma) / float(electron_dos_mass)
+        bp = prefactor * float(hole_gamma) / float(hole_dos_mass)
+        self.set_density_gradient_coefficients(bn, bp)
+        return bn, bp
+
+    def set_density_gradient_silicon_multivalley(
+        self,
+        enabled: bool = True,
+        longitudinal_mass: float = 0.916,
+        transverse_mass: float = 0.190,
+        subbands: int = 4,
+    ):
+        """Enable the Si ``<100>`` Delta-valley/multi-subband DG closure.
+
+        Masses are relative to the free-electron mass. Two valleys use the
+        longitudinal confinement mass and four use the transverse mass; their
+        2-D density of states and thermal subband occupations determine the
+        local electron DG coefficient. The model is opt-in so non-Si material
+        calibrations retain the scalar ``b_n`` behavior.
+        """
+        if (
+            not np.isfinite(longitudinal_mass)
+            or not np.isfinite(transverse_mass)
+            or longitudinal_mass <= 0.0
+            or transverse_mass <= 0.0
+        ):
+            raise ValueError("silicon DG effective masses must be finite and positive")
+        if isinstance(subbands, bool) or int(subbands) != subbands:
+            raise ValueError("silicon DG subbands must be an integer")
+        if not 1 <= int(subbands) <= 32:
+            raise ValueError("silicon DG subbands must be in [1,32]")
+        self._sim.set_density_gradient_silicon_multivalley(
+            bool(enabled), float(longitudinal_mass), float(transverse_mass),
+            int(subbands)
+        )
+
+    def set_density_gradient_interface_distance_factor(self, factor: float):
+        """Set the interface-boundary calibration factor.
+
+        The factor scales only the distance from a semiconductor interface
+        node to an inactive neighboring node in the DG boundary stencil. It
+        is global for a simulation and must be calibrated to a fixed material
+        interface/reference boundary model; it is never changed implicitly by
+        film thickness or node count. ``1`` uses the literal mesh distance.
+        """
+        if not np.isfinite(factor) or factor <= 0.0:
+            raise ValueError(
+                "density-gradient interface distance factor must be finite "
+                "and positive"
+            )
+        self._sim.set_density_gradient_interface_distance_factor(float(factor))
+
+    def set_density_gradient_potential_form(self, enabled: bool = True):
+        """Select the opt-in Sentaurus potential-form DG fixed-point solve.
+
+        The mode reconstructs the lagged quasi-Fermi source and solves the
+        quantum-potential PDE. When the material-step boundary is enabled,
+        its nonlinear closure is imposed in the same discrete system.
+        """
+        self._sim.set_density_gradient_potential_form(bool(enabled))
+
+    def set_density_gradient_step_boundary(
+        self,
+        enabled: bool = True,
+        electron_barrier_eV: float = 3.1727,
+        hole_barrier_eV: float = 4.70314,
+        electron_barrier_mass: float = 0.42,
+        hole_barrier_mass: float = 1.0,
+        electron_gamma: float = 1.0,
+        hole_gamma: float = 1.0,
+        electron_theta: float = 0.5,
+        hole_theta: float = 0.5,
+    ):
+        """Enable the analytic material-step DG boundary closure.
+
+        This is the inhomogeneous Neumann closure used by the potential-form
+        density-gradient equation at a semiconductor/non-metal interface.
+        Barrier energies are in eV and barrier masses are relative to ``m0``.
+        In accordance with Sentaurus Device equation (250), ``gamma`` and
+        ``theta`` are properties of the non-solved barrier (the ``0+`` side),
+        not the semiconductor. Defaults reproduce the explicitly exported
+        W-2024.09 Si/SiO2 values at 300 K; callers must supply material-specific
+        values for other interfaces. The model is opt-in and never inferred
+        from geometry.
+        """
+        values = (
+            electron_barrier_eV, hole_barrier_eV,
+            electron_barrier_mass, hole_barrier_mass,
+            electron_gamma, hole_gamma, electron_theta, hole_theta,
+        )
+        if any(not np.isfinite(value) or value <= 0.0 for value in values):
+            raise ValueError(
+                "density-gradient step-boundary parameters must be finite "
+                "and positive"
+            )
+        self._sim.set_density_gradient_step_boundary(
+            bool(enabled), float(electron_barrier_eV), float(hole_barrier_eV),
+            float(electron_barrier_mass), float(hole_barrier_mass),
+            float(electron_gamma), float(hole_gamma),
+            float(electron_theta), float(hole_theta),
+        )
+
     def set_schottky_tunneling(
         self,
         name: str,
@@ -269,18 +414,29 @@ class Simulator:
         series_resistance_ohm: float = 0.0,
         ideality_factor: float = 1.0,
         richardson_multiplier: float = 1.0,
+        pinning_factor: float = 1.0,
+        charge_neutrality_level_eV: Optional[float] = None,
         tunneling_window_center_eV: Optional[float] = None,
         tunneling_window_width_eV: float = 0.025,
+        transport_saturation_current_A: Optional[float] = None,
+        tunneling_cutoff_energy_eV: Optional[float] = None,
+        tunneling_decay_exponent: float = 1.0,
     ):
         """Attach a calibrated NLM-equivalent injection model to a contact.
 
         Call :meth:`set_contact` with a workfunction first.  The Schottky-Mott
         barrier is then derived from that workfunction and the semiconductor
-        electron affinity at the contact.  The returned model evaluates
-        thermionic-only and thermionic+tunnelling terminal currents without
-        changing the drift--diffusion boundary state.
+        electron affinity at the contact.  Supplying ``pinning_factor`` and
+        ``charge_neutrality_level_eV`` replaces the ideal barrier with a
+        calibrated Fermi-level-pinned barrier while preserving the existing
+        default.  The returned model evaluates thermionic-only and
+        thermionic+tunnelling terminal currents without changing the
+        drift--diffusion boundary state.
         """
-        from tcad.physics.contact import SchottkyContactModel
+        from tcad.physics.contact import (
+            SchottkyContactModel,
+            pinned_schottky_barrier_height,
+        )
 
         if name not in self._contact_workfunctions:
             raise RuntimeError(
@@ -292,10 +448,11 @@ class Simulator:
         chi = self.mesh.fields.get("chi")
         if chi is None:
             raise RuntimeError("Electron-affinity field 'chi' is required")
-        barrier = max(
-            self._contact_workfunctions[name]
-            - float(np.median(np.asarray(chi).ravel()[mask])),
-            0.0,
+        barrier = pinned_schottky_barrier_height(
+            self._contact_workfunctions[name],
+            float(np.median(np.asarray(chi).ravel()[mask])),
+            pinning_factor=pinning_factor,
+            charge_neutrality_level_eV=charge_neutrality_level_eV,
         )
         model = SchottkyContactModel(
             barrier_height_eV=barrier,
@@ -307,9 +464,54 @@ class Simulator:
             tunneling_barrier_lowering_eV=tunneling_barrier_lowering_eV,
             tunneling_window_center_eV=tunneling_window_center_eV,
             tunneling_window_width_eV=tunneling_window_width_eV,
+            transport_saturation_current_A=transport_saturation_current_A,
+            tunneling_cutoff_energy_eV=tunneling_cutoff_energy_eV,
+            tunneling_decay_exponent=tunneling_decay_exponent,
         )
         self._schottky_contact_models[name] = model
         return model
+
+    def set_wse2_schottky_contact(
+        self,
+        name: str,
+        area_m2: float,
+        *,
+        effective_mass_ratio: float = 0.36,
+        pinning_factor: float = 1.0,
+        charge_neutrality_level_eV: Optional[float] = None,
+        tunneling_barrier_lowering_eV: float = 0.0,
+        series_resistance_ohm: float = 0.0,
+        ideality_factor: float = 1.0,
+        richardson_multiplier: float = 1.0,
+        tunneling_window_center_eV: Optional[float] = None,
+        tunneling_window_width_eV: float = 0.025,
+        transport_saturation_current_A: Optional[float] = None,
+        tunneling_cutoff_energy_eV: Optional[float] = None,
+        tunneling_decay_exponent: float = 1.0,
+    ):
+        """Attach a WSe2 Schottky/NLM contact model.
+
+        This is a convenience wrapper around :meth:`set_schottky_tunneling`
+        with WSe2-oriented defaults and explicit Fermi-level pinning controls.
+        It is calibrated-interface infrastructure; omitting pinning and NLM
+        parameters recovers the Schottky-Mott thermionic limit.
+        """
+        return self.set_schottky_tunneling(
+            name,
+            effective_mass_ratio=effective_mass_ratio,
+            area_m2=area_m2,
+            tunneling_barrier_lowering_eV=tunneling_barrier_lowering_eV,
+            series_resistance_ohm=series_resistance_ohm,
+            ideality_factor=ideality_factor,
+            richardson_multiplier=richardson_multiplier,
+            pinning_factor=pinning_factor,
+            charge_neutrality_level_eV=charge_neutrality_level_eV,
+            tunneling_window_center_eV=tunneling_window_center_eV,
+            tunneling_window_width_eV=tunneling_window_width_eV,
+            transport_saturation_current_A=transport_saturation_current_A,
+            tunneling_cutoff_energy_eV=tunneling_cutoff_energy_eV,
+            tunneling_decay_exponent=tunneling_decay_exponent,
+        )
 
     def schottky_contact_current(
         self, name: str, voltage_V: Optional[float] = None,
@@ -336,6 +538,24 @@ class Simulator:
         if G_opt.size != self.mesh.npts():
             raise ValueError(f"G_opt size {G_opt.size} != mesh nodes {self.mesh.npts()}")
         self._sim.set_optical_generation(G_opt.astype(np.float64).ravel())
+
+    def set_btbt_weight(self, weight: np.ndarray) -> None:
+        """Set an optional per-node multiplier for solver BTBT generation.
+
+        The default solver behavior is unchanged when this method is not used.
+        Calibrated TFET/Hurkx replays can use it to restrict or weight the
+        local generation volume without modifying optical generation or SRH.
+        """
+        weight = np.asarray(weight, dtype=np.float64).ravel()
+        if weight.size != self.mesh.npts():
+            raise ValueError(
+                f"BTBT weight size {weight.size} != mesh nodes {self.mesh.npts()}"
+            )
+        if not np.all(np.isfinite(weight)):
+            raise ValueError("BTBT weight values must be finite")
+        if np.any(weight < 0.0):
+            raise ValueError("BTBT weight values must be nonnegative")
+        self._sim.set_btbt_weight(weight)
 
     def update_contact(self, name: str, voltage: float):
         """
@@ -508,8 +728,15 @@ class Simulator:
     def set_btbt(self, enabled: bool = True,
                  A_kane: float = 3.1e21,
                  B_kane: float = 2.0e9,
-                 D: int = 2,
-                 use_nonlocal: bool = False) -> None:
+                 D: float = 2.0,
+                 field_mode: str | int = "magnitude",
+                 field_cap: float = 0.0,
+                 field_alpha: float = 0.0,
+                 field_ref: float = 1.0e8,
+                 continuity_scale: float = 1.0,
+                 use_nonlocal: bool = False,
+                 tunnel_path_fraction: float = 0.5,
+                 wkb_npts: int = 64) -> None:
         """Enable band-to-band tunneling.
 
         Parameters
@@ -525,17 +752,91 @@ class Simulator:
             match.  The previous default 2.0e7 was the V/cm-convention value
             misused as V/m (gave exp(-B/E)~1, i.e. no barrier).  2.0e9 V/m is
             the SI-equivalent of the published 2.0e7 V/cm Si value.
-        D : int
-            Exponent: 2 for direct, 2.5 (truncated to 2) for indirect tunneling.
+        D : float
+            Exponent: 2 for direct, 2.5 for indirect tunneling.  This is
+            passed as a real-valued exponent; older builds truncated 2.5 to 2,
+            which made Sentaurus-style indirect-BTBT calibration impossible.
+        field_mode : {"magnitude", "x", "y", "z"} or int
+            Local-field selector.  ``"magnitude"`` uses ``|grad(phi)|`` and is
+            the backward-compatible default.  Component modes use ``|Ex|``,
+            ``|Ey|`` or ``|Ez|`` and are useful for junction/path-field
+            calibration against Sentaurus local-Hurkx TFET references.
+        field_cap : float
+            Optional local-field cap [V/m].  Values <=0 disable the cap.  This
+            is a calibrated compatibility control for Sentaurus local-Hurkx
+            TFET replay on sharp junction grids.
+        field_alpha : float
+            Optional local-field shape exponent.  ``E_eff =
+            E*(E/field_ref)**field_alpha`` before evaluating Kane.  Zero
+            preserves the original model.
+        field_ref : float
+            Reference field [V/m] for ``field_alpha``.  Must be positive.
+        continuity_scale : float
+            Multiplier for the BTBT source inserted into the carrier
+            continuity equations.  The reported ``G_btbt`` array is not scaled.
+            Default 1.0 preserves legacy behavior.
         use_nonlocal : bool
             Use non-local (path-integral WKB) tunneling model. Computes
             tunneling probability by integrating along the source-channel
             tunneling path, avoiding the overestimation of the local Kane
             model at sharp p+/n+ junctions. Recommended for TFET simulation.
+        tunnel_path_fraction : float
+            Non-local path cap as a fraction of the x-domain span. Set <=0 to
+            disable this cap and use only the physical/barrier boundary caps.
+        wkb_npts : int
+            Number of WKB Simpson segments. Odd values are rounded up inside
+            the C++ solver; values below 2 are rejected.
         """
+        if not np.isfinite(tunnel_path_fraction):
+            raise ValueError("tunnel_path_fraction must be finite")
+        if int(wkb_npts) < 2:
+            raise ValueError("wkb_npts must be >= 2")
+        if isinstance(field_mode, str):
+            field_mode_key = field_mode.strip().lower()
+            field_mode_map = {
+                "magnitude": 0,
+                "mag": 0,
+                "norm": 0,
+                "x": 1,
+                "ex": 1,
+                "y": 2,
+                "ey": 2,
+                "z": 3,
+                "ez": 3,
+            }
+            if field_mode_key not in field_mode_map:
+                raise ValueError("field_mode must be one of magnitude, x, y, z")
+            field_mode_value = field_mode_map[field_mode_key]
+        else:
+            field_mode_value = int(field_mode)
+            if field_mode_value < 0 or field_mode_value > 3:
+                raise ValueError("field_mode integer must be in [0, 3]")
+        if not np.isfinite(field_cap):
+            raise ValueError("field_cap must be finite")
+        if not np.isfinite(field_alpha):
+            raise ValueError("field_alpha must be finite")
+        if not np.isfinite(field_ref) or field_ref <= 0.0:
+            raise ValueError("field_ref must be finite and positive")
+        if not np.isfinite(continuity_scale) or continuity_scale < 0.0:
+            raise ValueError("continuity_scale must be finite and non-negative")
         self._sim.set_btbt_enabled(enabled)
-        self._sim.set_btbt_params(A_kane, B_kane, int(D))
+        if not np.isfinite(D) or D <= 0.0:
+            raise ValueError("D must be finite and positive")
+        self._sim.set_btbt_params(A_kane, B_kane, float(D))
+        if hasattr(self._sim, "set_btbt_field_shape"):
+            self._sim.set_btbt_field_shape(
+                field_mode_value, float(field_cap), float(field_alpha), float(field_ref),
+            )
+        elif hasattr(self._sim, "set_btbt_field_options"):
+            self._sim.set_btbt_field_options(field_mode_value, float(field_cap))
+        else:
+            self._sim.set_btbt_field_mode(field_mode_value)
+        if hasattr(self._sim, "set_btbt_continuity_scale"):
+            self._sim.set_btbt_continuity_scale(float(continuity_scale))
         self._sim.set_btbt_use_nonlocal(use_nonlocal)
+        self._sim.set_btbt_nonlocal_params(
+            float(tunnel_path_fraction), int(wkb_npts),
+        )
         self._btbt_enabled = bool(enabled)
 
     def set_impact_ionization(self, enabled: bool = True,
@@ -987,6 +1288,10 @@ class Simulator:
     def set_leakage(self, enabled: bool = True,
                     pf_C: float = 0.02, pf_B: float = 5.0e5, pf_phi_t: float = 0.5,
                     fn_C: float = 0.0, fn_B: float = 0.0, fn_phi_b: float = 0.0,
+                    fn_C_positive: Optional[float] = None,
+                    fn_B_positive: Optional[float] = None,
+                    fn_C_negative: Optional[float] = None,
+                    fn_B_negative: Optional[float] = None,
                     E_floor: float = 1.0e6, sigma_cap: float = 0.05,
                     leak_mask_override: Optional[np.ndarray] = None) -> None:
         """Enable leakage current (Poole-Frenkel / Fowler-Nordheim) (P2.2).
@@ -1013,8 +1318,14 @@ class Simulator:
             coefficient, and trap ionization energy [eV].
             ``frac_pf = pf_C·exp(-pf_B·sqrt(pf_phi_t/|E|))``.
         fn_C, fn_B, fn_phi_b : float
-            Fowler-Nordheim prefactor [A/V²], exponent coefficient, and barrier height
-            [eV]. ``frac_fn = fn_C·|E|·exp(-fn_B·fn_phi_b^1.5/|E|)``.
+            Symmetric Fowler-Nordheim prefactor [A/V²], exponent coefficient
+            [V/m/eV^1.5], and barrier height [eV]. The current density is
+            ``J_fn = fn_C·E²·exp(-fn_B·fn_phi_b^1.5/|E|)``.
+        fn_C_positive, fn_B_positive, fn_C_negative, fn_B_negative : float, optional
+            Signed-field FN coefficient pairs. If all four are supplied they
+            override ``fn_C/fn_B`` according to the oriented edge field sign,
+            matching Sentaurus Fowler write/erase parameters. Partial pairs
+            are rejected.
         E_floor : float
             Field below which leakage is negligible [V/m].
         sigma_cap : float
@@ -1025,6 +1336,20 @@ class Simulator:
         if not enabled:
             self._sim.set_leakage_enabled(False)
             return
+        directional = (
+            fn_C_positive, fn_B_positive, fn_C_negative, fn_B_negative
+        )
+        if any(value is not None for value in directional) and not all(
+            value is not None for value in directional
+        ):
+            raise ValueError(
+                "all four signed-field FN coefficients must be provided"
+            )
+        if any(value is not None for value in directional):
+            if any((not np.isfinite(value)) or value < 0.0 for value in directional):
+                raise ValueError(
+                    "signed-field FN coefficients must be finite and nonnegative"
+                )
         npts = self.mesh.npts()
         if leak_mask_override is not None:
             mask = np.asarray(leak_mask_override, dtype=np.int8).ravel()
@@ -1034,6 +1359,8 @@ class Simulator:
             mask = np.zeros(npts, dtype=np.int8)
         self._sim.set_leakage(mask, pf_C, pf_B, pf_phi_t,
                               fn_C, fn_B, fn_phi_b, E_floor, sigma_cap)
+        if any(value is not None for value in directional):
+            self._sim.set_leakage_fn_polarity(*directional)
 
     def set_interface_traps(self, D_it: float = 0.0, E_t: float = 0.0,
                             trap_mask_override: Optional[np.ndarray] = None) -> None:
@@ -1222,7 +1549,12 @@ class Simulator:
             return
         eps = mesh.fields["epsilon"]
         mat_id = mesh.fields["material_id"]
-        edge_eps = compute_edge_permittivity(mesh, eps, mat_id)
+        edge_eps = compute_edge_permittivity(
+            mesh,
+            eps,
+            mat_id,
+            shapes=getattr(mesh, "_material_shapes", None),
+        )
         self._sim.set_edge_permittivity(
             edge_eps["x_plus"].astype(np.float64),
             edge_eps["x_minus"].astype(np.float64),

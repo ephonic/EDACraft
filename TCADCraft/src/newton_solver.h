@@ -35,7 +35,7 @@ struct NewtonOptions {
     //   - Jacobian carrier columns get the chain-rule factor dF/du = dF/dn * n
     //     (and dF/dv = dF/dp * p), turning a 1e22-wide diagonal into O(1).
     //   - Dirichlet carrier BC rows become u - log(n_bc); insulator rows become
-    //     u - log(1e-30); the BE transient term becomes (exp(u)-exp(u_prev))/dt.
+    //     u - log(EPSILON); the BE transient term becomes (exp(u)-exp(u_prev))/dt.
     //   - Newton updates are additive in log-space (u += du), which is
     //     equivalent to the exponential update but cleaner — no division by the
     //     current density (the use_log_damping path divides dx[n]/x[n], which
@@ -49,7 +49,12 @@ struct NewtonOptions {
     bool enable_btbt = false;
     real_t btbt_A = 3.1e21Q;
     real_t btbt_B = 2.0e9Q;  // V/m (SI; 2e7 V/cm)
-    int btbt_D = 2;
+    real_t btbt_D = 2.0Q;
+    int btbt_field_mode = 0;
+    real_t btbt_field_cap = 0.0Q;
+    real_t btbt_field_alpha = 0.0Q;
+    real_t btbt_field_ref = 1.0e8Q;
+    real_t btbt_continuity_scale = 1.0Q;
     // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
     // G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q.  Defaults are silicon (SI units,
     // pre-converted from the 1/cm and V/cm literature values — see
@@ -109,6 +114,12 @@ public:
     explicit NewtonSolver(const Grid3D& grid, const NewtonOptions& opt = {});
 
     void set_permittivity(const std::vector<real_t>& eps);
+    void set_edge_permittivity(const std::vector<real_t>& x_plus,
+                               const std::vector<real_t>& x_minus,
+                               const std::vector<real_t>& y_plus,
+                               const std::vector<real_t>& y_minus,
+                               const std::vector<real_t>& z_plus,
+                               const std::vector<real_t>& z_minus);
     void set_mobility(const std::vector<real_t>& mu_n, const std::vector<real_t>& mu_p);
     void set_doping(const std::vector<real_t>& Nd_minus_Na);
     void set_charge_volume_fraction(const std::vector<real_t>& fraction);
@@ -140,6 +151,34 @@ public:
                          real_t D_it, real_t E_t,
                          const std::vector<real_t>& Q_ot);
     void set_semiconductor_mask(const std::vector<char>& mask) { semi_mask_ = mask; }
+    void set_density_gradient_coefficients(real_t bn, real_t bp) {
+        dg_bn_ = bn; dg_bp_ = bp;
+    }
+    void set_density_gradient_silicon_multivalley(bool enable,
+                                                  real_t ml, real_t mt,
+                                                  size_t subbands) {
+        dg_silicon_multivalley_ = enable;
+        dg_silicon_ml_ = ml; dg_silicon_mt_ = mt;
+        dg_silicon_subbands_ = subbands;
+    }
+    void set_density_gradient_interface_distance_factor(real_t factor) {
+        dg_interface_distance_factor_ = factor;
+    }
+    void set_density_gradient_step_boundary(
+        bool enable, real_t electron_barrier_eV, real_t hole_barrier_eV,
+        real_t electron_barrier_mass, real_t hole_barrier_mass,
+        real_t electron_gamma, real_t hole_gamma,
+        real_t electron_theta, real_t hole_theta) {
+        dg_step_boundary_enabled_ = enable;
+        dg_step_e_barrier_eV_ = electron_barrier_eV;
+        dg_step_h_barrier_eV_ = hole_barrier_eV;
+        dg_step_e_mass_ = electron_barrier_mass;
+        dg_step_h_mass_ = hole_barrier_mass;
+        dg_step_e_gamma_ = electron_gamma;
+        dg_step_h_gamma_ = hole_gamma;
+        dg_step_e_theta_ = electron_theta;
+        dg_step_h_theta_ = hole_theta;
+    }
     void set_ohmic_contacts(const std::set<size_t>& nodes,
                             const std::map<size_t, real_t>& EFn,
                             const std::map<size_t, real_t>& EFp,
@@ -181,6 +220,9 @@ private:
     NewtonOptions opt_;
 
     std::vector<real_t> eps_;
+    std::vector<real_t> edge_eps_x_plus_, edge_eps_x_minus_;
+    std::vector<real_t> edge_eps_y_plus_, edge_eps_y_minus_;
+    std::vector<real_t> edge_eps_z_plus_, edge_eps_z_minus_;
     std::vector<real_t> mu_n_, mu_p_;
     std::vector<real_t> Nd_minus_Na_;
     std::vector<real_t> charge_volume_fraction_;
@@ -207,6 +249,33 @@ private:
 
     // DG semiconductor mask (1=semi, 0=oxide). Empty = no DG.
     std::vector<char> semi_mask_;
+    real_t dg_bn_ = 4.885e-20Q;
+    real_t dg_bp_ = 3.432e-20Q;
+    bool dg_silicon_multivalley_ = false;
+    real_t dg_silicon_ml_ = 0.916Q;
+    real_t dg_silicon_mt_ = 0.190Q;
+    size_t dg_silicon_subbands_ = 4;
+    real_t dg_interface_distance_factor_ = 1.0Q;
+    bool dg_step_boundary_enabled_ = false;
+    real_t dg_step_e_barrier_eV_ = 3.17Q;
+    real_t dg_step_h_barrier_eV_ = 4.70Q;
+    real_t dg_step_e_mass_ = 0.42Q;
+    real_t dg_step_h_mass_ = 1.0Q;
+    // Eq. 250 uses gamma(0+), i.e. the non-solved barrier side.
+    real_t dg_step_e_gamma_ = 1.0Q;
+    real_t dg_step_h_gamma_ = 1.0Q;
+    real_t dg_step_e_theta_ = 0.5Q;
+    real_t dg_step_h_theta_ = 0.5Q;
+    // Picard/Newton DG state.  dQ/dn is intentionally omitted from the
+    // three-block Jacobian, so one Newton iteration (including all line-search
+    // trials) must use one frozen Q.  It is refreshed from the accepted x at
+    // the start of the next outer iteration.
+    bool use_lagged_quantum_potential_ = false;
+    std::vector<real_t> lagged_Qn_, lagged_Qp_;
+    // Per-node quantum rescue active set.  Deeply depleted log-density
+    // variables below the mobile-charge error reference are numerically
+    // unobservable and are pinned to their accepted Gummel value.
+    std::vector<char> inactive_n_, inactive_p_;
     // Ohmic contact data
     std::set<size_t> ohmic_nodes_;
     std::map<size_t, real_t> ohmic_EFn_, ohmic_EFp_;
@@ -220,9 +289,14 @@ private:
 
     void assemble_residual(const std::vector<real_t>& x, std::vector<real_t>& F);
     void assemble_jacobian(const std::vector<real_t>& x, SparseMatrix& J);
+    void refresh_lagged_quantum_potential(const std::vector<real_t>& x);
 
     static real_t bernoulli(real_t x);
     static real_t d_bernoulli_dx(real_t x);
+    real_t edge_epsilon(size_t idx, size_t nbr,
+                        const std::vector<real_t>& override_values) const;
+    real_t active_carrier_width(size_t idx, size_t j, size_t k, int axis,
+                                const std::vector<real_t>& mobility) const;
 
     void compute_srh_and_derivs(size_t idx, real_t n, real_t p, real_t ni,
                                 real_t& R, real_t& dR_dn, real_t& dR_dp) const;

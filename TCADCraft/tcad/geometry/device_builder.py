@@ -112,6 +112,7 @@ class Device:
         self.regions: List[Region] = []
         self.contacts: Dict[str, Tuple[Shape, float]] = {}  # name -> (shape, voltage)
         self.contact_workfunctions: Dict[str, float] = {}
+        self.metadata: Dict[str, object] = {}
 
     def add_region(self, region: Region) -> Device:
         self.regions.append(region)
@@ -1100,6 +1101,15 @@ class Device:
         dev.add_contact("drain", Box(Lsd + Lg, x_total, 0, W, -5e-9, 0), voltage=Vd)
         dev.add_contact("gate", Box(Lsd, Lsd + Lg, 0, W,
                                      t_ch + tox, t_ch + tox + 5e-9), voltage=Vg)
+        dev.metadata["sentaurus_calibration"] = {
+            "benchmark": "novel_material_device_v1",
+            "material": "igzo",
+            "channel_thickness_nm": t_ch * 1.0e9,
+            "drain_voltage_V": Vd - Vs,
+            "gate_voltage_V": Vg - Vs,
+            "source_voltage_V": Vs,
+            "temperature_K": 300.0,
+        }
         return dev
 
     @staticmethod
@@ -1144,6 +1154,16 @@ class Device:
         )
         dev.add_contact("gate", Box(Lsd, Lsd + Lg, 0, W,
                                      t_ch + tox, t_ch + tox + 5e-9), voltage=Vg)
+        dev.metadata["sentaurus_calibration"] = {
+            "benchmark": "novel_material_device_v1",
+            "material": "wse2",
+            "metal_workfunction_eV": source_workfunction,
+            "drain_workfunction_eV": drain_workfunction,
+            "drain_voltage_V": Vd - Vs,
+            "gate_voltage_V": Vg - Vs,
+            "source_voltage_V": Vs,
+            "temperature_K": 300.0,
+        }
         return dev
 
     @staticmethod

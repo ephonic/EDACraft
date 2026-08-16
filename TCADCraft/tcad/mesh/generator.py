@@ -42,6 +42,11 @@ def structured_mesh_from_device(
         _nz = nz or 51
 
     grid = StructuredGrid(bbox, _nx, _ny, _nz)
+    # Preserve the ordered region geometry for cut-cell preprocessing. Region
+    # ids use the same later-region-wins order as Device.sample_on_grid().
+    grid._material_shapes = [
+        (region.shape, rid) for rid, region in enumerate(device.regions)
+    ]
     # Attach device fields
     fields = grid.create_device_fields(device)
     for name, data in fields.items():

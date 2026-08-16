@@ -18,6 +18,7 @@ class TestAdaptiveRefiner:
         assert fine.ny >= 3
         assert fine.nz >= 3
         assert "doping" in fine.fields
+        assert len(fine._material_shapes) == len(dev.regions)
 
     def test_refinement_increases_resolution(self):
         dev = Device.pnjunction()
@@ -300,4 +301,3 @@ class TestAdaptiveLoop:
         # Final mesh should be larger than initial
         if len(grids) > 1:
             assert grids[-1].npts() > grids[0].npts()
-

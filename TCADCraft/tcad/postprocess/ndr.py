@@ -29,7 +29,7 @@ def extract_btb_current(
     mesh,
     A_kane: float = 3.1e21,
     B_kane: float = 2.0e9,
-    D: int = 2,
+    D: float = 2.0,
 ) -> float:
     """Extract BTBT generation current from simulation results.
 

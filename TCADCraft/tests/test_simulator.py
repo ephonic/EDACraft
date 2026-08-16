@@ -35,6 +35,35 @@ class TestSimulator:
             invalid[0] = np.nan
             sim.set_charge_volume_fraction(invalid)
 
+    def test_set_btbt_weight_validation(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=1)
+        sim = Simulator(mesh)
+
+        class CaptureWeight:
+            def __init__(self):
+                self.weight = None
+
+            def set_btbt_weight(self, weight):
+                self.weight = weight
+
+        capture = CaptureWeight()
+        sim._sim = capture
+        sim.set_btbt_weight(np.full(mesh.npts(), 0.5))
+        assert capture.weight.shape == (mesh.npts(),)
+        assert np.allclose(capture.weight, 0.5)
+
+        with pytest.raises(ValueError, match="size"):
+            sim.set_btbt_weight(np.ones(mesh.npts() - 1))
+        with pytest.raises(ValueError, match="finite"):
+            invalid = np.ones(mesh.npts())
+            invalid[0] = np.nan
+            sim.set_btbt_weight(invalid)
+        with pytest.raises(ValueError, match="nonnegative"):
+            invalid = np.ones(mesh.npts())
+            invalid[0] = -1.0
+            sim.set_btbt_weight(invalid)
+
     def test_set_contact(self):
         dev = Device.pnjunction()
         mesh = structured_mesh_from_device(dev, nx=11, ny=11, nz=11)
@@ -57,6 +86,196 @@ class TestSimulator:
         sim.set_quantum(True)
         sim.set_quantum(False)
 
+    def test_btbt_nonlocal_options_forwarded_and_validated(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=1)
+        sim = Simulator(mesh)
+
+        class CaptureBTBT:
+            def __init__(self):
+                self.calls = []
+
+            def set_btbt_enabled(self, value):
+                self.calls.append(("enabled", value))
+
+            def set_btbt_params(self, A, B, D):
+                self.calls.append(("params", A, B, D))
+
+            def set_btbt_field_mode(self, mode):
+                self.calls.append(("field_mode", mode))
+
+            def set_btbt_field_options(self, mode, cap):
+                self.calls.append(("field_options", mode, cap))
+
+            def set_btbt_field_shape(self, mode, cap, alpha, ref):
+                self.calls.append(("field_shape", mode, cap, alpha, ref))
+
+            def set_btbt_continuity_scale(self, scale):
+                self.calls.append(("continuity_scale", scale))
+
+            def set_btbt_use_nonlocal(self, value):
+                self.calls.append(("use_nonlocal", value))
+
+            def set_btbt_nonlocal_params(self, tunnel_path_fraction, wkb_npts):
+                self.calls.append(("nonlocal", tunnel_path_fraction, wkb_npts))
+
+        capture = CaptureBTBT()
+        sim._sim = capture
+        sim.set_btbt(
+            enabled=True,
+            D=2.5,
+            field_mode="x",
+            field_cap=8.0e8,
+            field_alpha=-0.25,
+            field_ref=1.0e8,
+            continuity_scale=3.5,
+            use_nonlocal=True,
+            tunnel_path_fraction=0.25,
+            wkb_npts=96,
+        )
+        assert ("params", 3.1e21, 2.0e9, 2.5) in capture.calls
+        assert ("field_shape", 1, 8.0e8, -0.25, 1.0e8) in capture.calls
+        assert ("continuity_scale", 3.5) in capture.calls
+        assert ("nonlocal", 0.25, 96) in capture.calls
+
+        with pytest.raises(ValueError, match="D"):
+            sim.set_btbt(D=0.0)
+        with pytest.raises(ValueError, match="field_mode"):
+            sim.set_btbt(field_mode="bad")
+        with pytest.raises(ValueError, match="field_cap"):
+            sim.set_btbt(field_cap=np.inf)
+        with pytest.raises(ValueError, match="field_alpha"):
+            sim.set_btbt(field_alpha=np.nan)
+        with pytest.raises(ValueError, match="field_ref"):
+            sim.set_btbt(field_ref=0.0)
+        with pytest.raises(ValueError, match="continuity_scale"):
+            sim.set_btbt(continuity_scale=-1.0)
+        with pytest.raises(ValueError, match="tunnel_path_fraction"):
+            sim.set_btbt(tunnel_path_fraction=np.nan)
+        with pytest.raises(ValueError, match="wkb_npts"):
+            sim.set_btbt(wkb_npts=1)
+
+    def test_density_gradient_coefficient_validation(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=1)
+        sim = Simulator(mesh)
+        sim.set_density_gradient_coefficients(4.885e-20, 3.432e-20)
+        with pytest.raises(ValueError, match="finite and positive"):
+            sim.set_density_gradient_coefficients(np.nan, 3.432e-20)
+
+    def test_density_gradient_effective_mass_mapping(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=1)
+        sim = Simulator(mesh)
+        bn, bp = sim.set_density_gradient_effective_masses(
+            electron_dos_mass=1.090250521886503,
+            hole_dos_mass=1.1524650081209626,
+            electron_gamma=3.6,
+            hole_gamma=5.6,
+        )
+        assert bn == pytest.approx(4.193511896579586e-20, rel=1e-12)
+        assert bp == pytest.approx(6.171091146361865e-20, rel=1e-12)
+        with pytest.raises(ValueError, match="masses and gamma factors"):
+            sim.set_density_gradient_effective_masses(1.0, 1.0, 0.0, 1.0)
+
+    def test_silicon_multivalley_parameter_validation(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=3)
+        sim = Simulator(mesh)
+        sim.set_density_gradient_silicon_multivalley()
+        with pytest.raises(ValueError, match="finite and positive"):
+            sim.set_density_gradient_silicon_multivalley(transverse_mass=np.nan)
+        with pytest.raises(ValueError, match=r"\[1,32\]"):
+            sim.set_density_gradient_silicon_multivalley(subbands=0)
+
+    def test_density_gradient_interface_factor_validation(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=3)
+        sim = Simulator(mesh)
+        sim.set_density_gradient_interface_distance_factor(0.6)
+        with pytest.raises(ValueError, match="finite and positive"):
+            sim.set_density_gradient_interface_distance_factor(np.nan)
+
+    def test_density_gradient_potential_form_toggle(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=3)
+        sim = Simulator(mesh)
+        sim.set_density_gradient_potential_form()
+        sim.set_density_gradient_potential_form(False)
+
+    def test_density_gradient_step_boundary_validation(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=3)
+        sim = Simulator(mesh)
+        sim.set_density_gradient_step_boundary()
+        with pytest.raises(ValueError, match="finite and positive"):
+            sim.set_density_gradient_step_boundary(electron_barrier_mass=np.nan)
+
+    def test_density_gradient_step_boundary_defaults_use_barrier_gamma(self):
+        """Equation 250 takes gamma from 0+ (oxide), not bulk silicon."""
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=3)
+        sim = Simulator(mesh)
+
+        class CaptureBoundary:
+            args = None
+
+            def set_density_gradient_step_boundary(self, *args):
+                self.args = args
+
+        capture = CaptureBoundary()
+        sim._sim = capture
+        sim.set_density_gradient_step_boundary()
+        assert capture.args[5:7] == pytest.approx((1.0, 1.0))
+
+    def test_leakage_signed_fn_validation_is_atomic(self):
+        dev = Device.pnjunction()
+        mesh = structured_mesh_from_device(dev, nx=5, ny=1, nz=1)
+        sim = Simulator(mesh)
+
+        class CaptureLeakage:
+            leakage_args = None
+            polarity_args = None
+
+            def set_leakage(self, *args):
+                self.leakage_args = args
+
+            def set_leakage_fn_polarity(self, *args):
+                self.polarity_args = args
+
+            def set_leakage_enabled(self, enabled):
+                self.enabled = enabled
+
+        capture = CaptureLeakage()
+        sim._sim = capture
+        with pytest.raises(ValueError, match="all four"):
+            sim.set_leakage(
+                fn_C_positive=1.23e-6,
+                fn_B_positive=2.37e10,
+            )
+        assert capture.leakage_args is None
+        assert capture.polarity_args is None
+        with pytest.raises(ValueError, match="finite and nonnegative"):
+            sim.set_leakage(
+                fn_C_positive=np.nan,
+                fn_B_positive=2.37e10,
+                fn_C_negative=1.87e-7,
+                fn_B_negative=1.88e10,
+            )
+        assert capture.leakage_args is None
+        assert capture.polarity_args is None
+
+        sim.set_leakage(
+            fn_C_positive=1.23e-6,
+            fn_B_positive=2.37e10,
+            fn_C_negative=1.87e-7,
+            fn_B_negative=1.88e10,
+        )
+        assert capture.leakage_args is not None
+        assert capture.polarity_args == pytest.approx(
+            (1.23e-6, 2.37e10, 1.87e-7, 1.88e10)
+        )
+
     def test_run_small(self):
         """Run a very small simulation to verify end-to-end."""
         dev = Device.pnjunction(L=1e-6, W=1e-6, H=1e-6)
@@ -73,6 +292,8 @@ class TestSimulator:
         assert "p" in results
         assert "Qn" in results
         assert "Qp" in results
+        assert "poisson_residual" in results
+        assert results["quantum_residual"] == pytest.approx(0.0)
         assert results["phi"].size == mesh.npts()
         assert results["Qn"].size == mesh.npts()
         assert np.all(results["Qn"] == 0.0)
@@ -307,6 +528,25 @@ class TestCutCell:
         sim.set_material_from_mesh()
         sim.enable_cut_cell(True)
         assert sim._cut_cell_enabled is True
+
+    def test_cut_cell_uses_device_region_geometry(self):
+        mesh = self._make_mesh()
+        assert getattr(mesh, "_material_shapes", None)
+        sim = Simulator(mesh)
+        sim.set_material_from_mesh()
+        sim.enable_cut_cell(True)
+
+        class CaptureEdges:
+            args = None
+
+            def set_edge_permittivity(self, *args):
+                self.args = args
+
+        capture = CaptureEdges()
+        sim._sim = capture
+        sim._apply_cut_cell()
+        assert capture.args is not None
+        assert all(values.shape == (mesh.npts(),) for values in capture.args)
 
     def test_cut_cell_runs_without_crash(self):
         mesh = self._make_mesh()

@@ -50,6 +50,10 @@ void DeviceSimulatorDouble::set_optical_generation(const std::vector<double>& G_
     sim_.set_optical_generation(to_real_t(G_opt));
 }
 
+void DeviceSimulatorDouble::set_btbt_weight(const std::vector<double>& weight) {
+    sim_.set_btbt_weight(to_real_t(weight));
+}
+
 void DeviceSimulatorDouble::set_recombination(const std::vector<double>& tau_n, const std::vector<double>& tau_p) {
     sim_.set_recombination(to_real_t(tau_n), to_real_t(tau_p));
 }
@@ -86,6 +90,45 @@ void DeviceSimulatorDouble::set_hole_bc(const std::map<size_t, double>& bc) {
 
 void DeviceSimulatorDouble::set_quantum_enabled(bool enable) {
     sim_.set_quantum_enabled(enable);
+}
+
+void DeviceSimulatorDouble::set_density_gradient_coefficients(double bn, double bp) {
+    sim_.set_density_gradient_coefficients(static_cast<real_t>(bn),
+                                           static_cast<real_t>(bp));
+}
+
+void DeviceSimulatorDouble::set_density_gradient_silicon_multivalley(
+    bool enable, double longitudinal_mass, double transverse_mass,
+    size_t subbands) {
+    sim_.set_density_gradient_silicon_multivalley(
+        enable, static_cast<real_t>(longitudinal_mass),
+        static_cast<real_t>(transverse_mass), subbands);
+}
+
+void DeviceSimulatorDouble::set_density_gradient_interface_distance_factor(
+    double factor) {
+    sim_.set_density_gradient_interface_distance_factor(
+        static_cast<real_t>(factor));
+}
+
+void DeviceSimulatorDouble::set_density_gradient_potential_form(bool enable) {
+    sim_.set_density_gradient_potential_form(enable);
+}
+
+void DeviceSimulatorDouble::set_density_gradient_step_boundary(
+    bool enable, double electron_barrier_eV, double hole_barrier_eV,
+    double electron_barrier_mass, double hole_barrier_mass,
+    double electron_gamma, double hole_gamma,
+    double electron_theta, double hole_theta) {
+    sim_.set_density_gradient_step_boundary(
+        enable, static_cast<real_t>(electron_barrier_eV),
+        static_cast<real_t>(hole_barrier_eV),
+        static_cast<real_t>(electron_barrier_mass),
+        static_cast<real_t>(hole_barrier_mass),
+        static_cast<real_t>(electron_gamma),
+        static_cast<real_t>(hole_gamma),
+        static_cast<real_t>(electron_theta),
+        static_cast<real_t>(hole_theta));
 }
 
 void DeviceSimulatorDouble::set_gummel_max_iter(size_t max_iter) {
@@ -186,12 +229,33 @@ void DeviceSimulatorDouble::set_btbt_enabled(bool enable) {
     sim_.set_btbt_enabled(enable);
 }
 
-void DeviceSimulatorDouble::set_btbt_params(double A, double B, int D) {
-    sim_.set_btbt_params((real_t)A, (real_t)B, D);
+void DeviceSimulatorDouble::set_btbt_params(double A, double B, double D) {
+    sim_.set_btbt_params((real_t)A, (real_t)B, (real_t)D);
+}
+
+void DeviceSimulatorDouble::set_btbt_field_mode(int mode) {
+    sim_.set_btbt_field_mode(mode);
+}
+
+void DeviceSimulatorDouble::set_btbt_field_options(int mode, double cap) {
+    sim_.set_btbt_field_options(mode, (real_t)cap);
+}
+
+void DeviceSimulatorDouble::set_btbt_field_shape(int mode, double cap,
+                                                 double alpha, double ref) {
+    sim_.set_btbt_field_shape(mode, (real_t)cap, (real_t)alpha, (real_t)ref);
+}
+
+void DeviceSimulatorDouble::set_btbt_continuity_scale(double scale) {
+    sim_.set_btbt_continuity_scale((real_t)scale);
 }
 
 void DeviceSimulatorDouble::set_btbt_use_nonlocal(bool enable) {
     sim_.set_btbt_use_nonlocal(enable);
+}
+
+void DeviceSimulatorDouble::set_btbt_nonlocal_params(double tunnel_path_frac, size_t wkb_npts) {
+    sim_.set_btbt_nonlocal_params((real_t)tunnel_path_frac, wkb_npts);
 }
 
 void DeviceSimulatorDouble::set_ii_enabled(bool enable) {
@@ -270,6 +334,15 @@ void DeviceSimulatorDouble::set_leakage(const std::vector<signed char>& mask,
 
 void DeviceSimulatorDouble::set_leakage_enabled(bool enable) {
     sim_.set_leakage_enabled(enable);   // P2.2
+}
+
+void DeviceSimulatorDouble::set_leakage_fn_polarity(double C_positive,
+                                                     double B_positive,
+                                                     double C_negative,
+                                                     double B_negative) {
+    sim_.set_leakage_fn_polarity(
+        (real_t)C_positive, (real_t)B_positive,
+        (real_t)C_negative, (real_t)B_negative);
 }
 
 void DeviceSimulatorDouble::set_interface_traps(const std::vector<signed char>& mask,
@@ -429,37 +502,48 @@ size_t DeviceSimulatorDouble::solve_iterations() const {
     return solved_ ? last_result_.iterations : 0;
 }
 
+double DeviceSimulatorDouble::solve_poisson_residual() const {
+    return solved_ ? static_cast<double>(last_result_.poisson_residual) : -1.0;
+}
+
+double DeviceSimulatorDouble::solve_quantum_residual() const {
+    return solved_ ? static_cast<double>(last_result_.quantum_residual) : -1.0;
+}
+
 size_t DeviceSimulatorDouble::nx() const { return sim_.nx(); }
 size_t DeviceSimulatorDouble::ny() const { return sim_.ny(); }
 size_t DeviceSimulatorDouble::nz() const { return sim_.nz(); }
 size_t DeviceSimulatorDouble::npts() const { return sim_.npts(); }
 
-std::vector<std::vector<double>> DeviceSimulatorDouble::solve_transient_phi() {
+void DeviceSimulatorDouble::solve_transient_once() {
     auto results = sim_.solve_transient();
     transient_history_converged_.clear();
     transient_history_phi_.resize(results.size());
+    transient_history_n_.resize(results.size());
+    transient_history_p_.resize(results.size());
     for (size_t i = 0; i < results.size(); ++i) {
         transient_history_phi_[i] = to_double(results[i].phi);
+        transient_history_n_[i] = to_double(results[i].n);
+        transient_history_p_[i] = to_double(results[i].p);
         transient_history_converged_.push_back(results[i].converged);
     }
+}
+
+std::vector<std::vector<double>> DeviceSimulatorDouble::solve_transient_phi() {
+    // The Python binding requests phi, n and p through three C++ getters.
+    // Execute the physical time integration once and cache every field so a
+    // single API call cannot silently advance the transient three times.
+    solve_transient_once();
     return transient_history_phi_;
 }
 
 std::vector<std::vector<double>> DeviceSimulatorDouble::solve_transient_n() {
-    auto results = sim_.solve_transient();
-    transient_history_n_.resize(results.size());
-    for (size_t i = 0; i < results.size(); ++i) {
-        transient_history_n_[i] = to_double(results[i].n);
-    }
+    if (transient_history_n_.empty()) solve_transient_once();
     return transient_history_n_;
 }
 
 std::vector<std::vector<double>> DeviceSimulatorDouble::solve_transient_p() {
-    auto results = sim_.solve_transient();
-    transient_history_p_.resize(results.size());
-    for (size_t i = 0; i < results.size(); ++i) {
-        transient_history_p_[i] = to_double(results[i].p);
-    }
+    if (transient_history_p_.empty()) solve_transient_once();
     return transient_history_p_;
 }
 
