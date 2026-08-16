@@ -23,6 +23,7 @@ public:
     void set_doping(const std::vector<double>& Nd_minus_Na);
     void set_charge_volume_fraction(const std::vector<double>& fraction);
     void set_optical_generation(const std::vector<double>& G_opt);
+    void set_btbt_weight(const std::vector<double>& weight);
     void set_recombination(const std::vector<double>& tau_n, const std::vector<double>& tau_p);
     void set_thermal_voltage(double VT);
     void set_effective_dos(const std::vector<double>& Nc, const std::vector<double>& Nv);
@@ -33,6 +34,18 @@ public:
     void set_hole_bc(const std::map<size_t, double>& bc);
 
     void set_quantum_enabled(bool enable);
+    void set_density_gradient_coefficients(double bn, double bp);
+    void set_density_gradient_silicon_multivalley(bool enable,
+                                                  double longitudinal_mass,
+                                                  double transverse_mass,
+                                                  size_t subbands);
+    void set_density_gradient_interface_distance_factor(double factor);
+    void set_density_gradient_potential_form(bool enable);
+    void set_density_gradient_step_boundary(
+        bool enable, double electron_barrier_eV, double hole_barrier_eV,
+        double electron_barrier_mass, double hole_barrier_mass,
+        double electron_gamma, double hole_gamma,
+        double electron_theta, double hole_theta);
     void set_gummel_max_iter(size_t max_iter);
     void set_tolerance(double tol);
     void set_poisson_solver_type(int type);
@@ -63,8 +76,13 @@ public:
     void set_ambient_temperature(double T_ambient);
     void set_thermal_dirichlet(const std::map<size_t, double>& bc);
     void set_btbt_enabled(bool enable);
-    void set_btbt_params(double A, double B, int D);
+    void set_btbt_params(double A, double B, double D);
+    void set_btbt_field_mode(int mode);
+    void set_btbt_field_options(int mode, double cap);
+    void set_btbt_field_shape(int mode, double cap, double alpha, double ref);
+    void set_btbt_continuity_scale(double scale);
     void set_btbt_use_nonlocal(bool enable);
+    void set_btbt_nonlocal_params(double tunnel_path_frac, size_t wkb_npts);
     // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
     void set_ii_enabled(bool enable);
     void set_ii_params(double A_n, double B_n, double A_p, double B_p);
@@ -89,6 +107,8 @@ public:
                      double C_pf, double B_pf, double phi_t,
                      double C_fn, double B_fn, double phi_b,
                      double E_floor, double sigma_cap);   // P2.2
+    void set_leakage_fn_polarity(double C_positive, double B_positive,
+                                 double C_negative, double B_negative);
     void set_leakage_enabled(bool enable);                // P2.2
     void set_interface_traps(const std::vector<signed char>& mask, double D_it, double E_t);  // P6
     void set_oxide_traps(const std::vector<double>& Q_ot);  // P6
@@ -135,6 +155,8 @@ public:
     std::vector<double> solve_G_ii();
     bool solve_converged() const;
     size_t solve_iterations() const;
+    double solve_poisson_residual() const;
+    double solve_quantum_residual() const;
 
     // Transient solve: returns flat history [step][field...]
     // Each step is a flattened array of size nx*ny*nz
@@ -167,6 +189,7 @@ private:
     std::vector<std::vector<double>> transient_history_p_;
     std::vector<bool> transient_history_converged_;
 
+    void solve_transient_once();
     std::vector<real_t> to_real_t(const std::vector<double>& v) const;
     std::vector<double> to_double(const std::vector<real_t>& v) const;
 };

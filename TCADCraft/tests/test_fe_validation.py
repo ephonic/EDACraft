@@ -206,6 +206,32 @@ class TestLeakageCurrent:
         assert samples[8.0] > 0.0 and samples[-8.0] < 0.0
         assert abs(samples[8.0] + samples[-8.0]) / abs(samples[8.0]) < 1e-10
 
+    def test_fn_signed_field_coefficients_match_closed_form(self):
+        """Write/erase FN pairs select on field sign without breaking KCL."""
+        sim, N = _build_alscn_slab(leak=False, Lx=40e-9, nx=41)
+        c_pos, b_pos = 1.23e-6, 2.37e10
+        c_neg, b_neg = 1.87e-7, 1.88e10
+        sim.set_leakage(
+            np.ones(N, dtype=np.int8),
+            C_pf=0.0, B_pf=0.0, phi_t=0.0,
+            C_fn=9.9, B_fn=9.9, phi_b=1.0,
+            E_floor=1e6, sigma_cap=0.0,
+        )
+        sim.set_leakage_fn_polarity(c_pos, b_pos, c_neg, b_neg)
+        for voltage, c_fn, b_fn in (
+            (4.0, c_pos, b_pos), (-4.0, c_neg, b_neg)
+        ):
+            sim.set_dirichlet_potential({0: voltage, N - 1: 0.0})
+            result = sim.solve()
+            current = np.asarray(result["Jleak_x"][:N - 1])
+            field = voltage / 40e-9
+            expected = (
+                np.sign(field) * c_fn * field**2
+                * np.exp(-b_fn / abs(field))
+            )
+            assert np.ptp(current) / max(abs(current).max(), 1e-300) < 1e-10
+            assert np.mean(current) == pytest.approx(expected, rel=1e-10)
+
 
 # ---------------------------------------------------------------------------
 # P3: NLS model

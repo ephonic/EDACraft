@@ -40,9 +40,9 @@ gmsh = ["gmsh>=4.12"]
 dev = ["pytest>=7.0", "pytest-cov", "black", "mypy"]
 
 [project.urls]
-Homepage = "https://github.com/ephonic/EDACraft/tree/main/TCADCraft"
-Repository = "https://github.com/ephonic/EDACraft"
-Issues = "https://github.com/ephonic/EDACraft/issues"
+Homepage = "https://github.com/EDACraft/TCADCraft"
+Repository = "https://github.com/EDACraft/TCADCraft"
+Issues = "https://github.com/EDACraft/TCADCraft/issues"
 
 [tool.setuptools.packages.find]
 include = ["tcad", "tcad.*"]

@@ -1,8 +1,10 @@
 #include "device_simulator.h"
 #include "statistics.h"
+#include <algorithm>
 #include <iostream>
 #include <cmath>
 #include <string>
+#include <cstdlib>
 
 namespace tcad {
 
@@ -28,10 +30,38 @@ DeviceSimulator::DeviceSimulator(size_t nx, size_t ny, size_t nz,
     Nc_.assign(N, 2.8e19Q);   // Default Si conduction-band DOS [cm^-3]
     Nv_.assign(N, 1.04e19Q);  // Default Si valence-band DOS [cm^-3]
     Eg_.assign(N, 1.12Q);     // Default Si bandgap [eV]
+    dg_.set_effective_dos(Nc_, Nv_);
     thermal_conductivity_.assign(N, 150.0Q); // Default: Silicon thermal conductivity [W/(m*K)]
 }
 
 namespace {
+bool finite_vector(const std::vector<real_t>& values) {
+    return std::all_of(values.begin(), values.end(), [](real_t value) {
+        return std::isfinite((double)value);
+    });
+}
+
+bool auto_petsc_enabled() {
+    const char* value = std::getenv("TCADCRAFT_AUTO_PETSC");
+    return value && std::string(value) == "1";
+}
+
+void validate_boundary_values(const std::map<size_t, real_t>& bc,
+                              size_t node_count, const char* name,
+                              bool require_nonnegative) {
+    for (const auto& [node, value] : bc) {
+        if (node >= node_count)
+            throw std::out_of_range(std::string(name) +
+                                    " boundary node is outside the grid");
+        if (!std::isfinite((double)value) ||
+            (require_nonnegative && value < 0.0Q))
+            throw std::invalid_argument(std::string(name) +
+                                        " boundary value must be finite" +
+                                        (require_nonnegative
+                                             ? " and nonnegative" : ""));
+    }
+}
+
 void validate_positions(const std::vector<real_t>& positions, size_t expected,
                         const char* axis) {
     if (positions.size() != expected)
@@ -47,6 +77,8 @@ void validate_positions(const std::vector<real_t>& positions, size_t expected,
 void DeviceSimulator::set_grid_z(const std::vector<real_t>& z_pos) {
     validate_positions(z_pos, g_.nz, "z");
     g_.zx = z_pos;
+    dg_transport_Qn_.clear();
+    dg_transport_Qp_.clear();
     // Grid-owning helpers store Grid3D by value. Refresh them immediately so
     // final E/J/Q post-processing uses exactly the mesh used by the nonlinear
     // solve (Gummel/Newton are rebuilt from g_ inside solve()).
@@ -56,17 +88,41 @@ void DeviceSimulator::set_grid_z(const std::vector<real_t>& z_pos) {
     poisson_.set_charge_volume_fraction(charge_volume_fraction_);
     poisson_.set_dirichlet(phi_bc_);
     dg_ = DensityGradient(g_);
+    dg_.set_coefficients(dg_bn_, dg_bp_);
+    dg_.set_silicon_multivalley(dg_silicon_multivalley_, dg_silicon_ml_,
+                                dg_silicon_mt_, dg_silicon_subbands_);
+    dg_.set_interface_distance_factor(dg_interface_distance_factor_);
+    dg_.set_potential_form(dg_potential_form_enabled_);
+    dg_.set_effective_dos(Nc_, Nv_);
+    dg_.set_step_boundary(
+        dg_step_boundary_enabled_, dg_step_e_barrier_eV_,
+        dg_step_h_barrier_eV_, dg_step_e_mass_, dg_step_h_mass_,
+        dg_step_e_gamma_, dg_step_h_gamma_, dg_step_e_theta_,
+        dg_step_h_theta_);
 }
 
 void DeviceSimulator::set_grid_x(const std::vector<real_t>& x_pos) {
     validate_positions(x_pos, g_.nx, "x");
     g_.xx = x_pos;
+    dg_transport_Qn_.clear();
+    dg_transport_Qp_.clear();
     poisson_ = PoissonSolver(g_);
     poisson_.set_permittivity(eps_);
     poisson_.set_doping(Nd_minus_Na_);
     poisson_.set_charge_volume_fraction(charge_volume_fraction_);
     poisson_.set_dirichlet(phi_bc_);
     dg_ = DensityGradient(g_);
+    dg_.set_coefficients(dg_bn_, dg_bp_);
+    dg_.set_silicon_multivalley(dg_silicon_multivalley_, dg_silicon_ml_,
+                                dg_silicon_mt_, dg_silicon_subbands_);
+    dg_.set_interface_distance_factor(dg_interface_distance_factor_);
+    dg_.set_potential_form(dg_potential_form_enabled_);
+    dg_.set_effective_dos(Nc_, Nv_);
+    dg_.set_step_boundary(
+        dg_step_boundary_enabled_, dg_step_e_barrier_eV_,
+        dg_step_h_barrier_eV_, dg_step_e_mass_, dg_step_h_mass_,
+        dg_step_e_gamma_, dg_step_h_gamma_, dg_step_e_theta_,
+        dg_step_h_theta_);
 }
 
 void DeviceSimulator::set_permittivity(const std::vector<real_t>& eps) {
@@ -81,6 +137,12 @@ void DeviceSimulator::set_edge_permittivity(const std::vector<real_t>& x_plus,
                                             const std::vector<real_t>& y_minus,
                                             const std::vector<real_t>& z_plus,
                                             const std::vector<real_t>& z_minus) {
+    edge_eps_x_plus_ = x_plus;
+    edge_eps_x_minus_ = x_minus;
+    edge_eps_y_plus_ = y_plus;
+    edge_eps_y_minus_ = y_minus;
+    edge_eps_z_plus_ = z_plus;
+    edge_eps_z_minus_ = z_minus;
     poisson_.set_edge_permittivity(x_plus, x_minus, y_plus, y_minus, z_plus, z_minus);
 }
 
@@ -114,6 +176,17 @@ void DeviceSimulator::set_optical_generation(const std::vector<real_t>& G_opt) {
     gummel_.set_optical_generation(G_opt_);
 }
 
+void DeviceSimulator::set_btbt_weight(const std::vector<real_t>& weight) {
+    if (!weight.empty() && weight.size() != g_.npts()) {
+        throw std::invalid_argument("BTBT weight size mismatch");
+    }
+    if (!finite_vector(weight)) {
+        throw std::invalid_argument("BTBT weight values must be finite");
+    }
+    btbt_weight_ = weight;
+    gummel_.set_btbt_weight(btbt_weight_);
+}
+
 void DeviceSimulator::set_recombination(const std::vector<real_t>& tau_n, const std::vector<real_t>& tau_p) {
     if (tau_n.size() != g_.npts() || tau_p.size() != g_.npts())
         throw std::invalid_argument("recombination lifetime size mismatch");
@@ -128,6 +201,7 @@ void DeviceSimulator::set_thermal_voltage(real_t VT) {
 }
 
 void DeviceSimulator::set_dirichlet_potential(const std::map<size_t, real_t>& bc) {
+    validate_boundary_values(bc, g_.npts(), "potential", false);
     for (const auto& kv : bc) {
         phi_bc_[kv.first] = kv.second;
     }
@@ -135,6 +209,7 @@ void DeviceSimulator::set_dirichlet_potential(const std::map<size_t, real_t>& bc
 }
 
 void DeviceSimulator::set_electron_bc(const std::map<size_t, real_t>& bc) {
+    validate_boundary_values(bc, g_.npts(), "electron", true);
     for (const auto& kv : bc) {
         n_bc_[kv.first] = kv.second;
     }
@@ -142,6 +217,7 @@ void DeviceSimulator::set_electron_bc(const std::map<size_t, real_t>& bc) {
 }
 
 void DeviceSimulator::set_hole_bc(const std::map<size_t, real_t>& bc) {
+    validate_boundary_values(bc, g_.npts(), "hole", true);
     for (const auto& kv : bc) {
         p_bc_[kv.first] = kv.second;
     }
@@ -149,7 +225,92 @@ void DeviceSimulator::set_hole_bc(const std::map<size_t, real_t>& bc) {
 }
 
 void DeviceSimulator::set_quantum_enabled(bool enable) {
+    if (quantum_enabled_ != enable) {
+        dg_transport_Qn_.clear();
+        dg_transport_Qp_.clear();
+    }
     quantum_enabled_ = enable;
+}
+
+void DeviceSimulator::set_density_gradient_coefficients(real_t bn, real_t bp) {
+    if (!(bn > 0.0Q) || !(bp > 0.0Q) ||
+        !std::isfinite((double)bn) || !std::isfinite((double)bp))
+        throw std::invalid_argument("density-gradient coefficients must be positive");
+    dg_bn_ = bn;
+    dg_bp_ = bp;
+    dg_transport_Qn_.clear();
+    dg_transport_Qp_.clear();
+    dg_.set_coefficients(bn, bp);
+}
+
+void DeviceSimulator::set_density_gradient_silicon_multivalley(
+    bool enable, real_t longitudinal_mass, real_t transverse_mass,
+    size_t subbands) {
+    if (!(longitudinal_mass > 0.0Q) || !(transverse_mass > 0.0Q) ||
+        !std::isfinite((double)longitudinal_mass) ||
+        !std::isfinite((double)transverse_mass))
+        throw std::invalid_argument("silicon DG effective masses must be positive");
+    if (subbands < 1 || subbands > 32)
+        throw std::invalid_argument("silicon DG subbands must be in [1,32]");
+    dg_silicon_multivalley_ = enable;
+    dg_silicon_ml_ = longitudinal_mass;
+    dg_silicon_mt_ = transverse_mass;
+    dg_silicon_subbands_ = subbands;
+    dg_transport_Qn_.clear();
+    dg_transport_Qp_.clear();
+    dg_.set_silicon_multivalley(enable, longitudinal_mass, transverse_mass,
+                                subbands);
+}
+
+void DeviceSimulator::set_density_gradient_interface_distance_factor(
+    real_t factor) {
+    if (!(factor > 0.0Q) || !std::isfinite((double)factor))
+        throw std::invalid_argument(
+            "density-gradient interface distance factor must be positive");
+    dg_interface_distance_factor_ = factor;
+    dg_transport_Qn_.clear();
+    dg_transport_Qp_.clear();
+    dg_.set_interface_distance_factor(factor);
+}
+
+void DeviceSimulator::set_density_gradient_potential_form(bool enable) {
+    if (dg_potential_form_enabled_ != enable) {
+        dg_transport_Qn_.clear();
+        dg_transport_Qp_.clear();
+    }
+    dg_potential_form_enabled_ = enable;
+    dg_.set_potential_form(enable);
+}
+
+void DeviceSimulator::set_density_gradient_step_boundary(
+    bool enable, real_t electron_barrier_eV, real_t hole_barrier_eV,
+    real_t electron_barrier_mass, real_t hole_barrier_mass,
+    real_t electron_gamma, real_t hole_gamma,
+    real_t electron_theta, real_t hole_theta) {
+    const real_t values[] = {
+        electron_barrier_eV, hole_barrier_eV,
+        electron_barrier_mass, hole_barrier_mass,
+        electron_gamma, hole_gamma, electron_theta, hole_theta};
+    for (real_t value : values) {
+        if (!(value > 0.0Q) || !std::isfinite((double)value))
+            throw std::invalid_argument(
+                "density-gradient step-boundary parameters must be positive");
+    }
+    dg_step_boundary_enabled_ = enable;
+    dg_step_e_barrier_eV_ = electron_barrier_eV;
+    dg_step_h_barrier_eV_ = hole_barrier_eV;
+    dg_step_e_mass_ = electron_barrier_mass;
+    dg_step_h_mass_ = hole_barrier_mass;
+    dg_step_e_gamma_ = electron_gamma;
+    dg_step_h_gamma_ = hole_gamma;
+    dg_step_e_theta_ = electron_theta;
+    dg_step_h_theta_ = hole_theta;
+    dg_transport_Qn_.clear();
+    dg_transport_Qp_.clear();
+    dg_.set_step_boundary(enable, electron_barrier_eV, hole_barrier_eV,
+                          electron_barrier_mass, hole_barrier_mass,
+                          electron_gamma, hole_gamma,
+                          electron_theta, hole_theta);
 }
 
 void DeviceSimulator::set_phi_freezing_enabled(bool enable) {
@@ -233,14 +394,51 @@ void DeviceSimulator::set_btbt_enabled(bool enable) {
     btbt_enabled_ = enable;
 }
 
-void DeviceSimulator::set_btbt_params(real_t A, real_t B, int D) {
+void DeviceSimulator::set_btbt_params(real_t A, real_t B, real_t D) {
     btbt_A_ = A;
     btbt_B_ = B;
     btbt_D_ = D;
 }
 
+void DeviceSimulator::set_btbt_field_mode(int mode) {
+    set_btbt_field_options(mode, btbt_field_cap_);
+}
+
+void DeviceSimulator::set_btbt_field_options(int mode, real_t cap) {
+    set_btbt_field_shape(mode, cap, btbt_field_alpha_, btbt_field_ref_);
+}
+
+void DeviceSimulator::set_btbt_field_shape(int mode, real_t cap,
+                                           real_t alpha, real_t ref) {
+    if (mode < 0 || mode > 3) {
+        mode = 0;
+    }
+    btbt_field_mode_ = mode;
+    btbt_field_cap_ = cap > 0.0Q ? cap : 0.0Q;
+    btbt_field_alpha_ = std::isfinite((double)alpha) ? alpha : 0.0Q;
+    btbt_field_ref_ = ref > 0.0Q ? ref : 1.0e8Q;
+}
+
+void DeviceSimulator::set_btbt_continuity_scale(real_t scale) {
+    if (!std::isfinite((double)scale) || scale < 0.0Q) {
+        throw std::invalid_argument("BTBT continuity scale must be finite and non-negative");
+    }
+    btbt_continuity_scale_ = scale;
+}
+
 void DeviceSimulator::set_btbt_use_nonlocal(bool enable) {
     btbt_use_nonlocal_ = enable;
+}
+
+void DeviceSimulator::set_btbt_nonlocal_params(real_t tunnel_path_frac, size_t wkb_npts) {
+    if (!std::isfinite((double)tunnel_path_frac)) {
+        throw std::invalid_argument("BTBT tunnel_path_frac must be finite");
+    }
+    if (wkb_npts < 2) {
+        throw std::invalid_argument("BTBT wkb_npts must be >= 2");
+    }
+    btbt_tunnel_path_frac_ = tunnel_path_frac;
+    btbt_wkb_npts_ = wkb_npts;
 }
 
 void DeviceSimulator::set_ii_enabled(bool enable) {
@@ -294,7 +492,9 @@ void DeviceSimulator::solve_equilibrium() {
     eq_opt.continuity_tol = 1e-8Q;
     eq_opt.VT = VT_;
     eq_opt.statistics_type = statistics_type_;
-    eq_opt.poisson_solver = (N > 2000) ? SolverType::PETSC : SolverType::DENSE_DIRECT;
+    eq_opt.poisson_solver = (N > 2000)
+        ? (auto_petsc_enabled() ? SolverType::PETSC : SolverType::BICGSTAB_ILU0)
+        : SolverType::DENSE_DIRECT;
     eq_opt.continuity_solver = eq_opt.poisson_solver;
 
     GummelSolver eq_gummel(g_, eq_opt);
@@ -441,9 +641,29 @@ void DeviceSimulator::set_leakage(const std::vector<char>& mask,
     leak_mask_ = mask;
     leak_C_pf_ = C_pf; leak_B_pf_ = B_pf; leak_phi_t_ = phi_t;
     leak_C_fn_ = C_fn; leak_B_fn_ = B_fn; leak_phi_b_ = phi_b;
+    leak_fn_polarity_enabled_ = false;
     leak_E_floor_ = E_floor;
     leak_sigma_cap_ = sigma_cap;
     leak_enabled_ = true;
+}
+
+void DeviceSimulator::set_leakage_fn_polarity(real_t C_positive,
+                                               real_t B_positive,
+                                               real_t C_negative,
+                                               real_t B_negative) {
+    if (!std::isfinite((double)C_positive) ||
+        !std::isfinite((double)B_positive) ||
+        !std::isfinite((double)C_negative) ||
+        !std::isfinite((double)B_negative) ||
+        C_positive < 0.0Q || B_positive < 0.0Q ||
+        C_negative < 0.0Q || B_negative < 0.0Q)
+        throw std::invalid_argument(
+            "FN polarity coefficients must be finite and nonnegative");
+    leak_C_fn_positive_ = C_positive;
+    leak_B_fn_positive_ = B_positive;
+    leak_C_fn_negative_ = C_negative;
+    leak_B_fn_negative_ = B_negative;
+    leak_fn_polarity_enabled_ = true;
 }
 
 void DeviceSimulator::set_leakage_enabled(bool enable) {
@@ -486,6 +706,7 @@ void DeviceSimulator::set_effective_dos(const std::vector<real_t>& Nc, const std
         throw std::invalid_argument("effective DOS size mismatch");
     Nc_ = Nc;
     Nv_ = Nv;
+    dg_.set_effective_dos(Nc_, Nv_);
 }
 
 void DeviceSimulator::set_bandgap(const std::vector<real_t>& Eg) {
@@ -594,25 +815,40 @@ SimulationResult DeviceSimulator::solve() {
     // same discrete solution once the coupled state has converged.
     if (quantum_enabled_) opt.cont_damping = 0.2Q;
     opt.VT = VT_;
-    // Auto-switch from dense direct to iterative/PETSc for large systems
-    // to avoid O(n^3) slowdown.  User overrides are respected.
-    if (N > 2000) {
+    // Auto-switch the public DENSE_DIRECT default before the quad-precision
+    // O(n^3) fallback becomes the dominant cost.  A 16x9x4 MOS mesh has only
+    // 576 nodes but already needs several minutes for a four-point sweep when
+    // its 3D bandwidth prevents the portable band solver from being used.
+    // PETSc/SuperLU (or the portable sparse fallback) is both direct enough
+    // for the nonlinear tolerance and orders of magnitude faster there.
+    constexpr size_t dense_direct_node_limit = 256;
+    if (N > dense_direct_node_limit) {
 #ifdef TCAD_USE_PETSC
         if (poisson_solver_type_ == SolverType::DENSE_DIRECT)
-            opt.poisson_solver = SolverType::PETSC;
+            opt.poisson_solver = auto_petsc_enabled()
+                ? SolverType::PETSC : SolverType::BICGSTAB_ILU0;
         else
             opt.poisson_solver = poisson_solver_type_;
         if (continuity_solver_type_ == SolverType::DENSE_DIRECT)
-            opt.continuity_solver = SolverType::PETSC;
+            opt.continuity_solver = auto_petsc_enabled()
+                ? SolverType::PETSC : SolverType::BICGSTAB_ILU0;
         else
             opt.continuity_solver = continuity_solver_type_;
 #else
+        const size_t structured_bandwidth = std::max(
+            (size_t)1,
+            std::max(g_.ny > 1 ? g_.nx : (size_t)1,
+                     g_.nz > 1 ? g_.nx * g_.ny : (size_t)1));
+        const bool portable_narrow_band = structured_bandwidth <= 128 &&
+            4 * (2 * structured_bandwidth + 1) < N;
         if (poisson_solver_type_ == SolverType::DENSE_DIRECT)
-            opt.poisson_solver = SolverType::BICGSTAB_ILU0;
+            opt.poisson_solver = portable_narrow_band
+                ? SolverType::DENSE_DIRECT : SolverType::GMRES;
         else
             opt.poisson_solver = poisson_solver_type_;
         if (continuity_solver_type_ == SolverType::DENSE_DIRECT)
-            opt.continuity_solver = SolverType::BICGSTAB_ILU0;
+            opt.continuity_solver = portable_narrow_band
+                ? SolverType::DENSE_DIRECT : SolverType::GMRES;
         else
             opt.continuity_solver = continuity_solver_type_;
 #endif
@@ -625,7 +861,14 @@ SimulationResult DeviceSimulator::solve() {
     opt.btbt.A_kane = btbt_A_;
     opt.btbt.B_kane = btbt_B_;
     opt.btbt.D = btbt_D_;
+    opt.btbt.field_mode = btbt_field_mode_;
+    opt.btbt.field_cap = btbt_field_cap_;
+    opt.btbt.field_alpha = btbt_field_alpha_;
+    opt.btbt.field_ref = btbt_field_ref_;
+    opt.btbt.continuity_scale = btbt_continuity_scale_;
     opt.btbt.use_nonlocal = btbt_use_nonlocal_;
+    opt.btbt.tunnel_path_frac = btbt_tunnel_path_frac_;
+    opt.btbt.wkb_npts = btbt_wkb_npts_;
     // Impact ionization parameters
     opt.ii.enabled = ii_enabled_;
     opt.ii.A_n = ii_A_n_;
@@ -669,7 +912,19 @@ SimulationResult DeviceSimulator::solve() {
         }
     }
 
+    // Records whether the accepted, unmodified carrier state came from
+    // Gummel.  Its density-gradient potential is under-relaxed and therefore
+    // cannot be reconstructed exactly from the returned n/p alone.
+    bool accepted_gummel_state = false;
+
     if (use_newton_) {
+        // Under Fermi-Dirac statistics the potential-form DG branch owns an
+        // independent Q PDE that is not present in the three-block Newton
+        // system.  Every other DG branch is represented directly by Q(n,p)
+        // in Newton and can use it as a genuine fixed-point-cycle rescue.
+        const bool independent_dg_potential_pde =
+            quantum_enabled_ && dg_potential_form_enabled_ &&
+            statistics_type_ == StatisticsType::FERMI_DIRAC;
         // Hybrid: Gummel first for robust initial guess, then Newton for fast
         // convergence.  The warm-up runs to convergence normally, but exits
         // EARLY at the first detected limit cycle: a cycle means the
@@ -678,17 +933,39 @@ SimulationResult DeviceSimulator::solve() {
         // initial guess.  Normal contracting warm-up progress is never
         // interrupted.  (issues0719 P0-3 follow-up.)
         GummelOptions warm_opt = opt;
-        // Complete the Gummel stabilisation when possible.  Large contact
-        // jumps are already subdivided by the high-level continuation path;
-        // handing a cycle-mean state directly to Newton degraded KCL and the
-        // Newton/Gummel agreement on ordinary PN devices.
-        warm_opt.exit_on_limit_cycle = false;
+        // Complete classical/Fermi-potential stabilisation when possible.
+        // For a Newton-representable quantum branch, however, grinding a
+        // detected scalar DG cycle for hundreds of expensive iterations only
+        // revisits the same plateau.  Hand that finite state to Newton.  Keep
+        // the classical PN behaviour unchanged because an early cycle-mean
+        // hand-off there degraded Newton/Gummel KCL agreement.
+        warm_opt.exit_on_limit_cycle =
+            quantum_enabled_ && !independent_dg_potential_pde;
         gummel_ = GummelSolver(g_, warm_opt);
+        gummel_.set_density_gradient_coefficients(dg_bn_, dg_bp_);
+        gummel_.set_density_gradient_silicon_multivalley(
+            dg_silicon_multivalley_, dg_silicon_ml_, dg_silicon_mt_,
+            dg_silicon_subbands_);
+        gummel_.set_density_gradient_interface_distance_factor(
+            dg_interface_distance_factor_);
+        gummel_.set_density_gradient_potential_form(
+            dg_potential_form_enabled_);
+        gummel_.set_density_gradient_step_boundary(
+            dg_step_boundary_enabled_, dg_step_e_barrier_eV_,
+            dg_step_h_barrier_eV_, dg_step_e_mass_, dg_step_h_mass_,
+            dg_step_e_gamma_, dg_step_h_gamma_, dg_step_e_theta_,
+            dg_step_h_theta_);
+        if (dg_potential_form_enabled_ &&
+            dg_transport_Qn_.size() == N && dg_transport_Qp_.size() == N) {
+            gummel_.set_transport_quantum_state(
+                dg_transport_Qn_, dg_transport_Qp_);
+        }
         gummel_.set_mobility(mu_n_eff, mu_p_eff);
         gummel_.set_doping(Nd_minus_Na_);
         gummel_.set_charge_volume_fraction(charge_volume_fraction_);
         gummel_.set_recombination(tau_n_, tau_p_);
         gummel_.set_optical_generation(G_opt_);
+        gummel_.set_btbt_weight(btbt_weight_);
         gummel_.set_effective_dos(Nc_, Nv_);
         gummel_.set_bandgap(Eg_);
         gummel_.set_electron_bc(n_bc_);
@@ -737,8 +1014,27 @@ SimulationResult DeviceSimulator::solve() {
         // so the nonexistent Gummel warm-up masked a genuine Newton failure
         // and let a KCL-broken state seed the next bias point.
         bool gummel_ok = false;
-        if (!newton_primary_) {
+        // Sentaurus equations (247) and (248) are algebraically identical
+        // under Boltzmann statistics.  Only the Fermi-Dirac potential-form
+        // branch introduces an independent Q PDE that the three-block
+        // Newton solver does not carry.  Keying this decision on the public
+        // potential-form flag alone disabled a mathematically valid Newton
+        // rescue for the Boltzmann-equivalent density map and left refined
+        // MOS sweeps trapped in a scalar DG fixed-point cycle.
+        const std::vector<real_t> phi_before_gummel = res.phi;
+        const std::vector<real_t> n_before_gummel = res.n;
+        const std::vector<real_t> p_before_gummel = res.p;
+        if (!newton_primary_ || independent_dg_potential_pde) {
             gummel_ok = gummel_.solve(res.phi, res.n, res.p);
+        }
+        // A failed warm-up may still provide a useful finite Newton seed, but
+        // never pass a poisoned NaN/Inf state into the coupled solver.
+        if (!gummel_ok &&
+            (!finite_vector(res.phi) || !finite_vector(res.n) ||
+             !finite_vector(res.p))) {
+            res.phi = phi_before_gummel;
+            res.n = n_before_gummel;
+            res.p = p_before_gummel;
         }
         if (fe_enabled_) {
             fe_polarization_ = gummel_.fe_polarization();
@@ -748,6 +1044,7 @@ SimulationResult DeviceSimulator::solve() {
         size_t gummel_iters = gummel_.poisson_residuals().size();
         // Convergence-honesty diagnostics from the Gummel warm-up (P0-3).
         res.poisson_residual = gummel_.poisson_residual_final();
+        res.quantum_residual = gummel_.quantum_residual_final();
         res.phi_frozen = gummel_.phi_was_frozen();
 
         // issues0719 P0-3 follow-up: ALWAYS attempt the Newton polish, even
@@ -760,7 +1057,14 @@ SimulationResult DeviceSimulator::solve() {
         {
             // Use Gummel solution as initial guess for Newton
             NewtonOptions nopt;
-            nopt.max_iter = max_iter_;
+            // set_gummel_max_iter() controls the inexpensive block warm-up.
+            // Reusing a 600-step quantum-Gummel budget here allowed a failed
+            // quad-precision Newton rescue to burn several minutes before the
+            // caller could apply its voltage-bisection fallback.  A coupled
+            // Newton solve that has not converged in 60 iterations is stalled,
+            // not under-budgeted; retain smaller caller limits but cap only
+            // this rescue stage.
+            nopt.max_iter = std::min(max_iter_, size_t{60});
             nopt.tol = (double)tol_;
             nopt.abs_tol = 1e-20Q;
             nopt.verbose = (getenv("TCAD_NEWTON_VERBOSE") != nullptr);
@@ -769,13 +1073,24 @@ SimulationResult DeviceSimulator::solve() {
             nopt.use_line_search = newton_use_line_search_;
             nopt.line_search_max = newton_line_search_max_;
             nopt.use_log_damping = newton_use_log_damping_;
-            nopt.use_log_space = newton_use_log_space_;
+            // A true Newton-primary solve has no Gummel state to compress the
+            // initial carrier correction.  In linear density variables that
+            // first correction is routinely O(1e25), making even the quad
+            // Jacobian effectively singular through flux cancellation.
+            // Log-density is the mathematically equivalent positive
+            // formulation and is required for a robust primary solve.
+            nopt.use_log_space = newton_use_log_space_ || newton_primary_;
             nopt.jacobian_reuse_threshold = newton_jacobian_reuse_threshold_;
             nopt.enable_btbt = btbt_enabled_;
             nopt.enable_quantum = quantum_enabled_;
             nopt.btbt_A = btbt_A_;
             nopt.btbt_B = btbt_B_;
             nopt.btbt_D = btbt_D_;
+            nopt.btbt_field_mode = btbt_field_mode_;
+            nopt.btbt_field_cap = btbt_field_cap_;
+            nopt.btbt_field_alpha = btbt_field_alpha_;
+            nopt.btbt_field_ref = btbt_field_ref_;
+            nopt.btbt_continuity_scale = btbt_continuity_scale_;
             nopt.enable_ii = ii_enabled_;
             nopt.ii_A_n = ii_A_n_;
             nopt.ii_B_n = ii_B_n_;
@@ -787,7 +1102,23 @@ SimulationResult DeviceSimulator::solve() {
             nopt.temperature = temperature_;
             nopt.statistics_type = statistics_type_;
 #ifdef TCAD_USE_PETSC
-            nopt.linear_solver = SolverType::IR_BICGSTAB;  // float128 iterative refinement
+            // The coupled, two-sided-equilibrated Jacobian is sparse but can
+            // remain strongly non-normal at material interfaces.  The legacy
+            // IR_BICGSTAB path returned its best guess even when every inner
+            // solve hit the iteration limit; Newton then accepted updates as
+            // large as 1e11 in log-density space.  PETSc's sparse LU provides
+            // a deterministic direction for this production path, while the
+            // residual audit in NewtonSolver rejects any inaccurate solve.
+            // Linear-density Newton can require corrections of order 1e25;
+            // casting that tiny residual / huge solution cancellation to a
+            // double-precision external factorisation loses all meaningful
+            // backward accuracy.  Keep the quad direct path for small legacy
+            // linear-space systems, and use PETSc for the bounded log-space
+            // production formulation.
+            nopt.linear_solver = nopt.use_log_space
+                ? SolverType::PETSC
+                : (N <= 256 ? SolverType::DENSE_DIRECT
+                            : SolverType::IR_BICGSTAB);
 #else
             // Without PETSc, requesting it silently no-ops the linear solve
             // (universal Newton stall on >2000-node problems).  Fall back to
@@ -797,10 +1128,43 @@ SimulationResult DeviceSimulator::solve() {
 #endif
             // C档: Newton freeze flags (isolated-continuity MMS).
             nopt.freeze_phi = newton_freeze_phi_;
-            nopt.freeze_n = newton_freeze_n_;
-            nopt.freeze_p = newton_freeze_p_;
+            const real_t gummel_n_update =
+                gummel_.electron_update_final();
+            const real_t gummel_p_update = gummel_.hole_update_final();
+            const bool gummel_n_settled = gummel_n_update >= 0.0Q &&
+                gummel_n_update < tol_;
+            const bool gummel_p_settled = gummel_p_update >= 0.0Q &&
+                gummel_p_update < tol_;
+            // In a quantum limit-cycle rescue, keep a single already-settled
+            // minority block fixed while Newton closes the active carrier and
+            // Poisson equations.  Updating that physically negligible block
+            // excites a log-density near-null space (|du|~1e12) and pollutes
+            // the coupled direction.  Freeze only when exactly one carrier
+            // block has passed the same strict update gate; if both or neither
+            // have settled, retain the full coupled system.
+            const bool freeze_settled_n = quantum_enabled_ && !gummel_ok &&
+                gummel_n_settled && !gummel_p_settled;
+            const bool freeze_settled_p = quantum_enabled_ && !gummel_ok &&
+                gummel_p_settled && !gummel_n_settled;
+            nopt.freeze_n = newton_freeze_n_ || freeze_settled_n;
+            nopt.freeze_p = newton_freeze_p_ || freeze_settled_p;
             newton_ = NewtonSolver(g_, nopt);
+            newton_.set_density_gradient_coefficients(dg_bn_, dg_bp_);
+            newton_.set_density_gradient_silicon_multivalley(
+                dg_silicon_multivalley_, dg_silicon_ml_, dg_silicon_mt_,
+                dg_silicon_subbands_);
+            newton_.set_density_gradient_interface_distance_factor(
+                dg_interface_distance_factor_);
+            newton_.set_density_gradient_step_boundary(
+                dg_step_boundary_enabled_, dg_step_e_barrier_eV_,
+                dg_step_h_barrier_eV_, dg_step_e_mass_, dg_step_h_mass_,
+                dg_step_e_gamma_, dg_step_h_gamma_, dg_step_e_theta_,
+                dg_step_h_theta_);
             newton_.set_permittivity(eps_);
+            newton_.set_edge_permittivity(
+                edge_eps_x_plus_, edge_eps_x_minus_,
+                edge_eps_y_plus_, edge_eps_y_minus_,
+                edge_eps_z_plus_, edge_eps_z_minus_);
             newton_.set_mobility(mu_n_eff, mu_p_eff);
             newton_.set_doping(Nd_minus_Na_);
             newton_.set_charge_volume_fraction(charge_volume_fraction_);
@@ -853,8 +1217,16 @@ SimulationResult DeviceSimulator::solve() {
             std::vector<real_t> phi_w = res.phi, n_w = res.n, p_w = res.p;
             bool newton_ok = false;
             // Run Newton when Gummel didn't converge OR newton_primary mode.
-            if (!gummel_ok || newton_primary_) {
+            if ((!gummel_ok || newton_primary_) &&
+                !independent_dg_potential_pde) {
                 newton_ok = newton_.solve(res.phi, res.n, res.p);
+                if (newton_ok &&
+                    (!finite_vector(res.phi) || !finite_vector(res.n) ||
+                     !finite_vector(res.p))) {
+                    std::cerr << "Newton returned non-finite fields; "
+                              << "rejecting convergence\n";
+                    newton_ok = false;
+                }
                 // Newton already returns one coupled Poisson/electron/hole
                 // state.  A former "polish" re-solved Poisson alone here,
                 // changing phi without re-solving n and p.  The change can be
@@ -871,6 +1243,9 @@ SimulationResult DeviceSimulator::solve() {
             // cheap) instead of the warm-up residual.
             res.phi_frozen = false;
             res.poisson_residual = gummel_.compute_poisson_residual(res.phi, res.n, res.p);
+            // Newton evaluates Q directly from its current state and has no
+            // independent lagged transport-Q variable.
+            if (newton_ok) res.quantum_residual = 0.0Q;
             // Report total iterations (Gummel + Newton) for transparency
             res.iterations = gummel_iters + newton_.residuals().size();
             // Convergence verdict: a point is converged if ANY stage met
@@ -878,7 +1253,22 @@ SimulationResult DeviceSimulator::solve() {
             // its verdict on the honest update-norm + polish path; a failed
             // warm-up (limit cycle) is rescued only by a genuinely converged
             // Newton polish.
-            res.converged = gummel_ok || newton_ok;
+            const bool finite_fields = finite_vector(res.phi) &&
+                finite_vector(res.n) && finite_vector(res.p);
+            res.converged = (gummel_ok || newton_ok) && finite_fields &&
+                std::isfinite((double)res.poisson_residual);
+            accepted_gummel_state = gummel_ok && !newton_ok;
+            // Cross-bias transport Q is continuation state, not a diagnostic
+            // scratch buffer.  Commit it only with the finite Gummel state
+            // that earned the final verdict.  Persisting Q from a rejected
+            // warm-up paired the next retry's restored n/p/phi with a failed
+            // quantum iterate and made adaptive voltage bisection diverge.
+            if (accepted_gummel_state && dg_potential_form_enabled_ &&
+                gummel_.transport_quantum_n().size() == N &&
+                gummel_.transport_quantum_p().size() == N) {
+                dg_transport_Qn_ = gummel_.transport_quantum_n();
+                dg_transport_Qp_ = gummel_.transport_quantum_p();
+            }
             // NOTE: no second Gummel fallback pass — a fresh solve() would
             // advance the FE memory state (Preisach/NLS) a SECOND time for
             // the same bias point, breaking the one-state-advance-per-bias-
@@ -899,11 +1289,30 @@ SimulationResult DeviceSimulator::solve() {
     } else {
         // Rebuild gummel solver with options (simplified)
         gummel_ = GummelSolver(g_, opt);
+        gummel_.set_density_gradient_coefficients(dg_bn_, dg_bp_);
+        gummel_.set_density_gradient_silicon_multivalley(
+            dg_silicon_multivalley_, dg_silicon_ml_, dg_silicon_mt_,
+            dg_silicon_subbands_);
+        gummel_.set_density_gradient_interface_distance_factor(
+            dg_interface_distance_factor_);
+        gummel_.set_density_gradient_potential_form(
+            dg_potential_form_enabled_);
+        gummel_.set_density_gradient_step_boundary(
+            dg_step_boundary_enabled_, dg_step_e_barrier_eV_,
+            dg_step_h_barrier_eV_, dg_step_e_mass_, dg_step_h_mass_,
+            dg_step_e_gamma_, dg_step_h_gamma_, dg_step_e_theta_,
+            dg_step_h_theta_);
+        if (dg_potential_form_enabled_ &&
+            dg_transport_Qn_.size() == N && dg_transport_Qp_.size() == N) {
+            gummel_.set_transport_quantum_state(
+                dg_transport_Qn_, dg_transport_Qp_);
+        }
         gummel_.set_mobility(mu_n_eff, mu_p_eff);
         gummel_.set_doping(Nd_minus_Na_);
         gummel_.set_charge_volume_fraction(charge_volume_fraction_);
         gummel_.set_recombination(tau_n_, tau_p_);
         gummel_.set_optical_generation(G_opt_);
+        gummel_.set_btbt_weight(btbt_weight_);
         gummel_.set_effective_dos(Nc_, Nv_);
         gummel_.set_bandgap(Eg_);
         gummel_.set_electron_bc(n_bc_);
@@ -938,6 +1347,13 @@ SimulationResult DeviceSimulator::solve() {
         if (!Q_ot_.empty()) gummel_.set_oxide_traps(Q_ot_);
 
         res.converged = gummel_.solve(res.phi, res.n, res.p);
+        if (res.converged && dg_potential_form_enabled_ &&
+            gummel_.transport_quantum_n().size() == N &&
+            gummel_.transport_quantum_p().size() == N) {
+            dg_transport_Qn_ = gummel_.transport_quantum_n();
+            dg_transport_Qp_ = gummel_.transport_quantum_p();
+        }
+        accepted_gummel_state = res.converged;
         if (fe_enabled_) {
             fe_polarization_ = gummel_.fe_polarization();
             if (fe_model_ == 1 || fe_model_ == 3)
@@ -945,8 +1361,21 @@ SimulationResult DeviceSimulator::solve() {
         }
         // Convergence-honesty diagnostics (P0-3).
         res.poisson_residual = gummel_.poisson_residual_final();
+        res.quantum_residual = gummel_.quantum_residual_final();
         res.phi_frozen = gummel_.phi_was_frozen();
         res.iterations = gummel_.poisson_residuals().size();
+    }
+
+    // Final API invariant: no solver path may label a non-finite state as
+    // converged.  This guard also covers the simplified non-hybrid branch.
+    if (res.converged &&
+        (!finite_vector(res.phi) || !finite_vector(res.n) ||
+         !finite_vector(res.p) ||
+         !std::isfinite((double)res.poisson_residual) ||
+         (quantum_enabled_ &&
+          !std::isfinite((double)res.quantum_residual)))) {
+        std::cerr << "Non-finite converged state rejected\n";
+        res.converged = false;
     }
 
     // --- Failure-path robustness: physical clamp on a non-converged state. ---
@@ -1014,7 +1443,14 @@ SimulationResult DeviceSimulator::solve() {
     // cancellation of double-precision Python re-derivation.
     const std::vector<char> bd_state_detected = bd_state_;
     bd_state_ = bd_state_entered;
-    compute_edge_currents(res, res.phi, res.n, res.p);
+    const std::vector<real_t>* transport_Qn = nullptr;
+    const std::vector<real_t>* transport_Qp = nullptr;
+    if (quantum_enabled_ && accepted_gummel_state) {
+        transport_Qn = &gummel_.transport_quantum_n();
+        transport_Qp = &gummel_.transport_quantum_p();
+    }
+    compute_edge_currents(res, res.phi, res.n, res.p,
+                          transport_Qn, transport_Qp);
 
     // Thermal coupling (self-heating)
     if (thermal_coupling_enabled_ && res.converged) {
@@ -1175,9 +1611,11 @@ SimulationResult DeviceSimulator::solve() {
 }
 
 void DeviceSimulator::compute_edge_currents(SimulationResult& res,
-                                            const std::vector<real_t>& phi,
-                                            const std::vector<real_t>& n,
-                                            const std::vector<real_t>& p) {
+                                             const std::vector<real_t>& phi,
+                                             const std::vector<real_t>& n,
+                                             const std::vector<real_t>& p,
+                                             const std::vector<real_t>* transport_Qn,
+                                             const std::vector<real_t>* transport_Qp) {
     // Full-precision Scharfetter-Gummel edge fluxes from the converged state.
     // CONVENTIONAL current densities (so Jn + Jp = total current, positive in
     // the +axis direction):
@@ -1216,12 +1654,31 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
             semi[i] = (mu_n_[i] > EPSILON || mu_p_[i] > EPSILON) ? 1 : 0;
         dg_.set_semiconductor_mask(semi);
         dg_.set_thermal_voltage(VT_);
-        dg_.quantum_potential(n, p, Qn, Qp);
+        if (dg_potential_form_enabled_ &&
+            statistics_type_ == StatisticsType::FERMI_DIRAC &&
+            transport_Qn != nullptr &&
+            transport_Qp != nullptr && transport_Qn->size() == N &&
+            transport_Qp->size() == N) {
+            dg_.quantum_potential_potential_form(
+                n, p, *transport_Qn, *transport_Qp, Qn, Qp);
+        } else {
+            dg_.quantum_potential(n, p, Qn, Qp);
+        }
         for (const auto& bc : n_bc_) Qn[bc.first] = 0.0Q;
         for (const auto& bc : p_bc_) Qp[bc.first] = 0.0Q;
     }
     res.Qn = Qn;
     res.Qp = Qp;
+
+    // A converged Gummel solve used the lagged/under-relaxed Q stored by the
+    // solver.  Use it for flux reconstruction while exposing the undamped
+    // physical Q(n,p) above.  Newton has no lagged state and falls back to the
+    // freshly evaluated potential.  Validate sizes so a skipped/failed solve
+    // can never leak a stale vector into current post-processing.
+    const std::vector<real_t>& Qn_flux =
+        (transport_Qn != nullptr && transport_Qn->size() == N) ? *transport_Qn : Qn;
+    const std::vector<real_t>& Qp_flux =
+        (transport_Qp != nullptr && transport_Qp->size() == N) ? *transport_Qp : Qp;
 
     auto fill_axis = [&](std::vector<real_t>& Jn_ax,
                          std::vector<real_t>& Jp_ax,
@@ -1237,10 +1694,10 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
                     if (axis == 0)      d = g_.dx_edge(i);
                     else if (axis == 1) d = g_.dy_edge(j);
                     else                d = g_.dz_edge(k);
-                    real_t delta_n = ((phi[nbr] + Qn[nbr]) -
-                                      (phi[idx] + Qn[idx])) / VT_;
-                    real_t delta_p = ((phi[nbr] - Qp[nbr]) -
-                                      (phi[idx] - Qp[idx])) / VT_;
+                    real_t delta_n = ((phi[nbr] + Qn_flux[nbr]) -
+                                      (phi[idx] + Qn_flux[idx])) / VT_;
+                    real_t delta_p = ((phi[nbr] - Qp_flux[nbr]) -
+                                      (phi[idx] - Qp_flux[idx])) / VT_;
                     real_t Bmn = B(-delta_n);
                     real_t Bpn = B(delta_n);
                     real_t Bmp = B(-delta_p);
@@ -1272,17 +1729,28 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
                                 bd_mask_.size() == N && sigma_bd_ > 0.0Q;
     if (!have_pf_fn && !have_breakdown) return;
 
-    auto conductivity = [&](real_t E_mag) -> real_t {
+    auto conductivity = [&](real_t E_mag, real_t E_axis) -> real_t {
         if (E_mag <= leak_E_floor_) return 0.0Q;
         real_t sigma = 0.0Q;  // [S/m]
         if (leak_C_pf_ > 0.0Q && leak_phi_t_ > 0.0Q) {
             real_t arg = leak_B_pf_ * sqrt_q(leak_phi_t_ / E_mag);
             sigma += leak_C_pf_ * exp_q(-arg);
         }
-        if (leak_C_fn_ > 0.0Q && leak_phi_b_ > 0.0Q) {
-            real_t arg = leak_B_fn_ * pow_q(leak_phi_b_, 1.5Q) / E_mag;
+        real_t C_fn = leak_C_fn_;
+        real_t B_fn = leak_B_fn_;
+        if (leak_fn_polarity_enabled_) {
+            if (E_axis >= 0.0Q) {
+                C_fn = leak_C_fn_positive_;
+                B_fn = leak_B_fn_positive_;
+            } else {
+                C_fn = leak_C_fn_negative_;
+                B_fn = leak_B_fn_negative_;
+            }
+        }
+        if (C_fn > 0.0Q && leak_phi_b_ > 0.0Q) {
+            real_t arg = B_fn * pow_q(leak_phi_b_, 1.5Q) / E_mag;
             // J_FN=C_fn*E^2*exp(-arg), hence sigma_FN=J/E.
-            sigma += leak_C_fn_ * E_mag * exp_q(-arg);
+            sigma += C_fn * E_mag * exp_q(-arg);
         }
         if (leak_sigma_cap_ > 0.0Q && sigma > leak_sigma_cap_)
             sigma = leak_sigma_cap_;
@@ -1310,7 +1778,7 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
                     real_t E2_j = res.Ex[nbr]*res.Ex[nbr] + res.Ey[nbr]*res.Ey[nbr] + res.Ez[nbr]*res.Ez[nbr];
                     real_t E_mag = 0.5Q * (sqrt_q(E2_i) + sqrt_q(E2_j));
                     if (E_mag < abs_q(E_axis)) E_mag = abs_q(E_axis);
-                    real_t sigma = pf_edge ? conductivity(E_mag) : 0.0Q;
+                    real_t sigma = pf_edge ? conductivity(E_mag, E_axis) : 0.0Q;
                     if (bd_edge) sigma += sigma_bd_;
                     J_ax[idx] = sigma * E_axis;
                 }
@@ -1455,6 +1923,10 @@ std::vector<SimulationResult> DeviceSimulator::solve_transient() {
 
         newton_ = NewtonSolver(g_, nopt);
         newton_.set_permittivity(eps_);
+        newton_.set_edge_permittivity(
+            edge_eps_x_plus_, edge_eps_x_minus_,
+            edge_eps_y_plus_, edge_eps_y_minus_,
+            edge_eps_z_plus_, edge_eps_z_minus_);
         newton_.set_mobility(mu_n_eff, mu_p_eff);
         newton_.set_doping(Nd_minus_Na_);
         newton_.set_charge_volume_fraction(charge_volume_fraction_);

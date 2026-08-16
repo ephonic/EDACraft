@@ -172,9 +172,10 @@ class TestPoissonMMS:
     def test_3d_sine_box_converges_second_order(self):
         """Richardson check on the sine-BC box: phi converges at O(h^2).
 
-        Uses three grids n=9,17,33 (max 35937 nodes — keeps the auto-selected
-        dense-direct path; larger grids trigger the PETSc 32-bit-index
-        overflow found during this audit, see audit0618.md §5) and the
+        Uses three grids n=5,9,17.  This keeps the MMS in the portable solver
+        budget used by remote pytest while preserving the 2x refinement ratio
+        needed by the Richardson estimator.  Larger 33^3 grids are covered by
+        dedicated performance/PETSc validation, not default CI.  The
         three-grid Richardson estimator
 
             if  e(h) ≈ C h^p   then   p ≈ log2( (e_h - e_{h/2}) /
@@ -184,23 +185,23 @@ class TestPoissonMMS:
         the 1 mV drive amplitude, so the dominant signal is the FD-stencil
         truncation error.
         """
-        ns = [9, 17, 33]
+        ns = [5, 9, 17]
         results = [_laplace_box_solve(n, n, n) for n in ns]
         for r in results:
             assert r["converged"], "Sine-box MMS did not converge"
 
-        # Evaluate phi at the n=9 common nodes (subset of n=17 by stride 2
-        # and of n=33 by stride 4).  Use Fortran order to match the C++
+        # Evaluate phi at the n=5 common nodes (subset of n=9 by stride 2
+        # and of n=17 by stride 4).  Use Fortran order to match the C++
         # flattened layout (i fastest).
         phi_at_common = []
         for n, r in zip(ns, results):
             phi = r["phi"].reshape((n, n, n), order="F")
-            stride = (n - 1) // 8
+            stride = (n - 1) // 4
             sub = phi[::stride, ::stride, ::stride]
-            assert sub.shape == (9, 9, 9), f"stride wrong for n={n}"
+            assert sub.shape == (5, 5, 5), f"stride wrong for n={n}"
             phi_at_common.append(sub.ravel(order="F"))
 
-        interior = np.ones((9, 9, 9), dtype=bool)
+        interior = np.ones((5, 5, 5), dtype=bool)
         interior[0, :, :] = interior[-1, :, :] = False
         interior[:, 0, :] = interior[:, -1, :] = False
         interior[:, :, 0] = interior[:, :, -1] = False
@@ -641,7 +642,10 @@ def _kane_integral_analytic(Eg_eV, E_field_Vm):
     return 2.0 * I  # the full exponent magnitude
 
 
-def _simpson_wkb_exponent(Eg_eV, E_field_Vm, path_L, n_wkb=64):
+def _simpson_wkb_exponent(
+    Eg_eV, E_field_Vm, path_L, n_wkb=64, tunnel_path_fraction=None,
+    domain_L=None,
+):
     """Byte-for-byte reimplementation of the C++ Simpson integral in
     compute_nonlocal_btbt (gummel_solver.cpp:180-205).
 
@@ -656,8 +660,15 @@ def _simpson_wkb_exponent(Eg_eV, E_field_Vm, path_L, n_wkb=64):
     else:
         d_min = Eg_J / (QE * E)
     effective_L = min(path_L, 2.0 * d_min)
+    if tunnel_path_fraction is not None:
+        if domain_L is None:
+            raise ValueError("domain_L is required with tunnel_path_fraction")
+        if tunnel_path_fraction > 0.0:
+            effective_L = min(effective_L, tunnel_path_fraction * domain_L)
     if effective_L < 1e-12:
         return 0.0  # zero barrier -> T=1
+    if n_wkb >= 4 and n_wkb % 2:
+        n_wkb += 1
     h = effective_L / n_wkb
     integral = 0.0
     for s in range(n_wkb + 1):
@@ -789,6 +800,33 @@ class TestNonLocalBTBTAnalytic:
             f"B_local={B_local_Vm:.2e} V/m looks like a V/cm value — the "
             "unit bug (audit §12.4) may have returned."
         )
+
+    def test_odd_wkb_segments_are_rounded_for_simpson(self):
+        """Odd WKB segment counts are rounded up before Simpson integration."""
+        Eg = 1.12
+        E_field = 1e9
+        d_min = Eg * QE / (QE * E_field)
+        path_L = 4.0 * d_min
+        exp_odd = _simpson_wkb_exponent(Eg, E_field, path_L, n_wkb=63)
+        exp_even = _simpson_wkb_exponent(Eg, E_field, path_L, n_wkb=64)
+        assert exp_odd == pytest.approx(exp_even, rel=0.0, abs=0.0)
+
+    def test_nonlocal_path_fraction_caps_wkb_barrier(self):
+        """The exposed path-fraction knob must cap the WKB integration path."""
+        Eg = 1.12
+        E_low = 1e7
+        d_min = Eg * QE / (QE * E_low)
+        path_L = 2.0 * d_min
+        domain_L = 500e-9
+        exp_full = _simpson_wkb_exponent(
+            Eg, E_low, path_L, n_wkb=64,
+            tunnel_path_fraction=0.5, domain_L=domain_L,
+        )
+        exp_capped = _simpson_wkb_exponent(
+            Eg, E_low, path_L, n_wkb=64,
+            tunnel_path_fraction=0.05, domain_L=domain_L,
+        )
+        assert exp_capped < exp_full
 
 
 # ============================================================================
@@ -1727,7 +1765,7 @@ class TestTransientSolver:
 # right way — the prerequisite for any future quantitative calibration.
 
 # DG coefficient for Si after the Phase 3.5 fix (material/library.py).
-# b_n = ħ²/(6·q·m*_n) with m*_n=0.26 m_0 (Si electron DOS mass).
+# b_n = ħ²/(6·q·m*_n) with the historical scalar m*_n=0.26 m_0.
 DG_BN_SI = 4.885e-20   # V·m²  (was 3.86e-6, a dimensionless value — the bug)
 DG_BP_SI = 3.432e-20   # V·m²  (Si hole, m*_p=0.37 m_0)
 
@@ -1746,6 +1784,97 @@ def _dg_correction_analytic(n_profile, dx, b_n):
     return Q
 
 
+class TestMaterialInterfaceContinuityVolume:
+    def test_physical_silicon_section_current_is_conservative(self):
+        """A shared Si/oxide node owns no carrier volume inside the oxide.
+
+        The current observable integrates only the physical silicon thickness.
+        The continuity row must use the same material-clipped transverse
+        control volume or its centre and drain sections do not satisfy KCL.
+        """
+        nx, nz = 21, 9
+        dx, dz = 2.0e-9, 1.0e-9
+        npts = nx * nz
+        sim = _make_sim(nx, 1, nz, dx, dx, dz)
+
+        body_rows = tuple(range(2, 7))
+        mu_n = np.zeros(npts)
+        mu_p = np.zeros(npts)
+        eps = np.full(npts, 3.9 * EPS0)
+        doping = np.zeros(npts)
+        charge_fraction = np.zeros(npts)
+        for k in body_rows:
+            for i in range(nx):
+                node = i + nx * k
+                mu_n[node] = 0.10
+                mu_p[node] = 0.04
+                eps[node] = EPS_SI
+                doping[node] = 1.0e25 if i <= 3 or i >= nx - 4 else -1.0e22
+                charge_fraction[node] = 1.0
+        # The physical Si/oxide interfaces coincide with rows 2 and 6.
+        charge_fraction[2 * nx:3 * nx] = 0.60
+        charge_fraction[6 * nx:7 * nx] = 0.60
+
+        ni = 6.6759e15
+        nc = ni * np.exp(1.12 / (2.0 * VT_300))
+        sim.set_mobility(mu_n, mu_p)
+        sim.set_permittivity(eps)
+        sim.set_doping(doping)
+        sim.set_charge_volume_fraction(charge_fraction)
+        sim.set_recombination(np.full(npts, 1.0e-6), np.full(npts, 1.0e-6))
+        sim.set_effective_dos(np.full(npts, nc), np.full(npts, nc))
+        sim.set_bandgap(np.full(npts, 1.12))
+        sim.set_thermal_voltage(VT_300)
+        sim.set_tolerance(1.0e-7)
+        sim.set_gummel_max_iter(300)
+        sim.set_use_newton(1)
+
+        phi_n = VT_300 * np.log(1.0e25 / ni)
+
+        def apply_bias(vd):
+            phi_bc = {}
+            n_bc = {}
+            p_bc = {}
+            for i in range(nx):
+                phi_bc[i] = 0.20
+                phi_bc[i + nx * (nz - 1)] = 0.20
+            for k in body_rows:
+                source = nx * k
+                drain = nx - 1 + nx * k
+                phi_bc[source] = phi_n
+                phi_bc[drain] = phi_n + vd
+                n_bc[source] = n_bc[drain] = 1.0e25
+                p_bc[source] = p_bc[drain] = ni * ni / 1.0e25
+            sim.set_dirichlet_potential(phi_bc)
+            sim.set_electron_bc(n_bc)
+            sim.set_hole_bc(p_bc)
+
+        apply_bias(0.0)
+        equilibrium = sim.solve()
+        assert equilibrium["converged"]
+        apply_bias(0.05)
+        sim.set_initial_guess(
+            equilibrium["phi"], equilibrium["n"], equilibrium["p"]
+        )
+        result = sim.solve()
+        assert result["converged"]
+
+        jx = np.asarray(result["Jn_x"]) + np.asarray(result["Jp_x"])
+        z = dz * np.asarray(body_rows, dtype=float)
+
+        def section(edge_i):
+            values = np.asarray([jx[edge_i + nx * k] for k in body_rows])
+            return float(np.trapezoid(values, z))
+
+        centre = section(nx // 2)
+        drain = section(nx - 2)
+        relative_kcl = abs(centre - drain) / max(abs(centre), abs(drain), 1.0e-30)
+        assert relative_kcl < 1.0e-4, (
+            f"material-clipped section KCL failed: centre={centre:.6e}, "
+            f"drain={drain:.6e}, relative error={relative_kcl:.3e}"
+        )
+
+
 class TestDensityGradient:
     """Validate the DG quantum-correction machinery (audit §6.2 row 'DG').
 
@@ -1761,7 +1890,7 @@ class TestDensityGradient:
         HISTORY.  Phase 2.5 found b_n=3.86e-6 was dimensionless, giving
         Qn ~ 1e10..1e12 and an exponent ~1e13 far outside the [-10,10]
         clamp (DG did nothing useful).  Phase 3.5 changed b_n to
-        ħ²/(6·q·m*_DOS), material-dependent, in V·m².  This test confirms
+        ħ²/(6·q·m*), material-dependent, in V·m².  This test confirms
         the fix: the exponent is now O(1) at a realistic carrier peak.
         """
         nx = 41
@@ -1784,12 +1913,13 @@ class TestDensityGradient:
         )
 
     def test_dg_coefficient_matches_hbar_squared_formula(self):
-        """Regression guard: the Si DG coefficient must equal ħ²/(6·q·m*_DOS).
+        """Regression guard: the scalar Si DG coefficient follows ħ²/(6·q·m*).
 
         Catches any future change that reverts b_n to a dimensionless or
         otherwise-wrong value.
         """
-        # Si electron DOS mass = 0.26 m_0 (material/library.py convention).
+        # Historical scalar electron mass = 0.26 m_0. A Sentaurus mapping
+        # uses gamma/m_DOS explicitly and is tested through Simulator.
         b_n_expected = HBAR * HBAR / (6.0 * QE * 0.26 * M0)
         rel_err = abs(DG_BN_SI - b_n_expected) / b_n_expected
         assert rel_err < 1e-2, (
@@ -1873,7 +2003,10 @@ class TestDensityGradient:
         Nd_low = 1e21
         Nc = ni * np.exp(1.12 / (2 * VT_300))
 
-        def _run(use_dg):
+        def _run(
+            use_dg, dg_scale=1.0, potential_form=False,
+            newton_rescue=False, max_iter=150,
+        ):
             sim = _make_sim(nx, 1, 1, dx, dx, dx)
             _apply_uniform_si(sim, nx)
             doping = np.zeros(nx)
@@ -1889,19 +2022,87 @@ class TestDensityGradient:
                              nx - 1: float(ni * ni / Nd_low)})
             if use_dg:
                 sim.set_quantum_enabled(True)
-            sim.set_gummel_max_iter(150)
+                sim.set_density_gradient_coefficients(
+                    DG_BN_SI * dg_scale, DG_BP_SI * dg_scale
+                )
+                sim.set_density_gradient_potential_form(potential_form)
+            if newton_rescue:
+                sim.set_use_newton(True)
+            sim.set_gummel_max_iter(max_iter)
             sim.set_tolerance(1e-8)
             return sim.solve()
 
         r_off = _run(use_dg=False)
         r_on = _run(use_dg=True)
+        r_strong = _run(use_dg=True, dg_scale=1.5)
+        r_potential = _run(use_dg=True, potential_form=True)
+        # Equation (248) is not an independent PDE under Boltzmann
+        # statistics.  A potential-form *configuration* must therefore not
+        # suppress the equivalent density-map Newton path.  This regression
+        # also verifies that Newton receives the same DG coefficients and
+        # material-step closure as Gummel.
+        r_potential_newton = _run(
+            use_dg=True, potential_form=True,
+            newton_rescue=True, max_iter=100,
+        )
         assert r_off["converged"] and r_on["converged"], (
             "DG on/off runs did not both converge"
+        )
+        assert r_strong["converged"]
+        assert r_potential["converged"]
+        assert r_potential_newton["converged"]
+        for label, result in (("default", r_on), ("scaled", r_strong)):
+            q_residual = float(result["quantum_residual"])
+            assert np.isfinite(q_residual) and q_residual < 1.1e-6, (
+                f"{label} DG transport potential did not reach its returned "
+                f"carrier state: relative residual={q_residual:.3e}"
+            )
+        potential_residual = float(r_potential["quantum_residual"])
+        assert np.isfinite(potential_residual) and potential_residual < 1.1e-4
+        assert np.all(np.isfinite(np.asarray(r_potential["Qn"])))
+        # With constant temperature and Boltzmann statistics, Sentaurus
+        # equations (247) and (248) are algebraically identical.  Preserve
+        # that identity at the discrete level on nonuniform/coarse meshes;
+        # otherwise potential form invents a mesh-dependent quantum branch.
+        assert np.allclose(
+            np.asarray(r_potential["Qn"]), np.asarray(r_on["Qn"]),
+            rtol=1e-8, atol=1e-10,
+        )
+        assert np.allclose(
+            np.asarray(r_potential["n"]), np.asarray(r_on["n"]),
+            rtol=1e-8, atol=1e10,
+        )
+        newton_log_rmse = np.sqrt(np.mean(np.square(
+            np.log10(np.maximum(np.asarray(r_potential_newton["n"]), 1.0))
+            - np.log10(np.maximum(np.asarray(r_on["n"]), 1.0))
+        )))
+        assert newton_log_rmse < 5e-4, (
+            "Boltzmann potential-form Newton rescue moved to a different "
+            f"carrier branch: log-RMSE={newton_log_rmse:.3e} decade"
+        )
+        q_delta = np.max(
+            np.abs(np.asarray(r_strong["Qn"]) - np.asarray(r_on["Qn"]))
+        )
+        assert q_delta > 1e-4, (
+            "configured DG coefficients did not propagate into the solved "
+            "quantum potential"
         )
         i_hi = nx // 2 - 1
         i_lo = nx // 2
         n_off = np.asarray(r_off["n"])
         n_on = np.asarray(r_on["n"])
+
+        # The DG fixed-point loop under-relaxes Q for stability.  Edge-current
+        # post-processing must use that same transport Q, not an undamped
+        # Q(n,p) recomputation, otherwise the reported current no longer solves
+        # the continuity equation even though the carrier state converged.
+        j_on = (np.asarray(r_on["Jn_x"]) + np.asarray(r_on["Jp_x"]))[:-1]
+        j_scale = max(float(np.max(np.abs(j_on))), 1e-30)
+        j_spread = float(np.ptp(j_on) / j_scale)
+        assert j_spread < 1e-6, (
+            f"DG edge currents are inconsistent with the solved transport "
+            f"potential: relative KCL spread={j_spread:.3e}"
+        )
 
         assert n_on[i_hi] < 0.995 * n_off[i_hi], (
             f"DG did not deplete the high-density interface side: "
@@ -1917,3 +2118,61 @@ class TestDensityGradient:
             f"DG increased the interface density jump: {jump_on:.3e} vs "
             f"classical {jump_off:.3e}"
         )
+
+    def test_failed_gummel_does_not_commit_transport_quantum_state(self):
+        """A rejected solve must not mutate cross-bias transport-Q state.
+
+        Continuation state is part of the accepted ``(phi, n, p, Q)``
+        transaction.  Persisting Q from a max-iteration failure paired a
+        subsequent retry's freshly restored carrier fields with a rejected
+        quantum iterate, which made refined-mesh adaptive voltage bisection
+        diverge.  With the fix, retrying from the simulator's deterministic
+        equilibrium initial state is identical to a fresh simulator.
+        """
+        nx = 41
+        dx = 1.0e-9
+        ni = 6.6759e9 * 1.0e6
+        nd_high, nd_low = 1.0e25, 1.0e21
+        nc = ni * np.exp(1.12 / (2.0 * VT_300))
+
+        def build(max_iter):
+            sim = _make_sim(nx, 1, 1, dx, dx, dx)
+            _apply_uniform_si(sim, nx)
+            doping = np.empty(nx)
+            doping[: nx // 2] = nd_high
+            doping[nx // 2 :] = nd_low
+            sim.set_doping(doping)
+            sim.set_bandgap(np.full(nx, 1.12))
+            sim.set_effective_dos(np.full(nx, nc), np.full(nx, nc))
+            phi_eq = VT_300 * np.log(nd_high / ni)
+            sim.set_dirichlet_potential(
+                {0: float(phi_eq), nx - 1: float(0.4 * phi_eq)}
+            )
+            sim.set_electron_bc({0: nd_high, nx - 1: nd_low})
+            sim.set_hole_bc(
+                {0: ni * ni / nd_high, nx - 1: ni * ni / nd_low}
+            )
+            sim.set_quantum_enabled(True)
+            sim.set_density_gradient_coefficients(DG_BN_SI, DG_BP_SI)
+            sim.set_density_gradient_potential_form(True)
+            sim.set_use_newton(1)
+            sim.set_tolerance(1.0e-8)
+            sim.set_gummel_max_iter(max_iter)
+            return sim
+
+        reused = build(1)
+        rejected = reused.solve()
+        assert not rejected["converged"]
+        reused.set_gummel_max_iter(150)
+        retried = reused.solve()
+
+        fresh = build(150).solve()
+        assert retried["converged"] and fresh["converged"]
+        assert retried["iterations"] == fresh["iterations"]
+        assert retried["quantum_residual"] == pytest.approx(
+            fresh["quantum_residual"], rel=0.0, abs=1.0e-15
+        )
+        for field in ("phi", "n", "p", "Qn", "Qp"):
+            assert np.array_equal(
+                np.asarray(retried[field]), np.asarray(fresh[field])
+            ), f"failed solve leaked continuation state into {field}"

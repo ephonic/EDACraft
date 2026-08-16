@@ -49,6 +49,7 @@ struct SimulationResult {
     // Convergence-honesty diagnostics (P0-3): final Poisson residual (-1 = not
     // computed) and whether the potential was frozen by the limit-cycle guard.
     real_t poisson_residual = static_cast<real_t>(-1.0);
+    real_t quantum_residual = static_cast<real_t>(-1.0);
     bool phi_frozen = false;
 };
 
@@ -73,6 +74,7 @@ public:
     void set_thermal_voltage(real_t VT);
     void set_effective_dos(const std::vector<real_t>& Nc, const std::vector<real_t>& Nv);
     void set_bandgap(const std::vector<real_t>& Eg);
+    void set_btbt_weight(const std::vector<real_t>& weight);
 
     // Boundary conditions
     void set_dirichlet_potential(const std::map<size_t, real_t>& bc);
@@ -81,6 +83,20 @@ public:
 
     // Simulation control
     void set_quantum_enabled(bool enable);
+    // Density-gradient coefficients [V*m^2].  Exposed so Sentaurus-calibrated
+    // effective masses can be applied without recompiling the core.
+    void set_density_gradient_coefficients(real_t bn, real_t bp);
+    void set_density_gradient_silicon_multivalley(bool enable,
+                                                  real_t longitudinal_mass,
+                                                  real_t transverse_mass,
+                                                  size_t subbands);
+    void set_density_gradient_interface_distance_factor(real_t factor);
+    void set_density_gradient_potential_form(bool enable);
+    void set_density_gradient_step_boundary(
+        bool enable, real_t electron_barrier_eV, real_t hole_barrier_eV,
+        real_t electron_barrier_mass, real_t hole_barrier_mass,
+        real_t electron_gamma, real_t hole_gamma,
+        real_t electron_theta, real_t hole_theta);
     void set_grid_z(const std::vector<real_t>& z_pos);
     void set_grid_x(const std::vector<real_t>& x_pos);
     void set_phi_freezing_enabled(bool enable);
@@ -122,8 +138,13 @@ public:
 
     // Band-to-band tunneling
     void set_btbt_enabled(bool enable);
-    void set_btbt_params(real_t A, real_t B, int D);
+    void set_btbt_params(real_t A, real_t B, real_t D);
+    void set_btbt_field_mode(int mode);
+    void set_btbt_field_options(int mode, real_t cap);
+    void set_btbt_field_shape(int mode, real_t cap, real_t alpha, real_t ref);
+    void set_btbt_continuity_scale(real_t scale);
     void set_btbt_use_nonlocal(bool enable);
+    void set_btbt_nonlocal_params(real_t tunnel_path_frac, size_t wkb_npts);
 
     // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
     // G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q injected into both continuity eqns.
@@ -166,6 +187,10 @@ public:
                      real_t C_pf, real_t B_pf, real_t phi_t,
                      real_t C_fn, real_t B_fn, real_t phi_b,
                      real_t E_floor, real_t sigma_cap);
+    // Optional signed-field Fowler-Nordheim coefficients. Positive/negative
+    // refer to the field component on each oriented mesh edge.
+    void set_leakage_fn_polarity(real_t C_positive, real_t B_positive,
+                                 real_t C_negative, real_t B_negative);
     void set_leakage_enabled(bool enable);
     // Interface traps (Dit) + bulk oxide traps (P6).
     void set_interface_traps(const std::vector<char>& mask,
@@ -213,7 +238,9 @@ private:
     void compute_edge_currents(SimulationResult& res,
                                const std::vector<real_t>& phi,
                                const std::vector<real_t>& n,
-                               const std::vector<real_t>& p);
+                               const std::vector<real_t>& p,
+                               const std::vector<real_t>* transport_Qn = nullptr,
+                               const std::vector<real_t>* transport_Qp = nullptr);
 
     Grid3D g_;
     PoissonSolver poisson_;
@@ -221,16 +248,42 @@ private:
     NewtonSolver newton_;
     DensityGradient dg_;
     std::vector<real_t> eps_;
+    std::vector<real_t> edge_eps_x_plus_, edge_eps_x_minus_;
+    std::vector<real_t> edge_eps_y_plus_, edge_eps_y_minus_;
+    std::vector<real_t> edge_eps_z_plus_, edge_eps_z_minus_;
     std::vector<real_t> mu_n_, mu_p_;
     std::vector<real_t> tau_n_, tau_p_;
     std::vector<real_t> Nd_minus_Na_;
     std::vector<real_t> charge_volume_fraction_;
     std::vector<real_t> G_opt_;
+    std::vector<real_t> btbt_weight_;
     std::vector<real_t> Nc_, Nv_, Eg_;
     std::map<size_t, real_t> phi_bc_, n_bc_, p_bc_;
     bool has_initial_guess_ = false;
     std::vector<real_t> init_phi_, init_n_, init_p_;
     bool quantum_enabled_ = false;
+    real_t dg_bn_ = 4.885e-20Q;
+    real_t dg_bp_ = 3.432e-20Q;
+    bool dg_silicon_multivalley_ = false;
+    real_t dg_silicon_ml_ = 0.916Q;
+    real_t dg_silicon_mt_ = 0.190Q;
+    size_t dg_silicon_subbands_ = 4;
+    real_t dg_interface_distance_factor_ = 1.0Q;
+    bool dg_potential_form_enabled_ = false;
+    // Accepted potential-form transport state persisted across bias points.
+    // GummelSolver is rebuilt for every solve(), so continuation would
+    // otherwise restart from a density-form estimate at every voltage step.
+    std::vector<real_t> dg_transport_Qn_, dg_transport_Qp_;
+    bool dg_step_boundary_enabled_ = false;
+    real_t dg_step_e_barrier_eV_ = 3.17Q;
+    real_t dg_step_h_barrier_eV_ = 4.70Q;
+    real_t dg_step_e_mass_ = 0.42Q;
+    real_t dg_step_h_mass_ = 1.0Q;
+    // Eq. 250 uses gamma(0+), i.e. the non-solved barrier side.
+    real_t dg_step_e_gamma_ = 1.0Q;
+    real_t dg_step_h_gamma_ = 1.0Q;
+    real_t dg_step_e_theta_ = 0.5Q;
+    real_t dg_step_h_theta_ = 0.5Q;
     size_t max_iter_ = 100;   // raised from 50 for correct div(P) coupling
     // A relative update tolerance below float64/linear-solver accuracy made
     // otherwise valid bias sweeps hit max_iter and then restart from thermal
@@ -268,8 +321,15 @@ private:
     bool btbt_enabled_ = false;
     real_t btbt_A_ = 3.1e21Q;
     real_t btbt_B_ = 2.0e9Q;  // V/m (SI; 2e7 V/cm)
-    int btbt_D_ = 2;
+    real_t btbt_D_ = 2.0Q;
+    int btbt_field_mode_ = 0;
+    real_t btbt_field_cap_ = 0.0Q;
+    real_t btbt_field_alpha_ = 0.0Q;
+    real_t btbt_field_ref_ = 1.0e8Q;
+    real_t btbt_continuity_scale_ = 1.0Q;
     bool btbt_use_nonlocal_ = false;
+    real_t btbt_tunnel_path_frac_ = 0.5Q;
+    size_t btbt_wkb_npts_ = 64;
     // Avalanche impact ionization (SI units; defaults = silicon, see
     // ImpactIonizationParams in gummel_solver.h)
     bool ii_enabled_ = false;
@@ -315,6 +375,9 @@ private:
     std::vector<char> leak_mask_;
     real_t leak_C_pf_ = 0.0Q, leak_B_pf_ = 0.0Q, leak_phi_t_ = 0.0Q;
     real_t leak_C_fn_ = 0.0Q, leak_B_fn_ = 0.0Q, leak_phi_b_ = 0.0Q;
+    bool leak_fn_polarity_enabled_ = false;
+    real_t leak_C_fn_positive_ = 0.0Q, leak_B_fn_positive_ = 0.0Q;
+    real_t leak_C_fn_negative_ = 0.0Q, leak_B_fn_negative_ = 0.0Q;
     real_t leak_E_floor_ = 1.0e6Q;
     real_t leak_sigma_cap_ = 0.05Q;
     // Interface traps (Dit) + bulk oxide traps (P6)

@@ -4,8 +4,7 @@ Release date: 2026-08-16
 
 TCADCraft 0.2.0 is a source-code release focused on numerical robustness,
 device-physics coverage, mixed-material workflows, and reproducible calibration
-artifacts. This release is intended to be published from
-`EDACraft/TCADCraft/` only; no tarball or wheel artifact is included.
+artifacts. No tarball or wheel artifact is included.
 
 ## Highlights
 

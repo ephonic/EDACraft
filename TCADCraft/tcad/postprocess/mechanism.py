@@ -99,7 +99,7 @@ def btbt_generation(
     mesh,
     A_kane: float = A_KANE,
     B_kane: float = B_KANE_SI,
-    D: int = KANE_D,
+    D: float = KANE_D,
 ) -> Tuple[np.ndarray, float]:
     """Per-node BTBT generation rate [m^-3 s^-1] and total BTBT current [A].
 
@@ -184,7 +184,7 @@ def attribute_mechanism(
     k: int = 0,
     A_kane: float = A_KANE,
     B_kane: float = B_KANE_SI,
-    D: int = KANE_D,
+    D: float = KANE_D,
 ) -> MechanismReport:
     """Attribute the dominant current mechanism on a 1-D x cutline.
 

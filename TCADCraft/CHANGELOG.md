@@ -219,4 +219,4 @@ Semantic Versioning, and dates use ISO 8601.
   is released with Sentaurus response replay alignment only; WSe2
   compact/full-DD replacement remains diagnostic-only.
 
-[0.2.0]: https://github.com/ephonic/EDACraft/tree/main/TCADCraft
+[0.2.0]: https://github.com/EDACraft/TCADCraft/tree/main
