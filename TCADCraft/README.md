@@ -278,6 +278,32 @@ Plotting helpers:
 `plot_3d_field()` uses PyVista if installed, otherwise it falls back to a 2D
 slice plot.
 
+## Performance And Runtime
+
+Current benchmark artifacts focus on accuracy and convergence. They do not yet
+store a complete apples-to-apples wall-clock runtime table against Sentaurus.
+
+For local TCADCraft timing, the scripts under `bench/tcadcraft/` are the right
+entry point. Several of them print per-solve timings directly, for example:
+
+- `bench/tcadcraft/test_speed_quad.py`
+- `bench/tcadcraft/test_dense_sizes.py`
+- `bench/tcadcraft/nmos_*.py`
+
+For Sentaurus-side runs, the harness under `bench/sentaurus/` wraps `sdevice`
+with `timeout`, but the committed calibration outputs are curve files and
+metrics rather than elapsed wall-clock logs. If you need a strict runtime
+comparison, run both tools on the same host, same deck size, and same bias
+schedule, then capture wall-clock with `/usr/bin/time -p` or an equivalent
+timer.
+
+Practical reading, based on the current benchmark scope:
+
+- TCADCraft is built for fast scripted iteration and local calibration.
+- Sentaurus still has the advantage for mature large-scale production decks.
+- The repo currently proves functional parity on several device families, but
+  not a formal runtime ratio.
+
 ## Main Post-Processing APIs
 
 Use current-based extractors for quantitative work:
