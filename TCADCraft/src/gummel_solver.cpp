@@ -82,6 +82,47 @@ bool finite_vector(const Vector& values) {
     return true;
 }
 
+bool accept_positive_floor_continuity_state(
+    const SparseMatrix& matrix, const Vector& rhs, Vector& solution,
+    real_t residual_gate) {
+    if (!finite_vector(solution)) return false;
+    constexpr real_t floor_clip_gate = 1.0e-3Q;
+    bool clipped = false;
+    Vector candidate = solution;
+    for (real_t& value : candidate) {
+        if (value < 0.0Q) {
+            if (abs_q(value) > floor_clip_gate)
+                return false;
+            value = EPSILON;
+            clipped = true;
+        }
+    }
+    if (!clipped) return false;
+
+    const Vector applied = matrix.apply(candidate);
+    const auto& rows = matrix.row_offsets();
+    const auto& cols = matrix.col_indices();
+    const auto& values = matrix.vals();
+    for (size_t row = 0; row < rhs.size(); ++row) {
+        real_t scale = abs_q(rhs[row]);
+        for (size_t entry = rows[row]; entry < rows[row + 1]; ++entry)
+            scale += abs_q(values[entry] * candidate[cols[entry]]);
+        const real_t absolute = abs_q(applied[row] - rhs[row]);
+        const real_t relative = absolute / std::max(scale, 1.0Q);
+        if (!std::isfinite((double)relative)) return false;
+        if (relative <= residual_gate) continue;
+        // Depleted minority-carrier rows can be below one carrier per cubic
+        // metre after a high-field SG step.  A tiny negative solution that is
+        // clipped to the density floor is physically indistinguishable from
+        // zero, so allow only that sub-resolution absolute residual.  Rows
+        // with any resolved physical scale still obey the original gate.
+        if (!(scale <= 1.0Q && absolute <= floor_clip_gate))
+            return false;
+    }
+    solution = std::move(candidate);
+    return true;
+}
+
 void equilibrated_copy(const SparseMatrix& matrix, const Vector& rhs,
                        SparseMatrix& scaled_matrix, Vector& scaled_rhs,
                        Vector& row_scale, Vector& column_scale) {
@@ -365,6 +406,9 @@ bool solve_continuity_linear_system(
         }
     }
 
+    if (accept_positive_floor_continuity_state(
+            matrix, rhs, solution, residual_gate))
+        return true;
     std::cerr << species << " continuity linear residual "
               << (double)residual << " exceeds gate "
               << (double)residual_gate << std::endl;

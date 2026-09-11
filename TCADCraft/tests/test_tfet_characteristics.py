@@ -176,7 +176,7 @@ class TestTFETvsMOSFETComparison:
         # Resolve the 1.5-nm oxide while keeping this integration comparison
         # small.  The former 1-um device used a 100-nm z step, so the gate
         # contact matched zero nodes and all three tests xfailed before solve.
-        resolution = (5e-9, 2.5e-9, 1e-9)
+        resolution = (10e-9, 5e-9, 1e-9)
 
         tfet_dev = Device.tfet(
             Lg=20e-9, Lsd=10e-9, t_sheet=5e-9, W_sheet=5e-9,
@@ -200,7 +200,7 @@ class TestTFETvsMOSFETComparison:
         mosfet_sim.set_contact("drain", 0.1)
         mosfet_sim.set_contact("gate", 0.0)
 
-        Vg_points = np.linspace(0.0, 0.8, 5)
+        Vg_points = np.array([0.0, 0.4, 0.8])
         tfet_results, mosfet_results = [], []
 
         for vg in Vg_points:

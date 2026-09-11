@@ -925,6 +925,35 @@ SimulationResult DeviceSimulator::solve() {
         const bool independent_dg_potential_pde =
             quantum_enabled_ && dg_potential_form_enabled_ &&
             statistics_type_ == StatisticsType::FERMI_DIRAC;
+        const bool strong_dos_heterogeneity = [&]() {
+            real_t nc_min = 1.0e300Q, nc_max = 0.0Q;
+            real_t nv_min = 1.0e300Q, nv_max = 0.0Q;
+            real_t eg_min = 1.0e300Q, eg_max = -1.0e300Q;
+            for (size_t i = 0; i < N; ++i) {
+                if (Nc_[i] > 0.0Q && std::isfinite((double)Nc_[i])) {
+                    nc_min = std::min(nc_min, Nc_[i]);
+                    nc_max = std::max(nc_max, Nc_[i]);
+                }
+                if (Nv_[i] > 0.0Q && std::isfinite((double)Nv_[i])) {
+                    nv_min = std::min(nv_min, Nv_[i]);
+                    nv_max = std::max(nv_max, Nv_[i]);
+                }
+                if (std::isfinite((double)Eg_[i])) {
+                    eg_min = std::min(eg_min, Eg_[i]);
+                    eg_max = std::max(eg_max, Eg_[i]);
+                }
+            }
+            const bool nc_spread =
+                nc_max > 0.0Q && nc_min < 1.0e300Q &&
+                (nc_min < 1.0e24Q || nc_max / std::max(nc_min, 1.0Q) > 20.0Q);
+            const bool nv_spread =
+                nv_max > 0.0Q && nv_min < 1.0e300Q &&
+                (nv_min < 1.0e24Q || nv_max / std::max(nv_min, 1.0Q) > 20.0Q);
+            const bool eg_spread =
+                eg_max > -1.0e299Q && eg_min < 1.0e299Q &&
+                (eg_max - eg_min) > 0.5Q;
+            return nc_spread || nv_spread || eg_spread;
+        }();
         // Hybrid: Gummel first for robust initial guess, then Newton for fast
         // convergence.  The warm-up runs to convergence normally, but exits
         // EARLY at the first detected limit cycle: a cycle means the
@@ -940,7 +969,8 @@ SimulationResult DeviceSimulator::solve() {
         // the classical PN behaviour unchanged because an early cycle-mean
         // hand-off there degraded Newton/Gummel KCL agreement.
         warm_opt.exit_on_limit_cycle =
-            quantum_enabled_ && !independent_dg_potential_pde;
+            (quantum_enabled_ && !independent_dg_potential_pde) ||
+            strong_dos_heterogeneity;
         gummel_ = GummelSolver(g_, warm_opt);
         gummel_.set_density_gradient_coefficients(dg_bn_, dg_bp_);
         gummel_.set_density_gradient_silicon_multivalley(
@@ -1347,6 +1377,34 @@ SimulationResult DeviceSimulator::solve() {
         if (!Q_ot_.empty()) gummel_.set_oxide_traps(Q_ot_);
 
         res.converged = gummel_.solve(res.phi, res.n, res.p);
+        size_t gummel_iters_total = gummel_.poisson_residuals().size();
+        // Classical drift-diffusion problems with strong uniform generation
+        // can be contracting but still miss the caller's per-solve max_iter
+        // by a small tail.  A second solve at the same bias starts from the
+        // finite state just produced and is equivalent to an internal
+        // continuation of the fixed-point iteration.  Keep this retry out of
+        // history-dependent models (FE, breakdown) and quantum transport,
+        // where an extra solve would also advance hidden state.
+        const bool has_optical_generation = [&]() {
+            for (const real_t value : G_opt_)
+                if (abs_q(value) > 0.0Q) return true;
+            return false;
+        }();
+        if (!res.converged && has_optical_generation &&
+            !fe_enabled_ && !bd_enabled_ && !quantum_enabled_ &&
+            finite_vector(res.phi) && finite_vector(res.n) &&
+            finite_vector(res.p)) {
+            constexpr size_t same_bias_retries = 2;
+            for (size_t retry = 0; retry < same_bias_retries; ++retry) {
+                res.converged = gummel_.solve(res.phi, res.n, res.p);
+                gummel_iters_total += gummel_.poisson_residuals().size();
+                if (res.converged ||
+                    !finite_vector(res.phi) ||
+                    !finite_vector(res.n) ||
+                    !finite_vector(res.p))
+                    break;
+            }
+        }
         if (res.converged && dg_potential_form_enabled_ &&
             gummel_.transport_quantum_n().size() == N &&
             gummel_.transport_quantum_p().size() == N) {
@@ -1363,7 +1421,7 @@ SimulationResult DeviceSimulator::solve() {
         res.poisson_residual = gummel_.poisson_residual_final();
         res.quantum_residual = gummel_.quantum_residual_final();
         res.phi_frozen = gummel_.phi_was_frozen();
-        res.iterations = gummel_.poisson_residuals().size();
+        res.iterations = gummel_iters_total;
     }
 
     // Final API invariant: no solver path may label a non-finite state as

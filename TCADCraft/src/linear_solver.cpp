@@ -612,6 +612,7 @@ size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector
 #endif
         std::vector<real_t> band(n * band_width, 0.0Q);
         Vector rhs = b;
+        bool banded_ok = true;
         auto at = [&](size_t row, size_t col) -> real_t& {
             return band[row * band_width + col + lower_bw - row];
         };
@@ -620,19 +621,21 @@ size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector
             for (size_t entry = rp[i]; entry < rp[i + 1]; ++entry)
                 row_scale = std::max(row_scale, abs_q(vals[entry]));
             if (!(row_scale > EPSILON) ||
-                !std::isfinite((double)row_scale))
-                throw std::runtime_error("banded direct solver: invalid row");
+                !std::isfinite((double)row_scale)) {
+                banded_ok = false;
+                break;
+            }
             for (size_t entry = rp[i]; entry < rp[i + 1]; ++entry)
                 at(i, cols[entry]) = vals[entry] / row_scale;
             rhs[i] /= row_scale;
         }
-        for (size_t k = 0; k < n; ++k) {
+        for (size_t k = 0; banded_ok && k < n; ++k) {
             const real_t pivot = at(k, k);
             if (abs_q(pivot) < 1.0e-28Q ||
-                !std::isfinite((double)pivot))
-                throw std::runtime_error(
-                    "banded direct solver: zero/non-finite pivot at row " +
-                    std::to_string(k));
+                !std::isfinite((double)pivot)) {
+                banded_ok = false;
+                break;
+            }
             const size_t i_end = std::min(n - 1, k + lower_bw);
             const size_t j_end = std::min(n - 1, k + upper_bw);
             for (size_t i = k + 1; i <= i_end; ++i) {
@@ -643,20 +646,33 @@ size_t LinearSolver::dense_direct(const SparseMatrix& A, const Vector& b, Vector
                 rhs[i] -= factor * rhs[k];
             }
         }
-        x.assign(n, 0.0Q);
-        for (size_t reverse = n; reverse-- > 0;) {
-            real_t value = rhs[reverse];
-            const size_t j_end = std::min(n - 1, reverse + upper_bw);
-            for (size_t j = reverse + 1; j <= j_end; ++j)
-                value -= at(reverse, j) * x[j];
-            const real_t pivot = at(reverse, reverse);
-            if (abs_q(pivot) < 1.0e-28Q ||
-                !std::isfinite((double)pivot))
-                throw std::runtime_error(
-                    "banded direct solver: singular back substitution");
-            x[reverse] = value / pivot;
+        if (banded_ok) {
+            x.assign(n, 0.0Q);
+            for (size_t reverse = n; reverse-- > 0;) {
+                real_t value = rhs[reverse];
+                const size_t j_end = std::min(n - 1, reverse + upper_bw);
+                for (size_t j = reverse + 1; j <= j_end; ++j)
+                    value -= at(reverse, j) * x[j];
+                const real_t pivot = at(reverse, reverse);
+                if (abs_q(pivot) < 1.0e-28Q ||
+                    !std::isfinite((double)pivot)) {
+                    banded_ok = false;
+                    break;
+                }
+                x[reverse] = value / pivot;
+            }
+            if (banded_ok && candidate_is_acceptable(x))
+                return 1;
         }
-        return 1;
+        // A high-field Scharfetter-Gummel continuity block can be narrow but
+        // not safely solvable by the portable no-pivot banded eliminator.
+        // Keep that fast path for diagonally dominant cases, but fall through
+        // to the general dense solver below when a tiny pivot or poor
+        // backward residual is detected.  The dense fallback uses partial
+        // pivoting (and LAPACK when available), which avoids reporting a
+        // recoverable Gummel substep as a hard zero-pivot failure.
+        if (getenv("TCAD_LIN_DEBUG"))
+            std::cerr << "[banded direct rejected -> dense pivot fallback]\n";
     }
 
     // Convert sparse to dense (flattened row-major)

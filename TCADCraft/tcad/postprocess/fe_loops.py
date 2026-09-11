@@ -11,9 +11,40 @@ left to ad-hoc scripts).
 """
 
 from __future__ import annotations
-from typing import Dict, List, Optional, Tuple
+from contextlib import contextmanager
+import os
+import sys
+from typing import Callable, Dict, List, Optional, Tuple
+import warnings
 
 import numpy as np
+
+
+@contextmanager
+def _suppress_solver_stdio():
+    """Temporarily silence low-level C/C++ stdout/stderr diagnostics.
+
+    The MLC ramp helper intentionally retries intermediate non-converged points.
+    C++ ``std::cout``/``std::cerr`` messages are written at the file-descriptor
+    level before Python can decide whether the retry recovered, so suppress them
+    inside this controlled retry loop and report only unrecovered failures.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    stdout_fd = os.dup(1)
+    stderr_fd = os.dup(2)
+    try:
+        with open(os.devnull, "w", encoding="utf-8") as sink:
+            os.dup2(sink.fileno(), 1)
+            os.dup2(sink.fileno(), 2)
+            yield
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(stdout_fd, 1)
+        os.dup2(stderr_fd, 2)
+        os.close(stdout_fd)
+        os.close(stderr_fd)
 
 
 def _fe_mask(sim) -> np.ndarray:
@@ -705,6 +736,192 @@ def run_pulse_width_sweep(
         "memory_window": np.asarray(mw_values),
         "Ps": ps_arr,
     }
+
+
+def extract_mlc_memory_window(
+    program_voltages,
+    read_currents,
+    min_state_separation_decades: float = 0.10,
+) -> Dict[str, np.ndarray]:
+    """Extract a physically reported MLC current window from read currents.
+
+    ``comment6.docx`` flagged a misleading "negative memory window" in the
+    AlScN/MoS2 MLC exploration.  The sign is useful as a polarity diagnostic,
+    but the externally reported MLC window is the *separation* between read
+    states and must therefore be non-negative.  This helper reports both:
+
+    - ``memory_window_decades``: absolute log10 current span, always >= 0.
+    - ``signed_window_decades``: high-program-current minus low-program-current
+      log span.  Negative values indicate an inverted FE/channel polarity or an
+      intentional p-type convention that should be documented.
+    - ``n_states``: count of read levels separated by at least
+      ``min_state_separation_decades``.
+    """
+    V = np.asarray(program_voltages, dtype=float).ravel()
+    I = np.asarray(read_currents, dtype=float).ravel()
+    if V.size != I.size:
+        raise ValueError("program_voltages and read_currents must have same length")
+    if V.size < 2:
+        raise ValueError("at least two program/read states are required")
+    if not np.all(np.isfinite(V)):
+        raise ValueError("program_voltages must be finite")
+    if not np.all(np.isfinite(I)):
+        raise ValueError("read_currents must be finite")
+    if min_state_separation_decades < 0.0:
+        raise ValueError("min_state_separation_decades must be non-negative")
+
+    positive = I[I > 0.0]
+    floor = max(float(np.min(positive)) if positive.size else 1.0e-30, 1.0e-30)
+    I_safe = np.clip(np.abs(I), floor, None)
+    order_v = np.argsort(V)
+    V_sorted = V[order_v]
+    I_by_v = I_safe[order_v]
+    signed = float(np.log10(I_by_v[-1] / I_by_v[0]))
+    log_levels = np.sort(np.log10(I_safe))
+    n_states = 1
+    last = float(log_levels[0])
+    for level in log_levels[1:]:
+        if float(level) - last >= min_state_separation_decades:
+            n_states += 1
+            last = float(level)
+
+    return {
+        "program_voltages": V,
+        "read_currents": I_safe,
+        "program_voltages_sorted": V_sorted,
+        "read_currents_sorted_by_program": I_by_v,
+        "memory_window_decades": abs(signed),
+        "signed_window_decades": signed,
+        "polarity": "normal" if signed >= 0.0 else "inverted",
+        "n_states": int(n_states),
+        "min_state_separation_decades": float(min_state_separation_decades),
+    }
+
+
+def _ramp_contact_and_run(
+    sim,
+    contact: str,
+    target_voltage: float,
+    max_step: float,
+    max_iter: int,
+    tol: float,
+    retries: int,
+) -> Dict[str, np.ndarray]:
+    if not np.isfinite(target_voltage):
+        raise ValueError("target voltage must be finite")
+    if not np.isfinite(max_step) or max_step <= 0.0:
+        raise ValueError("max_step must be finite and > 0")
+    if retries < 0:
+        raise ValueError("retries must be >= 0")
+
+    contacts = getattr(sim, "_contact_voltages", {})
+    start_voltage = float(contacts.get(contact, getattr(sim, "voltage", 0.0)))
+    delta = float(target_voltage) - start_voltage
+    n_steps = max(1, int(np.ceil(abs(delta) / max_step)))
+    result: Dict[str, np.ndarray] = {}
+    for voltage in np.linspace(start_voltage, float(target_voltage), n_steps + 1)[1:]:
+        sim.update_contact(contact, float(voltage))
+        attempts = retries + 1
+        for attempt in range(attempts):
+            with warnings.catch_warnings(), _suppress_solver_stdio():
+                # Non-convergence during an intermediate ramp attempt is an
+                # expected recoverable condition for this helper: the point is
+                # immediately retried from the finite state just produced.  Do
+                # not emit a user-facing warning unless all attempts fail and
+                # the RuntimeError below is raised.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Solver did not converge; result marked valid=False.*",
+                    category=RuntimeWarning,
+                )
+                result = sim.run(max_iter=max_iter, tol=tol)
+            if bool(result.get("converged", True)) and bool(result.get("valid", True)):
+                break
+        if not bool(result.get("converged", True)) or not bool(result.get("valid", True)):
+            raise RuntimeError(
+                f"{contact} ramp to {float(voltage):.6g} V did not converge"
+            )
+    return result
+
+
+def run_mlc_program_read_sweep(
+    sim,
+    contact: str,
+    program_voltages,
+    read_voltage: float = 0.0,
+    reset_voltage: Optional[float] = None,
+    max_ramp_step: float = 0.25,
+    max_iter: int = 300,
+    tol: float = 1.0e-6,
+    retries: int = 2,
+    current_reader: Optional[Callable[[object, Dict[str, np.ndarray]], float]] = None,
+    min_state_separation_decades: float = 0.10,
+) -> Dict[str, np.ndarray]:
+    """Run a robust FeFET MLC program-read sequence.
+
+    The driver mirrors a Sentaurus-style quasistationary program/reset/read
+    flow: every program, erase, and read transition is broken into bounded
+    voltage increments and each intermediate point must converge before the
+    next one is attempted.  This directly targets the AlScN thickness-scaling
+    failure mode from ``comment6.docx`` where thick FE layers required large
+    coercive voltages and direct multi-volt jumps drove the coupled
+    FE/continuity solver into zero-pivot or limit-cycle states.
+
+    If ``current_reader`` is supplied, it is called at each read point and the
+    returned currents are post-processed by :func:`extract_mlc_memory_window`.
+    Otherwise the helper records read-point axial FE polarization only.
+    """
+    V_program = np.asarray(program_voltages, dtype=float).ravel()
+    if V_program.size == 0:
+        raise ValueError("program_voltages must contain at least one value")
+    if not np.all(np.isfinite(V_program)):
+        raise ValueError("program_voltages must be finite")
+
+    if hasattr(sim, "set_use_newton"):
+        sim.set_use_newton(True)
+    if hasattr(sim, "set_newton_log_space"):
+        sim.set_newton_log_space(True)
+
+    fe_mask = _fe_mask(sim) if hasattr(sim, "mesh") else None
+    read_results: List[Dict[str, np.ndarray]] = []
+    read_currents: List[float] = []
+    read_polarization: List[float] = []
+
+    for Vp in V_program:
+        if reset_voltage is not None:
+            _ramp_contact_and_run(
+                sim, contact, float(reset_voltage), max_ramp_step,
+                max_iter, tol, retries,
+            )
+        _ramp_contact_and_run(
+            sim, contact, float(Vp), max_ramp_step, max_iter, tol, retries,
+        )
+        result = _ramp_contact_and_run(
+            sim, contact, float(read_voltage), max_ramp_step,
+            max_iter, tol, retries,
+        )
+        read_results.append(result)
+        if current_reader is not None:
+            current = float(current_reader(sim, result))
+            if not np.isfinite(current):
+                raise RuntimeError("current_reader returned a non-finite current")
+            read_currents.append(abs(current))
+        if "P" in result:
+            read_polarization.append(_read_axial_polarization(sim, result, fe_mask))
+
+    output: Dict[str, np.ndarray] = {
+        "program_voltages": V_program,
+        "read_voltage": float(read_voltage),
+        "read_results": read_results,
+        "read_polarization": np.asarray(read_polarization, dtype=float),
+    }
+    if current_reader is not None:
+        current_arr = np.asarray(read_currents, dtype=float)
+        output["read_currents"] = current_arr
+        output.update(extract_mlc_memory_window(
+            V_program, current_arr, min_state_separation_decades,
+        ))
+    return output
 
 
 def run_power_measurement(

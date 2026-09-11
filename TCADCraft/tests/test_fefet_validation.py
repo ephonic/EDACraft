@@ -264,6 +264,48 @@ class TestRetentionEnduranceDrivers:
         assert len(sim.qot_history) == 5  # program + four retention steps
         assert np.all(np.isfinite(result["Q_ot"]))
 
+    def test_mlc_window_reports_positive_span_and_polarity(self):
+        from tcad.postprocess.fe_loops import extract_mlc_memory_window
+
+        metrics = extract_mlc_memory_window(
+            program_voltages=[0.0, 2.0, 4.0],
+            # Deliberately inverted current ordering from comment6.docx: this
+            # should be a polarity diagnostic, not a negative public window.
+            read_currents=[1.0e-6, 1.0e-8, 1.0e-10],
+            min_state_separation_decades=0.5,
+        )
+
+        assert metrics["memory_window_decades"] == pytest.approx(4.0)
+        assert metrics["signed_window_decades"] == pytest.approx(-4.0)
+        assert metrics["polarity"] == "inverted"
+        assert metrics["n_states"] == 3
+
+    def test_mlc_program_read_sweep_ramps_large_voltage_jumps(self):
+        from tcad.postprocess.fe_loops import run_mlc_program_read_sweep
+
+        class FakeMLCSim(_FakeFESimulator):
+            def __init__(self):
+                super().__init__()
+                self.trace = []
+                self.program_state = 0.0
+
+            def update_contact(self, name, voltage):
+                self.trace.append(float(voltage))
+                if float(voltage) > self.program_state:
+                    self.program_state = float(voltage)
+                super().update_contact(name, voltage)
+
+        sim = FakeMLCSim()
+        out = run_mlc_program_read_sweep(
+            sim, "gate", program_voltages=[0.0, 2.0],
+            read_voltage=0.0, reset_voltage=-1.0, max_ramp_step=0.5,
+            current_reader=lambda s, _r: 10.0 ** (-6.0 + s.program_state),
+        )
+
+        assert np.max(np.abs(np.diff(sim.trace))) <= 0.5 + 1e-12
+        assert out["memory_window_decades"] == pytest.approx(2.0)
+        assert out["polarity"] == "normal"
+
     def test_endurance_applies_wakeup_fatigue_state(self):
         from tcad.physics.reliability import CyclingDegradation
         sim = _FakeFESimulator()

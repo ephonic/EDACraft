@@ -50,6 +50,7 @@ class Simulator:
         self._fe_base_ps = 0.0
         self._fe_ec = 0.0
         self._fe_escale = 0.0
+        self._auto_newton_for_hetero_dos = False
 
         # Default arrays
         npts = mesh.npts()
@@ -74,12 +75,24 @@ class Simulator:
             self._sim.set_doping(doping)
         if "Nc" in self.mesh.fields and "Nv" in self.mesh.fields:
             # Convert DOS from cm^-3 to m^-3
+            Nc = self.mesh.fields["Nc"].astype(float)
+            Nv = self.mesh.fields["Nv"].astype(float)
             self._sim.set_effective_dos(
-                self.mesh.fields["Nc"].astype(float) * 1e6,
-                self.mesh.fields["Nv"].astype(float) * 1e6,
+                Nc * 1e6,
+                Nv * 1e6,
             )
+            finite_dos = np.concatenate([
+                Nc[np.isfinite(Nc) & (Nc > 0.0)],
+                Nv[np.isfinite(Nv) & (Nv > 0.0)],
+            ])
+            if finite_dos.size:
+                dos_min = float(finite_dos.min())
+                dos_max = float(finite_dos.max())
+                if dos_min < 1.0e18 or dos_max / max(dos_min, 1.0) > 20.0:
+                    self._auto_newton_for_hetero_dos = True
         if "Eg" in self.mesh.fields:
-            self._sim.set_bandgap(self.mesh.fields["Eg"].astype(float))
+            Eg = self.mesh.fields["Eg"].astype(float)
+            self._sim.set_bandgap(Eg)
         if "charge_volume_fraction" in self.mesh.fields:
             self.set_charge_volume_fraction(
                 self.mesh.fields["charge_volume_fraction"]
@@ -1585,6 +1598,10 @@ class Simulator:
         self._sim.set_gummel_max_iter(max_iter)
         self._sim.set_tolerance(tol)
         self._apply_cut_cell()
+        if getattr(self, "_auto_newton_for_hetero_dos", False):
+            self._sim.set_use_newton(True)
+            self._sim.set_newton_use_log_space(True)
+            self._sim.set_newton_use_log_damping(True)
         pending = self._pending_contact_ramps
         self._pending_contact_ramps = {}
         continuation_steps = 1

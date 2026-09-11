@@ -514,54 +514,58 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
         // only when monotonic-saturation (not loop shape) is the priority.
         const real_t Escale = (fe_escale_ > 0.0Q) ? fe_escale_
                             : ((Ec > 0.0Q) ? Ec : 1.0Q);
-        for (size_t k = 0; k < g_.nz; ++k) {
-            for (size_t j = 0; j < g_.ny; ++j) {
+        // Treat the compact Preisach model as a uniform FE domain ensemble.
+        // Updating one play operator per mesh node lets self-consistent bound
+        // charge seed artificial node-to-node domains in a nominally uniform
+        // thin film, which weakens built-in/imprint-field shifts and makes the
+        // result grid-dependent.  Average the polar-axis drive over the FE
+        // region, advance one ensemble play state, then write the same
+        // polarization back to all FE nodes.  This matches the compact nature
+        // of the model and the NLS path below.
+        real_t E = 0.0Q, P_old = 0.0Q, w_old = 0.0Q;
+        size_t n_fe = 0;
+        for (size_t k = 0; k < g_.nz; ++k)
+            for (size_t j = 0; j < g_.ny; ++j)
                 for (size_t i = 0; i < g_.nx; ++i) {
-                    size_t idx = g_.index(i, j, k);
-                    // Reset masked-off nodes (Px=Py=Pz=0, play=0).
-                    if (!fe_mask_[idx]) {
-                        fe_polarization_[3*idx+0] = 0.0Q;
-                        fe_polarization_[3*idx+1] = 0.0Q;
-                        fe_polarization_[3*idx+2] = 0.0Q;
-                        fe_play_state_[idx] = 0.0Q;
-                        continue;
-                    }
-                    // E = -grad(phi) along the polar axis fe_axis_ (scalar
-                    // Preisach; the vector generalisation would run three
-                    // independent play operators, matching L-K's A4 form).
-                    // (P0-1 fix: was hard-wired to the x component, so a
-                    // z-stacked FeFET never drove the polarization.)
-                    // P2.1: apply the internal/imprint field offset E_bi so the
-                    // effective switching drive is E_eff = E - E_bi. This models
-                    // a built-in bias / imprint that breaks +/- symmetry.
-                    real_t E = e_field_component(phi, i, j, k, fe_axis_);
-                    E -= fe_E_bi_;   // imprint / built-in offset (P2.1)
-                    // Depolarization field (comments2.docx P3):
-                    // E_dep = -P_current / (eps_fe * eps_0), opposes P.
-                    if (fe_eps_fe_ > 0.0Q) {
-                        real_t P_cur = fe_polarization_[3*idx+fe_axis_];
-                        real_t eps0 = 8.854187817e-12Q;
-                        E -= P_cur / (fe_eps_fe_ * eps0);
-                    }
-
-                    // Play operator update: w follows E but lags by Ec.
-                    real_t w = fe_play_state_[idx];
-                    if (E > w + Ec)       w = E - Ec;
-                    else if (E < w - Ec)  w = E + Ec;
-                    // else: w unchanged (inside the deadband -> memory)
-                    fe_play_state_[idx] = w;
-
-                    // Saturating output: P = Ps * tanh((E - w)/Escale).
-                    real_t arg = (E - w) / Escale;
-                    real_t P_new = Ps * tanh_q(arg);
-                    // Under-relaxation (comments2.docx): blend new and old P.
-                    real_t P_old_p = fe_polarization_[3*idx+fe_axis_];
-                    fe_polarization_[3*idx+fe_axis_] = fe_relax_ * P_new + (1.0Q - fe_relax_) * P_old_p;
-                    // Off-axis components stay 0 (scalar Preisach along fe_axis_).
-                    for (int c = 0; c < 3; ++c)
-                        if (c != fe_axis_) fe_polarization_[3*idx+c] = 0.0Q;
+                    const size_t idx = g_.index(i, j, k);
+                    if (!fe_mask_[idx]) continue;
+                    E += e_field_component(phi, i, j, k, fe_axis_);
+                    P_old += fe_polarization_[3 * idx + fe_axis_];
+                    w_old += fe_play_state_[idx];
+                    ++n_fe;
                 }
+        if (n_fe == 0) return;
+        E /= (real_t)n_fe;
+        P_old /= (real_t)n_fe;
+        w_old /= (real_t)n_fe;
+        E -= fe_E_bi_;   // imprint / built-in offset (P2.1)
+        if (fe_eps_fe_ > 0.0Q) {
+            const real_t eps0 = 8.854187817e-12Q;
+            E -= P_old / (fe_eps_fe_ * eps0);
+        }
+
+        // Play operator update: w follows E but lags by Ec.
+        real_t w = w_old;
+        if (E > w + Ec)       w = E - Ec;
+        else if (E < w - Ec)  w = E + Ec;
+
+        // Saturating output: P = Ps * tanh((E - w)/Escale).
+        const real_t arg = (E - w) / Escale;
+        const real_t P_new = Ps * tanh_q(arg);
+        const real_t P = fe_relax_ * P_new + (1.0Q - fe_relax_) * P_old;
+
+        for (size_t idx = 0; idx < N; ++idx) {
+            if (!fe_mask_[idx]) {
+                fe_polarization_[3*idx+0] = 0.0Q;
+                fe_polarization_[3*idx+1] = 0.0Q;
+                fe_polarization_[3*idx+2] = 0.0Q;
+                fe_play_state_[idx] = 0.0Q;
+                continue;
             }
+            fe_polarization_[3*idx+fe_axis_] = P;
+            for (int c = 0; c < 3; ++c)
+                if (c != fe_axis_) fe_polarization_[3*idx+c] = 0.0Q;
+            fe_play_state_[idx] = w;
         }
         return;
     }

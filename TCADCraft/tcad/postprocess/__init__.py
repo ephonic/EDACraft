@@ -40,6 +40,10 @@ from .mechanism import (
     MechanismReport,
     MECHANISM_LABELS,
 )
+from .fe_loops import (
+    extract_mlc_memory_window,
+    run_mlc_program_read_sweep,
+)
 
 __all__ = [
     "extract_transfer_characteristics",
@@ -74,4 +78,6 @@ __all__ = [
     "mechanism_feature_vector",
     "MechanismReport",
     "MECHANISM_LABELS",
+    "extract_mlc_memory_window",
+    "run_mlc_program_read_sweep",
 ]
