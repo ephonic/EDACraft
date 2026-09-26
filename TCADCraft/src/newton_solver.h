@@ -45,6 +45,16 @@ struct NewtonOptions {
     // set.  See audit §18.
     bool use_log_space = false;
 
+    // High-field velocity saturation (mirrors GummelOptions.hfs; the
+    // Newton continuity edges must reduce the mobility identically to the
+    // Gummel path and the terminal-current post-processing).
+    bool hfs_enabled = false;
+    real_t hfs_vsat_n = 1.07e5Q;
+    real_t hfs_vsat_p = 8.37e4Q;
+    real_t hfs_beta_n = 2.0Q;
+    real_t hfs_beta_p = 1.0Q;
+    int hfs_driving = 0;
+
     // Band-to-band tunneling
     bool enable_btbt = false;
     real_t btbt_A = 3.1e21Q;

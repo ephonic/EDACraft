@@ -522,23 +522,53 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
         // region, advance one ensemble play state, then write the same
         // polarization back to all FE nodes.  This matches the compact nature
         // of the model and the NLS path below.
+        //
+        // Drive and imprint semantics (imprint/Vc audit, 2026-09-18):
+        // (1) The ensemble drive is the electrode-screened potential drop
+        //     across the FE region along the polar axis.  The node-averaged
+        //     gradient mixes in the unscreened self-consistent depolarization
+        //     field ~P/(eps0*epsr) >> Ec of a saturated uniform film (through
+        //     the boundary-node one-sided stencils), which flipped the play
+        //     state on every bias step (period-2 +/-Ps chatter).
+        // (2) The internal/imprint field E_bi offsets the OUTPUT comparison
+        //     only; the play history tracks the applied field.  Feeding
+        //     E - E_bi into the play as well made the saturated major-loop
+        //     crossings E_bi-invariant (E_bi re-absorbed by the play reset),
+        //     i.e. the imprint vanished from the major loop.
         real_t E = 0.0Q, P_old = 0.0Q, w_old = 0.0Q;
+        real_t E_grad = 0.0Q;
+        real_t phi_lo_sum = 0.0Q, phi_hi_sum = 0.0Q;
+        size_t n_lo = 0, n_hi = 0;
+        long lo = -1, hi = -1;
         size_t n_fe = 0;
         for (size_t k = 0; k < g_.nz; ++k)
             for (size_t j = 0; j < g_.ny; ++j)
                 for (size_t i = 0; i < g_.nx; ++i) {
                     const size_t idx = g_.index(i, j, k);
                     if (!fe_mask_[idx]) continue;
-                    E += e_field_component(phi, i, j, k, fe_axis_);
+                    E_grad += e_field_component(phi, i, j, k, fe_axis_);
                     P_old += fe_polarization_[3 * idx + fe_axis_];
                     w_old += fe_play_state_[idx];
+                    const long coord = (fe_axis_ == 0) ? (long)i
+                                   : ((fe_axis_ == 1) ? (long)j : (long)k);
+                    if (lo < 0 || coord < lo) { lo = coord; phi_lo_sum = 0.0Q; n_lo = 0; }
+                    if (hi < 0 || coord > hi) { hi = coord; phi_hi_sum = 0.0Q; n_hi = 0; }
+                    if (coord == lo) { phi_lo_sum += phi[idx]; ++n_lo; }
+                    if (coord == hi) { phi_hi_sum += phi[idx]; ++n_hi; }
                     ++n_fe;
                 }
         if (n_fe == 0) return;
-        E /= (real_t)n_fe;
         P_old /= (real_t)n_fe;
         w_old /= (real_t)n_fe;
-        E -= fe_E_bi_;   // imprint / built-in offset (P2.1)
+        E_grad /= (real_t)n_fe;
+        const real_t d_axis = (fe_axis_ == 0) ? g_.dx
+                          : ((fe_axis_ == 1) ? g_.dy : g_.dz);
+        if (hi > lo && n_lo > 0 && n_hi > 0 && d_axis > 0.0Q) {
+            E = (phi_lo_sum / (real_t)n_lo - phi_hi_sum / (real_t)n_hi)
+                / ((real_t)(hi - lo) * d_axis);
+        } else {
+            E = E_grad;
+        }
         if (fe_eps_fe_ > 0.0Q) {
             const real_t eps0 = 8.854187817e-12Q;
             E -= P_old / (fe_eps_fe_ * eps0);
@@ -549,8 +579,9 @@ void PoissonSolver::update_ferroelectric_polarization(const std::vector<real_t>&
         if (E > w + Ec)       w = E - Ec;
         else if (E < w - Ec)  w = E + Ec;
 
-        // Saturating output: P = Ps * tanh((E - w)/Escale).
-        const real_t arg = (E - w) / Escale;
+        // Saturating output: P = Ps * tanh((E - E_bi - w)/Escale); the
+        // imprint offset enters the output comparison only (see above).
+        const real_t arg = (E - fe_E_bi_ - w) / Escale;
         const real_t P_new = Ps * tanh_q(arg);
         const real_t P = fe_relax_ * P_new + (1.0Q - fe_relax_) * P_old;
 

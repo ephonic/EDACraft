@@ -143,8 +143,18 @@ class TestImprintField:
 
     @staticmethod
     def _first_coercive(V, P):
-        """First voltage at which the mid-node P crosses zero (switching onset)."""
-        for k in range(1, len(V)):
+        """First P zero-crossing after the loop reaches its first extremum.
+
+        The bipolar sweep starts at V=0, so with an imprint field the initial
+        (virgin) branch already crosses P=0 at V = E_bi*L.  That is the
+        imprinted initial state, not the loop's coercive point: start the
+        search after the first |V| extremum so the detector reports a genuine
+        switching-branch crossing (imprint/Vc audit, 2026-09-18).
+        """
+        V = np.asarray(V, dtype=float)
+        P = np.asarray(P, dtype=float)
+        vmax_idx = int(np.argmax(np.abs(V)))
+        for k in range(vmax_idx + 1, len(V)):
             if P[k - 1] == 0.0 or np.sign(P[k]) != np.sign(P[k - 1]):
                 return 0.5 * (V[k - 1] + V[k])
         return float("nan")
@@ -152,17 +162,19 @@ class TestImprintField:
     def test_ebi_shifts_coercive_voltage(self):
         """The imprint field must shift the coercive voltage by ~E_bi*L.
 
-        (issues0719 P0-5: restored behavioral assertion.)  With the correct
-        div(P) stencil the loop EXTREMA saturate at +/-Ps regardless of E_bi,
-        so an extrema-asymmetry check is not sensitive.  The physical imprint
-        signature is a rigid shift of the switching point: E_bi = 1e8 V/m
-        across L = 40 nm shifts Vc by E_bi*L = 4 V.  Measured shift is
-        3.79 V; we assert > 2 V for robust margin.
+        (issues0719 P0-5: restored behavioral assertion; 2026-09-18 imprint
+        audit.)  The physical imprint signature is a rigid shift of the
+        switching-branch crossings: E_bi = 1e8 V/m across L = 40 nm shifts Vc
+        by E_bi*L = 4 V.  This requires the play history to track the applied
+        field with E_bi entering only the output comparison; feeding E-E_bi
+        into the play as well re-absorbs the offset at saturation and the
+        imprint vanishes from the major loop (see poisson_solver.cpp model-1
+        comments).  Assert > 2 V for robust margin.
         """
         sim0, N = _build_alscn_slab(E_bi=0.0)
-        V0, P0 = _sweep(sim0, N)
+        V0, P0 = _sweep(sim0, N, Vmax=16.0)
         sim1, N = _build_alscn_slab(E_bi=1.0e8)
-        V1, P1 = _sweep(sim1, N)
+        V1, P1 = _sweep(sim1, N, Vmax=16.0)
         assert np.all(np.isfinite(P0)) and np.all(np.isfinite(P1))
         vc0 = self._first_coercive(V0, P0)
         vc1 = self._first_coercive(V1, P1)

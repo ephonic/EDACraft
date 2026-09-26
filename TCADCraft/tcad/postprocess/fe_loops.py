@@ -94,6 +94,27 @@ def _advance_traps(sim, result, trap_model, dt: float, temperature: float):
     return result, qot
 
 
+def _apply_cycling_state(sim, degradation_model, active_fraction: float) -> None:
+    """Feed M1 slow-state outputs back into the solver before the next
+    electrical half-cycle.
+
+    ``active_fraction`` rescales the switchable Preisach/NLS polarization while
+    preserving the persistent play/NLS state (Simulator API).  The imprint
+    state is converted to the solver's loop-shift convention: the solver's
+    ``E_bi`` enters the material drive as ``E - E_bi``, so a physical imprint
+    that stabilizes the polarity written by +V programming (M1
+    ``imprint_state > 0``) corresponds to ``E_bi = -imprint_state``
+    (imprint/Vc audit, 2026-09-18).
+    """
+    if hasattr(sim, "set_ferroelectric_active_fraction"):
+        sim.set_ferroelectric_active_fraction(active_fraction)
+    if (
+        getattr(degradation_model, "imprint_field_max", 0.0) > 0.0
+        and hasattr(sim, "set_ferroelectric_builtin_field")
+    ):
+        sim.set_ferroelectric_builtin_field(-degradation_model.imprint_field())
+
+
 def _bipolar_voltage(Vmax: float, n_pts: int) -> np.ndarray:
     """Generate a full bipolar voltage sweep: 0 -> +Vmax -> 0 -> -Vmax -> 0.
 
@@ -503,6 +524,14 @@ def run_endurance(
     dynamics, and ``degradation_model=CyclingDegradation(...)`` to evolve
     competing wake-up/fatigue populations and the switchable polarization.
 
+    ``degradation_model=FieldHistoryCyclingState(...)`` (plan0918 M1) in
+    addition accumulates a signed imprint state: the model advances once per
+    half-cycle (program +E, erase -E; zero-field segments freeze), the
+    switchable-polarization fraction and imprint are fed back into the solver
+    before every half-cycle, and the returned ``imprint_field`` /
+    ``imprint_loop_shift_V`` trajectories record the rigid loop translation
+    (the shift that stabilizes the last-programmed polarity).
+
     Breakdown should normally be enabled on ``Simulator`` so its irreversible
     state, explicit filament current and Joule heat are used. The former
     empirical E/E_bd polarization scaling is available only through
@@ -573,6 +602,7 @@ def run_endurance(
     mw_list = []
     qot_list = []
     active_fraction_list = []
+    imprint_list = []
     trap_occupancy_list = []
 
     for cycle in range(1, n_cycles + 1):
@@ -585,14 +615,16 @@ def run_endurance(
         active_fraction = 1.0
         if degradation_model is not None:
             active_fraction = degradation_model.advance(1.0, E_cycle)
-            if hasattr(sim, "set_ferroelectric_active_fraction"):
-                sim.set_ferroelectric_active_fraction(active_fraction)
+            _apply_cycling_state(sim, degradation_model, active_fraction)
         # Program (+V) then erase (-V)
         sim.update_contact(contact, V_pulse)
         r_program = sim.run(max_iter=max_iter, tol=tol)
         _, qot_dynamic = _advance_traps(
             sim, r_program, trap_model, pulse_width, temperature,
         )
+        if degradation_model is not None:
+            active_fraction = degradation_model.advance(1.0, -E_cycle)
+            _apply_cycling_state(sim, degradation_model, active_fraction)
         sim.update_contact(contact, -V_pulse)
         r_erase = sim.run(max_iter=max_iter, tol=tol)
         _, qot_dynamic = _advance_traps(
@@ -638,6 +670,8 @@ def run_endurance(
             mw_list.append(mw_val)
             qot_list.append(Q_ot)
             active_fraction_list.append(active_fraction)
+            if hasattr(degradation_model, "imprint_state"):
+                imprint_list.append(degradation_model.imprint_field())
             if trap_model is not None:
                 trap_occupancy_list.append(float(np.mean(trap_model.occupancy)))
 
@@ -652,6 +686,10 @@ def run_endurance(
         output["active_fraction"] = np.asarray(active_fraction_list)
         output["wakeup_state"] = float(degradation_model.wakeup_state)
         output["fatigue_state"] = float(degradation_model.fatigue_state)
+        if hasattr(degradation_model, "imprint_state"):
+            imprint_arr = np.asarray(imprint_list, dtype=float)
+            output["imprint_field"] = imprint_arr
+            output["imprint_loop_shift_V"] = -imprint_arr * fe_thickness
     if trap_model is not None:
         output["trap_occupancy"] = np.asarray(trap_occupancy_list)
     return output

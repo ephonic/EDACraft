@@ -1268,12 +1268,57 @@ class Simulator:
             self._fe_base_ps * float(fraction), self._fe_ec, self._fe_escale,
         )
 
+    def set_high_field_saturation(
+        self,
+        enabled: bool = True,
+        vsat_n: float = 1.07e5,
+        vsat_p: float = 8.37e4,
+        beta_n: float = 2.0,
+        beta_p: float = 1.0,
+        driving: str = "grad_quasi_fermi",
+    ) -> None:
+        """Enable high-field velocity saturation (Caugy-Thomas).
+
+        Per SG edge the mobility is reduced as
+        ``mu(F) = mu_low / (1 + (mu_low*F/vsat)^beta)^(1/beta)`` with the
+        driving force ``F`` taken from the lagged edge quasi-Fermi gradient
+        (Sentaurus ``HighFieldSaturation(GradQuasiFermi)``) or the transport
+        field.  Defaults are the Sentaurus Si MaterialDB saturation
+        velocities.  Disabled by default (bit-preserving).
+
+        Parameters
+        ----------
+        enabled : bool
+            Turn the model on/off.
+        vsat_n, vsat_p : float
+            Saturation velocities [m/s].
+        beta_n, beta_p : float
+            Caugy-Thomas exponents.
+        driving : {"grad_quasi_fermi", "electric_field"}
+            Edge driving-force selector.
+        """
+        driving_map = {"grad_quasi_fermi": 0, "electric_field": 1}
+        key = driving_map.get(str(driving).lower())
+        if key is None:
+            raise ValueError(
+                "driving must be 'grad_quasi_fermi' or 'electric_field'"
+            )
+        self._sim.set_high_field_saturation(
+            enabled, float(vsat_n), float(vsat_p),
+            float(beta_n), float(beta_p), key,
+        )
+
     def set_ferroelectric_builtin_field(self, E_bi: float = 0.0) -> None:
         """Set the internal/imprint field offset (P2.1).
 
-        The effective ferroelectric switching drive becomes ``E_eff = E - E_bi``.
-        This models a built-in bias or wake-up imprint that breaks the +/- loop
-        symmetry. ``E_bi = 0`` (default) restores a symmetric loop.
+        For the Preisach ensemble (model 1) the play history tracks the
+        applied field while ``E_bi`` offsets the output comparison
+        (``P = Ps*tanh((E - E_bi - w)/Escale)``), so a nonzero ``E_bi``
+        rigidly translates the saturated major-loop crossings by
+        ``E_bi * t_FE`` (imprint/Vc audit, 2026-09-18).  Positive ``E_bi``
+        biases the virgin state toward -P; an imprint stabilizing the
+        polarity written by +V programming therefore uses negative
+        ``E_bi``. ``E_bi = 0`` (default) restores a symmetric loop.
 
         Parameters
         ----------

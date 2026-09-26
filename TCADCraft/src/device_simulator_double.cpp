@@ -258,6 +258,17 @@ void DeviceSimulatorDouble::set_btbt_nonlocal_params(double tunnel_path_frac, si
     sim_.set_btbt_nonlocal_params((real_t)tunnel_path_frac, wkb_npts);
 }
 
+void DeviceSimulatorDouble::set_btbt_nonlocal_mass(double mass_ratio) {
+    sim_.set_btbt_nonlocal_mass((real_t)mass_ratio);
+}
+
+void DeviceSimulatorDouble::set_high_field_saturation(bool enable, double vsat_n,
+                                                      double vsat_p, double beta_n,
+                                                      double beta_p, int driving) {
+    sim_.set_high_field_saturation(enable, (real_t)vsat_n, (real_t)vsat_p,
+                                   (real_t)beta_n, (real_t)beta_p, driving);
+}
+
 void DeviceSimulatorDouble::set_ii_enabled(bool enable) {
     sim_.set_ii_enabled(enable);
 }

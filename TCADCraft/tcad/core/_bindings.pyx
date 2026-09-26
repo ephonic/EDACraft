@@ -103,6 +103,8 @@ cdef extern from "device_simulator_double.h" namespace "tcad":
         void set_btbt_continuity_scale(double scale)
         void set_btbt_use_nonlocal(cbool enable)
         void set_btbt_nonlocal_params(double tunnel_path_frac, size_t wkb_npts)
+        void set_btbt_nonlocal_mass(double mass_ratio)
+        void set_high_field_saturation(cbool enable, double vsat_n, double vsat_p, double beta_n, double beta_p, int driving) except +
         void set_ii_enabled(cbool enable)
         void set_ii_params(double A_n, double B_n, double A_p, double B_p)
         void set_auger_enabled(cbool enable)
@@ -407,6 +409,15 @@ cdef class PyDeviceSimulator:
 
     def set_btbt_nonlocal_params(self, double tunnel_path_frac, size_t wkb_npts):
         self._sim.set_btbt_nonlocal_params(tunnel_path_frac, wkb_npts)
+
+    def set_btbt_nonlocal_mass(self, double mass_ratio):
+        self._sim.set_btbt_nonlocal_mass(mass_ratio)
+
+    def set_high_field_saturation(self, bint enable, double vsat_n,
+                                  double vsat_p, double beta_n,
+                                  double beta_p, int driving):
+        self._sim.set_high_field_saturation(enable, vsat_n, vsat_p,
+                                            beta_n, beta_p, driving)
 
     def set_ii_enabled(self, bint enable):
         self._sim.set_ii_enabled(enable)

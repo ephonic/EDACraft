@@ -664,6 +664,27 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     // Edge mobility: HARMONIC mean (current conservation fix,
                     // see gummel_solver.cpp electron block comment).
                     real_t mu_e = 2.0Q * mu_n_[idx] * mu_n_[nbr] / (mu_n_[idx] + mu_n_[nbr] + 1e-30Q);
+                    // High-field saturation (must mirror the Gummel edge and
+                    // the current post-processing, otherwise Newton-primary
+                    // solves are inconsistent with terminal-current HFS and
+                    // the electrothermal KCL gate rejects every state).
+                    if (opt_.hfs_enabled) {
+                        real_t force;
+                        if (opt_.hfs_driving == 1) {
+                            force = abs_q(dphi) / dx;
+                        } else {
+                            real_t efn_i = (phi[idx] + Qn_dg[idx])
+                                - VT_ * log_q(std::max(n[idx], 1.0Q) / std::max(Nc_[idx], 1.0Q));
+                            real_t efn_j = (phi[nbr] + Qn_dg[nbr])
+                                - VT_ * log_q(std::max(n[nbr], 1.0Q) / std::max(Nc_[nbr], 1.0Q));
+                            force = abs_q(efn_j - efn_i) / dx;
+                        }
+                        real_t ratio = mu_e * force / opt_.hfs_vsat_n;
+                        if (ratio > 1.0e-12Q) {
+                            real_t b = opt_.hfs_beta_n;
+                            mu_e /= pow_q(1.0Q + pow_q(ratio, b), 1.0Q / b);
+                        }
+                    }
                     // Face-area weighting (see gummel_solver.cpp comment).
                     real_t D = w * mu_e * VT_ / dx;
                     real_t a_ii = D * B_minus;
@@ -759,6 +780,24 @@ void NewtonSolver::assemble_residual(const std::vector<real_t>& x, std::vector<r
                     real_t B_minus = bernoulli(-dphi / VT_);
                     // Edge mobility: HARMONIC mean (current conservation fix).
                     real_t mu_e = 2.0Q * mu_p_[idx] * mu_p_[nbr] / (mu_p_[idx] + mu_p_[nbr] + 1e-30Q);
+                    // High-field saturation (hole edge; see electron block).
+                    if (opt_.hfs_enabled) {
+                        real_t force;
+                        if (opt_.hfs_driving == 1) {
+                            force = abs_q(dphi) / dx;
+                        } else {
+                            real_t efp_i = (phi[idx] - Qp_dg[idx])
+                                + VT_ * log_q(std::max(p[idx], 1.0Q) / std::max(Nv_[idx], 1.0Q));
+                            real_t efp_j = (phi[nbr] - Qp_dg[nbr])
+                                + VT_ * log_q(std::max(p[nbr], 1.0Q) / std::max(Nv_[nbr], 1.0Q));
+                            force = abs_q(efp_j - efp_i) / dx;
+                        }
+                        real_t ratio = mu_e * force / opt_.hfs_vsat_p;
+                        if (ratio > 1.0e-12Q) {
+                            real_t b = opt_.hfs_beta_p;
+                            mu_e /= pow_q(1.0Q + pow_q(ratio, b), 1.0Q / b);
+                        }
+                    }
                     real_t D = w * mu_e * VT_ / dx;
                     real_t a_ii = D * B_plus;
                     real_t a_ij = -D * B_minus;
@@ -933,18 +972,93 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                         real_t B_plus = bernoulli(x_val);
                         // Edge mobility: HARMONIC mean (matches residual).
                         real_t mu_e = 2.0Q * mu_n_[idx] * mu_n_[nbr] / (mu_n_[idx] + mu_n_[nbr] + 1e-30Q);
+                        // HFS reduction with ANALYTIC dmu coupling (A15):
+                        // - electric_field driving: force = |dphi|/dx, the
+                        //   derivative lands in the PHI columns and is
+                        //   merged into dflux_dphi_{i,j}.
+                        // - grad_quasi_fermi driving: force = |Efn_j-Efn_i|/dx
+                        //   with Efn = phi+Q-VT*ln(n/Nc); in log-space the
+                        //   derivative lands in the U (=log n) columns:
+                        //   dforce/du_j = -sign*VT/dx, dforce/du_i =
+                        //   +sign*VT/dx; merged into the carrier entries.
+                        real_t mu0_edge = mu_e;
+                        real_t dmu_dF = 0.0Q;
+                        real_t force_sign = 0.0Q;
+                        if (opt_.hfs_enabled) {
+                            real_t force;
+                            if (opt_.hfs_driving == 1) {
+                                force = abs_q(dphi) / dx;
+                                force_sign = (dphi >= 0.0Q) ? 1.0Q : -1.0Q;
+                            } else {
+                                real_t efn_i = (phi[idx] + Qn_dg[idx])
+                                    - VT_ * log_q(std::max(n[idx], 1.0Q) / std::max(Nc_[idx], 1.0Q));
+                                real_t efn_j = (phi[nbr] + Qn_dg[nbr])
+                                    - VT_ * log_q(std::max(n[nbr], 1.0Q) / std::max(Nc_[nbr], 1.0Q));
+                                force = abs_q(efn_j - efn_i) / dx;
+                                force_sign = (efn_j - efn_i >= 0.0Q) ? 1.0Q : -1.0Q;
+                            }
+                            real_t ratio = mu_e * force / opt_.hfs_vsat_n;
+                            if (ratio > 1.0e-12Q) {
+                                real_t b = opt_.hfs_beta_n;
+                                mu_e /= pow_q(1.0Q + pow_q(ratio, b), 1.0Q / b);
+                                real_t rb = pow_q(ratio, b);
+                                dmu_dF = -(mu0_edge * mu0_edge
+                                           / opt_.hfs_vsat_n)
+                                    * pow_q(ratio, b - 1.0Q)
+                                    * pow_q(1.0Q + rb, -1.0Q / b - 1.0Q);
+                            }
+                        }
                         real_t D = w * mu_e * VT_ / dx;
                         real_t a_ii = D * B_minus;
                         real_t a_ij = -D * B_plus;
+                        // GQF coupling corrections to the U columns
+                        // (electron edge): dflux/du_k += dD/du_k*edge_carrier
+                        // with dD/du_k = (w*VT/dx)*dmu_dF*(dforce/du_k).
+                        real_t gqf_ij_corr = 0.0Q;
+                        if (dmu_dF != 0.0Q && opt_.hfs_driving == 0) {
+                            real_t edge_carrier =
+                                n[idx] * B_minus - n[nbr] * B_plus;
+                            real_t base = (w * VT_ / dx) * dmu_dF
+                                * (-force_sign * VT_ / dx);
+                            gqf_ij_corr = base * edge_carrier;
+                        }
                         center += a_ii;
-                        // Neighbor carrier column: scale by n[nbr] in log-space.
                         real_t nbr_scale = opt_.use_log_space ? n[nbr] : 1.0Q;
-                        J.add_entry(i_n, n_idx(nbr), a_ij * nbr_scale);
-                        // phi derivatives (unchanged — phi not transformed)
+                        J.add_entry(i_n, n_idx(nbr),
+                                    a_ij * nbr_scale + gqf_ij_corr);
+                        real_t gqf_ii_corr = 0.0Q;
+                        if (dmu_dF != 0.0Q && opt_.hfs_driving == 0) {
+                            // u_i column (center): dforce/du_i = +sign*VT/dx.
+                            // Added as its OWN entry: `center` is multiplied
+                            // by the log-space chain scale sn downstream, but
+                            // this term is already dF/du (direct).
+                            real_t edge_carrier =
+                                n[idx] * B_minus - n[nbr] * B_plus;
+                            gqf_ii_corr = (w * VT_ / dx) * dmu_dF
+                                * (force_sign * VT_ / dx) * edge_carrier;
+                            J.add_entry(i_n, i_n, gqf_ii_corr);
+                        }
+                        // phi derivatives with the A15 merged mobility
+                        // coupling (electric_field driving only):
+                        // d/dphi_k [ D(phi) * (n_i*Bm - n_j*Bp) ]
+                        //   = Bernoulli part  +  dD/dphi_k * edge_carrier.
                         real_t dBm = d_bernoulli_dx(-x_val);
                         real_t dBp = d_bernoulli_dx(x_val);
                         real_t dflux_dphi_i = D / VT_ * (n[idx] * dBm + n[nbr] * dBp);
                         real_t dflux_dphi_j = -D / VT_ * (n[idx] * dBm + n[nbr] * dBp);
+                        if (dmu_dF != 0.0Q) {
+                            // PHI-column coupling: dEfn/dphi = 1 in BOTH
+                            // driving modes (the GQF force contains phi),
+                            // so this is not electric_field-only.  A16b:
+                            // omitting it for GQF left F[n] d/dphi entries
+                            // 7-15% wrong at the depletion edges -- the
+                            // residual Jacobian error that stalls Newton.
+                            real_t edge_carrier =
+                                n[idx] * B_minus - n[nbr] * B_plus;
+                            real_t dD_dF = (w * VT_ / (dx * dx)) * dmu_dF;
+                            dflux_dphi_i += -force_sign * dD_dF * edge_carrier;
+                            dflux_dphi_j += force_sign * dD_dF * edge_carrier;
+                        }
                         dF_dphi_i += dflux_dphi_i;
                         J.add_entry(i_n, phi_idx(nbr), dflux_dphi_j);
                         return a_ii;
@@ -1004,17 +1118,81 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
                         real_t B_minus = bernoulli(-x_val);
                         // Edge mobility: HARMONIC mean (matches residual).
                         real_t mu_e = 2.0Q * mu_p_[idx] * mu_p_[nbr] / (mu_p_[idx] + mu_p_[nbr] + 1e-30Q);
+                        // A15 merged analytic dmu coupling (holes; see the
+                        // electron site for the full derivation -- GQF
+                        // driving lands in the V (=log p) columns).
+                        real_t mu0_edge = mu_e;
+                        real_t dmu_dF = 0.0Q;
+                        real_t force_sign = 0.0Q;
+                        if (opt_.hfs_enabled) {
+                            real_t force;
+                            if (opt_.hfs_driving == 1) {
+                                force = abs_q(dphi) / dx;
+                                force_sign = (dphi >= 0.0Q) ? 1.0Q : -1.0Q;
+                            } else {
+                                real_t efp_i = (phi[idx] - Qp_dg[idx])
+                                    + VT_ * log_q(std::max(p[idx], 1.0Q) / std::max(Nv_[idx], 1.0Q));
+                                real_t efp_j = (phi[nbr] - Qp_dg[nbr])
+                                    + VT_ * log_q(std::max(p[nbr], 1.0Q) / std::max(Nv_[nbr], 1.0Q));
+                                force = abs_q(efp_j - efp_i) / dx;
+                                force_sign = (efp_j - efp_i >= 0.0Q) ? 1.0Q : -1.0Q;
+                            }
+                            real_t ratio = mu_e * force / opt_.hfs_vsat_p;
+                            if (ratio > 1.0e-12Q) {
+                                real_t b = opt_.hfs_beta_p;
+                                mu_e /= pow_q(1.0Q + pow_q(ratio, b), 1.0Q / b);
+                                real_t rb = pow_q(ratio, b);
+                                dmu_dF = -(mu0_edge * mu0_edge
+                                           / opt_.hfs_vsat_p)
+                                    * pow_q(ratio, b - 1.0Q)
+                                    * pow_q(1.0Q + rb, -1.0Q / b - 1.0Q);
+                            }
+                        }
                         real_t D = w * mu_e * VT_ / dx;
                         real_t a_ii = D * B_plus;
                         real_t a_ij = -D * B_minus;
+                        // GQF coupling corrections to the V columns (holes):
+                        // Efp = phi - Q + VT*ln(p/Nv) -> dEfp/dv = +VT.
+                        real_t gqf_ij_corr = 0.0Q;
+                        if (dmu_dF != 0.0Q && opt_.hfs_driving == 0) {
+                            real_t edge_carrier =
+                                p[idx] * B_plus - p[nbr] * B_minus;
+                            real_t base = (w * VT_ / dx) * dmu_dF
+                                * (force_sign * VT_ / dx);
+                            gqf_ij_corr = base * edge_carrier;
+                        }
                         center += a_ii;
                         real_t nbr_scale = opt_.use_log_space ? p[nbr] : 1.0Q;
-                        J.add_entry(i_p, p_idx(nbr), a_ij * nbr_scale);
-                        // phi derivatives (unchanged — phi not transformed)
+                        J.add_entry(i_p, p_idx(nbr),
+                                    a_ij * nbr_scale + gqf_ij_corr);
+                        if (dmu_dF != 0.0Q && opt_.hfs_driving == 0) {
+                            // v_i column: Efp = phi - Q + VT*ln(p/Nv) ->
+                            // dEfp/dv = +VT; own entry (not via center*sp).
+                            real_t edge_carrier =
+                                p[idx] * B_plus - p[nbr] * B_minus;
+                            real_t gqf_ii_corr = (w * VT_ / dx) * dmu_dF
+                                * (-force_sign * VT_ / dx) * edge_carrier;
+                            J.add_entry(i_p, i_p, gqf_ii_corr);
+                        }
+                        // phi derivatives with the A15 merged mobility
+                        // coupling (electric_field driving; hole signs).
                         real_t dBp = d_bernoulli_dx(x_val);
                         real_t dBm = d_bernoulli_dx(-x_val);
                         real_t dflux_dphi_i = -D / VT_ * (p[idx] * dBp + p[nbr] * dBm);
                         real_t dflux_dphi_j = D / VT_ * (p[idx] * dBp + p[nbr] * dBm);
+                        if (dmu_dF != 0.0Q) {
+                            // PHI-column coupling (A16b): dEfp/dphi = 1 in
+                            // BOTH driving modes.  NOTE the coupling-term
+                            // sign is carrier-type-INDEPENDENT (unlike the
+                            // Bernoulli base terms): dD/dphi_k is the same
+                            // physical derivative for electrons and holes,
+                            // so the pattern matches the electron site.
+                            real_t edge_carrier =
+                                p[idx] * B_plus - p[nbr] * B_minus;
+                            real_t dD_dF = (w * VT_ / (dx * dx)) * dmu_dF;
+                            dflux_dphi_i += -force_sign * dD_dF * edge_carrier;
+                            dflux_dphi_j += force_sign * dD_dF * edge_carrier;
+                        }
                         dF_dphi_i += dflux_dphi_i;
                         J.add_entry(i_p, phi_idx(nbr), dflux_dphi_j);
                         return a_ii;
@@ -1045,7 +1223,6 @@ void NewtonSolver::assemble_jacobian(const std::vector<real_t>& x, SparseMatrix&
     }
     J.finalize();
 }
-
 
 bool NewtonSolver::solve(std::vector<real_t>& phi,
                          std::vector<real_t>& n,
@@ -1884,4 +2061,4 @@ size_t NewtonSolver::debug_fd_jacobian_check(const std::vector<real_t>& phi,
     return n_bad;
 }
 
-} // namespace tcad
+}  // namespace tcad

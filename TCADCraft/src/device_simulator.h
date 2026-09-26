@@ -145,6 +145,9 @@ public:
     void set_btbt_continuity_scale(real_t scale);
     void set_btbt_use_nonlocal(bool enable);
     void set_btbt_nonlocal_params(real_t tunnel_path_frac, size_t wkb_npts);
+    void set_btbt_nonlocal_mass(real_t mass_ratio);
+    void set_high_field_saturation(bool enable, real_t vsat_n, real_t vsat_p,
+                                   real_t beta_n, real_t beta_p, int driving);
 
     // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
     // G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q injected into both continuity eqns.
@@ -330,6 +333,13 @@ private:
     bool btbt_use_nonlocal_ = false;
     real_t btbt_tunnel_path_frac_ = 0.5Q;
     size_t btbt_wkb_npts_ = 64;
+    real_t btbt_nonlocal_mass_ = 0.25Q;
+    bool hfs_enabled_ = false;
+    real_t hfs_vsat_n_ = 1.07e5Q;
+    real_t hfs_vsat_p_ = 8.37e4Q;
+    real_t hfs_beta_n_ = 2.0Q;
+    real_t hfs_beta_p_ = 1.0Q;
+    int hfs_driving_ = 0;
     // Avalanche impact ionization (SI units; defaults = silicon, see
     // ImpactIonizationParams in gummel_solver.h)
     bool ii_enabled_ = false;

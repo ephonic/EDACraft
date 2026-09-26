@@ -441,6 +441,37 @@ void DeviceSimulator::set_btbt_nonlocal_params(real_t tunnel_path_frac, size_t w
     btbt_wkb_npts_ = wkb_npts;
 }
 
+void DeviceSimulator::set_btbt_nonlocal_mass(real_t mass_ratio) {
+    if (!std::isfinite((double)mass_ratio) || mass_ratio <= 0.0) {
+        throw std::invalid_argument("BTBT nonlocal mass ratio must be finite and > 0");
+    }
+    btbt_nonlocal_mass_ = mass_ratio;
+}
+
+void DeviceSimulator::set_high_field_saturation(bool enable, real_t vsat_n,
+                                                real_t vsat_p, real_t beta_n,
+                                                real_t beta_p, int driving) {
+    if (std::isfinite((double)vsat_n) && vsat_n > 0.0 &&
+        std::isfinite((double)vsat_p) && vsat_p > 0.0 &&
+        std::isfinite((double)beta_n) && beta_n > 0.0 &&
+        std::isfinite((double)beta_p) && beta_p > 0.0) {
+        hfs_vsat_n_ = vsat_n;
+        hfs_vsat_p_ = vsat_p;
+        hfs_beta_n_ = beta_n;
+        hfs_beta_p_ = beta_p;
+    } else {
+        throw std::invalid_argument(
+            "high-field saturation parameters must be finite and > 0");
+    }
+    if (driving == 0 || driving == 1) {
+        hfs_driving_ = driving;
+    } else {
+        throw std::invalid_argument(
+            "high-field driving must be 0 (GradQuasiFermi) or 1 (ElectricField)");
+    }
+    hfs_enabled_ = enable;
+}
+
 void DeviceSimulator::set_ii_enabled(bool enable) {
     ii_enabled_ = enable;
 }
@@ -869,6 +900,13 @@ SimulationResult DeviceSimulator::solve() {
     opt.btbt.use_nonlocal = btbt_use_nonlocal_;
     opt.btbt.tunnel_path_frac = btbt_tunnel_path_frac_;
     opt.btbt.wkb_npts = btbt_wkb_npts_;
+    opt.btbt.nonlocal_mass = btbt_nonlocal_mass_;
+    opt.hfs.enabled = hfs_enabled_;
+    opt.hfs.vsat_n = hfs_vsat_n_;
+    opt.hfs.vsat_p = hfs_vsat_p_;
+    opt.hfs.beta_n = hfs_beta_n_;
+    opt.hfs.beta_p = hfs_beta_p_;
+    opt.hfs.driving = hfs_driving_;
     // Impact ionization parameters
     opt.ii.enabled = ii_enabled_;
     opt.ii.A_n = ii_A_n_;
@@ -1112,6 +1150,12 @@ SimulationResult DeviceSimulator::solve() {
             nopt.use_log_space = newton_use_log_space_ || newton_primary_;
             nopt.jacobian_reuse_threshold = newton_jacobian_reuse_threshold_;
             nopt.enable_btbt = btbt_enabled_;
+            nopt.hfs_enabled = hfs_enabled_;
+            nopt.hfs_vsat_n = hfs_vsat_n_;
+            nopt.hfs_vsat_p = hfs_vsat_p_;
+            nopt.hfs_beta_n = hfs_beta_n_;
+            nopt.hfs_beta_p = hfs_beta_p_;
+            nopt.hfs_driving = hfs_driving_;
             nopt.enable_quantum = quantum_enabled_;
             nopt.btbt_A = btbt_A_;
             nopt.btbt_B = btbt_B_;
@@ -1761,7 +1805,37 @@ void DeviceSimulator::compute_edge_currents(SimulationResult& res,
                     real_t Bmp = B(-delta_p);
                     real_t Bpp = B(delta_p);
                     real_t mu_ne = 2.0Q * mu_n_[idx] * mu_n_[nbr] / (mu_n_[idx] + mu_n_[nbr] + 1e-30Q);
+                    // High-field saturation must reduce the POST-PROCESSING
+                    // edge mobility identically to the continuity equation,
+                    // otherwise terminal currents ignore the model (found by
+                    // the 1-D resistor analytic golden).  The driving force
+                    // here uses the CONVERGED quasi-Fermi gradient - the
+                    // self-consistent force at the returned state.
+                    if (hfs_enabled_) {
+                        real_t efn_i = (phi[idx] + Qn_flux[idx])
+                            - VT_ * log_q(std::max(n[idx], 1.0Q) / std::max(Nc_[idx], 1.0Q));
+                        real_t efn_j = (phi[nbr] + Qn_flux[nbr])
+                            - VT_ * log_q(std::max(n[nbr], 1.0Q) / std::max(Nc_[nbr], 1.0Q));
+                        real_t force = abs_q(efn_j - efn_i) / d;
+                        if (hfs_driving_ == 1)
+                            force = abs_q((phi[nbr] + Qn_flux[nbr]) - (phi[idx] + Qn_flux[idx])) / d;
+                        real_t ratio = mu_ne * force / hfs_vsat_n_;
+                        if (ratio > 1.0e-12Q)
+                            mu_ne /= pow_q(1.0Q + pow_q(ratio, hfs_beta_n_), 1.0Q / hfs_beta_n_);
+                    }
                     real_t mu_pe = 2.0Q * mu_p_[idx] * mu_p_[nbr] / (mu_p_[idx] + mu_p_[nbr] + 1e-30Q);
+                    if (hfs_enabled_) {
+                        real_t efp_i = (phi[idx] - Qp_flux[idx])
+                            + VT_ * log_q(std::max(p[idx], 1.0Q) / std::max(Nv_[idx], 1.0Q));
+                        real_t efp_j = (phi[nbr] - Qp_flux[nbr])
+                            + VT_ * log_q(std::max(p[nbr], 1.0Q) / std::max(Nv_[nbr], 1.0Q));
+                        real_t force = abs_q(efp_j - efp_i) / d;
+                        if (hfs_driving_ == 1)
+                            force = abs_q((phi[nbr] - Qp_flux[nbr]) - (phi[idx] - Qp_flux[idx])) / d;
+                        real_t ratio = mu_pe * force / hfs_vsat_p_;
+                        if (ratio > 1.0e-12Q)
+                            mu_pe /= pow_q(1.0Q + pow_q(ratio, hfs_beta_p_), 1.0Q / hfs_beta_p_);
+                    }
                     real_t Dn = mu_ne * VT_ / d;
                     real_t Dp = mu_pe * VT_ / d;
                     Jn_ax[idx] = QE * Dn * (n[nbr] * Bpn - n[idx] * Bmn);

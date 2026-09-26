@@ -57,6 +57,13 @@ struct BTBTParams {
     // rounds odd values up internally because Simpson's rule requires an even
     // segment count.
     size_t wkb_npts = 64;
+    // Effective tunneling mass ratio m_t/m0 for the WKB barrier integral
+    // (M2 audit, 2026-09-18).  The generation uses the Kane-consistent
+    // prefactor A_kane * E^D (same parameters and cm^-3 -> m^-3 conversion
+    // as the local model) times exp(-2*Theta), so calibrated local
+    // parameters transfer via the mapping B_eff = (4/3)*sqrt(2*m_t)*Eg^1.5
+    // / (hbar*q): m_t = 0.25 * (B/B_eff(0.25))^2.
+    real_t nonlocal_mass = 0.25Q;
 };
 
 // Ferroelectric model selector (M7c). LANDAU_KHALATNIKOV is the legacy cubic
@@ -140,6 +147,24 @@ struct ImpactIonizationParams {
     real_t E_floor = 1.0e5Q;  // below this |E| [V/m] alpha is negligible -> 0
 };
 
+struct HighFieldParams {
+    bool enabled = false;
+    // High-field velocity saturation (Sentaurus HighFieldSaturation).
+    // Caugy-Thomas form applied per SG edge:
+    //   mu(F) = mu_low / (1 + (mu_low*F/vsat)^beta)^(1/beta)
+    // with F the edge driving force.  Default vsat are the Sentaurus Si
+    // MaterialDB values (1.07e7 / 8.37e6 cm/s -> SI); beta defaults of
+    // 2.0 (electrons) and 1.0 (holes) follow the Caugy-Thomas convention.
+    real_t vsat_n = 1.07e5Q;   // [m/s] electron saturation velocity
+    real_t vsat_p = 8.37e4Q;   // [m/s] hole saturation velocity
+    real_t beta_n = 2.0Q;
+    real_t beta_p = 1.0Q;
+    // Driving force: 0 = |grad(quasi-Fermi potential)| along the edge
+    // (Sentaurus GradQuasiFermi, the robust default); 1 = |E| from the
+    // transport potential gradient.
+    int driving = 0;
+};
+
 struct AugerParams {
     bool enabled = false;
     // Sentaurus Si defaults (MaterialDB): Cn=2.8e-31, Cp=9.9e-32 [cm^6/s]
@@ -185,6 +210,8 @@ struct GummelOptions {
     real_t frozen_residual_gate = 1e-3Q;
     // Band-to-band tunneling
     BTBTParams btbt;
+    // High-field velocity saturation
+    HighFieldParams hfs;
     // Avalanche impact ionization
     ImpactIonizationParams ii;
     // Auger recombination

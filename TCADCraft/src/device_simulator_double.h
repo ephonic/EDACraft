@@ -83,6 +83,9 @@ public:
     void set_btbt_continuity_scale(double scale);
     void set_btbt_use_nonlocal(bool enable);
     void set_btbt_nonlocal_params(double tunnel_path_frac, size_t wkb_npts);
+    void set_btbt_nonlocal_mass(double mass_ratio);
+    void set_high_field_saturation(bool enable, double vsat_n, double vsat_p,
+                                   double beta_n, double beta_p, int driving);
     // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
     void set_ii_enabled(bool enable);
     void set_ii_params(double A_n, double B_n, double A_p, double B_p);
