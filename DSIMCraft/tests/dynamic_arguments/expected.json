@@ -1,0 +1,24 @@
+{
+  "values": [
+    "TRACE copied 201 302 4 20 3 7 3 7",
+    "TRACE varying 0 1 3 32",
+    "TRACE varying 1 2 4 64",
+    "TRACE varying 2 3 5 96"
+  ],
+  "functions": [
+    "TRACE functions 10 132 4 4 10 16",
+    "TRACE empty 0 0",
+    "TRACE types 67 0 800000000000000000000005 ffffffffffffffffffffffff 1 17"
+  ],
+  "references": [
+    "TRACE references 52 10 0"
+  ],
+  "lifetime": [
+    "TRACE lifetime 12 34 2 4 1 2",
+    "TRACE live 13 4 9"
+  ],
+  "control": [
+    "TRACE control 90 12 13 7 11"
+  ],
+  "parallel": []
+}

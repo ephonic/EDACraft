@@ -1,0 +1,22 @@
+{
+  "arguments": [
+    "TRACE args 7 1 17",
+    "TRACE cast 1 7"
+  ],
+  "inherited_self": [
+    "TRACE handles 1 1",
+    "TRACE shared 1"
+  ],
+  "isolation": [
+    "TRACE separate 1 1 1 1",
+    "TRACE counts 2 1"
+  ],
+  "late_local": [
+    "TRACE late 1 1",
+    "TRACE late 1 1"
+  ],
+  "transitive": [
+    "TRACE transitive 10000000000000003 1",
+    "TRACE alias 10000000000000007"
+  ]
+}

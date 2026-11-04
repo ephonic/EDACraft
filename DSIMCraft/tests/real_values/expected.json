@@ -1,0 +1,28 @@
+{
+  "arithmetic": [
+    "TRACE arithmetic p=-1.250 n=-2 bits=bff4000000000000"
+  ],
+  "calls": [
+    "TRACE calls value=4.75 total=3.00"
+  ],
+  "timing": [
+    "TRACE timing t=3.000 value=2.50"
+  ],
+  "parallel": [],
+  "rollback": [
+    "TRACE rollback value=1.25"
+  ],
+  "dpi": [
+    "TRACE dpi value=2.75 rounded=0.50"
+  ],
+  "arrays": [
+    "TRACE arrays value=1.25"
+  ],
+  "special": [
+    "TRACE special preserved"
+  ],
+  "ports": [
+    "TRACE two=0.50",
+    "TRACE one=2.50"
+  ]
+}

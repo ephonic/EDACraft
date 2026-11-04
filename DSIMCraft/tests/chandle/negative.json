@@ -1,0 +1,90 @@
+{
+  "integer_assign": [
+    "chandle h;initial h=0;",
+    "chandle assignment"
+  ],
+  "integer_read": [
+    "chandle h;int i;initial i=h;",
+    "handle cannot be assigned"
+  ],
+  "integer_compare": [
+    "chandle h;initial if(h==0)$fatal;",
+    "equality requires"
+  ],
+  "arithmetic": [
+    "chandle h;initial h=h+1;",
+    "handle cannot be used"
+  ],
+  "boolean": [
+    "chandle h;initial if(h&&h)$fatal;",
+    "chandle cannot be used as a boolean"
+  ],
+  "logical": [
+    "chandle h;initial if(!h)$fatal;",
+    "chandle cannot be used as a boolean"
+  ],
+  "class_mixed": [
+    "class C;endclass C c;chandle h;initial if(c==h)$fatal;",
+    "equality requires"
+  ],
+  "cast_integer": [
+    "typedef chandle H;H h;initial h=H'(1);",
+    "chandle cast requires"
+  ],
+  "packed": [
+    "chandle [7:0] h;",
+    "syntax error"
+  ],
+  "packed_field": [
+    "typedef struct packed {chandle h;} P;P p;",
+    "chandle packed dimensions"
+  ],
+  "bits": [
+    "chandle h;initial $display(\"%0d\",$bits(h));",
+    "bit-stream type"
+  ],
+  "array_gap": [
+    "chandle h[];",
+    "chandle dynamic containers"
+  ],
+  "module_port_gap": [
+    "input chandle h;",
+    "chandle packed dimensions"
+  ],
+  "ref_type": [
+    "chandle h;longint x;task automatic t(ref chandle a);endtask initial t(x);",
+    "matching class handle types"
+  ],
+  "dpi_class": [
+    "class C;endclass import \"DPI-C\" function chandle f(input C c);",
+    "handles are not supported"
+  ],
+  "dpi_array": [
+    "import \"DPI-C\" function chandle f(input chandle c[2]);",
+    "open/unpacked arrays"
+  ],
+  "dpi_integer": [
+    "import \"DPI-C\" function void f(input chandle h);initial f(0);",
+    "chandle assignment"
+  ],
+  "conditional_type": [
+    "chandle h;initial h=1?h:0;",
+    "chandle conditional requires"
+  ],
+  "unknown_conditional": [
+    "chandle h;initial h=1'bx ? h : null;",
+    "selector cannot be unknown"
+  ],
+  "rand": [
+    "class C;rand chandle h;endclass C c;initial c=new;",
+    "rand property currently requires"
+  ],
+  "case_integer": [
+    "chandle h;initial case(h) 0:$display(\"bad\");default:;endcase",
+    "chandle case requires compatible handles or null"
+  ],
+  "case_class": [
+    "class C;endclass C c;chandle h;initial case(h) c:$display(\"bad\");default:;endcase",
+    "chandle case requires compatible handles or null"
+  ]
+}

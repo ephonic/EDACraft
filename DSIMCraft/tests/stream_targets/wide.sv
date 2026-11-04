@@ -1,0 +1,1 @@
+module top;logic[79:0] data[];int observed;initial begin {>>{data}}=160'h123456789abcdef01234_56789abcdef012345678;observed=data.size();$display("TRACE wide target %0d %h %h",observed,data[0],data[1]);end endmodule

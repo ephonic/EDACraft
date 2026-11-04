@@ -1,0 +1,9 @@
+{
+ "report_array":["H_ARR mem[0]=42 mem[1]=43"],
+ "report_deep":["H_DEEP PASS (array+param hier access)"],
+ "report_property":["D3 CONC_ASSERT PASS"],
+ "hierarchy":["TRACE hierarchy initial 12 B ab","TRACE hierarchy update 79 C"],
+ "package_state":["TRACE package shared 8 5 8 RUN seed!","TRACE package final 13 13"],
+ "package_arrays":["TRACE package array 12 12 70","TRACE package indexed 34"],
+ "parallel":[]
+}

@@ -1,0 +1,20 @@
+{
+  "static": [
+    "TRACE startup xxxxxxxx xxxxxxxx 7 9 1",
+    "TRACE independent 7 9 00 00"
+  ],
+  "automatic": [
+    "TRACE local 1 85 84 cd 265",
+    "TRACE local 2 86 84 cd 266",
+    "TRACE function 337 2 1"
+  ],
+  "views": [
+    "TRACE view 00123456789abcdef0012345 fffffffffffffffffffffffe 1 1",
+    "TRACE view 000000000000000000000001 000000000000000000000002 1 2",
+    "TRACE types 1 3 a5 3c"
+  ],
+  "control": [
+    "TRACE control 42 3 10 1"
+  ],
+  "parallel": []
+}

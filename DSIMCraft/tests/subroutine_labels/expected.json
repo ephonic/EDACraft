@@ -1,0 +1,41 @@
+{
+  "signatures": [
+    "TRACE functions 78 2 7",
+    "TRACE tasks 7"
+  ],
+  "classes": [
+    "TRACE dispatch 13 7",
+    "TRACE clones 15 20"
+  ],
+  "rollback": [
+    "TRACE r1 3",
+    "TRACE r3 12",
+    "TRACE r5 5"
+  ],
+  "parallel": [],
+  "default_values": [
+    "TRACE defaults chain 9 1 21 30",
+    "TRACE defaults scope 201 201 101 100",
+    "TRACE defaults converted 16 6 14",
+    "TRACE defaults named 12"
+  ],
+  "default_methods": [
+    "TRACE defaults methods 30 125 9",
+    "TRACE defaults clones 14 24",
+    "TRACE defaults virtual task 21"
+  ],
+  "default_tasks": [
+    "TRACE defaults task 10 1",
+    "TRACE defaults task converted 20",
+    "TRACE defaults ref read 11",
+    "TRACE defaults ref task 12 12"
+  ],
+  "default_types": [
+    "TRACE defaults types 10000000000000001 hello! 1.75 11 5 x1z110xz",
+    "TRACE defaults select 6 5",
+    "TRACE defaults signed -1"
+  ],
+  "default_prototypes": [
+    "TRACE defaults prototypes 15 11 19"
+  ]
+}

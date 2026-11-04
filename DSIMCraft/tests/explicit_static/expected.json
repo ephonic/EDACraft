@@ -1,0 +1,18 @@
+{
+  "function": [
+    "TRACE function 335 223 835 723"
+  ],
+  "task": [
+    "TRACE task 22 24 6"
+  ],
+  "storage": [
+    "TRACE storage 211 432 763"
+  ],
+  "control": [
+    "TRACE control 156 12 0"
+  ],
+  "parallel": [],
+  "events": [
+    "TRACE events 3 2"
+  ]
+}

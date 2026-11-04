@@ -1,0 +1,23 @@
+{
+  "phases": [
+    "TRACE phase_sort a m z"
+  ],
+  "numeric": [
+    "TRACE ordering numeric 16"
+  ],
+  "keys": [
+    "TRACE ordering keys 6"
+  ],
+  "properties": [
+    "TRACE ordering properties 3"
+  ],
+  "subarrays": [
+    "TRACE ordering subarrays 5"
+  ],
+  "rollback": [
+    "TRACE ordering rollback 7"
+  ],
+  "four_state": [
+    "TRACE ordering four_state 6"
+  ]
+}

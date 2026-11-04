@@ -1,0 +1,44 @@
+{
+  "allocation": [
+    "TRACE null=1",
+    "TRACE a=5 b=5 add=8",
+    "TRACE alias=19",
+    "TRACE separate=12 old=19",
+    "TRACE wide=0000000000000000f123456789abcdef0"
+  ],
+  "clones": [
+    "TRACE clone W=8 N=2 bits=03 value=3",
+    "TRACE clone W=65 N=4 bits=00000000000000005 value=5"
+  ],
+  "event_nba": [
+    "TRACE event_nba t=3 sampled=99"
+  ],
+  "events": [
+    "TRACE event=2 value=3",
+    "TRACE wait=4 value=5"
+  ],
+  "methods": [
+    "TRACE identity=1 nested=15",
+    "TRACE handle=1 sum=40",
+    "TRACE increment=20",
+    "TRACE final=23"
+  ],
+  "nested": [
+    "TRACE nested value=9",
+    "TRACE child alias=21"
+  ],
+  "order": [
+    "TRACE order p=11/11 q=12/12 counter=12"
+  ],
+  "package": [
+    "TRACE package=hello:31 value=31 flags=10xz0011",
+    "TRACE text=updated len=7"
+  ],
+  "parallel": [],
+  "rollback": [
+    "TRACE rollback t=6 p=17 q=10 bits=000000000000000030000000000000005 r=10"
+  ],
+  "tasks": [
+    "TRACE tasks=4 a=4 b=15"
+  ]
+}

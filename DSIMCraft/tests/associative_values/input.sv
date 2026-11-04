@@ -1,0 +1,1 @@
+module top;typedef int map_t[int];map_t data;int observed;task automatic read_map(input map_t values,output int total);#2;total=values[1];values[2]=9;endtask initial begin data[1]=7;fork read_map(data,observed);begin #1;data[1]=13;end join $display("TRACE input %0d %0d %0d",observed,data[1],data.num());end endmodule

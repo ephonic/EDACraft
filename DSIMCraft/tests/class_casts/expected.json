@@ -1,0 +1,44 @@
+{
+  "abstract": [
+    "TRACE f 7",
+    "TRACE t 6 2"
+  ],
+  "casts": [
+    "TRACE good 1 22",
+    "TRACE fail 0 1",
+    "TRACE null 1 1",
+    "TRACE literal 1 1",
+    "TRACE unrelated 0",
+    "TRACE trunc 0 0001",
+    "TRACE x 1 x010",
+    "TRACE z 1 z011",
+    "TRACE enumfail 0 z011"
+  ],
+  "clones": [
+    "TRACE clones fe 1fffffffffffffffffffffffffffffffe 1 1 1 impl"
+  ],
+  "rollback": [
+    "TRACE rollback 13 1 2 1 8"
+  ],
+  "targets": [
+    "TRACE field 1 19 1 1",
+    "TRACE unchanged 0 1 2 2",
+    "TRACE element 1 fc 1",
+    "TRACE elementfail 0 fc 2",
+    "TRACE ref 1 19",
+    "TRACE skipped 2",
+    "TRACE task 1"
+  ],
+  "conversions": [
+    "TRACE narrow_value 1 -4",
+    "TRACE signed 1 -4",
+    "TRACE wide 1 1fffffffffffffffffffffffffffffffc",
+    "TRACE enumwide 1 100000000000000000000000000000001",
+    "TRACE enumwidefail 0 100000000000000000000000000000001",
+    "TRACE string 1 cast string",
+    "TRACE up 1 1",
+    "TRACE unrelatednull 0 0",
+    "TRACE incompatiblehandle 0 1",
+    "TRACE incompatibleint 0 -4"
+  ]
+}

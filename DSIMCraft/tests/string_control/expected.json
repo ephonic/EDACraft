@@ -1,0 +1,23 @@
+{
+  "cases": [
+    "TRACE case 7 1",
+    "TRACE qualified 9",
+    "TRACE default 2"
+  ],
+  "characters": [
+    "TRACE unknown 61 61",
+    "TRACE unknown_write [abc]",
+    "TRACE zero_write [abc]",
+    "TRACE x_write [abc]",
+    "TRACE partial_write [abc]",
+    "TRACE order [Bbc] 1"
+  ],
+  "indices": [
+    "TRACE sum 394 62 00 8",
+    "TRACE write [ZbcA]"
+  ],
+  "references": [
+    "TRACE refs [aQc] 51",
+    "TRACE sensitivity 1"
+  ]
+}

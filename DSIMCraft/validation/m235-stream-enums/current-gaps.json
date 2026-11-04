@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "compiler": "/Users/yangfan/vibe-coding/dsim/build-m217/dsim",
+  "models": {
+    "coverage_sample": {
+      "status": "COMPILE_BLOCKED",
+      "source_sha256": "a4fc09963138505f55b30f883421c85a02a6f6d415340f939abfa8196daa036e",
+      "diagnostic": "Verilog syntax error at line 2 col 19 near 'with': syntax error\ndsim: /Users/yangfan/vibe-coding/dsim/validation/m233-stream-targets/probes/coverage_sample.sv:2: line 2: syntax error; Verilog parse/semantic analysis failed:\n\n",
+      "vcs_status": "PASS"
+    },
+    "joint_random": {
+      "status": "COMPILE_BLOCKED",
+      "source_sha256": "6704a403204c187a484b537e26a5ffa77b5c693f99942bbf11fbb70ebba43348",
+      "diagnostic": "dsim: /Users/yangfan/vibe-coding/dsim/validation/m233-stream-targets/probes/joint_random.sv:3: line 3: random class-handle properties require joint object-graph constraint solving, which is not supported yet\n",
+      "vcs_status": "PASS"
+    },
+    "dpi_open_array": {
+      "status": "COMPILE_BLOCKED",
+      "source_sha256": "325f860c3b6fac271cf3f0df3b49886ccd4d04d4987fecff7a2b5b038017ca27",
+      "diagnostic": "dsim: /Users/yangfan/vibe-coding/dsim/validation/m233-stream-targets/probes/dpi_open_array.sv:2: line 2: DPI currently requires scalar or packed integral/string values; open/unpacked arrays, aggregates and handles are not supported yet\n",
+      "vcs_status": "PASS"
+    }
+  }
+}

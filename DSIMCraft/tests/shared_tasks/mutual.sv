@@ -1,0 +1,1 @@
+package p;task automatic odd(input int n,ref int v);if(n==0)return;#1;v+=n;even(n-1,v);endtask task automatic even(input int n,ref int v);if(n==0)return;#1;v+=n;odd(n-1,v);endtask endpackage module top;import p::*;int value;initial begin odd(5,value);$display("TRACE mutual %0d %0d",value,$time);end endmodule

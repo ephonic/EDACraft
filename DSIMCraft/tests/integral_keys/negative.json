@@ -1,0 +1,62 @@
+{
+  "enum_integer_cursor": [
+    "typedef enum bit[27:0]{A=1} E;int a[E];bit[27:0] k;initial if(a.first(k))$display(\"x\");",
+    "declared enum type"
+  ],
+  "enum_other_cursor": [
+    "typedef enum {A=1} E;typedef enum {B=1} F;int a[E];F k;initial if(a.next(k))$display(\"x\");",
+    "declared enum type"
+  ],
+  "enum_locator": [
+    "typedef enum {A=1} E;typedef enum {B=1} F;int a[E];F q[$];initial q=a.find_index() with(item>0);",
+    "compatible element types"
+  ],
+  "enum_copy": [
+    "typedef enum {A=1} E;typedef enum {B=1} F;int a[E],b[F];initial a=b;",
+    "matching key types"
+  ],
+  "width_copy": [
+    "typedef bit[64:0] K;typedef bit[128:0] L;int a[K],b[L];initial a=b;",
+    "matching key types"
+  ],
+  "sign_copy": [
+    "typedef logic signed[64:0] K;typedef logic[64:0] L;int a[K],b[L];initial a=b;",
+    "matching key types"
+  ],
+  "width_cursor": [
+    "typedef bit[64:0] K;int a[K];int k;initial if(a.first(k))$display(\"x\");",
+    "whole integral variable of the key width"
+  ],
+  "real_index": [
+    "typedef bit[64:0] K;int a[K];initial a[1.5]=2;",
+    "requires integral operands"
+  ],
+  "real_type": [
+    "typedef real K;int a[K];",
+    "supported singular integral"
+  ],
+  "handle_type": [
+    "typedef chandle K;int a[K];",
+    "supported singular integral"
+  ],
+  "array_type": [
+    "typedef int K[2];int a[K];",
+    "supported singular integral"
+  ],
+  "unpacked_struct_type": [
+    "typedef struct {int n;} K;int a[K];",
+    "supported singular integral"
+  ],
+  "packed_copy_bits": [
+    "typedef struct packed {bit[63:0] high;bit low;} K;typedef bit[64:0] B;int a[K],b[B];initial a=b;",
+    "matching key types"
+  ],
+  "packed_copy_other_struct": [
+    "typedef struct packed {bit[63:0] high;bit low;} K;typedef struct packed {bit[63:0] high;bit low;} L;int a[K],b[L];initial a=b;",
+    "matching key types"
+  ],
+  "packed_ref_other_struct": [
+    "typedef struct packed {bit[63:0] high;bit low;} K;typedef struct packed {bit[63:0] high;bit low;} L;task automatic f(ref K k);endtask L k;initial f(k);",
+    "ref requires equivalent argument types"
+  ]
+}

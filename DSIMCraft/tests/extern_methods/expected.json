@@ -1,0 +1,46 @@
+{
+  "basic": [
+    "TRACE init 6 21",
+    "TRACE task 7 9",
+    "TRACE void 13"
+  ],
+  "nonansi": [
+    "TRACE nonansi 6",
+    "TRACE delayed 13"
+  ],
+  "parallel": [],
+  "parameters": [
+    "TRACE param 1 -2 5000000002 7",
+    "TRACE param 2 -2 5000000002 7",
+    "TRACE count 1 2 2 1",
+    "TRACE count 2 2 2 1"
+  ],
+  "references": [
+    "TRACE ref 8 17 8 17 25"
+  ],
+  "rollback": [
+    "TRACE count 5",
+    "TRACE count 12",
+    "TRACE final 13"
+  ],
+  "types": [
+    "TRACE types 4726622ee226622ee2 NEXT 9 5",
+    "TRACE wide 123456789abcdef012"
+  ],
+  "virtual": [
+    "TRACE virtual 16",
+    "TRACE later 20"
+  ],
+  "keywords": [
+    "TRACE keyword 5",
+    "TRACE escaped 26"
+  ],
+  "return_scope": [
+    "TRACE scope 32 61 42 12 6",
+    "TRACE trunc 905"
+  ],
+  "self_type": [
+    "TRACE self -7 5000000000 1 1",
+    "TRACE alias 5000000008"
+  ]
+}

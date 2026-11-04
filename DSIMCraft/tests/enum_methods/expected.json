@@ -1,0 +1,8 @@
+{
+  "traversal": ["TRACE traversal 9 2 10"],
+  "edges": ["TRACE edges x100 x101 0001 1"],
+  "constants": ["TRACE constants 13 18"],
+  "effects": ["TRACE effects 7 1 3 1"],
+  "types": ["TRACE types 3fffffffffffffffffffffffffffffffe 336 22 1 6"],
+  "parallel": []
+}

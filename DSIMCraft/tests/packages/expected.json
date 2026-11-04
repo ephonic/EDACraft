@@ -1,0 +1,10 @@
+{
+  "report": ["T03_PACKAGE PASS"],
+  "namespaces": ["TRACE package namespaces 2af2 abc 23"],
+  "functions": ["TRACE package functions 24 62 10"],
+  "scopes": ["TRACE package scopes 19 21"],
+  "timing": ["TRACE package timing 6 13"],
+  "parallel": [],
+  "bindings": ["TRACE package bindings 11 11"],
+  "timescales": ["TRACE package precision 123 123"]
+}

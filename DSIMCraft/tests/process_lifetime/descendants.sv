@@ -1,0 +1,1 @@
+module top;process worker,child;int value=0;initial begin fork begin worker=process::self();fork begin child=process::self();#10;value=99;end join_none #20;end join_none wait(child!=null);#1;worker.kill();wait fork;#30;$display("TRACE descendants %0d %0d %0d",worker.status(),child.status(),value);end endmodule

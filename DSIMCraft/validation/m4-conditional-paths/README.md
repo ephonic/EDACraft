@@ -1,0 +1,19 @@
+# 条件 IOPATH 的运行时接入
+
+基线为427源 `fb428999f23437814f42195754c1a0f7824973e5f19cde884f2c5bd2b2f0c206`；新430源冻结为 `cc977597cecacf8c63009e55bd995d472528ce7b3c84f6eb24e181281b05be59`，见source.json。修改时序模型到运行时的构造、门级生成器、path.hpp、新宏、CTest与旧负例，新增三份条件路径测试。runtime.hpp及两个Verilog parser、SDF流式parser保持427版本。
+
+利用既有COND/CONDELSE数据和精确词法匹配，接入实际标量条件函数、ifnone端点组选择、当前输出状态、边沿/最新时间/min-tie与现有取消/检查点。只在有条件路径的设计启用新宏，原始大网表无条件路径的运行时不增加分支。
+
+初步输入时采样的方案因本地独立Icarus探针显示错误选择而撤回，未作为验收版本；其源保存在input-sampling-prototype。当前按标准30.5.3在准备输出变化时读取条件，输出状态读取实际延迟端口。探针和日志见probe；这是本地参考，不称VCS验证。首个实际流程因使用未提供Verilog端口表的叶单元位置连接而失败，targeted-initial.log与原始流程目录保留；改为命名连接后六类初步流程通过。加入输出状态等三类场景后，以最终430源重跑全部87项，不复用混合阶段的六例捕获作为最终验收。
+
+最终九类实际编译流程通过：通用/标量 × 堆/时间轮，216份完整有序/稳态 × VCD/raw/Zstd捕获，16份实际生成boundary/replay捕获，四项严格拒绝保护原CPP/IR。三类实际内核及生成scalar-wheel回放的本地ASan/UBSan通过。完整旧SDF默认/标量CPP仅替换整个runtime与path头后，同Clang预处理结果逐字相同；当前真实编译器另重新生成四份无条件SDF程序，整个CPP只差path头替换。IR只排除parse_seconds、bind_seconds、gate_preprocessing.seconds三个实际耗时字段，其他字段完整相等；最初将耗时也逐字比较的辅助脚本失败已保存在local-checks-initial.log，未改变语义检查。
+
+完整本地87/87原会话91381已正常退出0（402.51s），见macos-ctest.log。verify_local.py --capture已保存完整捕获并独立核对PASS，见local-validation.json。Linux/新VCS尚未启动；当前远端仍只运行同一标量独立性能复测，终止前不编译/回归/剖析。本批无性能收益结论，功能边界见docs/conditional-paths.md。
+
+Linux后续入口launch_linux.py已准备，要求独立性能复测正常终止并审计PASS。使用当前430冻结源干净构建dsim和三个新内核，执行三内核/条件流程/旧SDF流程五项定向测试；九类实际native/VCS各三次及五个顶层物理位完整时间线，还包含输出延迟期间改变条件的独立VCS探针。最后用新编译器实际重读完整原SDF，验证默认/标量CPP只差整个runtime/path头及同GCC预处理身份。该Linux范围明确为五项定向测试，不称完整87项Linux回归；427时间轮的Linux完整83项另行执行。collector保存全部日志与捕获，fetch_linux.py只取正常终止结果，之后仍须独立核对。
+
+427源时间轮Linux入口已增加--source-root，后续应使用/tmp/dsim-time-wheel-integration-frozen-1018核对原冻结源，不将当前430源称为该批427版本。两个队列完整IR对比也已排除上述三个实际耗时字段，其余字段保持全量相等。
+
+430源后续Linux五项定向通过（208.29s），但整批新VCS验证失败，不能宣称该源Linux/VCS功能已验收。最初回标日志被rename后无法在第二次运行取得；随后清除csdf缓存会移除VCS编译时回标数据，该辅助方案已撤回。最终保留缓存并记录身份，truth/overlap/case-equality/alias各三次通过，edge实际TRACE暴露生产ifnone错误：E为真但源边沿不匹配时，VCS仍走ifnone。当前path.hpp与独立oracle已据此修正，旧430源和本地87项证据保持历史原样。
+
+剩余increment/output-state/no-ifnone/unconditional-tie各三次，以及输出选择时刻探针19/107/219/319ps各三次已在独立VCS探针中通过；不等同旧九例整批通过。三个失败阶段与后继探针的248个原始证据已下载逐项核对，归档SHA256为8752e093f265102fa2afd5cec80b608340e6bd632cf9e175afdb62bb7add3803，见failures/archive.json。后继432组合源1076ce4含边沿修正与SDF专用作业，使用独立根目录跑完整92项和新九类VCS，见../m5-sdf-jobs；本目录verify.py不应对旧失败任务写PASS。

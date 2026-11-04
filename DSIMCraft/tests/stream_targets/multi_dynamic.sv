@@ -1,0 +1,1 @@
+module top;bit[3:0] first[],second[];int observed;initial begin second=new[3];{>>{first,second}}=12'habc;observed=first.size()+second.size();$display("TRACE multiple %0d %0d %h %h %h",first.size(),second.size(),first[0],first[1],first[2]);end endmodule

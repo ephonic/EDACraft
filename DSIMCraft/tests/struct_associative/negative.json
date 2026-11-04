@@ -1,0 +1,11 @@
+{
+  "nominal_copy": "module top;typedef struct {string s;} A;typedef struct {string s;} B;A a[int];B b[int];initial a=b;endmodule",
+  "nominal_element": "module top;typedef struct {string s;} A;typedef struct {string s;} B;A a[int];B b;initial a[1]=b;endmodule",
+  "key_type": "module top;typedef struct {string s;} A;A a[string],b[int];initial a=b;endmodule",
+  "ref_type": "module top;typedef struct {string s;} A;typedef struct {string s;} B;A a[int];task automatic f(ref B b[int]);endtask initial f(a);endmodule",
+  "element_ref": "module top;typedef struct {string s;} A;A a[int];task automatic f(ref A b);endtask initial f(a[1]);endmodule",
+  "nba": "module top;typedef struct {string s;int n;} A;A a[int],v;initial a[1]<=v;endmodule",
+  "field_nba": "module top;typedef struct {string s;int n;} A;A a[int];initial a[1].n<=3;endmodule",
+  "nested_queue": "module top;typedef struct {string s;} A;A a[int][$];endmodule",
+  "nested_class_queue": "module top;typedef struct {string s;} A;class C;A a[int][$];endclass endmodule"
+}

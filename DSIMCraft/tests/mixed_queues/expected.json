@@ -1,0 +1,32 @@
+{
+  "resources": [
+    "TRACE associative_queue 15"
+  ],
+  "methods": [
+    "TRACE mixed methods 5"
+  ],
+  "nested": [
+    "TRACE mixed nested 18 4"
+  ],
+  "copies": [
+    "TRACE mixed copies 13"
+  ],
+  "properties": [
+    "TRACE mixed properties 18"
+  ],
+  "class_keys": [
+    "TRACE mixed class_keys 20"
+  ],
+  "rollback": [
+    "TRACE mixed rollback 7"
+  ],
+  "defaults": [
+    "TRACE mixed defaults 5"
+  ],
+  "constraints": [
+    "TRACE mixed constraints 5"
+  ],
+  "state": [
+    "TRACE mixed state 12"
+  ]
+}

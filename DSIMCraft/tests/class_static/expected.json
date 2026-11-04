@@ -1,0 +1,48 @@
+{
+  "basic": [
+    "TRACE initial 0 0",
+    "TRACE shared 6 6 6 19",
+    "TRACE nullstatic 10 11",
+    "TRACE dispatch 13 12",
+    "TRACE task 2 17"
+  ],
+  "parameters": [
+    "TRACE param 5 5 5 2",
+    "TRACE default 1 1 6"
+  ],
+  "receiver": [
+    "TRACE call 1 2",
+    "TRACE read 2 2",
+    "TRACE write 3 7",
+    "TRACE update 4 7 8",
+    "TRACE element 7 13",
+    "TRACE queue 9 15",
+    "TRACE task 10 23",
+    "TRACE ref 11 24",
+    "TRACE reftext 12 24 aXc"
+  ],
+  "report_r01": [
+    "PROBE_CLASS2: ok (poly/static/null/scope-resolve)"
+  ],
+  "lifetime": [
+    "TRACE local1 12",
+    "TRACE local2 25",
+    "TRACE overlap 7 11 21"
+  ],
+  "storage": [
+    "TRACE storage 42 7 1 Xhanged 1xxxxxxxxxxzz12340000000000000001 100000000000012340000000000000001"
+  ],
+  "clone": [
+    "TRACE clone 11 11 7"
+  ],
+  "rollback": [
+    "TRACE r1 3",
+    "TRACE r3 12",
+    "TRACE r5 5"
+  ],
+  "initializers": [
+    "TRACE startup 5 6 5",
+    "TRACE startup2 7 6"
+  ],
+  "parallel": []
+}

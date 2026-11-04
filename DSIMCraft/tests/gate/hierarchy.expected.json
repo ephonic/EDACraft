@@ -1,0 +1,6 @@
+[
+  "TRACE a=0 y=0 constant=1 floating=z",
+  "TRACE a=1 y=1 constant=1 floating=z",
+  "TRACE a=x y=x constant=1 floating=z",
+  "TRACE a=z y=x constant=1 floating=z"
+]

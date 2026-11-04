@@ -1,0 +1,30 @@
+{
+  "await": [
+    "TRACE completed 0 7 2"
+  ],
+  "descendants": [
+    "TRACE descendants 4 4 0"
+  ],
+  "kill": [
+    "TRACE killed 4 0",
+    "TRACE later 0"
+  ],
+  "reuse": [
+    "TRACE reuse 1 0 0"
+  ],
+  "self_kill": [
+    "TRACE self 4 0"
+  ],
+  "status": [
+    "TRACE status 1 0"
+  ],
+  "text_inside": [
+    "TRACE inside 1 0"
+  ],
+  "derived_random": [
+    "TRACE derived 1 1"
+  ],
+  "abstract_virtual": [
+    "TRACE abstract 7"
+  ]
+}

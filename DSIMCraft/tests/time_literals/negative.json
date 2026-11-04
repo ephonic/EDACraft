@@ -1,0 +1,14 @@
+{
+  "late": "module top;int a;timeunit 1ns/1ps;endmodule",
+  "late_precision": "module top;timeunit 1s;int a;timeprecision 1ps;endmodule",
+  "changed": "module top;timeunit 1ns/1ps;timeprecision 10ps;endmodule",
+  "coarse": "module top;timeunit 1ps/1ns;endmodule",
+  "bad_unit": "module top;timeunit 3ns/1ps;endmodule",
+  "sub_fs": "module top;timeunit 1ns/0.1fs;endmodule",
+  "cu_late": "module child;endmodule timeunit 1ns/1ps;module top;child a();endmodule",
+  "cu_changed": "timeunit 1ns/1ps;timeunit 10ns;module top;endmodule",
+  "class_time": "module top;class box;timeunit 1ns/1ps;endclass endmodule",
+  "generate_time": "module top;generate if(1)begin: g timeunit 1ns/1ps;end endgenerate endmodule",
+  "whitespace": "module top;timeunit 1ns/1ps;realtime d=1 ns;endmodule",
+  "exponent": "module top;timeunit 1ns/1ps;realtime d=1e3ps;endmodule"
+}

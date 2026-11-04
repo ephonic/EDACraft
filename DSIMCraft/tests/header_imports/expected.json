@@ -1,0 +1,8 @@
+{
+ "ports": ["TRACE header ports 08 09 1d"],
+ "clones": ["TRACE header clones 0c 010 b"],
+ "interfaces": ["TRACE header interfaces 02b 2b"],
+ "shared": ["TRACE header shared 21 21"],
+ "types": ["TRACE header types a5 -5 8"],
+ "scopes": ["TRACE header scopes 00b 07"]
+}

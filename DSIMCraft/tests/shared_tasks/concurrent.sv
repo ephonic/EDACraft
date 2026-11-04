@@ -1,0 +1,1 @@
+module top;int a=1,b=10;task automatic bump(ref int v,input int delta);int saved=delta;#delta;v+=saved;endtask initial begin fork bump(a,2);bump(b,3);join $display("TRACE concurrent %0d %0d %0d",a,b,$time);end endmodule

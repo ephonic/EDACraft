@@ -1,0 +1,113 @@
+{
+  "io": {
+    "output": [
+      "TRACE OPEN 1 1",
+      "TRACE POS 8",
+      "TRACE SEEK 0 0",
+      "TRACE PACK 4 6162630a 0",
+      "TRACE LINE 4 <last> 1",
+      "TRACE END 0 <> 1",
+      "TRACE CHAR 0 97 1",
+      "TRACE UNGET 0 0 0",
+      "TRACE AGAIN 90 1",
+      "TRACE TAIL 0 115 7",
+      "TRACE BADSEEK -1 7",
+      "TRACE MCD 12",
+      "TRACE MISSING 0"
+    ],
+    "files": {
+      "data.txt": "6162630a6c617374",
+      "multi.txt": "5452414345204d43442031320a"
+    }
+  },
+  "lines": {
+    "output": [
+      "TRACE P 3 616263 3 0",
+      "TRACE P 3 646566 6 0",
+      "TRACE P 3 67680a 9 0",
+      "TRACE P 2 005a0a 11 0",
+      "TRACE P 0 005a0a 11 1",
+      "TRACE BEFORE 0 -1",
+      "TRACE FIRST 81 0",
+      "TRACE DOUBLE 0 0 -1",
+      "TRACE C 66 -1",
+      "TRACE C 65 0",
+      "TRACE C 97 1",
+      "TRACE APPOS 0",
+      "TRACE APREAD 9 9 97 10",
+      "TRACE APWRITE 14"
+    ],
+    "files": {
+      "lines.txt": "61626364656667680a5a0a454e44"
+    }
+  },
+  "targets": {
+    "output": [
+      "TRACE T1 2 1 0000410a xxxxxxxx",
+      "TRACE T2 2 2 0000410a 0000420a xxxxxxxx xxxxxxxx",
+      "TRACE T3 0 2 xxxxxxxx xxxxxxxx",
+      "TRACE T4 0 <>"
+    ],
+    "files": {
+      "target.txt": "410a420a"
+    }
+  },
+  "modes": {
+    "output": [
+      "TRACE BYTES 0 255 2 0000000000000000000000000000410a -1 1",
+      "TRACE NOUNGET -1 1",
+      "TRACE APPEND 4",
+      "TRACE READ 4 000000000000000000000000005a410a",
+      "TRACE REL 0 68 7",
+      "TRACE BADPATH 0"
+    ],
+    "files": {
+      "modes.bin": "005a410a454e44"
+    }
+  },
+  "automatic": {
+    "output": [
+      "TRACE AUTO 2 8 9 90 14"
+    ],
+    "files": {
+      "auto.txt": "66697273740a7365636f6e640a5a",
+      "final.txt": "646f6e653d3220636861723d39300a"
+    }
+  },
+  "parallel": {
+    "output": [
+      "TRACE PAR 6"
+    ],
+    "files": {
+      "parallel.txt": "310a320a330a"
+    }
+  },
+  "memory": {
+    "output": [
+      "TRACE MEM 01 2a ff",
+      "TRACE EXPORT 48"
+    ],
+    "files": {
+      "memory.txt": "30312032612066660a"
+    }
+  },
+  "channels": {
+    "output": [
+      "TRACE CHANNEL abcdef0123456789abcdef0123456789 -7",
+      "TRACE TAIL 4 000000000000000000000000000000007461696c 1"
+    ],
+    "files": {
+      "channel1.txt": "5452414345204348414e4e454c206162636465663031323334353637383961626364656630313233343536373839202d370a7461696c",
+      "channel2.txt": "5452414345204348414e4e454c206162636465663031323334353637383961626364656630313233343536373839202d370a"
+    }
+  },
+  "nul": {
+    "output": [
+      "TRACE NUL PACK 4 000000004100420a 4",
+      "TRACE NUL STRING 4 1 65 0 0 4"
+    ],
+    "files": {
+      "nul.txt": "4100420a"
+    }
+  }
+}

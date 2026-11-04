@@ -1,0 +1,13 @@
+{
+  "unknown_option": "module top;int v;covergroup cg;option.no_such_option=1;cp:coverpoint v;endgroup endmodule",
+  "bin_iff": "module top;int v;covergroup cg;cp:coverpoint v{bins b={1} iff(v);}endgroup endmodule",
+  "bad_width": "module top;bit[63:0] v;covergroup cg;cp:coverpoint v;endgroup endmodule",
+  "unknown_method": "module top;bit v;covergroup cg;cp:coverpoint v;endgroup cg c;initial begin c=new();c.no_such_method();end endmodule",
+  "sample_value": "module top;bit v;int i;covergroup cg;cp:coverpoint v;endgroup cg c;initial begin c=new();i=c.sample();end endmodule",
+  "duplicate_bin": "module top;bit v;covergroup cg;cp:coverpoint v{bins b={0};bins b={1};}endgroup endmodule",
+  "close_label": "module top;bit v;covergroup cg;cp:coverpoint v;endgroup:wrong endmodule",
+  "side_effect": "module top;int v;covergroup cg;cp:coverpoint v++;endgroup endmodule",
+  "transition": "module top;bit v;covergroup cg;cp:coverpoint v{bins b=(0=>1);}endgroup endmodule",
+  "wildcard": "module top;bit v;covergroup cg;cp:coverpoint v{wildcard bins b={1};}endgroup endmodule",
+  "bad_cross": "module top;bit a,b;covergroup cg;cp:coverpoint a;x:cross cp,missing;endgroup endmodule"
+}

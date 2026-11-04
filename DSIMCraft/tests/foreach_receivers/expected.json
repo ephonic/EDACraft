@@ -1,0 +1,5 @@
+{
+ "basic":["TRACE foreach receivers sum=21"],
+ "strings":["TRACE foreach receivers strings=7"],
+ "rollback":["TRACE foreach receivers rollback=9"]
+}

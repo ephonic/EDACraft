@@ -1,0 +1,8 @@
+{
+ "storage": ["TRACE class dynamic allocation copy defaults bounds pass"],
+ "sizes": ["TRACE class dynamic size scalar coupling foreach guards pass"],
+ "modes": ["TRACE class dynamic inherited modes callbacks named arrays pass"],
+ "atomicity": ["TRACE class dynamic unsat sizes elements atomic callbacks pass"],
+ "enums": ["TRACE class dynamic wide enum domain symbolic indices pass"],
+ "rollback": ["TRACE class dynamic size data rng cycles checkpoint pass"]
+}

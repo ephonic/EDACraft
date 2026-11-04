@@ -1,0 +1,18 @@
+[
+  "TRACE a=0 b=0 plain=00x0 cat=00x0 sp=00x0 sc=00x0 sw=00x0 short_bus=x0 ascending=00 one=0 open=zz10",
+  "TRACE a=0 b=1 plain=01xx cat=01xx sp=01xx sc=01xx sw=00xx short_bus=xx ascending=01 one=0 open=zz10",
+  "TRACE a=0 b=x plain=0xxx cat=0xxx sp=0xxx sc=0xxx sw=00xx short_bus=xx ascending=0x one=0 open=zz10",
+  "TRACE a=0 b=z plain=0zx0 cat=0zx0 sp=0zx0 sc=0zx0 sw=00x0 short_bus=x0 ascending=0z one=0 open=zz10",
+  "TRACE a=1 b=0 plain=1010 cat=1010 sp=1010 sc=1010 sw=0010 short_bus=10 ascending=10 one=1 open=zz10",
+  "TRACE a=1 b=1 plain=111x cat=111x sp=111x sc=111x sw=001x short_bus=1x ascending=11 one=1 open=zz10",
+  "TRACE a=1 b=x plain=1x1x cat=1x1x sp=1x1x sc=1x1x sw=001x short_bus=1x ascending=1x one=1 open=zz10",
+  "TRACE a=1 b=z plain=1z10 cat=1z10 sp=1z10 sc=1z10 sw=0010 short_bus=10 ascending=1z one=1 open=zz10",
+  "TRACE a=x b=0 plain=x0x0 cat=x0x0 sp=x0x0 sc=x0x0 sw=00x0 short_bus=x0 ascending=x0 one=x open=zz10",
+  "TRACE a=x b=1 plain=x1xx cat=x1xx sp=x1xx sc=x1xx sw=00xx short_bus=xx ascending=x1 one=x open=zz10",
+  "TRACE a=x b=x plain=xxxx cat=xxxx sp=xxxx sc=xxxx sw=00xx short_bus=xx ascending=xx one=x open=zz10",
+  "TRACE a=x b=z plain=xzx0 cat=xzx0 sp=xzx0 sc=xzx0 sw=00x0 short_bus=x0 ascending=xz one=x open=zz10",
+  "TRACE a=z b=0 plain=z010 cat=z010 sp=z010 sc=z010 sw=0010 short_bus=10 ascending=z0 one=z open=zz10",
+  "TRACE a=z b=1 plain=z11x cat=z11x sp=z11x sc=z11x sw=001x short_bus=1x ascending=z1 one=z open=zz10",
+  "TRACE a=z b=x plain=zx1x cat=zx1x sp=zx1x sc=zx1x sw=001x short_bus=1x ascending=zx one=z open=zz10",
+  "TRACE a=z b=z plain=zz10 cat=zz10 sp=zz10 sc=zz10 sw=0010 short_bus=10 ascending=zz one=z open=zz10"
+]

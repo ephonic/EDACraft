@@ -1,0 +1,23 @@
+{
+  "methods": [
+    "TRACE methods one three 9"
+  ],
+  "objects": [
+    "TRACE objects alpha 6"
+  ],
+  "functions": [
+    "TRACE functions first task 7"
+  ],
+  "bounds": [
+    "TRACE bounds front 3"
+  ],
+  "rollback": [
+    "TRACE rollback tail object-tail 7"
+  ],
+  "clones": [
+    "TRACE clones 2 4"
+  ],
+  "locators": [
+    "TRACE locators alpha gamma 18"
+  ]
+}

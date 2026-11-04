@@ -1,0 +1,1 @@
+module top;int result;process owner;task automatic walk(input int n,output int total);int saved=n;if(process::self()!=owner)$fatal(1,"identity");if(n==0)begin #1;total=0;return;end walk(n-1,total);#1;total+=saved;endtask initial begin owner=process::self();walk(4,result);$display("TRACE recursive %0d %0d",result,$time);end endmodule

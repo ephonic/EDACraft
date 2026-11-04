@@ -1,0 +1,21 @@
+{
+  "basic": [
+    "TRACE initial fe 07 fe 07",
+    "TRACE unknown xz z1 xz z1"
+  ],
+  "matrix": [
+    "TRACE matrix 33 02 33 2a 33",
+    "TRACE sampled 33 2a"
+  ],
+  "types": [
+    "TRACE types 200000000000000000000000000000001 100000000000000000000000000000002 1 2 a5 39 00 a5",
+    "TRACE wide zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  ],
+  "effects": [
+    "TRACE effects 7 11 17 03 04 04 05"
+  ],
+  "timing": [
+    "TRACE sampled 01 02 a5 39 a5 39 1e 1f"
+  ],
+  "parallel": []
+}

@@ -1,0 +1,45 @@
+{
+  "packed_ports": [
+    "TRACE packed a=12a5 y=a6ed byte=ed bit=1"
+  ],
+  "genvar_increment": [
+    "TRACE genvar a=a b=a c=a"
+  ],
+  "implicit_top": [
+    "TRACE inferred matvec_tb y=1"
+  ],
+  "ref_identifier": [
+    "TRACE identifier ref=7"
+  ],
+  "ref_escaped": [
+    "TRACE escaped ref=7"
+  ],
+  "packed_runtime": [
+    "TRACE shape a a 1 4 4 2",
+    "TRACE storage 5670 fedcba9876543210abc5",
+    "TRACE update 35 3",
+    "TRACE invalid x 0 4"
+  ],
+  "packed_ranges": [
+    "TRACE ranges ab ab 01 01",
+    "TRACE partial xxx xxx",
+    "TRACE clipped abc abc xx xx xxx"
+  ],
+  "packed_formals": [
+    "TRACE formals a512 a513 1"
+  ],
+  "generated_ports": [
+    "TRACE generated 1334 333",
+    "TRACE generated update 13fe"
+  ],
+  "keyword_names": [
+    "TRACE keywords 28"
+  ],
+  "packed_parallel": [],
+  "packed_cube": [
+    "TRACE cube 1034 10 3 8"
+  ],
+  "legacy_function": [
+    "TRACE legacy function=5"
+  ]
+}

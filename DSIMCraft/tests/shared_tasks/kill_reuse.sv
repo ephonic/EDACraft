@@ -1,0 +1,1 @@
+module top;process worker;int value;task automatic nested();worker=process::self();#1;worker.kill();value=99;endtask initial begin repeat(2)begin fork nested();join worker.await();end #3;$display("TRACE kill %0d %0d",worker.status(),value);end endmodule

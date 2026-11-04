@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "captures": 9,
+  "models": {
+    "basic": {
+      "trace": [
+        "TRACE stream enum 3 A"
+      ],
+      "source_sha256": "f1e7d47b6671a3c66ca65a2b56049db5195cf2291f2d7d895c730b08581f3939",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "6c97fa199f2ab7f04c40ec28688b4593770aad8a2568cbbe6ec04bb85a661936"
+        },
+        "shared": {
+          "cpp_sha256": "8a31c782658975f71cb07aa40b607195b10f3977d0ec750465d29a95fd05d861"
+        },
+        "wheel": {
+          "cpp_sha256": "748081b5067bee222f2d4775cab4891aeef9d62af5cd7471d53f92aace482c22"
+        }
+      }
+    },
+    "property": {
+      "trace": [
+        "TRACE stream enum property -2 NEG"
+      ],
+      "source_sha256": "42934710ec9d493f97f49850d8341d15b3fc58d32d8cd8e79da685aaa1071a22",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "fc4780211714960b8dd0bffcba3d698254df8d69482b2d9211a8eff9e2b78510"
+        },
+        "shared": {
+          "cpp_sha256": "7ca5dac53d85f3bfdd0bc807a98cf6c49a5ac146462d4722fed519fbdc558515"
+        },
+        "wheel": {
+          "cpp_sha256": "fd9b100e29986b3f2637795d6753241d7fd37b0fca9bc29da0e6b8a97eb24ab6"
+        }
+      }
+    },
+    "function": {
+      "trace": [
+        "TRACE stream enum function 10 B"
+      ],
+      "source_sha256": "a8e995c3fd51b8c463dac682ab6162c16e9974f5a538850407d0feeafd774ccc",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "ea642007c7949406f22b8c01002cc02b6175f14d49bad1fa5be99c63975ccf3d"
+        },
+        "shared": {
+          "cpp_sha256": "8d7e880ae93a5dd162f30b24e2b5cf82049473e0af1ccd5997349c7c9fa6a5c3"
+        },
+        "wheel": {
+          "cpp_sha256": "49a18df284af4a91f416c998028496146e27b5ff39176f22d3829888dded0834"
+        }
+      }
+    }
+  },
+  "negative_cases": 1,
+  "runtime_rejections": 0
+}

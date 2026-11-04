@@ -1,0 +1,20 @@
+{
+  "basic": [
+    "TRACE class assoc string 3 8"
+  ],
+  "copy": [
+    "TRACE class string copy 1 bus:branch"
+  ],
+  "methods": [
+    "TRACE class string tasks again right"
+  ],
+  "rollback": [
+    "TRACE class string rollback 7 seven"
+  ],
+  "locators": [
+    "TRACE class string locator 2 14"
+  ],
+  "uvm_map": [
+    "TRACE UVM map RW RO 12"
+  ]
+}

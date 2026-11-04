@@ -1,0 +1,31 @@
+{
+  "any": [
+    "TRACE any 1 0 2000",
+    "TRACE all 1 1 5000",
+    "TRACE recycle 4 8000"
+  ],
+  "none": [
+    "TRACE before 7 0",
+    "TRACE after 7 7",
+    "TRACE done 7 8 1 3000",
+    "TRACE lifetime 9"
+  ],
+  "cancel": [
+    "TRACE cancel 3 0 13 13000"
+  ],
+  "nested": [
+    "TRACE direct 1 0 2000",
+    "TRACE descendants 1 0 12000"
+  ],
+  "scopes": [
+    "TRACE first 12 0 2000",
+    "TRACE scopes 12 14 4000"
+  ],
+  "events": [
+    "TRACE events 3 0 3 16000"
+  ],
+  "parallel": [],
+  "empty": [
+    "TRACE empty 4 3000"
+  ]
+}

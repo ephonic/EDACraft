@@ -1,0 +1,30 @@
+{
+  "container": {
+    "source": "class Box;int data[$];endclass module top;Box box;function automatic void f(ref int data[]);endfunction initial f(box.data);endmodule\n",
+    "diagnostic": "ref array arguments require equivalent container types and bounds"
+  },
+  "bound": {
+    "source": "class Box;int data[$:2];endclass module top;Box box;function automatic void f(ref int data[$:1]);endfunction initial f(box.data);endmodule\n",
+    "diagnostic": "ref array arguments require equivalent container types and bounds"
+  },
+  "element": {
+    "source": "class Box;bit[7:0] data[];endclass module top;Box box;function automatic void f(ref logic[7:0] data[]);endfunction initial f(box.data);endmodule\n",
+    "diagnostic": "array arguments require equivalent element types"
+  },
+  "const_write": {
+    "source": "class Box;int data[];endclass module top;Box box;function automatic void f(const ref int data[]);data=new[1];endfunction initial f(box.data);endmodule\n",
+    "diagnostic": "cannot modify const ref"
+  },
+  "const_forward": {
+    "source": "class Box;int data[];endclass module top;Box box;function automatic void g(ref int data[]);data.delete();endfunction function automatic void f(const ref int data[]);g(data);endfunction initial f(box.data);endmodule\n",
+    "diagnostic": "cannot modify const ref"
+  },
+  "private": {
+    "source": "class Box;local int data[];endclass module top;Box box;function automatic void f(ref int data[]);endfunction initial f(box.data);endmodule\n",
+    "diagnostic": "local"
+  },
+  "scalar": {
+    "source": "class Box;int data[$];endclass module top;Box box;function automatic void f(ref int data[$]);endfunction initial f(box.data[0]);endmodule\n",
+    "diagnostic": "ref array arguments require equivalent container types and bounds"
+  }
+}

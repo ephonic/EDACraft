@@ -1,0 +1,86 @@
+{
+  "unknown_default": {
+    "body": "module top;default clocking missing;endmodule",
+    "diagnostic": "unknown default clocking"
+  },
+  "no_default": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking initial ##1;endmodule",
+    "diagnostic": "requires a lexical default clocking"
+  },
+  "positive_input": {
+    "body": "module top;bit clk,d;clocking cb @(posedge clk);input #2 d;endclocking endmodule",
+    "diagnostic": "positive clocking input skew"
+  },
+  "output_step": {
+    "body": "module top;bit clk,d;clocking cb @(posedge clk);output #1step d;endclocking endmodule",
+    "diagnostic": "does not permit #1step"
+  },
+  "blocking_drive": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking initial cb.driven=1;endmodule",
+    "diagnostic": "requires a nonblocking drive"
+  },
+  "input_drive": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking initial cb.seen<=1;endmodule",
+    "diagnostic": "cannot drive an input"
+  },
+  "output_read": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking initial $display(\"%d\",cb.driven);endmodule",
+    "diagnostic": "cannot read an output"
+  },
+  "selected_drive": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking initial cb.driven[3:0]<=1;endmodule",
+    "diagnostic": "select of method result"
+  },
+  "duplicate_port": {
+    "body": "module top;bit clk,d;clocking cb @(posedge clk);input d;output d;endclocking endmodule",
+    "diagnostic": "duplicate clocking signal"
+  },
+  "duplicate_block": {
+    "body": "module top;bit clk;clocking cb @(posedge clk);endclocking clocking cb @(posedge clk);endclocking endmodule",
+    "diagnostic": "duplicate clocking"
+  },
+  "duplicate_default": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking default clocking cb;default clocking cb;endmodule",
+    "diagnostic": "duplicate default clocking"
+  },
+  "vector_clock": {
+    "body": "module top;logic[2:0] clk;clocking cb @(posedge clk);endclocking endmodule",
+    "diagnostic": "requires one scalar integral signal"
+  },
+  "bare_clock": {
+    "body": "module top;bit clk;clocking cb @(clk);endclocking endmodule",
+    "diagnostic": "requires posedge or negedge"
+  },
+  "mixed_event": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking initial @(cb or posedge clk);endmodule",
+    "diagnostic": "unsupported primary token"
+  },
+  "zero_cycles": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking default clocking cb;initial ##0;endmodule",
+    "diagnostic": "positive integral constant"
+  },
+  "dynamic_cycles": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking default clocking cb;int n=2;initial ##(n);endmodule",
+    "diagnostic": "positive integral constant"
+  },
+  "clocking_method": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking initial cb.seen();endmodule",
+    "diagnostic": "not a method"
+  },
+  "timed_drive": {
+    "body": "module top;bit clk;logic [7:0] d;clocking cb @(posedge clk);input seen=d;output driven=d;endclocking initial cb.driven<=#1 2;endmodule",
+    "diagnostic": "without intra-assignment"
+  },
+  "net_output": {
+    "body": "module top;bit clk;wire d;clocking cb @(posedge clk);output d;endclocking endmodule",
+    "diagnostic": "static packed variable"
+  },
+  "side_effect": {
+    "body": "module top;bit clk,d;clocking cb @(posedge clk);input bad=d++;endclocking endmodule",
+    "diagnostic": "pure integral"
+  },
+  "bad_label": {
+    "body": "module top;bit clk;clocking cb @(posedge clk);endclocking: otherendmodule",
+    "diagnostic": "closing label"
+  }
+}

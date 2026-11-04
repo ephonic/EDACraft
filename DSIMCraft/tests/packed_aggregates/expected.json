@@ -1,0 +1,18 @@
+{
+  "values": [
+    "TRACE values ad a3 bf 2b6ff 20000000000000001ffffffffffffffff -1"
+  ],
+  "effects": [
+    "TRACE effects 1f3 456 354 1 4 1"
+  ],
+  "hierarchy": [
+    "TRACE hierarchy complete"
+  ],
+  "parallel": [],
+  "storage_views": [
+    "TRACE views direct x1z0xxxx x1z0xxxx xz0011zx 0100",
+    "TRACE views nba zx01xxxx z10xx01z 0001 01000010",
+    "TRACE views concat xz01xxxx 11111zx0 0001 11111000",
+    "TRACE views wide xz 00"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "models": {
+    "basic": {
+      "trace": [
+        "TRACE stream enum 3 A"
+      ],
+      "cpp_sha256": "8a31c782658975f71cb07aa40b607195b10f3977d0ec750465d29a95fd05d861"
+    },
+    "property": {
+      "trace": [
+        "TRACE stream enum property -2 NEG"
+      ],
+      "cpp_sha256": "7ca5dac53d85f3bfdd0bc807a98cf6c49a5ac146462d4722fed519fbdc558515"
+    },
+    "function": {
+      "trace": [
+        "TRACE stream enum function 10 B"
+      ],
+      "cpp_sha256": "8d7e880ae93a5dd162f30b24e2b5cf82049473e0af1ccd5997349c7c9fa6a5c3"
+    }
+  },
+  "frontend_sanitized": true,
+  "native_sanitized": true
+}

@@ -1,0 +1,30 @@
+{
+  "real_count": {
+    "source": "module top;real count=2.5;string word=\"a\",result;initial result={count{word}}; endmodule\n",
+    "diagnostic": "replication count requires an integral value"
+  },
+  "string_count": {
+    "source": "module top;string count=\"2\",word=\"a\",result;initial result={count{word}}; endmodule\n",
+    "diagnostic": "replication count requires an integral value"
+  },
+  "class_count": {
+    "source": "module top;class C;endclass C count;string word=\"a\",result;initial begin count=new();result={count{word}};end endmodule\n",
+    "diagnostic": "replication count requires an integral value"
+  },
+  "mixed_unsized": {
+    "source": "module top;string word=\"a\",result;initial result={word,1}; endmodule\n",
+    "diagnostic": "mixed string"
+  },
+  "class_payload": {
+    "source": "module top;class C;endclass C word;string result;int count=2;initial begin word=new();result={count{word}};end endmodule\n",
+    "diagnostic": "class handle"
+  },
+  "numeric_dynamic_packed": {
+    "source": "module top;int count=2;logic[7:0] result;initial result={count{4'ha}}; endmodule\n",
+    "diagnostic": "replication count must be a positive constant expression"
+  },
+  "real_conversion": {
+    "source": "module top;string word=\"a\";real result;int count=2;initial result={count{word}}; endmodule\n",
+    "diagnostic": "real conversion requires a numeric value"
+  }
+}

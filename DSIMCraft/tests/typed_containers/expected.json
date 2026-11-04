@@ -1,0 +1,50 @@
+{
+  "enums": [
+    "TRACE enums 2 RED BLUE 1 1"
+  ],
+  "objects": [
+    "TRACE objects 17 0 1",
+    "TRACE chained 17"
+  ],
+  "covariance": [
+    "TRACE covariance 57 19 1"
+  ],
+  "clones": [
+    "TRACE clone 65 1ffffffffffffffff 1",
+    "TRACE clone 129 1ffffffffffffffffffffffffffffffff 1"
+  ],
+  "lifetime": [
+    "TRACE lifetime 24"
+  ],
+  "rollback": [
+    "TRACE rollback 7 1 2"
+  ],
+  "parallel": [],
+  "package": [
+    "TRACE package 9 0"
+  ],
+  "defaults": [
+    "TRACE defaults x x x 0 0 0 3"
+  ],
+  "key_identity": [
+    "TRACE size 4 null 1 44",
+    "TRACE foreach 4 110",
+    "TRACE first 1 null 1",
+    "TRACE cursor 4",
+    "TRACE PASS"
+  ],
+  "key_fields": [
+    "TRACE fields 37 40"
+  ],
+  "key_scopes": [
+    "TRACE scope 65 1ffffffffffffffff",
+    "TRACE scope 129 1ffffffffffffffffffffffffffffffff",
+    "TRACE shared 2"
+  ],
+  "key_rollback": [
+    "TRACE key rollback 23 2 1"
+  ],
+  "key_parameters": [
+    "TRACE parameters 11 22 33 44"
+  ]
+}

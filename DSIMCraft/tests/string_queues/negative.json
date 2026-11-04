@@ -1,0 +1,15 @@
+{
+  "integer_element": "module top;int q[$];string s;initial q.push_back(s);endmodule",
+  "string_index": "module top;string q[$],s;initial q.delete(s);endmodule",
+  "real_element": "module top;string q[$];real r;initial q.push_back(r);endmodule",
+  "object_element": "module top;class C;endclass C a;string q[$];initial begin a=new();q.push_back(a);end endmodule",
+  "array_element": "module top;string q[$],r[$];initial q.push_back(r);endmodule",
+  "numeric_copy": "module top;string q[$];int r[$];initial q=r;endmodule",
+  "numeric_ref": "module top;string q[$];function automatic void f(ref int r[$]);endfunction initial f(q);endmodule",
+  "scalar_method": "module top;string s;initial s.push_back(1);endmodule",
+  "queue_string_method": "module top;string q[$];int n;initial n=q.len();endmodule",
+  "packed_select": "module top;string q[$];int n;initial begin q.push_back(\"abc\");n=q[0][0];end endmodule",
+  "string_arithmetic": "module top;string q[$];int n;initial begin q.push_back(\"abc\");n=q[0]+1;end endmodule",
+  "string_reduction": "module top;string q[$];int n;initial n=q.sum();endmodule",
+  "text_reduction": "module top;string q[$];int n;initial n=q.sum() with(item);endmodule"
+}

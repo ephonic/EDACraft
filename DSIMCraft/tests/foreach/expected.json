@@ -1,0 +1,18 @@
+{
+  "traversal": [
+    "TRACE traversal 12 43210"
+  ],
+  "multi": [
+    "TRACE multi 202 4"
+  ],
+  "overlap": [
+    "TRACE overlap 112233"
+  ],
+  "functions": [
+    "TRACE functions 19"
+  ],
+  "elaboration": [
+    "TRACE elaboration 6 12"
+  ],
+  "parallel": []
+}

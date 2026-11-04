@@ -1,0 +1,22 @@
+{
+  "control": [
+    "TRACE for 5 4 8 4",
+    "TRACE while 5 8",
+    "TRACE do 4 7",
+    "TRACE repeat 5 13",
+    "TRACE forever 4",
+    "TRACE empty 6"
+  ],
+  "scoped": [
+    "TRACE scoped 2 64 3 99",
+    "TRACE scoped 5 176 6 99",
+    "TRACE fresh 00000000",
+    "TRACE fresh 00000000"
+  ],
+  "updates": [
+    "TRACE updates 3fffffffffffffffffffffffffffffffe ff 00000000000000000000 0123456789abcdef0222",
+    "TRACE delayed xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 000000000000000000570123456789abcdef022200000000000000000055"
+  ],
+  "parallel": [],
+  "generate": []
+}

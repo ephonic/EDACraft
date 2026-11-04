@@ -1,0 +1,82 @@
+{
+  "numbers": {
+    "output": [
+      "TRACE NUM < -123456789012345678901234567890 17> <%d%d> 2 fffffffe7116f0093c8c1f11b1c0f52e 00000000000000000000000000000011",
+      "TRACE NUM <ABCDEF0123456789abcdef0123456789 1010xz?1> <%h%b> 2 abcdef0123456789abcdef0123456789 000000000000000000000000000000aX",
+      "TRACE NUM <7777777777777777 0x12> <%o%h> 2 00000000000000000000ffffffffffff 00000000000000000000000000000x12",
+      "TRACE NUM <xZ> <%2d%c> 2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 0000000000000000000000000000005a",
+      "TRACE NUM <z ?> <%d%d> 2 zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "TRACE NUM <_12_3x> <%d%c> 2 0000000000000000000000000000007b 00000000000000000000000000000078",
+      "TRACE NUM <12oops> <%d%c> 2 0000000000000000000000000000000c 0000000000000000000000000000006f",
+      "TRACE NUM <+12 -12> <%d%d> 2 0000000000000000000000000000000c fffffffffffffffffffffffffffffff4",
+      "TRACE NUM <+ab> <%h%c> 0 ffffffffffffffffffffffffffffffff ffffffffffffffffffffffffffffffff",
+      "TRACE NUM <0b10> <%b%c> 2 00000000000000000000000000000000 00000000000000000000000000000062",
+      "TRACE NUM <8> <%o%c> 0 ffffffffffffffffffffffffffffffff ffffffffffffffffffffffffffffffff",
+      "TRACE NUM <> <%d%d> -1 ffffffffffffffffffffffffffffffff ffffffffffffffffffffffffffffffff",
+      "TRACE NUM <oops> <%d%d> 0 ffffffffffffffffffffffffffffffff ffffffffffffffffffffffffffffffff",
+      "TRACE NUM <-> <%d%d> -1 ffffffffffffffffffffffffffffffff ffffffffffffffffffffffffffffffff",
+      "TRACE TEXT 2 <alpha> 0000000000000000000000000000005a"
+    ],
+    "files": {}
+  },
+  "targets": {
+    "output": [
+      "TRACE ONE 1 3 100 101 7 103",
+      "TRACE TWO 2 4 100 101 8 9",
+      "TRACE EMPTY -1 2",
+      "TRACE EVAL 2 5 7 8",
+      "TRACE SLICE 2 ff6162ff 63",
+      "TRACE TWO_STATE 1 00",
+      "TRACE STR 2 <hello> 00000051",
+      "TRACE VOID 99",
+      "TRACE CONCAT 1 00002351 45"
+    ],
+    "files": {}
+  },
+  "files": {
+    "output": [
+      "TRACE F1 2 12 0 4 0",
+      "TRACE FAIL 1 34 7 32",
+      "TRACE F2 2 00000051 56 12 1",
+      "TRACE EOF -1 56 12 1",
+      "TRACE PUSH 1 <A> 12 0",
+      "TRACE SUP 2 00000078 34 7",
+      "TRACE NUL 2 00000000 65 2"
+    ],
+    "files": {
+      "scan.txt": "2031327820333420510a3536",
+      "nul.bin": "0041"
+    }
+  },
+  "formats": {
+    "output": [
+      "TRACE LIT 2 17 23",
+      "TRACE MISMATCH 0 17",
+      "TRACE LITEOF -1",
+      "TRACE PACKEMPTY 0 0",
+      "TRACE SUPEOF -1 0",
+      "TRACE SUPONLY 0",
+      "TRACE PACKED 2 12 3",
+      "TRACE SPACE -1",
+      "TRACE WIDTH 2 <abc> 00000064"
+    ],
+    "files": {}
+  },
+  "automatic": {
+    "output": [
+      "TRACE AUTO 2 <2:12:one> <2:34:two> 1 -99 1",
+      "TRACE FINAL 1 73"
+    ],
+    "files": {
+      "auto.txt": "3132206f6e650a33342074776f0a"
+    }
+  },
+  "parallel": {
+    "output": [
+      "TRACE PAR 6"
+    ],
+    "files": {
+      "parallel.txt": "310a320a330a"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "wrong_element": "module top;class A;endclass class B;endclass class C;A a[];endclass C c;B b;initial begin c=new;b=new;c.a=new[1];c.a[0]=b;end endmodule",
+  "wrong_copy": "module top;class A;endclass class B;endclass class C;A a[];endclass C c;B b[];initial begin c=new;b=new[1];c.a=b;end endmodule",
+  "integral_write": "module top;class A;endclass class C;A a[];endclass C c;initial begin c=new;c.a=new[1];c.a[0]=17;end endmodule",
+  "random_graph": "module top;class A;rand int value;endclass class C;rand A a[];endclass C c;initial begin c=new;void'(c.randomize());end endmodule",
+  "randc_graph": "module top;class A;endclass class C;randc A a[];endclass endmodule",
+  "random_system_query": "module top;class C;rand int a[];constraint c{$size(a)==2;}endclass C c;initial begin c=new;void'(c.randomize());end endmodule",
+  "packed_select": "module top;class A;endclass class C;A a[];endclass C c;int x;initial begin c=new;c.a=new[1];x=c.a[0][3:0];end endmodule",
+  "nba": "module top;class A;endclass class C;A a[];endclass C c;A a;initial begin c=new;a=new;c.a=new[1];c.a[0]<=a;end endmodule",
+  "class_bits": "module top;class A;endclass class C;A a[];endclass C c;int n;initial begin c=new;n=$bits(c.a);end endmodule",
+  "implicit_array_mode_query": "module top;class C;rand int a[];function int f();return a.rand_mode();endfunction endclass C c;int n;initial begin c=new;n=c.f();end endmodule",
+  "explicit_array_mode_query": "module top;class C;rand int a[];endclass C c;int n;initial begin c=new;n=c.a.rand_mode();end endmodule"
+}

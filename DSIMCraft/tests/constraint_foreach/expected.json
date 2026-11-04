@@ -1,0 +1,20 @@
+{
+  "regions": [
+    "TRACE constraint foreach current object queue overlap callbacks pass"
+  ],
+  "state": [
+    "TRACE constraint foreach fixed dynamic associative lexical indices pass"
+  ],
+  "queues": [
+    "TRACE class queues constructors copy alias bounded selects methods pass"
+  ],
+  "rollback": [
+    "TRACE constraint foreach queue heap checkpoint pass"
+  ],
+  "nested": [
+    "TRACE constraint foreach nested keys specialization wide values pass"
+  ],
+  "keys": [
+    "TRACE constraint foreach typed object keys pass"
+  ]
+}

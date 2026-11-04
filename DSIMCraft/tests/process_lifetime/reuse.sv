@@ -1,0 +1,1 @@
+module top;process current,saved;int observed;initial begin for(int i=0;i<2;i++)begin fork begin current=process::self();#1;end join if(i==0)saved=current;end observed=(saved!=current);$display("TRACE reuse %0d %0d %0d",observed,saved.status(),current.status());end endmodule

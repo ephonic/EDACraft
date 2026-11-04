@@ -1,0 +1,6 @@
+{
+  "path": "/Users/yangfan/vibe-coding/dsim-test/cases/rtlagent-dual-20261023T030408-0849cd90-carry_baseline",
+  "original_rtl_sha256": "f447203610558357854d139f20731522cf18ad05bb756fe04337ce36fbda8dc5",
+  "original_tb_sha256": "33c8d0b2a4703371115e2cbbeb74b313b91e78a8b158fcbc41d6dbb778206f38",
+  "change": "none; exact original unrolled RTL and TB"
+}

@@ -1,0 +1,1 @@
+module top;string modes[2];int observed;function automatic void fill(ref string values[2]);for(int i=0;i<2;i++)values[i]=(i==0)?"RW":"RO";endfunction function automatic int total(input string values[2]);return values[0].len()+values[1].len();endfunction initial begin fill(modes);observed=total(modes);$display("TRACE string_refs %s %s %0d",modes[0],modes[1],observed);end endmodule

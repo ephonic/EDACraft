@@ -1,0 +1,86 @@
+{
+  "status": "COMPLETE_WITH_DIFFERENCES",
+  "performance_comparison": false,
+  "models": {
+    "arguments": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif arguments 8 17 33 35 sum:35"
+      ],
+      "source_sha256": "18b9840dbbdbac6539205b91b87b379ddfded9fe1f42723a3302a7c4e3840044",
+      "seconds": 13.042211542022415
+    },
+    "arrays": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif arrays 7 6 11 12"
+      ],
+      "source_sha256": "17ceef3a0606cc350df9873b9970c20bf51c5206e3c5683bc983904874fd43b1",
+      "seconds": 11.148376060009468
+    },
+    "basic": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif call 6 2 7"
+      ],
+      "source_sha256": "ba6aa484eee73871810d25936b51b12dab0c1090066483cc3ade9624dc04d48b",
+      "seconds": 11.002342553983908
+    },
+    "capture": {
+      "status": "DIFFERENT",
+      "trace": [
+        "TRACE vif capture 1 6 16 10 16"
+      ],
+      "source_sha256": "1627b4ab410e8641921d4f16335dcdda8e9021a872ca8896e7daa65474a6ca69",
+      "seconds": 11.096049223036971
+    },
+    "events": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif events 3 3"
+      ],
+      "source_sha256": "738441aaceaa25b3c21c77848c46b0086b99ffd790094360f50797d2287be33e",
+      "seconds": 14.088376840983983
+    },
+    "nested": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif nested 6 6 6 6"
+      ],
+      "source_sha256": "bec7cb01552af63400a8cf6a627e4fde43675eedf017645328932d8e8aad6452",
+      "seconds": 14.002490393002518
+    },
+    "reentry": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif reentry 10 20 10 20"
+      ],
+      "source_sha256": "2c11f1f5d486e1034ae7d667d4b886bbe3dcfc4dd7361055b7d2f6e5e34d232e",
+      "seconds": 13.156074158032425
+    },
+    "static": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif static 1 1 2 2"
+      ],
+      "source_sha256": "3ce9f7f8e6630d1e1e449ab990158c0b5881c1ab55a714dd8d79d0b0e5c86ce5",
+      "seconds": 11.099871454993263
+    },
+    "timing": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif timing 3.00 0.30"
+      ],
+      "source_sha256": "1dd46416d1ce0dab56309a6bbf1165e88f3b058057191263c7ab2669961d6476",
+      "seconds": 10.956203089037444
+    },
+    "types": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif types HIGH fedcba987654321001234567 1.25"
+      ],
+      "source_sha256": "504e0a847eaecc7530aa339a972debdda9c4e0014326ff61f63f1116978afb19",
+      "seconds": 10.938610992045142
+    }
+  }
+}

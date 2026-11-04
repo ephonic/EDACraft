@@ -1,0 +1,70 @@
+{
+  "function_mismatch": [
+    "function int f();return 1;endfunction : g",
+    "function closing label does not match: f"
+  ],
+  "task_mismatch": [
+    "task t();begin end endtask : wrong",
+    "task closing label does not match: t"
+  ],
+  "constructor_mismatch": [
+    "class C;function new();begin end endfunction : C endclass",
+    "function closing label does not match: new"
+  ],
+  "ordinary_function_new": [
+    "function int f();return 1;endfunction : new",
+    "function closing label does not match: f"
+  ],
+  "task_new": [
+    "task t();begin end endtask : new",
+    "task closing label does not match: t"
+  ],
+  "case_sensitive": [
+    "function int f();return 1;endfunction : F",
+    "function closing label does not match: f"
+  ],
+  "class_method": [
+    "class C;static function int f();return 1;endfunction : other endclass",
+    "function closing label does not match: f"
+  ],
+  "missing_identifier": [
+    "function int f();return 1;endfunction :",
+    "syntax error"
+  ],
+  "escaped_mismatch": [
+    "function int \\f.dot ();return 1;endfunction : \\f.other ",
+    "function closing label does not match: "
+  ],
+  "default_write_formal": [
+    "function automatic int f(int a,int b=++a);return b;endfunction initial $display(\"%d\",f(1));",
+    "default argument dependence requiring formal storage is not supported yet"
+  ],
+  "default_output_formal": [
+    "int y;function automatic int f(output int a,input int b=a+1);a=4;return b;endfunction initial $display(\"%d\",f(y));",
+    "default argument dependence requiring formal storage is not supported yet"
+  ],
+  "default_array_formal": [
+    "typedef int A[2];A x;function automatic int f(input A a,input int b=a[0]);return b;endfunction initial $display(\"%d\",f(x));",
+    "default argument dependence requiring formal storage is not supported yet"
+  ],
+  "default_ref_formal": [
+    "int x;function automatic int f(ref int a,ref int b=a);return b;endfunction initial $display(\"%d\",f(x));",
+    "default argument dependence requiring formal storage is not supported yet"
+  ],
+  "default_missing_prior": [
+    "function int f(int a,int b=missing);return b;endfunction initial $display(\"%d\",f(1));",
+    "identifier is unknown or not visible in this scope"
+  ],
+  "default_future_invisible": [
+    "function int f(int a=b,int b=2);return a;endfunction initial $display(\"%d\",f());",
+    "identifier is unknown or not visible in this scope"
+  ],
+  "default_self_invisible": [
+    "function int f(int a=a);return a;endfunction initial $display(\"%d\",f());",
+    "identifier is unknown or not visible in this scope"
+  ],
+  "default_body_invisible": [
+    "function int f(int a=local_value);int local_value;return a;endfunction initial $display(\"%d\",f());",
+    "identifier is unknown or not visible in this scope"
+  ]
+}

@@ -1,0 +1,1 @@
+module top;int value;task automatic inner(ref int v);fork begin #20;v=99;end join_none endtask task automatic outer(ref int v);begin:scope fork begin #1;disable scope;end join_none inner(v);#10;v=88;end v+=2;endtask initial begin outer(value);#30;$display("TRACE escaped %0d",value);end endmodule

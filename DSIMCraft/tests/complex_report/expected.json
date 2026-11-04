@@ -1,0 +1,84 @@
+{
+  "probes": {
+    "p01_property": [
+      "ASSERT-FIRED cnt=0",
+      "PROBE_PROPERTY: completed"
+    ],
+    "p02_interface": [
+      "PROBE_INTERFACE: gnt ok"
+    ],
+    "p03_unpacked_hier": [
+      "PROBE_UNPACKED_HIER: ok"
+    ],
+    "p04_recursion": [
+      "PROBE_RECURSION: ok 720"
+    ],
+    "p05_constfn": [
+      "PROBE_CONSTFN: ok 16"
+    ],
+    "p06_past": [
+      "PROBE_SAMPLED: past=4 rose=1 stable=1"
+    ],
+    "p07_stream": [
+      "PROBE_STREAM: ok 2D"
+    ],
+    "p08_readmemh": [
+      "PROBE_READMEMH: ok",
+      "PROBE_READMEMH: writememh done"
+    ],
+    "p09_unpacked_port": [
+      "PROBE_UNPACKED_PORT: ok"
+    ],
+    "p10_force": [
+      "PROBE_FORCE: force ok",
+      "PROBE_FORCE: after release a"
+    ],
+    "p11_latch": [
+      "PROBE_LATCH: ok held"
+    ],
+    "p12_inside": [
+      "PROBE_INSIDE: ok"
+    ],
+    "p13_sizecast": [
+      "PROBE_SIZECAST: ok"
+    ],
+    "p14_unpacked_struct": [
+      "PROBE_UNPACKED_STRUCT: ok"
+    ],
+    "p15_pkgvar": [
+      "PROBE_PKGVAR: ok 3"
+    ],
+    "p16_assert_semantics": [
+      "PROBE_ASSERT2: ok (per-cycle firing, |=> held)"
+    ],
+    "p17_readmemh_only": [
+      "PROBE_READMEMH2: ok"
+    ]
+  },
+  "extended": {
+    "assertion_blocks": [
+      "TRACE assertion blocks 2 1"
+    ],
+    "force_values": [
+      "TRACE force 43 45"
+    ],
+    "functions": [
+      "TRACE functions 8 28 -14 5040 34"
+    ],
+    "legacy_ports": [
+      "TRACE legacy 7"
+    ],
+    "memory_files": [
+      "TRACE memory files complete"
+    ],
+    "procedural_samples": [
+      "TRACE procedural 2 1"
+    ],
+    "selections": [
+      "TRACE selects 5 b a c 3"
+    ],
+    "struct_values": [
+      "TRACE structs 77 3abcdef0123456789abcdef0123456789 138"
+    ]
+  }
+}

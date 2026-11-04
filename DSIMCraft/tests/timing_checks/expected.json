@@ -1,0 +1,161 @@
+{
+  "setup": [
+    [
+      "SETUP",
+      102
+    ]
+  ],
+  "hold": [
+    [
+      "HOLD",
+      103
+    ],
+    [
+      "HOLD",
+      128
+    ]
+  ],
+  "recovery": [
+    [
+      "RECOVERY",
+      102
+    ]
+  ],
+  "removal": [
+    [
+      "REMOVAL",
+      103
+    ],
+    [
+      "REMOVAL",
+      128
+    ]
+  ],
+  "setuphold": [
+    [
+      "SETUP",
+      102
+    ],
+    [
+      "HOLD",
+      103
+    ],
+    [
+      "HOLD",
+      128
+    ]
+  ],
+  "recrem": [
+    [
+      "RECOVERY",
+      102
+    ],
+    [
+      "REMOVAL",
+      103
+    ],
+    [
+      "REMOVAL",
+      128
+    ]
+  ],
+  "width": [
+    [
+      "WIDTH",
+      105
+    ]
+  ],
+  "period": [
+    [
+      "PERIOD",
+      108
+    ]
+  ],
+  "skew": [
+    [
+      "SKEW",
+      116
+    ]
+  ],
+  "condition": [
+    [
+      "SETUP",
+      102
+    ]
+  ],
+  "threshold": [
+    [
+      "WIDTH",
+      105
+    ]
+  ],
+  "edge-overrides": [
+    [
+      "HOLD",
+      103
+    ]
+  ],
+  "negative": [],
+  "delta": [
+    [
+      "HOLD",
+      100
+    ]
+  ],
+  "setup-edge-overrides": [
+    [
+      "SETUP",
+      102
+    ]
+  ],
+  "fourstate": [
+    [
+      "HOLD",
+      101
+    ],
+    [
+      "SETUP",
+      102
+    ],
+    [
+      "SETUP",
+      115
+    ],
+    [
+      "HOLD",
+      116
+    ]
+  ],
+  "explicit-edge": [
+    [
+      "HOLD",
+      101
+    ]
+  ],
+  "composed": [
+    [
+      "HOLD",
+      103
+    ],
+    [
+      "HOLD",
+      106
+    ]
+  ],
+  "combined-split": [
+    [
+      "SETUP",
+      102
+    ],
+    [
+      "HOLD",
+      103
+    ],
+    [
+      "HOLD",
+      128
+    ]
+  ],
+  "setup-zero": [],
+  "hold-zero": []
+}

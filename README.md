@@ -8,6 +8,32 @@ EDACraft is a monorepo hosting multiple EDA sub-projects, each focusing on diffe
 
 ## Sub-projects
 
+### [DSIMCraft](DSIMCraft/README.md) (`DSIMCraft/`)
+
+DSIMCraft v0.13.0 is a **source-only engineering release** of the compiled
+Verilog/SystemVerilog simulator from [ephonic/dsim](https://github.com/ephonic/dsim).
+It generates C++17 simulation programs and maintains separate RTL and gate-level
+parsers, with supported subsets of four-state simulation, delays/SDF, library
+formats, waveform output, and verification features.
+
+The unmodified Accellera UVM 2020.3.1 library has passed representative
+factory/config_db/sequence/driver/scoreboard, field utilities, virtual-interface
+method calls through a real DUT, and 8192-bit pack/unpack tests. These are bounded
+functional checks using `UVM_NO_DPI`; **DSIMCraft does not claim full VCS/UVM
+compatibility or coverage of most industrial designs**. See its README for
+supported scope, dependencies, validation evidence, and known differences.
+
+```sh
+cmake -S DSIMCraft -B build/dsimcraft -DCMAKE_BUILD_TYPE=Release
+cmake --build build/dsimcraft --target dsim -j 4
+./build/dsimcraft/dsim DSIMCraft/examples/counter.sv -o /tmp/dsimcraft-counter
+/tmp/dsimcraft-counter
+```
+
+The directory includes buildable sources, parsers/runtime headers, examples,
+tests, documentation, source provenance and checksums; no platform executables,
+commercial EDA tools, or UVM distribution are bundled.
+
 ### [RTLCraft / rtlgen](RTLCraft/README.md) (`RTLCraft/`)
 
 RTLCraft now publishes its clean-core RTL toolkit as `rtlgen`. The release

@@ -1,0 +1,7 @@
+{
+  "failed_task": "class B;endclass class D extends B;endclass B b;D d;initial begin b=new;$display(\"TRACE before\");$cast(d,b);$display(\"TRACE AFTER_FAILURE\");end",
+  "failed_enum_task": "typedef enum{A=1,B=3} T;T t;initial begin t=A;$display(\"TRACE before\");$cast(t,2);$display(\"TRACE AFTER_FAILURE\");end",
+  "null_pure_function": "virtual class B;pure virtual function int f();endclass B b;initial $display(\"%0d\",b.f());",
+  "null_pure_task": "virtual class B;pure virtual task run();endclass B b;initial b.run();",
+  "failed_incompatible_task": "class B;endclass B b;initial begin $display(\"TRACE before\");$cast(b,3);$display(\"TRACE AFTER_FAILURE\");end"
+}

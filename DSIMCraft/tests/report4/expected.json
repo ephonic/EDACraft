@@ -1,0 +1,34 @@
+{
+  "p21_sra_cond": [
+    "direct=ffffffff cond=ffffffff tern=003fffff func=ffffffff ifelse=ffffffff (want ffffffff)",
+    "PROBE_SRA: ok (ternary-only bug confirmed: tern=003fffff)"
+  ],
+  "p27_signed_ternary": [
+    "sra  in ternary: BUG got=7fffffff want=ffffffff",
+    "div  in ternary: BUG got=55555554 want=00000000",
+    "mod  in ternary: BUG got=00000002 want=fffffffe",
+    "cmp  in ternary: ok",
+    "mul  in ternary: ok",
+    "sra both-branch ternary: ok"
+  ],
+  "signed_contexts": [
+    "TRACE signed 0 1 fffffffe 00000003 1 ffffffff 00000000 fffffffe 7fffffff 55555554 00000002 ffffffff 00000000 fffffffe ffffffff 00000000 fffffffe ffffffff 000000007fffffff ffffffffffffffff",
+    "TRACE signed 1 1 fffffff9 00000003 2 fffffffe fffffffe ffffffff 3ffffffe 55555553 00000000 fffffffe fffffffe ffffffff fffffffe fffffffe ffffffff fffffffe 000000003ffffffe fffffffffffffffe",
+    "TRACE signed 2 1 80000000 fffffffd 31 ffffffff 2aaaaaaa fffffffe 00000001 00000000 80000000 ffffffff 2aaaaaaa fffffffe ffffffff 2aaaaaaa fffffffe ffffffff 0000000000000001 ffffffffffffffff",
+    "TRACE signed 3 1 80000000 fffffffd 32 ffffffff 2aaaaaaa fffffffe 00000000 00000000 80000000 ffffffff 2aaaaaaa fffffffe ffffffff 2aaaaaaa fffffffe ffffffff 0000000000000000 ffffffffffffffff",
+    "TRACE signed 4 0 80000000 fffffffd 32 ffffffff 2aaaaaaa fffffffe 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 0000000000000000 0000000000000000",
+    "TRACE signed 5 x fffffffe 00000003 1 ffffffff 00000000 fffffffe Xxxxxxxx XXXXXXXX 0000000X xxxxxxxx 00000000 xxxxxxxX xxxxxxxx 00000000 xxxxxxxX xxxxxxxx 00000000Xxxxxxxx xxxxxxxxxxxxxxxx",
+    "TRACE signed 6 z fffffffe 00000003 1 ffffffff 00000000 fffffffe Xxxxxxxx XXXXXXXX 0000000X xxxxxxxx 00000000 xxxxxxxX xxxxxxxx 00000000 xxxxxxxX xxxxxxxx 00000000Xxxxxxxx xxxxxxxxxxxxxxxx",
+    "TRACE signed 7 1 7fffffff fffffffd 1 3fffffff d5555556 00000001 3fffffff 00000000 7fffffff 3fffffff d5555556 00000001 3fffffff d5555556 00000001 3fffffff 000000003fffffff 000000003fffffff",
+    "TRACE signed 8 1 7fffffff 00000000 1 3fffffff xxxxxxxx xxxxxxxx 3fffffff xxxxxxxx xxxxxxxx 3fffffff xxxxxxxx xxxxxxxx 3fffffff xxxxxxxx xxxxxxxx 3fffffff 000000003fffffff 000000003fffffff",
+    "TRACE signed 9 1 xxxxxxfe 00000003 1 xxxxxxXf xxxxxxxx xxxxxxxx XxxxxxXf xxxxxxxx xxxxxxxx xxxxxxXf xxxxxxxx xxxxxxxx xxxxxxXf xxxxxxxx xxxxxxxx xxxxxxXf 00000000XxxxxxXf xxxxxxxxxxxxxxXf"
+  ],
+  "literals": [
+    "TRACE mixed 00004143 4142 1 24",
+    "TRACE cast [AB]",
+    "TRACE literal 00 414X 4142"
+  ],
+  "contexts": [
+    "TRACE contexts 414243 4142434445464748494a4b4c4d4e4f5051 136 010000010100001x 1 [ABD]"
+  ]
+}

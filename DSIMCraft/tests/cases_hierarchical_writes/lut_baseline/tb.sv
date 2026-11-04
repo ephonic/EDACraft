@@ -1,0 +1,46 @@
+module tb_compare;
+reg clk,rst_n;
+reg frame_clock;
+integer i;
+reg [0:0] in_valid;
+reg [0:0] in_ready;
+reg [0:0] in_wen;
+reg [0:0] in_mode;
+reg [3:0] in_a;
+reg [3:0] in_b;
+reg [3:0] in_c;
+reg [3:0] in_d;
+reg [3:0] in_addr;
+reg [31:0] in_data;
+reg [12:0] in_tag;
+wire out_ready,out_valid;
+wire [31:0] out_value;
+wire [12:0] out_tag;
+reg [70:0] frames[0:3071];
+dut dut(.clk(clk),.rst_n(rst_n),.in_valid(in_valid),.in_ready(in_ready),.in_wen(in_wen),.in_mode(in_mode),.in_a(in_a),.in_b(in_b),.in_c(in_c),.in_d(in_d),.in_addr(in_addr),.in_data(in_data),.in_tag(in_tag),.out_ready(out_ready),.out_valid(out_valid),.out_value(out_value),.out_tag(out_tag));
+initial begin clk=0;rst_n=1;
+dut.words[0]=32'd74565;
+dut.words[1]=32'd149130;
+dut.words[2]=32'd223695;
+dut.words[3]=32'd298260;
+dut.words[4]=32'd372825;
+dut.words[5]=32'd447390;
+dut.words[6]=32'd521955;
+dut.words[7]=32'd596520;
+dut.words[8]=32'd671085;
+dut.words[9]=32'd745650;
+dut.words[10]=32'd820215;
+dut.words[11]=32'd894780;
+dut.words[12]=32'd969345;
+dut.words[13]=32'd1043910;
+dut.words[14]=32'd1118475;
+dut.words[15]=32'd1193040;
+$readmemh("stimulus.hex",frames);
+for(i=0;i<3072;i=i+1) begin
+{rst_n,frame_clock,in_valid,in_ready,in_wen,in_mode,in_a,in_b,in_c,in_d,in_addr,in_data,in_tag}=frames[i];
+#2;
+$display("RTL_DUAL_TRACE %0d ready=%b valid=%b value=%b tag=%b history=%b mem0=%b mem1=%b mem2=%b mem3=%b mem4=%b mem5=%b mem6=%b mem7=%b mem8=%b mem9=%b mem10=%b mem11=%b mem12=%b mem13=%b mem14=%b mem15=%b",2*i,out_ready,out_valid,out_value,out_tag,dut.history,dut.words[0],dut.words[1],dut.words[2],dut.words[3],dut.words[4],dut.words[5],dut.words[6],dut.words[7],dut.words[8],dut.words[9],dut.words[10],dut.words[11],dut.words[12],dut.words[13],dut.words[14],dut.words[15]);
+#1;if(frame_clock) clk=1;#2;
+$display("RTL_DUAL_TRACE %0d ready=%b valid=%b value=%b tag=%b history=%b mem0=%b mem1=%b mem2=%b mem3=%b mem4=%b mem5=%b mem6=%b mem7=%b mem8=%b mem9=%b mem10=%b mem11=%b mem12=%b mem13=%b mem14=%b mem15=%b",2*i+1,out_ready,out_valid,out_value,out_tag,dut.history,dut.words[0],dut.words[1],dut.words[2],dut.words[3],dut.words[4],dut.words[5],dut.words[6],dut.words[7],dut.words[8],dut.words[9],dut.words[10],dut.words[11],dut.words[12],dut.words[13],dut.words[14],dut.words[15]);
+clk=0;#1;end
+$display("RTL_DUAL_DONE events=6144 outputs=21");$finish;end endmodule

@@ -1,0 +1,33 @@
+{
+  "control": [
+    "TRACE short 0 0 1",
+    "TRACE control 2 4 1 1 10",
+    "TRACE loops 3 4 6",
+    "TRACE unknown 4 5 1"
+  ],
+  "delays": [
+    "TRACE sampled 10 11 13 14 3 13",
+    "TRACE nba 14 12 12",
+    "TRACE delayed 12 13"
+  ],
+  "generate": [],
+  "parallel": [],
+  "targets": [
+    "TRACE wordpost 000000000000000000ff 00000000000000000100 1",
+    "TRACE wordpre 00000000000000001235 00000000000000001235 2",
+    "TRACE packedpost 000000000000000000ff 0000000000000000f00f 01 1254 3 6",
+    "TRACE packedpre 08 1214 7",
+    "TRACE invalid xxxxxxxxxxxxxxxxxxxx 0 1",
+    "TRACE partial 0000xx00 xx01001000010100 16"
+  ],
+  "values": [
+    "TRACE prefix 00 0000",
+    "TRACE postfix 00 00ff",
+    "TRACE signed 00 fffe 0000",
+    "TRACE decrement fe 00ff 00ff",
+    "TRACE context 00 0001",
+    "TRACE argument ff 02fa",
+    "TRACE wide 000000000000000000000000000000000 3ffffffffffffffffffffffffffffffff",
+    "TRACE four xxxxxxxx zzzz0101"
+  ]
+}

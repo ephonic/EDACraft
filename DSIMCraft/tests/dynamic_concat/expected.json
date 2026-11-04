@@ -1,0 +1,8 @@
+{
+ "sample": ["TRACE whole 1234 5678 9a", "TRACE mixed 1342 56ef 9d bc", "TRACE overlap 5678 73"],
+ "timing": ["TRACE delay 5678 abcd 9a", "TRACE event 7654 32", "TRACE replaced 5678 71", "TRACE blocking 0b00 cd"],
+ "arguments": ["TRACE ref 12ad be", "TRACE inout 5678 9a"],
+ "wide": ["TRACE wide 1abc56789abcdef001234567 fedcba9876543210012345de 29 f1", "TRACE invalid 1abc56789abcdef001234567 5a 73"],
+ "parallel": [],
+ "control": ["TRACE observe 2 0 789a bc"]
+}

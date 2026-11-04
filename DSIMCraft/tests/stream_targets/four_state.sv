@@ -1,0 +1,1 @@
+module top;logic[3:0] data[];bit[3:0] clean[];int observed;initial begin {>>{data}}=8'bxz01_10zx;{<<2{clean}}={>>{data}};observed=clean.size();$display("TRACE states %b %b %h %h",data[0],data[1],clean[0],clean[1]);end endmodule

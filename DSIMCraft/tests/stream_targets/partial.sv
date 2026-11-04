@@ -1,0 +1,1 @@
+module top;bit[3:0] data[];logic[9:0] source=10'b1010110011;int observed;initial begin {>>{data}}=source;observed=data.size();$display("TRACE partial %0d %h %h %h",observed,data[0],data[1],data[2]);end endmodule

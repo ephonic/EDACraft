@@ -1,0 +1,26 @@
+{
+  "hidden": {
+    "source": "interface bus_if;int state;function automatic int read(input int value);return state+value;endfunction task automatic write(ref int value);#1;value++;endtask modport ro(input state);endinterface\nmodule top;bus_if a();virtual bus_if.ro vif;initial begin vif=a;vif.read(1);end endmodule\n",
+    "diagnostic": "not visible via modport"
+  },
+  "missing_member": {
+    "source": "interface bus_if;int state;function automatic int read(input int value);return state+value;endfunction task automatic write(ref int value);#1;value++;endtask modport ro(input state);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial begin vif=a;vif.absent();end endmodule\n",
+    "diagnostic": "interface member is not a subroutine"
+  },
+  "missing_argument": {
+    "source": "interface bus_if;int state;function automatic int read(input int value);return state+value;endfunction task automatic write(ref int value);#1;value++;endtask modport ro(input state);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial begin vif=a;$display(\"%d\",vif.read());end endmodule\n",
+    "diagnostic": "missing subroutine argument without a default"
+  },
+  "bad_named": {
+    "source": "interface bus_if;int state;function automatic int read(input int value);return state+value;endfunction task automatic write(ref int value);#1;value++;endtask modport ro(input state);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial begin vif=a;$display(\"%d\",vif.read(.wrong(1)));end endmodule\n",
+    "diagnostic": "unknown subroutine argument"
+  },
+  "task_function": {
+    "source": "interface bus_if;int state;function automatic int read(input int value);return state+value;endfunction task automatic write(ref int value);#1;value++;endtask modport ro(input state);endinterface\nmodule top;bus_if a();virtual bus_if vif;int data;function automatic int invalid();vif.write(data);return data;endfunction initial begin vif=a;data=invalid();end endmodule\n",
+    "diagnostic": "functions require"
+  },
+  "event_function": {
+    "source": "interface bus_if;int state;function automatic int read(input int value);state++;return state+value;endfunction task automatic write(ref int value);#1;value++;endtask modport ro(input state);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial begin vif=a;@(vif.read(1));end endmodule\n",
+    "diagnostic": "effect-free automatic function"
+  }
+}

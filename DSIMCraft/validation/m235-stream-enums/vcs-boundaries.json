@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "compile": {
+    "implicit": {
+      "status": "ACCEPTED",
+      "exit_code": 0,
+      "source_sha256": "b7c0e79a0e70d81e682d1e192cd08744149d1fcf4880db5e7ed7205c283fb008"
+    }
+  },
+  "runtime": {}
+}

@@ -1,0 +1,8 @@
+{
+  "constant_write": "module top;class C;parameter int N=3;endclass initial C::N=5;endmodule",
+  "localparam_write": "module top;class C;localparam int N=3;endclass C c;initial begin c=new;c.N=4;end endmodule",
+  "nonconstant": "module top;int runtime_n;class C;parameter N=runtime_n;endclass endmodule",
+  "override_body": "module top;class C#(int W=8);parameter N=W+1;endclass C#(.N(4)) c;endmodule",
+  "override_local": "module top;class C#(int W=8);localparam N=W+1;endclass C#(.N(4)) c;endmodule",
+  "call_constant": "module top;class C;parameter N=3;endclass C c;initial begin c=new;c.N();end endmodule"
+}

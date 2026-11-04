@@ -1,0 +1,8 @@
+{
+ "sequences":["TRACE sequences 1 -1 1 -1 1 1"],
+ "actions":["TRACE actions 1 1 1 1 2 1"],
+ "nba":["TRACE nba 1 -1"],
+ "tasks":["TRACE tasks 3 7 10"],
+ "control":["TRACE control 78 0 0"],
+ "parallel":[]
+}

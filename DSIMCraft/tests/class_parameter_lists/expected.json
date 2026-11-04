@@ -1,0 +1,25 @@
+{
+  "type_groups": [
+    "TRACE types 123 -2 1ffffffffffffffff 54"
+  ],
+  "value_groups": [
+    "TRACE values 25 139 -9 0 1ffffffffffffffff"
+  ],
+  "required": [
+    "TRACE required 0002468acf13579bde 1fffffffffffffffe 12"
+  ],
+  "inheritance": [
+    "TRACE inherited 10000000000000012"
+  ],
+  "clones": [
+    "TRACE clone 8 25 ff",
+    "TRACE clone 129 388 1ffffffffffffffffffffffffffffffff"
+  ],
+  "rollback": [
+    "TRACE rollback 7 1"
+  ],
+  "parallel": [],
+  "scoped_ports": [
+    "TRACE scoped -9 -3 1"
+  ]
+}

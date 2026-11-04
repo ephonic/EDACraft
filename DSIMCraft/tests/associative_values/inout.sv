@@ -1,0 +1,1 @@
+module top;typedef int map_t[int];map_t data;int observed;task automatic update(inout map_t values);values[1]=11;values[2]=9;#2;endtask initial begin data[1]=7;fork update(data);begin #1;$display("TRACE private %0d %0d",data[1],data.num());data[3]=15;end join observed=data.num();$display("TRACE inout %0d %0d %0d %0d",data[1],data[2],observed,data.exists(3));end endmodule

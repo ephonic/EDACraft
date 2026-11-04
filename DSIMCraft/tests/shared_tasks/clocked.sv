@@ -1,0 +1,1 @@
+module top;bit clk;int count;task automatic helper(ref int value);value++;endtask always @(posedge clk)helper(count);initial begin repeat(6)#1 clk=~clk;#1;$display("TRACE clocked %0d",count);end endmodule

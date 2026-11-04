@@ -1,0 +1,1 @@
+module top;bit[3:0] data[];logic[3:0] tail;int observed;initial begin {>>{data,tail}}=10'b1010110011;observed=data.size();$display("TRACE mixed partial %0d %h %h %h",observed,data[0],data[1],tail);end endmodule

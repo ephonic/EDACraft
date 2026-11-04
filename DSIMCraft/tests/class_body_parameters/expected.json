@@ -1,0 +1,20 @@
+{
+  "basic": [
+    "TRACE body basic 28 5"
+  ],
+  "specializations": [
+    "TRACE body specializations 39 71 19"
+  ],
+  "inheritance": [
+    "TRACE body inheritance 56 106 12"
+  ],
+  "clones": [
+    "TRACE body clones 31 394 425"
+  ],
+  "wide": [
+    "TRACE body wide 4 -3"
+  ],
+  "text": [
+    "TRACE body text packet:item 11"
+  ]
+}

@@ -1,0 +1,7 @@
+/build*/
+/out/
+/simv*
+*.dsim.cpp
+__pycache__/
+*.pyc
+.DS_Store

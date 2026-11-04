@@ -1,0 +1,14 @@
+{
+  "null_read": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial $display(\"%0d\",vif.data);endmodule\n",
+    "diagnostic": "null virtual interface dereference"
+  },
+  "null_write": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial vif.data=1;endmodule\n",
+    "diagnostic": "null virtual interface dereference"
+  },
+  "null_ref": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if vif;task automatic alter(ref logic[7:0] value);value=1;endtask initial alter(vif.data);endmodule\n",
+    "diagnostic": "null virtual interface dereference"
+  }
+}

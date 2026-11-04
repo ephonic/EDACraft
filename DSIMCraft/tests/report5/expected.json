@@ -1,0 +1,21 @@
+{
+  "p21_sra_cond": [
+    "direct=ffffffff cond=ffffffff tern=003fffff func=ffffffff ifelse=ffffffff (want ffffffff)",
+    "PROBE_SRA: ok (ternary-only bug confirmed: tern=003fffff)"
+  ],
+  "p27_signed_ternary": [
+    "sra  in ternary: BUG got=7fffffff want=ffffffff",
+    "div  in ternary: BUG got=55555554 want=00000000",
+    "mod  in ternary: BUG got=00000002 want=fffffffe",
+    "cmp  in ternary: ok",
+    "mul  in ternary: ok",
+    "sra both-branch ternary: ok"
+  ],
+  "p28_string_mix": [
+    "PROBE_STRMIX: ok"
+  ],
+  "p29_ternary_context": [
+    "PROBE_CONTEXT: unsigned=7fffffff,55555554,00000002 signed=ffffffff,00000000,fffffffe",
+    "PROBE_CONTEXT: PASS"
+  ]
+}

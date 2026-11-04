@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "performance_comparison": false,
+  "models": {
+    "events": {
+      "status": "PASS",
+      "trace": [
+        "TRACE vif events 3 3"
+      ],
+      "source_sha256": "738441aaceaa25b3c21c77848c46b0086b99ffd790094360f50797d2287be33e",
+      "seconds": 10.898877913015895
+    }
+  }
+}

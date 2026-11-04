@@ -1,0 +1,30 @@
+{
+  "burst": [
+    "TRACE burst 5 5 25 3000"
+  ],
+  "any": [
+    "TRACE first 3 0 3000",
+    "TRACE any 3 3 7000"
+  ],
+  "nested": [
+    "TRACE direct 3 0 3000",
+    "TRACE nested 3 3 10000"
+  ],
+  "events": [
+    "TRACE events 4 4 4 2000"
+  ],
+  "cancel": [
+    "TRACE cancel 0 1000",
+    "TRACE reuse 3 0 11 8000"
+  ],
+  "parallel": [],
+  "recycle": [
+    "TRACE recycle 150 50000"
+  ],
+  "legacy": [
+    "TRACE overlap 3"
+  ],
+  "labels": [
+    "TRACE labels 3 0 1000"
+  ]
+}

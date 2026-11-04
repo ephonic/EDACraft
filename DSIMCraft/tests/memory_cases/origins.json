@@ -1,0 +1,48 @@
+{
+  "sram": {
+    "case": "rtl-agent-sram-packed-index-compile-133f769fae40",
+    "files": {
+      "dut.sv": "699477d60a559bd532af8c7d8c2b4710212bdc7b519d2dfa67faec00438b7bc1",
+      "tb.sv": "a20a288b735093ebae415d8f6e988183a07932b2be303626588a9bea3977deaa",
+      "vectors_0.txt": "bca67b7bb50397c1910fba0f48226df59645f123785c691ed7fffdb6908d0b3e",
+      "vectors_1.txt": "bff9b52dc7177916842c37c708da3767ec71a2b1cfc5aaac6ac0ff875577dc7e",
+      "vectors_2.txt": "769e309d77509d437f369457cd555c83a2d049a6a61d414a7e76896eed591995",
+      "vectors_3.txt": "979a20db7e172aca3da611fd56b1c85674d7ea9c61fe2e4d1badf323d998fd2b",
+      "vectors_4.txt": "5fdf39b00f2bd5c40b14652992da7a76f5d3265ed100b6c6690099f454a83668",
+      "vectors_5.txt": "ee682c146468b4dcbd8124f8673a83258fe4c78d68a8228b9cfa1c40b8dae74f",
+      "vectors_6.txt": "de0f93fc898151e3e89266f119690a4fe599013b595ad6285f3f00233e7c6022"
+    },
+    "original_dsim_sha256": "133f769fae40770fc2246af5c4a73a01c268da2db11be3d0bfcb291584e2725b",
+    "original_classification": "dsim_compile_failed_VCS_independent_reference_passed",
+    "budget_seconds": 180,
+    "expected_stdout": "SRAM_BRIDGE_PASS checked=4480\n",
+    "phases": 4480,
+    "port_comparisons": 76160
+  },
+  "unrolled": {
+    "case": "rtl-agent-memory-batch-compile-timeout-a5e55bf04ce8",
+    "files": {
+      "dut.sv": "26032e099bba9341a4e91964826347c2cc74bb599c841433eded822d413b69fb",
+      "tb.sv": "a07d39a918d53f1b8bea755d4ff1faddc4b057399e1b8b419e547f9f855e24a4"
+    },
+    "original_dsim_sha256": "a5e55bf04ce851411f07b0200d9dab1a04853cea859e28e9faaef1fc36a786c3",
+    "original_classification": "compile_timeout_at_original_180_second_budget",
+    "budget_seconds": 180,
+    "expected_stdout": "MEMORY_BATCH_PASS checked=3840\n",
+    "phases": 3840,
+    "port_comparisons": 38400
+  },
+  "banking": {
+    "case": "rtl-memory-banking-compile-timeout-20261028T115718Z",
+    "files": {
+      "dut.sv": "8f8afb3cb9dea9ccc5df255968c074800fb41bdfe163ad6ad7b931fe0a77dde0",
+      "tb.sv": "0e61040136019bc7791652a75145e8c3642c578f79c3f52b1b9e6650c4f55b86"
+    },
+    "original_dsim_sha256": "c3a49de995d0feef2aa224faa97310cf22c5a99020d5cab9341279382b61abce",
+    "original_classification": "compile_timeout_at_original_180_second_budget",
+    "budget_seconds": 180,
+    "expected_stdout": "MEMORY_BANKING_PASS checked=640\n",
+    "phases": 640,
+    "port_comparisons": 23040
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "basic": [
+    "TRACE string casts value=A calls=1"
+  ],
+  "calls": [
+    "TRACE string calls value=cab"
+  ],
+  "unsigned": [
+    "TRACE implicit unsigned a=1 b=256 c=-256"
+  ],
+  "parameters": [
+    "TRACE string parameters u=AB:suffix v=EF"
+  ],
+  "rollback": [
+    "TRACE string rollback value=DE observed=69"
+  ]
+}

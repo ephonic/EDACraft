@@ -1,0 +1,18 @@
+{
+  "const_actual": {
+    "source": "module top;class State;const int value=3;endclass State state;function automatic void f(ref int value);value=7;endfunction initial begin state=new;f(state.value);end endmodule\n",
+    "diagnostic": "nonconst ref cannot bind a const class property"
+  },
+  "const_formal": {
+    "source": "module top;class State;int value;endclass State state;function automatic void f(const ref int value);value=7;endfunction initial begin state=new;f(state.value);end endmodule\n",
+    "diagnostic": "cannot modify const ref"
+  },
+  "element_type": {
+    "source": "module top;class State;logic[7:0] value;endclass State state;function automatic void f(ref bit[7:0] value);endfunction initial begin state=new;f(state.value);end endmodule\n",
+    "diagnostic": "equivalent argument types"
+  },
+  "selection": {
+    "source": "module top;class State;logic[7:0] value;endclass State state;function automatic void f(ref logic value);endfunction initial begin state=new;f(state.value[0]);end endmodule\n",
+    "diagnostic": "packed bit/part selections"
+  }
+}

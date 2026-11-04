@@ -1,0 +1,30 @@
+{
+  "null": {
+    "source": "module top;process p;initial p.srandom(1);endmodule",
+    "diagnostic": "null or invalid class object access"
+  },
+  "bad_state": {
+    "source": "module top;process p;initial begin p=process::self();p.set_randstate(\"bad\");end endmodule",
+    "diagnostic": "invalid process random state"
+  },
+  "bad_hex": {
+    "source": "module top;process p;initial begin p=process::self();p.set_randstate(\"DSIM-RNG1:000000000000000g\");end endmodule",
+    "diagnostic": "invalid process random state"
+  },
+  "bad_context": {
+    "source": "module top;function automatic process here();return process::self();endfunction process p=here();endmodule",
+    "diagnostic": "process::self requires an executing process"
+  },
+  "null_status": {
+    "source": "module top;process p;process::state value;initial value=p.status();endmodule",
+    "diagnostic": "null or invalid class object access"
+  },
+  "null_kill": {
+    "source": "module top;process p;initial p.kill();endmodule",
+    "diagnostic": "null or invalid class object access"
+  },
+  "null_await": {
+    "source": "module top;process p;initial p.await();endmodule",
+    "diagnostic": "null or invalid class object access"
+  }
+}

@@ -1,0 +1,1 @@
+module top;typedef int map_t[string][int];map_t data;int observed;task automatic update(inout map_t values);values["row"][2]=9;values.delete("old");#1;endtask initial begin data["row"][1]=7;data["old"][3]=1;update(data);observed=data.num();$display("TRACE multidim %0d %0d %0d %0d",observed,data["row"][1],data["row"][2],data.exists("old"));end endmodule

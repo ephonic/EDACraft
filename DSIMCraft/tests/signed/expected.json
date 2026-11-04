@@ -1,0 +1,33 @@
+{
+  "design": [
+    "TRACE math -4 -10 -21 -2 -1",
+    "TRACE types fff9 0179 00f9 ff80 00f9 fff9 00f9 fff9",
+    "TRACE shift fffe 3ffe e4 3e",
+    "TRACE decimal          -7 -7          -2 -2 f903",
+    "TRACE compare 11000101 mixed=0000000000000000 concat=00f9 mem=fffd",
+    "TRACE nba -4 current=2 -2 mem=ff81",
+    "TRACE block -5",
+    "TRACE unknown xxxxxxxxxxxx0011 xxxxxxxxxxxxxx00 00xxxxxxxxxxxx00 zzzzzzzzzzzz0011 xxxxxxxxxxxxxxxx",
+    "TRACE address xxxx",
+    "TRACE mem -5"
+  ],
+  "wide": [
+    "TRACE wide 3fffffffffffffffffedcba9876543290 3ffffffffffffffff6f8091a2b3c4d66f 3fffffffffffffffffffdb4deeeca3cde 3ffffffffffffffffffffffffffffffef",
+    "TRACE ext 3fffffffffffffffffffffffffffffffd 000000000000000000000000000000003 3ffffffffffffffffffffffffffffffff 0000000000000fffffedcba9876543212 0000000000000fffffedcba9876543211 3fffffffffffffffffffffffffffffffd",
+    "TRACE dec -81985529216486895 -645555348161314 -17 11000101",
+    "TRACE min 000000000000080000000000000000000 000000000000000000000000000000000 3ffffffffffffffffffffffffffffffff 3ffffffffffff80000000000000000000",
+    "TRACE large 3ffffffffffffffffffffffffffffffff",
+    "TRACE x xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxx01",
+    "TRACE z zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz 1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111101"
+  ],
+  "context": [
+    "TRACE context 000b 0004 0001 000b fffb 0007 fffc fffd",
+    "TRACE branches ffff 0000 fff9 0009 0099 -3 -1 count=0 chosen=1",
+    "TRACE mux 1111111111111xx1 000000000000x00x",
+    "TRACE signx xxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxx"
+  ],
+  "parallel": [],
+  "parameters": [
+    "TRACE params -9 -11 9 9"
+  ]
+}

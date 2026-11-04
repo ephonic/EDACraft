@@ -1,0 +1,1 @@
+module top;logic[4:0] q[$]='{5'b10101,5'b00110};logic[3:0] r[$];logic[15:0] value;initial begin r={<<3{q}};$display("TRACE partial %0d %h %h %h",r.size(),r[0],r[1],r[2]);value={>>{q}};$display("TRACE packed %h",value);end endmodule

@@ -1,0 +1,1 @@
+module top;process worker;int value=0;initial begin fork begin worker=process::self();#10;value=99;end join_none wait(worker!=null);#1;worker.kill();worker.await();$display("TRACE killed %0d %0d",worker.status(),value);#20;$display("TRACE later %0d",value);end endmodule

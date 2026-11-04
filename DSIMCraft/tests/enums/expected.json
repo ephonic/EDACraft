@@ -1,0 +1,6 @@
+{
+ "values":["TRACE values 0 1 ffffffffffffffff z0x1 000000000000000010000000000000001 3"],
+ "scopes":["TRACE nested 1fff 1fff","TRACE scopes f0 12"],
+ "hierarchy":["TRACE hierarchy 3fffffffffffffffffffffffffffffffc 000000000000000000000000000000008"],
+ "parallel":[]
+}

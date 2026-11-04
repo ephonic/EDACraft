@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "simulator": "vcs",
+  "complete_uvm_source": true,
+  "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+  "uvm_source_files": 181,
+  "uvm_pkg_sha256": "4c1516f91172fc24e9d8f023911ffcb5718da281f285f3062547553c09be60e6",
+  "smoke_sha256": "cebcfc4562d2608bee7dae5b3e56501820d612b20923427e5cb14a8e92bac2bb",
+  "stages": {
+    "compile": {
+      "status": "PASS",
+      "command": [
+        "/apps/EDAs/synopsys2024/vcs/W-2024.09/bin/vcs",
+        "-full64",
+        "-sverilog",
+        "-top",
+        "top",
+        "+incdir+/tmp/dsim-m228-uvm-src/src",
+        "+define+UVM_NO_DPI",
+        "/tmp/dsim-m228-uvm-src/src/uvm_pkg.sv",
+        "/tmp/dsim-m236-oracle-src/tests/uvm_preprocess/interface_calls.sv",
+        "-o",
+        "/tmp/dsim-m236-vcs-uvm/native"
+      ],
+      "exit_code": 0,
+      "seconds": 16.43939950101776
+    },
+    "run": {
+      "status": "PASS",
+      "command": [
+        "/tmp/dsim-m236-vcs-uvm/native"
+      ],
+      "exit_code": 0,
+      "seconds": 3.521983439975884
+    }
+  },
+  "model_generated": false,
+  "native_generated": true,
+  "hello_pass": true,
+  "defines": [
+    "UVM_NO_DPI"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "randc_array": "module top;class C;randc int data[];endclass endmodule",
+  "random_class_array": "module top;class A;rand int x;endclass class C;rand A data[];endclass C c;initial begin c=new;void'(c.randomize());end endmodule",
+  "two_dimensions": "module top;class C;rand int data[][];endclass endmodule",
+  "dynamic_nba": "module top;class C;int data[];endclass C c;initial begin c=new;c.data=new[2];c.data[0]<=3;end endmodule",
+  "queue_method": "module top;class C;int data[];endclass C c;initial begin c=new;c.data.push_back(2);end endmodule",
+  "mixed_size_elements": "module top;class C;rand int data[];constraint bad {data.size()==data[0];}endclass C c;initial begin c=new;void'(c.randomize());end endmodule",
+  "random_reduction": "module top;class C;rand int data[];constraint bad {data.size()==3;data.sum()==1;}endclass C c;initial begin c=new;void'(c.randomize());end endmodule",
+  "dollar_index": "module top;class C;int data[];endclass C c;int n;initial begin c=new;n=c.data[$];end endmodule",
+  "new_queue": "module top;class C;int q[$];endclass C c;initial begin c=new;c.q=new[3];end endmodule"
+}

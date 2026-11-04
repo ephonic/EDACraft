@@ -1,0 +1,352 @@
+{
+  "basic": {
+    "top.u.a[2]": [
+      "top.u.observe_a",
+      0,
+      8
+    ],
+    "top.u.a[3]": [
+      "top.u.observe_a",
+      8,
+      8
+    ],
+    "top.u.q[5]": [
+      "top.u.observe_q",
+      0,
+      8
+    ],
+    "top.u.q[6]": [
+      "top.u.observe_q",
+      8,
+      8
+    ],
+    "top.a[0]": [
+      "top.observe_a",
+      0,
+      8
+    ],
+    "top.a[1]": [
+      "top.observe_a",
+      8,
+      8
+    ],
+    "top.q[8]": [
+      "top.observe_q",
+      0,
+      8
+    ],
+    "top.q[9]": [
+      "top.observe_q",
+      8,
+      8
+    ]
+  },
+  "matrix": {
+    "top.u.m.a[1][5]": [
+      "top.u.m.observe_a",
+      0,
+      8
+    ],
+    "top.u.m.a[1][6]": [
+      "top.u.m.observe_a",
+      8,
+      8
+    ],
+    "top.u.m.a[2][5]": [
+      "top.u.m.observe_a",
+      16,
+      8
+    ],
+    "top.u.m.a[2][6]": [
+      "top.u.m.observe_a",
+      24,
+      8
+    ],
+    "top.u.m.q[7][3]": [
+      "top.u.m.observe_q",
+      0,
+      8
+    ],
+    "top.u.m.q[7][4]": [
+      "top.u.m.observe_q",
+      8,
+      8
+    ],
+    "top.u.m.q[8][3]": [
+      "top.u.m.observe_q",
+      16,
+      8
+    ],
+    "top.u.m.q[8][4]": [
+      "top.u.m.observe_q",
+      24,
+      8
+    ],
+    "top.u.a[0][8]": [
+      "top.u.observe_a",
+      0,
+      8
+    ],
+    "top.u.a[0][9]": [
+      "top.u.observe_a",
+      8,
+      8
+    ],
+    "top.u.a[1][8]": [
+      "top.u.observe_a",
+      16,
+      8
+    ],
+    "top.u.a[1][9]": [
+      "top.u.observe_a",
+      24,
+      8
+    ],
+    "top.u.q[2][0]": [
+      "top.u.observe_q",
+      0,
+      8
+    ],
+    "top.u.q[2][1]": [
+      "top.u.observe_q",
+      8,
+      8
+    ],
+    "top.u.q[3][0]": [
+      "top.u.observe_q",
+      16,
+      8
+    ],
+    "top.u.q[3][1]": [
+      "top.u.observe_q",
+      24,
+      8
+    ],
+    "top.bank[4][0][8]": [
+      "top.observe_bank",
+      0,
+      8
+    ],
+    "top.bank[4][0][9]": [
+      "top.observe_bank",
+      8,
+      8
+    ],
+    "top.bank[4][1][8]": [
+      "top.observe_bank",
+      16,
+      8
+    ],
+    "top.bank[4][1][9]": [
+      "top.observe_bank",
+      24,
+      8
+    ],
+    "top.bank[5][0][8]": [
+      "top.observe_bank",
+      32,
+      8
+    ],
+    "top.bank[5][0][9]": [
+      "top.observe_bank",
+      40,
+      8
+    ],
+    "top.bank[5][1][8]": [
+      "top.observe_bank",
+      48,
+      8
+    ],
+    "top.bank[5][1][9]": [
+      "top.observe_bank",
+      56,
+      8
+    ],
+    "top.q[2][0]": [
+      "top.observe_q",
+      0,
+      8
+    ],
+    "top.q[2][1]": [
+      "top.observe_q",
+      8,
+      8
+    ],
+    "top.q[3][0]": [
+      "top.observe_q",
+      16,
+      8
+    ],
+    "top.q[3][1]": [
+      "top.observe_q",
+      24,
+      8
+    ]
+  },
+  "types": {
+    "top.c.a[1]": [
+      "top.c.observe_a",
+      0,
+      130
+    ],
+    "top.c.a[2]": [
+      "top.c.observe_a",
+      130,
+      130
+    ],
+    "top.c.b[4]": [
+      "top.c.observe_b",
+      0,
+      130
+    ],
+    "top.c.b[5]": [
+      "top.c.observe_b",
+      130,
+      130
+    ],
+    "top.c.q[8]": [
+      "top.c.observe_q",
+      0,
+      130
+    ],
+    "top.c.q[9]": [
+      "top.c.observe_q",
+      130,
+      130
+    ],
+    "top.d[0]": [
+      "top.observe_d",
+      0,
+      130
+    ],
+    "top.d[1]": [
+      "top.observe_d",
+      130,
+      130
+    ],
+    "top.b[6]": [
+      "top.observe_b",
+      0,
+      130
+    ],
+    "top.b[7]": [
+      "top.observe_b",
+      130,
+      130
+    ],
+    "top.q[0]": [
+      "top.observe_q",
+      0,
+      130
+    ],
+    "top.q[1]": [
+      "top.observe_q",
+      130,
+      130
+    ]
+  },
+  "timing": {
+    "top.c.a[0]": [
+      "top.c.observe_a",
+      0,
+      8
+    ],
+    "top.c.a[1]": [
+      "top.c.observe_a",
+      8,
+      8
+    ],
+    "top.c.q[2]": [
+      "top.c.observe_q",
+      0,
+      8
+    ],
+    "top.c.q[3]": [
+      "top.c.observe_q",
+      8,
+      8
+    ],
+    "top.d[0]": [
+      "top.observe_d",
+      0,
+      8
+    ],
+    "top.d[1]": [
+      "top.observe_d",
+      8,
+      8
+    ],
+    "top.q[5]": [
+      "top.observe_q",
+      0,
+      8
+    ],
+    "top.q[6]": [
+      "top.observe_q",
+      8,
+      8
+    ]
+  },
+  "parallel": {
+    "top.left.d[0]": [
+      "top.left.observe_d",
+      0,
+      8
+    ],
+    "top.left.d[1]": [
+      "top.left.observe_d",
+      8,
+      8
+    ],
+    "top.left.q[5]": [
+      "top.left.observe_q",
+      0,
+      8
+    ],
+    "top.left.q[6]": [
+      "top.left.observe_q",
+      8,
+      8
+    ],
+    "top.right.d[0]": [
+      "top.right.observe_d",
+      0,
+      8
+    ],
+    "top.right.d[1]": [
+      "top.right.observe_d",
+      8,
+      8
+    ],
+    "top.right.q[5]": [
+      "top.right.observe_q",
+      0,
+      8
+    ],
+    "top.right.q[6]": [
+      "top.right.observe_q",
+      8,
+      8
+    ],
+    "top.a[0]": [
+      "top.observe_a",
+      0,
+      8
+    ],
+    "top.a[1]": [
+      "top.observe_a",
+      8,
+      8
+    ],
+    "top.b[2]": [
+      "top.observe_b",
+      0,
+      8
+    ],
+    "top.b[3]": [
+      "top.observe_b",
+      8,
+      8
+    ]
+  }
+}

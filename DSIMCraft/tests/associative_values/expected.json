@@ -1,0 +1,36 @@
+{
+  "uvm": [
+    "TRACE pending 0 1",
+    "TRACE output 1 1 0"
+  ],
+  "input": [
+    "TRACE input 7 13 1"
+  ],
+  "inout": [
+    "TRACE private 7 1",
+    "TRACE inout 11 9 2 0"
+  ],
+  "function": [
+    "TRACE function 1 6 0 5"
+  ],
+  "recursive": [
+    "TRACE recursive 20 5"
+  ],
+  "object": [
+    "TRACE object 1 12 0"
+  ],
+  "multidim": [
+    "TRACE multidim 1 7 9 0"
+  ],
+  "task_recursive": [
+    "TRACE recursive pending 1 9",
+    "TRACE recursive task 4 110 111 112 9"
+  ],
+  "concurrent": [
+    "TRACE concurrent pending 3 4",
+    "TRACE concurrent 4 10 11 20 21"
+  ],
+  "subarray": [
+    "TRACE subarray 2 10 9 15 2"
+  ]
+}

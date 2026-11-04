@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "complete_uvm_source": true,
+  "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+  "test_sha256": "16d8d5dd9156f9dae343aa8b922f4b33f09122ed0880702150554e18bf30cde8",
+  "compiler": "/Users/yangfan/vibe-coding/dsim-test/releases/20261104T060449560625Z-8991211ac28a/dsim",
+  "native_optimization": "-O0",
+  "native_reused_after_complete_cpp_identity": true,
+  "trace": [
+    "TRACE REAL_UVM_SMOKE PACKING 8196 8196"
+  ],
+  "cpp_sha256": "96e4ec4d2ba6dcca955370e995f3bb0fe735e3cff39d426ab189901c4707517f"
+}

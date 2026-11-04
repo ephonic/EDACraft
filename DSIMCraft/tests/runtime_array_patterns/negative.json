@@ -1,0 +1,11 @@
+{
+  "fixed_empty": "module top;int a[2];initial a='{};endmodule",
+  "packed_empty": "module top;typedef struct packed{int a;} T;T x;initial x='{};endmodule",
+  "enum_element": "module top;typedef enum{A,B} T;T a[];initial a='{1};endmodule",
+  "class_element": "module top;class A;endclass class B;endclass A a[$];B b;initial begin b=new;a='{b};end endmodule",
+  "keyed": "module top;int a[];initial a='{default:1};endmodule",
+  "empty_scalar": "module top;int a;initial a={};endmodule",
+  "empty_lvalue": "module top;initial {}=1;endmodule",
+  "empty_arithmetic": "module top;int a;initial a={}+1;endmodule",
+  "nested_empty_concat": "module top;int q[$];initial q={{},5,{}};endmodule"
+}

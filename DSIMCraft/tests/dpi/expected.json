@@ -1,0 +1,29 @@
+{
+  "atoms": [
+    "TRACE atoms -7 65244 -4999999997 fedcba9876543210",
+    "TRACE scalar 0 1 x z 1",
+    "TRACE out 16 -11 hello dpi retained",
+    "TRACE alias 22"
+  ],
+  "vectors": [
+    "TRACE vector 1 0dd99dd11dd99dd11 1",
+    "TRACE vector2 000000000000000000000000000000000 123456789abcdef01"
+  ],
+  "callbacks": [
+    "TRACE callback 137 1 1",
+    "TRACE again 119 2 2"
+  ],
+  "packages": [
+    "TRACE package 9 1 0",
+    "TRACE later 10"
+  ],
+  "rollback": [
+    "TRACE bump 1",
+    "TRACE count 2 1",
+    "TRACE final 4"
+  ],
+  "export_types": [
+    "TRACE exports 42 2",
+    "TRACE repeat 42 4"
+  ]
+}

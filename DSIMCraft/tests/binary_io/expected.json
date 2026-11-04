@@ -1,0 +1,62 @@
+{
+  "packed": {
+    "output": [
+      "TRACE packed 3 123456 3 0",
+      "TRACE short 1 010000 9 1",
+      "TRACE empty 0 000000",
+      "TRACE twelve 2 234",
+      "TRACE five 1 12",
+      "TRACE wide 9 123456789abcdef00100 1",
+      "TRACE zero 2 0012 1"
+    ],
+    "files": {
+      "input.bin": "123456789abcdef001"
+    }
+  },
+  "arrays": {
+    "output": [
+      "TRACE asc 8 1234 5678 9abc def0 8",
+      "TRACE desc 8 def0 9abc 5678 1234",
+      "TRACE range 4 feed 1234 5678 feed",
+      "TRACE descending-range 4 feed 5678 1234 feed",
+      "TRACE short-array 1 feed feed 9 1",
+      "TRACE count-zero 0 0",
+      "TRACE clamp 4 1234 5678 4",
+      "TRACE twelve-array 6 234 678 abc"
+    ],
+    "files": {
+      "input.bin": "123456789abcdef001"
+    }
+  },
+  "targets": {
+    "output": [
+      "TRACE order 2 3 feed 1234",
+      "TRACE selected-short 1 1 0100",
+      "TRACE selected-empty 0 0 0100",
+      "TRACE part 1 ab010001",
+      "TRACE part-empty 0 abcdef01",
+      "TRACE ref 2 1234"
+    ],
+    "files": {
+      "input.bin": "123456789abcdef001"
+    }
+  },
+  "automatic": {
+    "output": [
+      "TRACE array-ref 4 1234 5678",
+      "TRACE local 9 123456789abcdef00100",
+      "TRACE caller feed 1234 5678 feed"
+    ],
+    "files": {
+      "input.bin": "123456789abcdef001"
+    }
+  },
+  "parallel": {
+    "output": [
+      "TRACE parallel 123480"
+    ],
+    "files": {
+      "input.bin": "123456789abcdef001"
+    }
+  }
+}

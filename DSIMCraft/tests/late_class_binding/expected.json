@@ -1,0 +1,24 @@
+{
+  "factory": [
+    "TRACE factory 1 41 1"
+  ],
+  "formatted_specialization": [
+    "TRACE done"
+  ],
+  "local_type": [
+    "TRACE local 56",
+    "TRACE again 57"
+  ],
+  "static_specialization": [
+    "TRACE late 56",
+    "TRACE reused 57",
+    "TRACE other 24"
+  ],
+  "string_queries": [
+    "TRACE empty 0",
+    "TRACE queries 24 3"
+  ],
+  "virtual_closure": [
+    "TRACE virtual closure 50 2"
+  ]
+}

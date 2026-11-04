@@ -1,0 +1,14 @@
+{
+  "array": "module top;class C;event e[2];endclass C c;initial c=new;endmodule",
+  "initializer": "module top;class C;event e=null;endclass C c;initial c=new;endmodule",
+  "alias": "module top;class C;event e,f=e;endclass C c;initial c=new;endmodule",
+  "const": "module top;class C;const event e;endclass C c;initial c=new;endmodule",
+  "rand": "module top;class C;rand event e;endclass C c;initial c=new;endmodule",
+  "edge": "module top;class C;event e;endclass C c;initial begin c=new;@(posedge c.e);end endmodule",
+  "value": "module top;class C;event e;endclass C c;int x;initial begin c=new;x=c.e;end endmodule",
+  "assignment": "module top;class C;event e;endclass C c;initial begin c=new;c.e=1;end endmodule",
+  "select": "module top;class C;event e;endclass C c;int x;initial begin c=new;x=c.e[0];end endmodule",
+  "method": "module top;class C;event e;endclass C c;initial begin c=new;wait(c.e.triggered());end endmodule",
+  "nba_control": "module top;class C;event e;endclass C c;int x;initial begin c=new;x<=@(c.e) 7;end endmodule",
+  "wait_order": "module top;class C;event e;endclass C c;initial begin c=new;wait_order(c.e) ;end endmodule"
+}

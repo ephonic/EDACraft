@@ -1,0 +1,26 @@
+{
+  "basic": [
+    "TRACE basic 10000000000000005 17"
+  ],
+  "nested": [
+    "TRACE nested 400000000000000003"
+  ],
+  "directions": [
+    "TRACE directions 5 5 11 6"
+  ],
+  "extern": [
+    "TRACE extern 10000000000000009",
+    "TRACE default 10000000000000005"
+  ],
+  "clones": [
+    "TRACE clone 8 04",
+    "TRACE clone 129 000000000000000000000000000000004"
+  ],
+  "escaped": [
+    "TRACE escaped 154"
+  ],
+  "rollback": [
+    "TRACE rollback 7 1"
+  ],
+  "parallel": []
+}

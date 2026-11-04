@@ -1,0 +1,6 @@
+{
+  "key_class": "module top;class A;endclass class B;endclass class H;string x[A];endclass H h;B b;initial begin h=new;b=new;h.x[b]=\"bad\";end endmodule",
+  "element_type": "module top;class H;string x[int];int y[int];endclass H h;initial begin h=new;h.x=h.y;end endmodule",
+  "nba": "module top;class H;string x[int];endclass H h;initial begin h=new;h.x[1]<=\"bad\";end endmodule",
+  "const_array": "module top;class H;const string x[int];endclass endmodule"
+}

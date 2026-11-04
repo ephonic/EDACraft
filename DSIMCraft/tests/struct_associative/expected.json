@@ -1,0 +1,10 @@
+{
+  "access": ["TRACE struct access 9"],
+  "defaults": ["TRACE struct defaults 2"],
+  "copy": ["TRACE struct copies 8"],
+  "calls": ["TRACE struct calls 10"],
+  "methods": ["TRACE struct methods 12"],
+  "classes": ["TRACE struct classes 10"],
+  "rollback": ["TRACE struct rollback 7"],
+  "handles": ["TRACE struct handles 16"]
+}

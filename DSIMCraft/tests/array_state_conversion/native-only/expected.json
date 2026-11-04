@@ -1,0 +1,9 @@
+{
+  "constructors": [
+    "TRACE constructor 1 3 84 cd 00",
+    "TRACE four 84 cd 00 xx",
+    "TRACE int 01234567 fffffffe 00000000",
+    "TRACE fixed_new 84 ff 00",
+    "TRACE wide_new 0123456789abcdef00123456 000000000000000000000000"
+  ]
+}

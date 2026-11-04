@@ -1,0 +1,35 @@
+{
+  "basic": [
+    "TRACE GAP virtual_interface 1"
+  ],
+  "binding": [
+    "TRACE virtual binding 3c a6 1"
+  ],
+  "events": [
+    "TRACE virtual events 25 13 1 37"
+  ],
+  "typed": [
+    "TRACE virtual typed 1234 5678"
+  ],
+  "capture": [
+    "TRACE virtual capture b 0 1"
+  ],
+  "prototype": [
+    "TRACE virtual package 1"
+  ],
+  "reference": [
+    "TRACE virtual ref 5a 0"
+  ],
+  "compound": [
+    "TRACE virtual compound -4 4 1 11 2"
+  ],
+  "wait_binding": [
+    "TRACE virtual wait binding 3"
+  ],
+  "hierarchy": [
+    "TRACE virtual hierarchy ac"
+  ],
+  "lexical": [
+    "TRACE virtual lexical 8 a5"
+  ]
+}

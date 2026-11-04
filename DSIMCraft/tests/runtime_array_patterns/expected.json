@@ -1,0 +1,14 @@
+{
+  "queue": [
+    "TRACE queue 16"
+  ],
+  "classes": [
+    "TRACE classes 12"
+  ],
+  "packed": [
+    "TRACE packed 7fffffffffffffffe"
+  ],
+  "rollback": [
+    "TRACE rollback 7 1 0"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "storage": [
+    "TRACE class handle dynamic null resize copy identity dispatch pass"
+  ],
+  "queries": [
+    "TRACE class container system queries dimensions receiver pass"
+  ],
+  "state": [
+    "TRACE random handle declarations scalar selection state constraints pass"
+  ],
+  "queues": [
+    "TRACE random queues sizes bounded enums modes selected properties pass"
+  ],
+  "queue_limits": [
+    "TRACE random bounded queue unsat atomicity empty retained sizes pass"
+  ],
+  "rollback": [
+    "TRACE class handle dynamic checkpoint heap identity pass"
+  ]
+}

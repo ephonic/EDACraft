@@ -1,0 +1,1 @@
+module top;virtual class Base;virtual task unused();$printtimescale;endtask virtual function int value();return 13;endfunction endclass Base item;int observed=7;initial begin if(item!=null)begin item.unused();observed=item.value();end $display("TRACE abstract %0d",observed);end endmodule

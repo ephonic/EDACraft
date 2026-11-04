@@ -1,0 +1,10 @@
+{
+  "null_query": {
+    "source": "class Box;event pulse;endclass module top;Box box;initial begin box=new();box.pulse=null;$display(\"%0d\",box.pulse.triggered);end endmodule\n",
+    "diagnostic": "null or invalid named event handle"
+  },
+  "null_receiver": {
+    "source": "class Box;event pulse;endclass module top;Box box;initial box.pulse=null;endmodule\n",
+    "diagnostic": "null or invalid class object access"
+  }
+}

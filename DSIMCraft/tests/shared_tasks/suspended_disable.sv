@@ -1,0 +1,1 @@
+module top;int value;task automatic inner(ref int v);#20;v=99;endtask task automatic outer(ref int v);begin:scope fork begin #1;disable scope;end join_none inner(v);end v+=2;endtask initial begin outer(value);#30;$display("TRACE suspended %0d",value);end endmodule

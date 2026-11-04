@@ -1,0 +1,1 @@
+module top;logic[3:0] head,tail;bit[3:0] data[];int observed;initial begin {>>{head,data,tail}}=20'habcde;observed=data.size();$display("TRACE mixed %h %0d %h %h %h %h",head,observed,data[0],data[1],data[2],tail);end endmodule

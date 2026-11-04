@@ -1,0 +1,4 @@
+// Sparse addressing, underscores, four-state extension and sparse updates.
+@2 12 c_d /* words 2 and 3 */
+@5 x z 1x
+@9 99

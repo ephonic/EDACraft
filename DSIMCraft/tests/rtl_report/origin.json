@@ -1,0 +1,20 @@
+{
+  "source": "/Users/yangfan/vibe-coding/dsim-test/rtl-tests",
+  "sha256": {
+    "fifo/rtl.sv": "2bd9cffaefd2701e92b0fef538d233308969bc9616d520202b43a5329ac8ef12",
+    "fifo/tb.sv": "2750e4f4be4b930d6a1843826a033a65d3eaac2b92339d11cac4078a5fba9b8c",
+    "alu/rtl.sv": "a870243ad3bf1b53890be00edcfd1dd41ab8fab25106dd8800e4de8e6b638693",
+    "alu/tb.sv": "1bab0fdb783158f200d18f65afe13d9825feff56efb424aac6da3238ee9bd93f",
+    "uart/rtl.sv": "31cbf6b2e92f3ee917de05d6f7db3a48186462d0c60aebfb492eb1fe69a57e18",
+    "uart/tb.sv": "9ef2795f71e10eef53ff27b4d211e4aca45152684e3ecaaa072eaa4e48dec26b",
+    "fir/rtl.sv": "3e7750ad218533a056b317978d0f564f32a274ed738f2a22c3ea9c1208e61ac7",
+    "fir/tb.sv": "d589ce42a6f2b97d5270cd5f550c00c04c13c70e3832819f9dd4b76f4e07c2ed",
+    "cdc/rtl.sv": "74bf1155773913ca4c8ed668c5cea6731a87be6e677d45016c59ddead910b87b",
+    "cdc/tb.sv": "73b9e56f782abd5bbe93a854a4e4f6f51171ef798247feaeec0ece856d320128",
+    "svfeatures/rtl.sv": "f8528d7e3ec9dac0158ea53ee04d007d56877da5e0f1b88a8a440b32e2257966",
+    "svfeatures/tb.sv": "8f68b9c3d78caec08d5fdd318b5d0865445bf885f3f4a6637348ba36a7e179cd",
+    "focused/p1.sv": "075cc753a59032ed3b9c41ad16695bc6ac63e1017fb1d6013da4dec0f89dc294",
+    "focused/p2.sv": "957277561c09a6b8834cd0ddcde8733be8647e2d1195722aefb4d4e0827e13e4",
+    "focused/p3.sv": "f3c487b0289a8b98c9ea7b47686d8d2fd2f43dd87bbc1b5cce99910875302c4b"
+  }
+}

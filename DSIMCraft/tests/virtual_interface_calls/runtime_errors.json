@@ -1,0 +1,10 @@
+{
+  "null_function": {
+    "source": "interface bus_if;int state;function automatic int read(input int value);return state+value;endfunction task automatic write(ref int value);#1;value++;endtask modport ro(input state);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial $display(\"%d\",vif.read(1));endmodule\n",
+    "diagnostic": "null virtual interface subroutine receiver"
+  },
+  "null_task": {
+    "source": "interface bus_if;int state;function automatic int read(input int value);return state+value;endfunction task automatic write(ref int value);#1;value++;endtask modport ro(input state);endinterface\nmodule top;bus_if a();virtual bus_if vif;int data;initial vif.write(data);endmodule\n",
+    "diagnostic": "null virtual interface subroutine receiver"
+  }
+}

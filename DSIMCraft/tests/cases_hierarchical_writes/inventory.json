@@ -1,0 +1,449 @@
+{
+  "accumulate_store_candidate": {
+    "archive": "rtlagent-dual-20261028T200711-9a3dc12a-accumulate_store_candidate",
+    "events": 298,
+    "outputs": [
+      [
+        "value",
+        64
+      ],
+      [
+        "other",
+        64
+      ],
+      [
+        "captured",
+        64
+      ],
+      [
+        "held_tag",
+        13
+      ]
+    ],
+    "files": [
+      "rtl.sv",
+      "tb.sv"
+    ],
+    "input_sha256": {
+      "rtl.sv": "60cc7149a4fd5d0761e39b35ff7672780c1fc69357107811442af99600f19a66",
+      "tb.sv": "852603bc7c6d1091ccc39f13d6f098d7c4c360661bc463086a029827827452e1"
+    },
+    "oracle_events_sha256": "a46d72090d2d56f9fad77ea94728a4954f85691c73380d200cedde2a043df508",
+    "expected_trace_sha256": "55925ed02cef0aa554c85094c919b09fb2d436490d3c8e1b5e18166e5610ce20",
+    "vcs_trace_sha256": "55925ed02cef0aa554c85094c919b09fb2d436490d3c8e1b5e18166e5610ce20"
+  },
+  "accumulate_store_prefix1": {
+    "archive": "rtlagent-dual-20261028T205932-398c576a-accumulate_store_prefix1",
+    "events": 298,
+    "outputs": [
+      [
+        "value",
+        64
+      ],
+      [
+        "other",
+        64
+      ],
+      [
+        "captured",
+        64
+      ],
+      [
+        "held_tag",
+        13
+      ]
+    ],
+    "files": [
+      "rtl.sv",
+      "tb.sv"
+    ],
+    "input_sha256": {
+      "rtl.sv": "60cc7149a4fd5d0761e39b35ff7672780c1fc69357107811442af99600f19a66",
+      "tb.sv": "424037ad1670129c74b11d242e2a56187a45759fe9cff47ed59393d7f8ef28a2"
+    },
+    "oracle_events_sha256": "699c6d36a591e47ec74661031d19eb94a9c8a0d7859b4b96f0e24014d3d783e9",
+    "expected_trace_sha256": "1d7bc79baac984e2e9c5d8b1772595992a3e4f3d848612cc0e2241eebdfb5921",
+    "vcs_trace_sha256": "1d7bc79baac984e2e9c5d8b1772595992a3e4f3d848612cc0e2241eebdfb5921"
+  },
+  "accumulate_store_prefix2": {
+    "archive": "rtlagent-dual-20261028T205932-398c576a-accumulate_store_prefix2",
+    "events": 298,
+    "outputs": [
+      [
+        "value",
+        64
+      ],
+      [
+        "other",
+        64
+      ],
+      [
+        "captured",
+        64
+      ],
+      [
+        "held_tag",
+        13
+      ]
+    ],
+    "files": [
+      "rtl.sv",
+      "tb.sv"
+    ],
+    "input_sha256": {
+      "rtl.sv": "5ecf960669b193971cde22c70d33fb5d7883ec5c58336eef6731b90351934418",
+      "tb.sv": "f93b4a2876afe4f7cb98a6157e220a4b978be29b268e6141155a46066dcae5b9"
+    },
+    "oracle_events_sha256": "4811fd07afaf596e1a47331f344904ca4d60f6f621a603cded22d333f29326e6",
+    "expected_trace_sha256": "2952e4072020220a717a03e54bda451f187b1d1e2551a1d418a31bc2b50b0063",
+    "vcs_trace_sha256": "2952e4072020220a717a03e54bda451f187b1d1e2551a1d418a31bc2b50b0063"
+  },
+  "gather_baseline": {
+    "archive": "rtlagent-dual-20261028T223533-8af52330-gather_baseline",
+    "events": 6144,
+    "outputs": [
+      [
+        "ready",
+        1
+      ],
+      [
+        "valid",
+        1
+      ],
+      [
+        "value",
+        16
+      ],
+      [
+        "tag",
+        13
+      ],
+      [
+        "history",
+        16
+      ],
+      [
+        "mem0",
+        16
+      ],
+      [
+        "mem1",
+        16
+      ],
+      [
+        "mem2",
+        16
+      ],
+      [
+        "mem3",
+        16
+      ],
+      [
+        "mem4",
+        16
+      ],
+      [
+        "mem5",
+        16
+      ],
+      [
+        "mem6",
+        16
+      ],
+      [
+        "mem7",
+        16
+      ]
+    ],
+    "files": [
+      "rtl.sv",
+      "tb.sv",
+      "stimulus.hex"
+    ],
+    "input_sha256": {
+      "rtl.sv": "6ee91689cf7657a4498a8c8976d44842ad39017c043b99a329e0c21fa3152e18",
+      "tb.sv": "bd14c0ae8fc036a464bfb8bdb9c150b3b51eaf769dc8089809f0065905c14791",
+      "stimulus.hex": "d14d238a8ec13503ce8456f58c902f90d165b5e0bd66523ae37fa56083815058"
+    },
+    "oracle_events_sha256": "fd7f4ab9af46e71e6e419aa8d3375935d644af530563c27467ed4ed89d12d4ee",
+    "expected_trace_sha256": "5b69e1232712460e6131badb1f9073a2309abc0a7e0e4bbdaf9bd4fac5836abc",
+    "vcs_trace_sha256": "5b69e1232712460e6131badb1f9073a2309abc0a7e0e4bbdaf9bd4fac5836abc"
+  },
+  "gather_candidate": {
+    "archive": "rtlagent-dual-20261028T223533-8af52330-gather_candidate",
+    "events": 6144,
+    "outputs": [
+      [
+        "ready",
+        1
+      ],
+      [
+        "valid",
+        1
+      ],
+      [
+        "value",
+        16
+      ],
+      [
+        "tag",
+        13
+      ],
+      [
+        "history",
+        16
+      ],
+      [
+        "mem0",
+        16
+      ],
+      [
+        "mem1",
+        16
+      ],
+      [
+        "mem2",
+        16
+      ],
+      [
+        "mem3",
+        16
+      ],
+      [
+        "mem4",
+        16
+      ],
+      [
+        "mem5",
+        16
+      ],
+      [
+        "mem6",
+        16
+      ],
+      [
+        "mem7",
+        16
+      ]
+    ],
+    "files": [
+      "rtl.sv",
+      "tb.sv",
+      "stimulus.hex"
+    ],
+    "input_sha256": {
+      "rtl.sv": "de06a5a926c52dd8d1e0369fb2d43d424093ac9320720cc9071aa270f67a0dff",
+      "tb.sv": "bd14c0ae8fc036a464bfb8bdb9c150b3b51eaf769dc8089809f0065905c14791",
+      "stimulus.hex": "d93572e734bac235818291e73f8f8e9aa8f4a1d6df4a85e4506cf6d089e98a31"
+    },
+    "oracle_events_sha256": "eef5f96a50cab4b172f9bb66ee0bc2208856f9c84045d66986481e3f335039a0",
+    "expected_trace_sha256": "f691d686b9a85982034fa60a43fe95887f10ce4e8d1c3d9205b0ebf5114fccb1",
+    "vcs_trace_sha256": "f691d686b9a85982034fa60a43fe95887f10ce4e8d1c3d9205b0ebf5114fccb1"
+  },
+  "lut_baseline": {
+    "archive": "rtlagent-dual-20261028T223533-8af52330-lut_baseline",
+    "events": 6144,
+    "outputs": [
+      [
+        "ready",
+        1
+      ],
+      [
+        "valid",
+        1
+      ],
+      [
+        "value",
+        32
+      ],
+      [
+        "tag",
+        13
+      ],
+      [
+        "history",
+        32
+      ],
+      [
+        "mem0",
+        32
+      ],
+      [
+        "mem1",
+        32
+      ],
+      [
+        "mem2",
+        32
+      ],
+      [
+        "mem3",
+        32
+      ],
+      [
+        "mem4",
+        32
+      ],
+      [
+        "mem5",
+        32
+      ],
+      [
+        "mem6",
+        32
+      ],
+      [
+        "mem7",
+        32
+      ],
+      [
+        "mem8",
+        32
+      ],
+      [
+        "mem9",
+        32
+      ],
+      [
+        "mem10",
+        32
+      ],
+      [
+        "mem11",
+        32
+      ],
+      [
+        "mem12",
+        32
+      ],
+      [
+        "mem13",
+        32
+      ],
+      [
+        "mem14",
+        32
+      ],
+      [
+        "mem15",
+        32
+      ]
+    ],
+    "files": [
+      "rtl.sv",
+      "tb.sv",
+      "stimulus.hex"
+    ],
+    "input_sha256": {
+      "rtl.sv": "c876a1cd4ebb495c62dd85421d4027e3fb19b973317c89bd3acbfed76182871a",
+      "tb.sv": "4af99f0b04ae97c3a1315025e0241b155f39cf8cc2f571accb4385072a221eaa",
+      "stimulus.hex": "4e8d92f8ccd675acfaab9dada777327a8cdf9bc3c3c6e67a37539a4313fc3740"
+    },
+    "oracle_events_sha256": "fe53c4e96ebad3c1932cc14520419e34dc898390b81b878e0e2a7d908d8b9c5c",
+    "expected_trace_sha256": "0de9c8351aaaa415c6102cfb48b555f80852330eb806cc6314b03bb244e860d1",
+    "vcs_trace_sha256": "0de9c8351aaaa415c6102cfb48b555f80852330eb806cc6314b03bb244e860d1"
+  },
+  "lut_candidate": {
+    "archive": "rtlagent-dual-20261028T223533-8af52330-lut_candidate",
+    "events": 6144,
+    "outputs": [
+      [
+        "ready",
+        1
+      ],
+      [
+        "valid",
+        1
+      ],
+      [
+        "value",
+        32
+      ],
+      [
+        "tag",
+        13
+      ],
+      [
+        "history",
+        32
+      ],
+      [
+        "mem0",
+        32
+      ],
+      [
+        "mem1",
+        32
+      ],
+      [
+        "mem2",
+        32
+      ],
+      [
+        "mem3",
+        32
+      ],
+      [
+        "mem4",
+        32
+      ],
+      [
+        "mem5",
+        32
+      ],
+      [
+        "mem6",
+        32
+      ],
+      [
+        "mem7",
+        32
+      ],
+      [
+        "mem8",
+        32
+      ],
+      [
+        "mem9",
+        32
+      ],
+      [
+        "mem10",
+        32
+      ],
+      [
+        "mem11",
+        32
+      ],
+      [
+        "mem12",
+        32
+      ],
+      [
+        "mem13",
+        32
+      ],
+      [
+        "mem14",
+        32
+      ],
+      [
+        "mem15",
+        32
+      ]
+    ],
+    "files": [
+      "rtl.sv",
+      "tb.sv",
+      "stimulus.hex"
+    ],
+    "input_sha256": {
+      "rtl.sv": "3c74f55f4c23dfa3b519351f13991ca1d64a4412c4244b98c93e52d24a844c0b",
+      "tb.sv": "4af99f0b04ae97c3a1315025e0241b155f39cf8cc2f571accb4385072a221eaa",
+      "stimulus.hex": "ead54b283218360c1c4a43f49afbe5d023e3dd61328d71b6648c2ebacd7e5dc2"
+    },
+    "oracle_events_sha256": "c04b7813b3835bb7ba3478c836b1846728a311546abf88bfa41a9033585e36d4",
+    "expected_trace_sha256": "44d06ecfe7a289adb5fc8e5650fe4ad0bd299717a2e3ab0751f00c232f8b63fe",
+    "vcs_trace_sha256": "44d06ecfe7a289adb5fc8e5650fe4ad0bd299717a2e3ab0751f00c232f8b63fe"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "performance_comparison": false,
+  "models": {
+    "basic": {
+      "status": "PASS",
+      "trace": [
+        "TRACE stream enum 3 A"
+      ],
+      "source_sha256": "f1e7d47b6671a3c66ca65a2b56049db5195cf2291f2d7d895c730b08581f3939",
+      "seconds": 11.241747511026915
+    },
+    "function": {
+      "status": "PASS",
+      "trace": [
+        "TRACE stream enum function 10 B"
+      ],
+      "source_sha256": "a8e995c3fd51b8c463dac682ab6162c16e9974f5a538850407d0feeafd774ccc",
+      "seconds": 11.204791426949669
+    },
+    "property": {
+      "status": "PASS",
+      "trace": [
+        "TRACE stream enum property -2 NEG"
+      ],
+      "source_sha256": "42934710ec9d493f97f49850d8341d15b3fc58d32d8cd8e79da685aaa1071a22",
+      "seconds": 11.33911929797614
+    }
+  }
+}

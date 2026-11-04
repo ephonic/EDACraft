@@ -1,0 +1,21 @@
+{
+  "automatic": [
+    "TRACE automatic [one/saved/done] [two/saved/done] 2"
+  ],
+  "conversions": [
+    "TRACE conversions [tail/classic] 4"
+  ],
+  "events": [
+    "TRACE events [<longer>] 3 8"
+  ],
+  "lifetime": [
+    "TRACE lifetime [xyxyxyxy] 8"
+  ],
+  "parallel": [],
+  "references": [
+    "TRACE references [outside/seen/done/outside/seen] [outside/seen] 30"
+  ],
+  "signatures": [
+    "TRACE signatures [[[x?]+]] [[task?]] [prealpha/task] 7"
+  ]
+}

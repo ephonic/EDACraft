@@ -1,0 +1,43 @@
+{
+  "values": [
+    "TRACE defaults 0 00 0000 00000000 0000000000000000 000000000000000000000000000000000 00 xxxxxxxx",
+    "TRACE values 84 -124 240 -3840 61696 -268435456 4026531840 -1152921504606846976 17293822569102704640 3ffff8000000000047fffffffffffffff",
+    "TRACE extend ffffffffffffffffff84",
+    "TRACE extend 000000000000000000f0",
+    "TRACE extend fffff000000000000000",
+    "TRACE shifts e1 3c fe20 1e20 ff00000000000000 0f00000000000000",
+    "TRACE convert 00000000 00000000 0000000000000084 0 84",
+    "TRACE compound 00 000000000000000000000000000000000"
+  ],
+  "ports": [
+    "TRACE ports 84 -2 -5 -7 -11 00000000ffffffeb",
+    "TRACE ports 00 1 0 0 94562317435394 0000000000000001",
+    "TRACE ports 01 3 4 5 6 000000000000000f"
+  ],
+  "subroutines": [
+    "TRACE defaults 00000000 00 0000000000000000",
+    "TRACE calls 85 5555 00000003 0000000100000000 00123456789abcdef012 0",
+    "TRACE task -124 -114",
+    "TRACE return 00000000"
+  ],
+  "memory": [
+    "TRACE defaults 00000000 00 00000000000000000000",
+    "TRACE read 00000102 84 00123456789abcdef012 00000000 bc",
+    "TRACE unknown 00000000 00",
+    "TRACE prefix 00000001 00000102",
+    "TRACE nba 00123456 00123456789abcdef012 00",
+    "TRACE file 00123456 80001200 ffffffff"
+  ],
+  "control": [
+    "TRACE loops 8 0",
+    "TRACE increment 00000001 ff",
+    "TRACE concat 2f xX",
+    "TRACE time1 2f 00",
+    "TRACE time3 84 84"
+  ],
+  "generate": [
+    "TRACE lane 0 -122",
+    "TRACE lane 1 -120"
+  ],
+  "parallel": []
+}

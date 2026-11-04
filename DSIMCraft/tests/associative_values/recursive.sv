@@ -1,0 +1,1 @@
+module top;typedef int map_t[int];map_t data;int observed;function automatic int calculate(input map_t values,input int n);if(n==0)return values[1];values[1]++;return calculate(values,n-1)+values[1];endfunction initial begin data[1]=5;observed=calculate(data,2);$display("TRACE recursive %0d %0d",observed,data[1]);end endmodule

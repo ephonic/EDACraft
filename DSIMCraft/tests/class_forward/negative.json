@@ -1,0 +1,94 @@
+{
+  "class_missing_unused": [
+    "class A;typedef class C;endclass",
+    "forward class has no definition in the same scope"
+  ],
+  "conflict": [
+    "typedef class C;typedef int C;",
+    "forward class typedef requires a scalar class type"
+  ],
+  "cycle": [
+    "typedef class A;typedef class B;class A extends B;endclass class B extends A;endclass",
+    "cyclic class inheritance"
+  ],
+  "missing": [
+    "typedef class C; initial $display(\"TRACE missing\");",
+    "forward class has no definition in the same scope"
+  ],
+  "outer_only": [
+    "class C;endclass class O;typedef class C;endclass",
+    "forward class has no definition in the same scope"
+  ],
+  "var_before_forward": [
+    "C c;typedef class C;class C;endclass",
+    "unknown integral type"
+  ],
+  "missing_without_forward": [
+    "class A;B b;endclass class B;endclass",
+    "unknown integral type B"
+  ],
+  "duplicate_definition": [
+    "typedef class C;class C;endclass class C;endclass",
+    "duplicate class declaration"
+  ],
+  "conflict_value": [
+    "typedef class C;int C;class C;endclass",
+    "redefine"
+  ],
+  "wrong_ref_identity": [
+    "typedef class A;class A;endclass class B;endclass B b;task automatic t(ref A a);endtask initial t(b);",
+    "matching class handle types"
+  ],
+  "wrong_alias_assignment": [
+    "typedef class A;typedef A Alias;class A;endclass class B;endclass Alias a;B b;initial a=b;",
+    "compatible object handle"
+  ],
+  "wrong_scope_definition": [
+    "typedef class C;class Outer;class C;endclass endclass",
+    "forward class has no definition in the same scope"
+  ],
+  "unused_function_initializer": [
+    "function automatic int unused();int n=missing();return n;endfunction",
+    "task/function is unknown"
+  ],
+  "unused_task_initializer": [
+    "task automatic unused();int n=missing();endtask",
+    "task/function is unknown"
+  ],
+  "local_type_declared_later": [
+    "class C;function int unused();Later value;typedef int Later;return 0;endfunction endclass",
+    "unknown integral type Later"
+  ],
+  "unused_default_call": [
+    "function automatic int unused(int x=missing());return x;endfunction",
+    "task/function is unknown"
+  ],
+  "unused_default_member": [
+    "class C;endclass C c;function automatic int unused(int x=c.missing());return x;endfunction",
+    "unknown class member"
+  ],
+  "alias_cycle": [
+    "typedef class A;typedef class B;typedef B A;typedef A B;",
+    "cyclic forward class typedef"
+  ],
+  "alias_self": [
+    "typedef class A;typedef A A;",
+    "cyclic forward class typedef"
+  ],
+  "alias_array": [
+    "typedef class A;class C;endclass typedef C A[2];",
+    "forward class typedef requires a scalar class type"
+  ],
+  "alias_wrong_ref": [
+    "typedef class A;class C;endclass class D;endclass typedef C A;D d;task automatic t(ref A a);endtask initial t(d);",
+    "matching class handle types"
+  ],
+  "alias_incomplete_actual": [
+    "typedef class A;class Box#(type T=int);T value;endclass typedef Box#(A) X;class C;endclass typedef C A;",
+    "incomplete forward class typedef"
+  ],
+  "process_wrong_key": [
+    "int a[process];class C;endclass C c;initial a[c]=1;",
+    "compatible object handle"
+  ]
+}

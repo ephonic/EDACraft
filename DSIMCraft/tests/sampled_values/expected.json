@@ -1,0 +1,21 @@
+{
+  "history": [
+    "TRACE history 8 0"
+  ],
+  "edges": [
+    "TRACE edges 9 0"
+  ],
+  "disabled": [
+    "TRACE disabled 4 0 2"
+  ],
+  "actions": [
+    "TRACE actions 4 0 9 10"
+  ],
+  "nested": [
+    "TRACE nested 7 0"
+  ],
+  "parallel": [],
+  "initial": [
+    "TRACE initial 5 0"
+  ]
+}

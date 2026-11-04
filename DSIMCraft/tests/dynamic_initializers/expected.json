@@ -1,0 +1,29 @@
+{
+  "static": [
+    "TRACE static 3 5 3 3 0 1 00000011 xxxxxxxx",
+    "TRACE local 3 5 xxxxxxxx",
+    "TRACE local 3 5 00000007",
+    "TRACE copied 9 17 17"
+  ],
+  "automatic": [
+    "TRACE auto 2 3 4 4 xxxxxxxx",
+    "TRACE auto 4 5 6 6 xxxxxxxx",
+    "TRACE seeded 3 2 3 7 3",
+    "TRACE seeded 1 2 1 9 1",
+    "TRACE fn 6 10"
+  ],
+  "block": [
+    "TRACE block 2 2 2 xxxxxxxx",
+    "TRACE block 3 2 3 00000002",
+    "TRACE nested 7",
+    "TRACE nested 8"
+  ],
+  "wide": [
+    "TRACE wide 123456789abcdef0012345ab 123456789abcdef001234567 fedcba987654321001234567 xxxxxxxxxxxxxxxxxxxxxxxx 000000000000000000000000",
+    "TRACE fixed 3 11 22 33 5 xxxxxxxx"
+  ],
+  "control": [
+    "TRACE control 42 6"
+  ],
+  "parallel": []
+}

@@ -1,0 +1,9 @@
+{
+  "report": "~/vibe-coding/dsim-test/rtl-tests/REPORT.md",
+  "report_sha256": "1e64d6f8fb92cd505b175919eee986e0ecca20f13df883f6387e4be842ca77a0",
+  "probes": {
+    "t05_random.sv": "3115e483cb6b9f8ef6132258c13cd5b9201793e272592f64df8ce60019f79d6b",
+    "t06_urandom.sv": "65033b1b4fd1077de7b130d7519d956c300350abd4576dd0a7910de89f72576f",
+    "t08_struct_arg.sv": "c82ecf19ed671d8d957bc600f17b39eadd05dda2214bb70631428d713d32f6f0"
+  }
+}

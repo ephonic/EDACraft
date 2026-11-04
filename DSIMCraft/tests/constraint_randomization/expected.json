@@ -1,0 +1,30 @@
+{
+  "enums": ["TRACE constraints enum domains callbacks modes atomicity pass"],
+  "enum_scope": ["TRACE constraints enum scope named inherited dynamic pass"],
+  "enum_wide": ["TRACE constraints enum wide signed pass"],
+  "enum_rollback": ["TRACE constraints enum cyclic checkpoint sparse domain pass"],
+  "cyclic": ["TRACE constraints cyclic permutations independent state pass"],
+  "cyclic_domains": ["TRACE constraints cyclic constrained domains exhaustion modes pass"],
+  "cyclic_rollback": ["TRACE constraints cyclic checkpoint failure disable resume pass"],
+  "cyclic_types": ["TRACE constraints cyclic inherited specialized wide fields pass"],
+  "variable_lists": ["TRACE constraints class variable lists nonrand local modes checker pass"],
+  "ordinary_receiver": ["TRACE constraints ordinary receiver randomize method pass"],
+  "integral": [
+    "TRACE constraints integral rare multivariable pass"
+  ],
+  "inheritance": [
+    "TRACE constraints inheritance callbacks inline parameters pass"
+  ],
+  "scope": [
+    "TRACE constraints scope rare unsat automatic pass"
+  ],
+  "semantics": [
+    "TRACE constraints signed wide unsat atomic pass"
+  ],
+  "rollback": [
+    "TRACE constraints checkpoint rng callbacks modes pass"
+  ],
+  "modes": [
+    "TRACE constraints individual and object modes pass"
+  ]
+}

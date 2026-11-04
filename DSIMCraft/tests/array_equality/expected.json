@@ -1,0 +1,56 @@
+{
+  "effects": [
+    "TRACE observe 1",
+    "TRACE snapshot 1",
+    "TRACE effects 2 2 1",
+    "TRACE ref 0 0",
+    "TRACE changed 1 1"
+  ],
+  "format_tasks": [
+    "TRACE swrite lhs=1 rhs=2 calls=2",
+    "TRACE sformat value=3",
+    "TRACE dynamic data -5 az",
+    "TRACE packed           msg 25"
+  ],
+  "numeric": [
+    "TRACE unknown x x 1 0",
+    "TRACE xz x x 0 1",
+    "TRACE mismatch 0 1 0 1",
+    "TRACE matrix x 1",
+    "TRACE row 1 0",
+    "TRACE matrix-change 0 1"
+  ],
+  "objects": [
+    "TRACE identity 1 0",
+    "TRACE null 1 0",
+    "TRACE distinct 0 1"
+  ],
+  "patterns": [
+    "TRACE pattern item:item[+]",
+    "TRACE field item item[+] 1",
+    "TRACE struct-text 0 1"
+  ],
+  "queues": [
+    "TRACE empty 1 0 1 0",
+    "TRACE equal 1 0 1 0",
+    "TRACE size 0 1 0 1",
+    "TRACE text 0 1",
+    "TRACE property 1",
+    "TRACE property-size 0"
+  ],
+  "registration": [
+    "TRACE registration a35 1",
+    "TRACE uninitialized xxx",
+    "TRACE independent a35"
+  ],
+  "replication": [
+    "TRACE replication 1111111 xxxxxxx xzxzxzxzxzxzxzxzxzxzxzxzxzxz",
+    "TRACE changed 1010101010101010101010101010"
+  ],
+  "string_foreach": [
+    "TRACE walk Az09 empty=1",
+    "TRACE grow abC count=3",
+    "TRACE control WY count=2",
+    "TRACE class AX"
+  ]
+}

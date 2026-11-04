@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "models": {
+    "capture": {
+      "trace": [
+        "TRACE vif capture 1 6 16 16 10"
+      ],
+      "cpp_sha256": "1cf47af8eaf248af188291996820d3ee1b76938c0ceb8e680e8cb08006a55a19"
+    }
+  },
+  "frontend_sanitized": true,
+  "native_sanitized": true
+}

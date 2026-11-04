@@ -1,0 +1,1 @@
+module top;typedef int map_t[string];class Box;map_t data;endclass Box item;int observed;task automatic replace_map(output map_t values);values["new"]=12;#1;endtask initial begin item=new();item.data["old"]=7;replace_map(item.data);observed=item.data.num();$display("TRACE object %0d %0d %0d",observed,item.data["new"],item.data.exists("old"));end endmodule

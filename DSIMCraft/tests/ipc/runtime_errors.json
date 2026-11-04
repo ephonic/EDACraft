@@ -1,0 +1,38 @@
+{
+  "null_mailbox": {
+    "source": "module top;mailbox #(int) m;int v;initial m.get(v);endmodule",
+    "diagnostic": "null or invalid class object access"
+  },
+  "null_semaphore": {
+    "source": "module top;semaphore s;initial s.get();endmodule",
+    "diagnostic": "null or invalid class object access"
+  },
+  "negative_bound": {
+    "source": "module top;mailbox m=new(-1);endmodule",
+    "diagnostic": "mailbox bound must not be negative"
+  },
+  "unknown_bound": {
+    "source": "module top;mailbox m=new(32'hx);endmodule",
+    "diagnostic": "IPC count contains X/Z"
+  },
+  "negative_get": {
+    "source": "module top;semaphore s=new(2);initial s.get(-1);endmodule",
+    "diagnostic": "semaphore key count must not be negative"
+  },
+  "negative_put": {
+    "source": "module top;semaphore s=new(2);initial s.put(-1);endmodule",
+    "diagnostic": "semaphore key count must not be negative"
+  },
+  "negative_try": {
+    "source": "module top;semaphore s=new(2);int rc;initial rc=s.try_get(-1);endmodule",
+    "diagnostic": "semaphore key count must not be negative"
+  },
+  "unknown_count": {
+    "source": "module top;semaphore s=new(2);initial s.get(32'hx);endmodule",
+    "diagnostic": "IPC count contains X/Z"
+  },
+  "dynamic_mismatch": {
+    "source": "module top;mailbox m=new;int v=3;string text;initial begin m.put(v);m.get(text);end endmodule",
+    "diagnostic": "mailbox get/peek message type mismatch"
+  }
+}

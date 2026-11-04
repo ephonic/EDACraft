@@ -1,0 +1,1 @@
+module top;typedef struct packed{logic[3:0]a;logic[3:0]b;} pair_t;pair_t p;function automatic logic[7:0] f(input pair_t v);return {v.b,v.a};endfunction initial begin p=8'h12;$display("TRACE struct %h",f(p));end endmodule

@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "complete_uvm_source": true,
+  "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+  "test_sha256": "50ebc1e47978deadf909f33a798590d17c3ed530b532b6ca1f60ef574d5b7ad9",
+  "compiler": "/apps/EDAs/own/dsim/releases/20261104T060449622672Z-8991211ac28a/dsim",
+  "native_optimization": "-O0",
+  "native_reused_after_complete_cpp_identity": true,
+  "trace": [
+    "TRACE REAL_UVM_SMOKE UTILITIES 1"
+  ],
+  "cpp_sha256": "d0766a6005c6d7f05cb8c7dd997a08992196c8f7f9239a454c5ce92b9363d062"
+}

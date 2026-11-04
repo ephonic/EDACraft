@@ -1,0 +1,74 @@
+"""Scalar dispatch: exact matching, full waves, budgets and transactional replay."""
+from pathlib import Path
+import json,subprocess,sys
+
+ROOT=Path(__file__).resolve().parents[2];fixtures=Path(__file__).resolve().parent
+compiler=Path(sys.argv[1]).resolve();out=Path(sys.argv[2]).resolve();out.mkdir(parents=True,exist_ok=True)
+cache=Path(sys.argv[3]).resolve() if len(sys.argv)>3 else compiler.parent/'CMakeCache.txt'
+config={x.split('=',1)[0].split(':',1)[0]:x.split('=',1)[1] for x in cache.read_text().splitlines() if '=' in x and not x.startswith('//')}
+sys.path.insert(0,str(ROOT/'tests/waveform'));from reader import read,declarations
+report={'status':'RUNNING','captures':0,'budget_comparisons':0,'predictions':0,'models':{}}
+def run(args,work,label):
+    p=subprocess.run(list(map(str,args)),cwd=work,capture_output=True,text=True,timeout=240)
+    (work/(label+'.stdout')).write_text(p.stdout);(work/(label+'.stderr')).write_text(p.stderr)
+    assert p.returncode==0,(label,p.returncode,p.stdout,p.stderr[-2000:]);return p.stdout
+def build(code,work,label,reference=False):
+    path=work/(label+'.cpp');path.write_text(code)
+    run(['c++','-std=c++17','-O2','-pthread',*(['-DDSIM_RTL_REFERENCE_CASE_DISPATCH=1','-DDSIM_REFERENCE_SCALAR_STORES=1'] if reference else []),'-I'+config['DSIM_ZSTD_INCLUDE'],path,config['DSIM_ZSTD_LIBRARY'],'-o',work/label],work,label+'-compile')
+    return work/label
+def streams(path):
+    meta,events=read(path);values=[[] for _ in meta['signals']]
+    for t,k,v in events:
+        if k=='value':values[v[0]].append((t,v[1]))
+    return {key:(width,ranges,values[i]) for key,(i,width,ranges) in declarations(meta).items()}
+try:
+    for name in ['cases','wide','stores']:
+        work=out/name;work.mkdir(exist_ok=True);refs={}
+        for backend,flags in [('serial',[]),('wheel',['--time-wheel']),('parallel',['--threads','2'])]:
+            run([compiler,fixtures/(name+'.sv'),*flags,'--wave-support','--emit-cpp',work/(backend+'.cpp'),'-o',work/backend],work,backend+'-lower')
+            code=(work/(backend+'.cpp')).read_text()
+            assert ('// Constant scalar case dispatch.' in code)==(name=='cases')
+            if backend=='serial':build(code,work,'reference',True)
+            for variant in ([backend,'reference'] if backend=='serial' else [backend]):
+                for mode in ['ordered','settled']:
+                    wave=work/(variant+'-'+mode+'.vcd')
+                    wave.unlink(missing_ok=True)
+                    text=run([work/variant,'--waveform',wave,'--wave-format','vcd','--wave-mode',mode],work,variant+'-'+mode)
+                    current=(text,streams(wave))
+                    if variant=='serial':refs[mode]=current
+                    else:assert current==refs[mode],(name,variant,mode)
+                    report['captures']+=1
+        text=refs['ordered'][0]
+        if name=='cases':
+            traces=[x for x in text.splitlines() if x.startswith('TRACE ')]
+            assert len(traces)==21 and traces[-1]=='TRACE final 55 2',traces
+            assert sum('DSIM selection:' in x for x in text.splitlines())==4,text
+        elif name=='wide':assert text=='TRACE wide 5\n',text
+        else:assert len(text.splitlines())==11 and text.endswith('TRACE nba ff ff\n'),text
+        # Compile without observers too, retaining the scalar ABI/cache path.
+        run([compiler,fixtures/(name+'.sv'),'--emit-only','--emit-cpp',work/'plain.cpp'],work,'plain-lower')
+        code=(work/'plain.cpp').read_text();assert code.count('\ns.run();\n')==1
+        a=build(code,work,'plain');b=build(code,work,'plain-reference',True)
+        assert run([a],work,'plain-run')==run([b],work,'plain-reference-run')==text
+        probe='''
+try{s.run();}catch(const std::exception& e){std::cout<<"BUDGET "<<s.executed_steps()<<" "<<e.what()<<"\\n";}
+std::cout<<"STATE "<<s.now<<" "<<s.executed_steps();for(const auto& item:s.signals){std::cout<<" ";for(int bit=0;bit<item.value.w;++bit)std::cout<<item.value.bit(bit);}std::cout<<"\\n";
+'''
+        patched=code.replace('\ns.run();\n',probe)
+        a=build(patched,work,'budget');b=build(patched,work,'budget-reference',True)
+        for limit in [*range(160),255,256,511,512,1024,4096,100000]:
+            assert run([a,'--max-events',limit],work,'budget-'+str(limit))==run([b,'--max-events',limit],work,'reference-'+str(limit)),(name,limit)
+            report['budget_comparisons']+=1
+        code=(work/'serial.cpp').read_text()
+        for accept in [False,True]:
+            patch='\nbool accepted=s.predict_until(11000,[](Sim&){},[](const Sim&){return '+str(accept).lower()+';},[](Sim&){});\n'
+            patch+='if(accepted!='+str(accept).lower()+')throw std::runtime_error("prediction mismatch");\ns.run();\n'
+            label='predict-'+str(accept);binary=build(code.replace('\ns.run();\n',patch),work,label)
+            wave=work/(label+'.vcd');wave.unlink(missing_ok=True)
+            result=run([binary,'--waveform',wave,'--wave-format','vcd','--wave-mode','ordered'],work,label+'-run')
+            assert (result,streams(wave))==refs['ordered'],(name,label)
+            report['captures']+=1;report['predictions']+=1
+        report['models'][name]='PASS';print('PASS scalar_dispatch',name,flush=True)
+    report['status']='PASS'
+finally:(out/'results.json').write_text(json.dumps(report,indent=2)+'\n')
+print(json.dumps(report))

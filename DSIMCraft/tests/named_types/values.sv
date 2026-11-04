@@ -1,0 +1,51 @@
+`timescale 1ns/1ps
+module top;
+typedef bit bit_t;
+typedef logic logic_t;
+typedef reg reg_t;
+typedef byte byte_t;
+typedef shortint short_t;
+typedef int int_t;
+typedef longint long_t;
+typedef integer integer_t;
+typedef time time_t;
+typedef logic signed [7:0] s8_t;
+typedef s8_t copy_t;
+typedef bit [12:0] u13_t;
+typedef logic [129:0] wide_t;
+localparam A=s8_t'(255);
+localparam B=long_t'(32'hffffffff+1);
+localparam C=u13_t'(16'hx5z1);
+localparam D=wide_t'(1)<<129;
+localparam E=copy_t'(128);
+localparam F=integer_t'(32'hxz00xz01);
+localparam G=time_t'(32'hffffffff+1);
+localparam H=bit_t'('x);
+localparam I=logic_t'('z);
+s8_t a,b;
+copy_t c;
+u13_t u;
+wide_t w;
+bit_t bt;
+logic_t lg;
+reg_t rg;
+byte_t by;
+short_t sh;
+int_t iv;
+long_t lv;
+integer_t integer_value;
+time_t tv;
+initial begin
+ if(bt!==0 || by!==0 || sh!==0 || iv!==0 || lv!==0) $fatal(1,"two state defaults");
+ if(lg!==1'bx || rg!==1'bx || integer_value!==32'bx || tv!==64'bx) $fatal(1,"four state defaults");
+ a=s8_t'(255);b=128;c=copy_t'(16'hff80);u=u13_t'(16'hx5z1);w=D;
+ bt=bit_t'('z);lg=logic_t'('z);rg=reg_t'('x);
+ by=byte_t'(16'hxx81);sh=short_t'(32'hxz80xz01);iv=int_t'(32'hxz80xz01);lv=long_t'(32'hffffffff+1);
+ integer_value=F;tv=G;
+ if(a!==8'hff || b!==8'h80 || c!==8'h80 || u!==13'h501 || w!==(130'd1<<129)) $fatal(1,"packed aliases");
+ if(64'(a)!==64'hffffffffffffffff || 64'(c)!==64'hffffffffffffff80) $fatal(1,"alias signing");
+ if(by!==8'h81 || sh!==16'h0001 || iv!==32'h00800001 || lv!==64'h100000000) $fatal(1,"two state casts");
+ if(lg!==1'bz || rg!==1'bx || H!==0 || I!==1'bz) $fatal(1,"scalar casts");
+ #1;$display("TRACE values %h %h %h %h %h",a,c,u,lv,w);$finish;
+end
+endmodule

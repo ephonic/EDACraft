@@ -1,0 +1,7 @@
+{
+ "ports": ["TRACE unit ports 08 09 1d"],
+ "shared": ["TRACE unit shared 21 21"],
+ "lexical": ["TRACE unit lexical 6 7 16 4 23"],
+ "bound": ["TRACE unit bound 3 3"],
+ "parallel": []
+}

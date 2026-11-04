@@ -1,0 +1,55 @@
+{
+  "enums": [
+    "TRACE policy DEFAULT 11",
+    "TRACE policy DEEP 22",
+    "TRACE policy REFERENCE 33",
+    "TRACE signed NEG 11",
+    "TRACE signed ZERO 22",
+    "TRACE signed POS 33",
+    "TRACE found ZERO",
+    "TRACE found POS"
+  ],
+  "wide": [
+    "TRACE wide 1 1",
+    "TRACE wide 100000001 2",
+    "TRACE wide 100000000000000000000000000000000 3",
+    "TRACE wide signed -2 10",
+    "TRACE wide signed -1 20",
+    "TRACE wide signed 0 30",
+    "TRACE wide signed 18446744073709551615 40",
+    "TRACE unsigned 1 6",
+    "TRACE unsigned 8000000000000000 7",
+    "TRACE unsigned ffffffffffffffff 5"
+  ],
+  "conversion": [
+    "TRACE narrow signed -127 9",
+    "TRACE narrow signed -111 7",
+    "TRACE narrow signed 127 8",
+    "TRACE key copies 12 12",
+    "TRACE conversions 1 4 8 1ffffffffffffffff"
+  ],
+  "fields": [
+    "TRACE fields HIGH 33 44 65 129"
+  ],
+  "rollback": [
+    "TRACE rollback DEFAULT 18 11"
+  ],
+  "constraints": [
+    "TRACE typed key constraints pass"
+  ],
+  "wide_constraints": [
+    "TRACE wide key constraints pass"
+  ],
+  "packed_range": [
+    "TRACE packed range 99 2 8000000000000000 23"
+  ],
+  "packed_types": [
+    "TRACE packed types 31 10000000000000001 0000000000001234 29"
+  ],
+  "packed_clones": [
+    "TRACE packed clones 32 64 128"
+  ],
+  "packed_rollback": [
+    "TRACE packed rollback 18 00000000000000010000000000000000 3"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "branches": [
+    "TRACE branches 12"
+  ],
+  "cases": [
+    "TRACE cases 13"
+  ],
+  "glitches": [
+    "TRACE glitches 2 2"
+  ],
+  "events": [
+    "TRACE events 1 0"
+  ],
+  "functions": [
+    "TRACE functions 10 20 2 1"
+  ],
+  "parallel": []
+}

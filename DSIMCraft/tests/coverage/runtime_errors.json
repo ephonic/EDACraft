@@ -1,0 +1,14 @@
+{
+  "illegal": {
+    "body": "module top;bit v;covergroup cg;cp:coverpoint v{bins z={0};illegal_bins invalid={1};}endgroup cg c;initial begin c=new();v=1;c.sample();end endmodule",
+    "diagnostic": "illegal coverage bin hit: invalid"
+  },
+  "null": {
+    "body": "module top;bit v;covergroup cg;cp:coverpoint v;endgroup cg c;initial c.sample();endmodule",
+    "diagnostic": "null or invalid class object access"
+  },
+  "expansion_limit": {
+    "body": "module top;int v;covergroup cg;cp:coverpoint v{bins many[]={[0:65536]};}endgroup cg c;initial c=new();endmodule",
+    "diagnostic": "expanded coverage bins exceed 65536"
+  }
+}

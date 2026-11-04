@@ -1,0 +1,52 @@
+{
+  "args": {
+    "args": [
+      "+mode=longer",
+      "+n=-12",
+      "+n=42",
+      "+bad=oops",
+      "+h=3_abcd_xz12",
+      "+s=hello world"
+    ]
+  },
+  "format": {
+    "args": [
+      "+ignored=value"
+    ]
+  },
+  "targets": {
+    "args": [
+      "+n=12",
+      "+bad=x",
+      "+h=x1",
+      "+o=7_x1"
+    ]
+  },
+  "automatic": {
+    "args": [
+      "+text=payload value",
+      "+mode=1"
+    ]
+  },
+  "parallel": {
+    "args": [
+      "+base=123",
+      "+mode=run"
+    ]
+  },
+  "writes": {
+    "args": [
+      "+hex=abcd_xz12_3456",
+      "+pair=a5f0",
+      "+n=23",
+      "+oct=7_x1",
+      "+bin=z01x"
+    ]
+  },
+  "numeric": {
+    "args": [
+      "+n=12oops",
+      "+h=12oops"
+    ]
+  }
+}

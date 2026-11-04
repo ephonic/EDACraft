@@ -1,0 +1,250 @@
+/* 
+ * Copyright (c) 2012 Fudan University ICCAD Lab
+ * All rights reserved.
+ *
+ * Filename : veri_err_token.hpp
+ * Summary  : token definitions of verilog syntax parser errors
+ *
+ * Version  : 1 ( Creation )
+ * Author   : Pavio Yang ( 11212020059@fudan.edu.cn )
+ * Date     : 2012.10.28
+ */
+
+#ifndef ERR_PARSER_ERR_VERI_ERR_TOKEN_HPP_
+#define ERR_PARSER_ERR_VERI_ERR_TOKEN_HPP_
+
+namespace rtl
+{
+
+/*
+ * verilog pre-processer error definitions
+ */
+enum VERI_PP_ERR_TOKEN
+{
+  vPRE_NO_OTHER             = 7000,
+  vDEFINE_VAR_DUPLICATED    = 7001,
+  vPRE_FILE_OPEN_ERROR      = 7003,
+  vPRE_FILE_STAT_ERROR      = 7004,
+  vPRE_ELIF_WITHOUT_IF      = 7005,
+  vPRE_ELSE_WITHOUT_IF      = 7006,
+  vPRE_ENDIF_WITHOUT_IF     = 7007,
+  vPRE_COMM_NOT_END         = 7010,
+  vPRE_QUOTE_NOT_END        = 7011,
+  vPRE_S_QUOTE_NOT_END      = 7012,
+  vPRE_ERR_STR_EXPECTED     = 7013,
+  vPRE_GREATER_EXPECTED     = 7014,
+  vPRE_NL_NOT_EXPECTED      = 7015,
+  vPRE_UNEXPECTED_TOK       = 7016,
+  vPRE_DEF_UNEXPECTED_TOK   = 7017,
+  vPRE_DEF_COMMA_EXPECTED   = 7018,
+  vPRE_DEF_LEFT_BRA_NEDDED  = 7019,
+  vPRE_DEF_ID_EXPECTED      = 7020,
+  vPRE_INC_TOO_DEEP         = 7021,
+  vPRE_UNCONN_ERR           = 7022,
+  vPRE_NONCONN_ERR          = 7023,
+  vPRE_DEFAULT_NETTYPE_ERR  = 7024,
+  vPRE_ENDIF_MISSING        = 7025,
+
+  vPRE_NOT_KNOWN_ERR        = 7300,
+};
+
+
+/*
+ * verilog pre-processer error definitions
+ */
+enum VERI_ERR_TOKEN
+{
+  /* verilog number error flag */
+  vNUNKNOWN               = 5999,
+  vNINVAL_CHAR            = 6000,
+  vNCHOPPED               = 6001,
+  vNNEW_FAIL              = 6002,
+  vNBITS_TOO_LARGE        = 6003,
+  vNDOUBLE_TWOS_COMP      = 6004,
+  vNDEC_X_Z               = 6005,
+  vNRADIX_UNKNOWN         = 6006,
+  vNFORMAT                = 6007,
+  vNNUMBER_OUT_BITS       = 6008,
+  vNUNARY_OP_NOT_FOUND    = 6009,
+  vNBINARY_OP_NOT_FOUND   = 6010,
+  vNVALUE_USED_WITHOUT_INIT = 6011,
+  vNARITH_OP_XZ           = 6012,
+  vNLOGIC_OP_NALIGN       = 6013,
+  vNSHIFT_ROUND_TOO_LARGE = 6014,
+  vNOP_NOT_SUPPORT        = 6050,
+
+
+  /* expression children type error */
+  vCHILD_TYPE_PRI_EXP     = 6108,
+  vCHILD_TYPE_UNA_EXP     = 6109,
+  vCHILD_TYPE_BIN_EXP     = 6110,
+  vCHILD_TYPE_RANGE_EXP   = 6111,
+  vCHILD_TYPE_MINTY_EXP   = 6112,
+  vCHILD_TYPE_QUES_EXP    = 6113,
+  vCHILD_TYPE_CALL_EXP    = 6114,
+  vCHILD_TYPE_ARRAY_EXP   = 6115,
+  vCHILD_TYPE_EVENT_EXP   = 6116,
+  vCHILD_TYPE_ASSIGN_EXP  = 6117,
+  vCHILD_TYPE_MCONCAT_EXP = 6118,
+
+  vCHILD_TYPE_MULTI_EXP   = 6119,
+  vCHILD_TYPE_DELAY_EXP   = 6120,
+  vCHILD_TYPE_DRIVE_EXP   = 6121,
+
+  vCHILD_TYPE_NAMED_PARAM_EXP = 6122,
+  vCHILD_TYPE_SIGN_FUNC_EXP   = 6123,
+  vCHILD_TYPE_UNSIGN_FUNC_EXP = 6124,
+
+  /* statement children type error */
+  vCHILD_TYPE_BLOCK_STMT             = 6130,
+  vCHILD_TYPE_CASE_STMT              = 6131,
+  vCHILD_TYPE_COND_STMT              = 6132,
+  vCHILD_TYPE_DISABLE_STMT           = 6133,
+  vCHILD_TYPE_EVENT_STMT             = 6134,
+  vCHILD_TYPE_LOOP_STMT              = 6135,
+  vCHILD_TYPE_NON_BLOCK_STMT         = 6136,
+  vCHILD_TYPE_PAR_BLOCK_STMT         = 6137,
+  vCHILD_TYPE_PROC_CONT_ASSIGN_STMT  = 6138,
+  vCHILD_TYPE_PROC_TIME_CONTROL_STMT = 6139,
+  vCHILD_TYPE_SEQ_BLOCK_STMT         = 6140,
+  vCHILD_TYPE_WAIT_STMT              = 6141,
+
+  vCHILD_TYPE_DEFAULT_CASE_ITEM      = 6142,
+  vCHILD_TYPE_CASE_ITEM              = 6143,
+  vCHILD_TYPE_CASE_ITEM_LIST         = 6144,
+
+  vCHILD_TYPE_FUNC_BLOCK_STMT        = 6145,
+  vCHILD_TYPE_FUNC_CASE_STMT         = 6146,
+  vCHILD_TYPE_FUNC_COND_STMT         = 6147,
+  vCHILD_TYPE_FUNC_LOOP_STMT         = 6148,
+  vCHILD_TYPE_FUNC_SEQ_BLOCK_STMT    = 6149,
+
+  vCHILD_TYPE_FUNC_DEFAULT_CASE_ITEM = 6150,
+  vCHILD_TYPE_FUNC_CASE_ITEM         = 6151,
+  vCHILD_TYPE_FUNC_CASE_ITEM_LIST    = 6152,
+
+  vCHILD_TYPE_SYS_CALL_STMT          = 6163,
+  vCHILD_TYPE_CALL_STMT              = 6164,
+
+  vCHILD_TYPE_STMT_LIST_STMT         = 6165,
+  vCHILD_TYPE_FUNC_STMT_LIST_STMT    = 6167,
+  vCHILD_TYPE_CONT_ASSIGN_STMT       = 6177,
+  vCHILD_TYPE_INIT_STMT              = 6178,
+  vCHILD_TYPE_ALWAYS_STMT            = 6180,
+
+  /* Instantiation type error */
+  vCHILD_TYPE_GEN_BLOCK              = 6190,
+  vCHILD_TYPE_GEN_COND               = 6191,
+  vCHILD_TYPE_GEN_DEFAULT_CASE       = 6192,
+  vCHILD_TYPE_GEN_CASE_ITEM          = 6193,
+  vCHILD_TYPE_GEN_CASE_ITEM_LIST     = 6194,
+
+  vCHILD_TYPE_GEN_ITEM_LIST          = 6195,
+
+  vCHILD_TYPE_MOD_INSTANCE           = 6196,
+  vCHILD_TYPE_GATE_INSTANCE          = 6197,
+  vCHILD_TYPE_MOD_INSTANTIATION      = 6198,
+  vCHILD_TYPE_GATE_INSTANTIATION     = 6199,
+
+  vCHILD_TYPE_GEN_LOOP               = 6200,
+  vCHILD_TYPE_GEN_CASE               = 6201,
+
+  /* Declaration type error */
+  vCHILD_TYPE_TF_DECL                = 6210,
+  vCHILD_TYPE_TASK_PORT_LIST         = 6211,
+  vCHILD_TYPE_FUNC_PORT_LIST         = 6212,
+  vCHILD_TYPE_TASK_DECL              = 6213,
+  vCHILD_TYPE_TASK_ITEM_DECL_LIST    = 6214,
+  vCHILD_TYPE_BLOCK_ITEM_DECL_LIST   = 6215,
+  vCHILD_TYPE_FUNC_ITEM_DECL_LIST    = 6216,
+  vCHILD_TYPE_VAR_DECL               = 6217,
+  vCHILD_TYPE_PARAM_DECL             = 6218,
+  vCHILD_TYPE_INT_DECL               = 6219,
+  vCHILD_TYPE_GENVAR_DECL            = 6220,
+  vCHILD_TYPE_PARAM_DECL_LIST        = 6221,
+  vCHILD_TYPE_FUNC_DECL              = 6222,
+  vCHILD_TYPE_PORT_DECL_LIST         = 6223,
+  vCHILD_TYPE_MODULE_PORT_ID         = 6224,
+
+  /* Module Error */
+  vMOD_TOP_MODULE_MISSING  = 6305,
+  vMOD_MODULE_MISSING      = 6306,
+
+  vMOD_MODULE_NOT_USED     = 6307,
+  vMOD_MODULE_INST_CYCLIC  = 6308,
+  vMOD_MODULE_REDEFINE     = 6309,
+
+  /* second parse error */
+
+     // not found
+  vSEC_SYMBOL_NOT_FOUND    = 6400,
+  vSEC_DISABLE_NOT_LOCATE  = 6401,
+  vSEC_TF_NOT_FOUND        = 6402,
+
+     // redefinition
+  vFUNC_REDEFINE           = 6500,
+  vTASK_REDEFINE           = 6501,
+
+  vVAR_VAR_REDEFINE        = 6502,
+  vVAR_TFMG_REDEFINE       = 6503,
+  vVAR_UNKNOWN_REDEFINE    = 6504,
+  vINT_VAR_REDEFINE        = 6505,
+  vINT_TFMG_REDEFINE       = 6506,
+  vINT_UNKNOWN_REDEFINE    = 6507,
+  vGENVAR_VAR_REDEFINE     = 6508,
+  vGENVAR_PARAM_REDEFINE   = 6509,
+  vGENVAR_TFMG_REDEFINE    = 6510,
+  vGENVAR_UNKNOWN_REDEFINE = 6511,
+  vPARAM_VAR_REDEFINE      = 6512,
+  vPARAM_PARAM_REDEFINE    = 6513,
+  vPARAM_TFMG_REDEFINE     = 6514,
+  vPARAM_UNKNOWN_REDEFINE  = 6515,
+  vGATE_INST_REDEFINE      = 6516,
+  vMOD_INST_REDEFINE       = 6517,
+  vLABEL_REDEFINE          = 6518,
+  vTF_PORT_REDEFINE        = 6519,
+
+  vSEC_CALLER_REUNFOLD     = 6520,
+  vSEC_MOD_REINSTANTIATED  = 6521,
+
+     // ask for calc-result but not getting any
+  vSEC_RANGE_CANNOT_CALC        = 6601,
+  vSEC_CONST_VALUE_NOT_CALC     = 6602,
+
+  vSEC_CONST_LVAL_ASSIGN        = 6603,
+  vSEC_VAR_RANGE_NOT_CALC       = 6604,
+  vSEC_DELAY_NOT_CALC           = 6605,
+  vSEC_LOOP_JUDGE_FAILURE       = 6606,
+  vSEC_CASE_COND_NOT_CALC       = 6607,
+  vSEC_CASE_LABEL_NOT_CALC      = 6608,
+  vSEC_IF_COND_NOT_CALC         = 6609,
+  vSEC_CALLER_MISS_RET          = 6610,
+  vSEC_FUNC_NO_RET              = 6611,
+
+     // type deduction failer
+  vSEC_TYPE_MISMATCH            = 6700,
+  vSEC_ARRAY_DECL_RANGE_UNKNOWN = 6701,
+  vSEC_SYMBOL_MIS_MATCH         = 6702,
+  vSEC_CALLER_PORT_NOT_COMPLETE = 6703,
+  vSEC_CALLER_PORT_MISMATCH     = 6704,
+
+  vSEC_MODINST_PORT_NOT_COMPLETE = 6710,
+  vSEC_MODINST_PORT_MISMATCH     = 6711,
+  vSEC_MOD_PORT_PARSE_NOT_SUPPORT= 6712,
+
+  vSEC_FUNC_RET_MISMATCH         = 6720,
+  vSEC_VAR_RANGE_OVERLOAD        = 6721,
+  vSEC_PRI_NOT_OTHER             = 6722,
+  vSEC_ARRAY_NOT_OTHER           = 6723,
+  vNUM_ASSIGN_OVERLOAD           = 6724,
+  vSEC_MOD_PORT_MISMATCH         = 6725,
+  vSEC_MOD_PARAM_MISMATCH        = 6726,
+
+  vCAST_WIDTH_INVALID = 6727,
+
+  vNOT_KNOWN_ERR          = 9300,
+};
+
+};
+
+#endif // ERR_PARSER_ERR_VERI_PP_ERR_TOKEN_HPP_

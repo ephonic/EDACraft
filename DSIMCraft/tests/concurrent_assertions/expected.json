@@ -1,0 +1,36 @@
+{
+  "report": [
+    "T04_CONC_ASSERT PASS"
+  ],
+  "implication": [
+    "TRACE implication 2 1 2 2"
+  ],
+  "sampling": [
+    "TRACE sampling 2 2 4 1"
+  ],
+  "disable": [
+    "TRACE disable 1 0"
+  ],
+  "clones": [
+    "TRACE clones 1 1"
+  ],
+  "fourstate": [
+    "TRACE fourstate 1 2 1"
+  ],
+  "parallel": [],
+  "glitch": [
+    "TRACE glitch 1"
+  ],
+  "reset_nba": [
+    "TRACE reset_nba 1 1"
+  ],
+  "actions": [
+    "TRACE action pass 1",
+    "TRACE action fail 0",
+    "TRACE action pass 1",
+    "TRACE actions 2 1"
+  ],
+  "reactive": [
+    "TRACE reactive 1 1"
+  ]
+}

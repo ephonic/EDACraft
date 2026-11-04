@@ -1,0 +1,71 @@
+{
+  "aggregate": [
+    "TRACE aggregate 00010001 00100010 00110011 01000100 11111111111111111111111111111111111111111111111111111111111111110011111111111111111111111111111111111111111111111111111111111111110",
+    "TRACE aggregate zzzzzzzz xxxxxxxx zzzzzzzz xxxxxxxx z10000000000000000000000000000000000000000000000000000000000000011z1000000000000000000000000000000000000000000000000000000000000001"
+  ],
+  "dynamic_read": [
+    "WAKE dynamic_read 0 xxxxxxxx xxxx",
+    "WAKE dynamic_read 1000 00010001 0001",
+    "TRACE dynamic_read 00010001 0001",
+    "WAKE dynamic_read 2000 00010001 0001",
+    "TRACE dynamic_read 00010001 0001",
+    "WAKE dynamic_read 3000 00010010 0001",
+    "TRACE dynamic_read 00010010 0001",
+    "WAKE dynamic_read 4000 xxxx0010 xxxx",
+    "TRACE dynamic_read xxxx0010 xxxx",
+    "WAKE dynamic_read 5000 00100010 0010",
+    "TRACE dynamic_read 00100010 0010"
+  ],
+  "functions": [
+    "WAKE functions 0 xx x",
+    "WAKE functions 1000 00 0",
+    "TRACE functions 000000 0",
+    "TRACE functions 110010 0",
+    "WAKE functions 3000 11 1",
+    "TRACE functions 111111 1",
+    "WAKE functions 4000 xx x",
+    "TRACE functions 11xx1x x",
+    "WAKE functions 5000 zz z",
+    "TRACE functions 11zz1z z"
+  ],
+  "latch": [
+    "TRACE latch xx00",
+    "TRACE latch 0000",
+    "TRACE latch 0101",
+    "TRACE latch 0110",
+    "TRACE latch 1010",
+    "TRACE latch xzxz"
+  ],
+  "memory_read": [
+    "WAKE memory_read 0 xxxxxxxx",
+    "WAKE memory_read 1000 00000000",
+    "TRACE memory_read 00000000 00110110",
+    "WAKE memory_read 2000 00100010",
+    "TRACE memory_read 00100010 00110110",
+    "WAKE memory_read 3000 01100011",
+    "TRACE memory_read 01100011 00110110",
+    "WAKE memory_read 4000 10010011",
+    "TRACE memory_read 10010011 00111001",
+    "WAKE memory_read 5000 xxxxxzxz",
+    "TRACE memory_read xxxxxzxz 00111001"
+  ],
+  "parallel": [],
+  "static": [
+    "WAKE static 0 xxxx x",
+    "WAKE static 1000 0000 0",
+    "TRACE static 000000 0 0000 0",
+    "TRACE static 110000 0 0000 0",
+    "WAKE static 3000 0101 1",
+    "TRACE static 110101 1 0101 1",
+    "WAKE static 4000 1010 0",
+    "TRACE static 111010 0 1010 1",
+    "WAKE static 5000 xzxz z",
+    "TRACE static 11xzxz z xzxz x",
+    "WAKE static 6000 zxzx x",
+    "TRACE static 11zxzx x zxzx x"
+  ],
+  "union": [
+    "TRACE union 01010110 01010110",
+    "TRACE union xz0101zx xz0101zx"
+  ]
+}

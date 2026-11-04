@@ -1,0 +1,1 @@
+module top;string names[3]='{"RW","RO","WO"};string copy[3];int index=1,observed;initial begin names[index]="READY";copy=names;observed=copy[index].len();$display("TRACE strings %s %s %0d %0d",names[0],copy[1],observed,names[2].len());end endmodule

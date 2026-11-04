@@ -1,0 +1,50 @@
+{
+  "status": "PASS",
+  "production_commit": "a0cc8b571775ce42279f0dba7a8b66166f39bb0a",
+  "source_sha256": "8991211ac28a0f2823ff3ccfaada039d66bd3c217bb3a24e9633ac63bd62d666",
+  "workflows": {
+    "vif": {
+      "status": "PASS",
+      "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+      "test_sha256": "bc214928724b8eb228ae29191a9eaec366fc70a15adac5747b2e422d80bfb942",
+      "trace": [
+        "TRACE UVM_PIN 100",
+        "TRACE UVM_PIN 101",
+        "TRACE UVM_PIN 102",
+        "TRACE UVM_DUT 3 303",
+        "TRACE REAL_UVM_SMOKE VIRTUAL_INTERFACE 3 303"
+      ],
+      "complete_cpp_identity_per_host": true,
+      "native_optimization": "-O0",
+      "defines": [
+        "UVM_NO_DPI"
+      ]
+    },
+    "packing": {
+      "status": "PASS",
+      "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+      "test_sha256": "16d8d5dd9156f9dae343aa8b922f4b33f09122ed0880702150554e18bf30cde8",
+      "trace": [
+        "TRACE REAL_UVM_SMOKE PACKING 8196 8196"
+      ],
+      "complete_cpp_identity_per_host": true,
+      "native_optimization": "-O0",
+      "defines": [
+        "UVM_NO_DPI"
+      ]
+    },
+    "utilities": {
+      "status": "PASS",
+      "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+      "test_sha256": "50ebc1e47978deadf909f33a798590d17c3ed530b532b6ca1f60ef574d5b7ad9",
+      "trace": [
+        "TRACE REAL_UVM_SMOKE UTILITIES 1"
+      ],
+      "complete_cpp_identity_per_host": true,
+      "native_optimization": "-O0",
+      "defines": [
+        "UVM_NO_DPI"
+      ]
+    }
+  }
+}

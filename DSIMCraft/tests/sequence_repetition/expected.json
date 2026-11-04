@@ -1,0 +1,45 @@
+{
+  "basic": [
+    "TRACE repeat 0 0 0 0 0 0 0 0 1 0",
+    "TRACE repeat 1 0 0 0 0 0 1 0 1 0",
+    "TRACE repeat 2 0 2 0 0 1 1 2 1 1",
+    "TRACE repeat 3 0 3 0 0 1 1 3 1 2",
+    "TRACE repeat 4 0 3 0 0 1 1 3 2 2",
+    "TRACE repeat 5 0 4 0 0 3 1 5 2 2",
+    "TRACE repeat 6 0 4 0 0 3 1 5 3 2",
+    "TRACE repeat 7 0 4 0 0 3 2 5 4 2",
+    "TRACE repeat 8 0 4 0 1 3 3 5 5 2",
+    "TRACE repeat 9 0 7 0 1 5 3 7 5 2",
+    "TRACE repeat 10 0 8 0 1 6 3 8 5 3",
+    "TRACE repeat 11 0 8 0 1 6 3 8 6 3",
+    "TRACE repeat 12 0 10 0 1 7 3 10 6 4",
+    "TRACE repeat 13 0 10 0 1 7 3 10 6 4",
+    "TRACE repeat 14 0 10 0 1 7 4 10 7 4",
+    "TRACE repeat 15 0 10 0 1 9 4 11 8 4"
+  ],
+  "sampled": [
+    "TRACE sampled-repeat 0 0 0 0 0 1",
+    "TRACE sampled-repeat 1 0 2 0 0 1",
+    "TRACE sampled-repeat 2 0 2 0 0 3",
+    "TRACE sampled-repeat 3 0 2 0 0 3",
+    "TRACE sampled-repeat 4 0 3 0 0 3",
+    "TRACE sampled-repeat 5 0 4 0 1 3",
+    "TRACE sampled-repeat 6 0 5 0 2 3",
+    "TRACE sampled-repeat 7 0 5 0 2 5",
+    "TRACE sampled-repeat 8 0 5 0 2 5",
+    "TRACE sampled-repeat 9 0 7 0 2 5",
+    "TRACE sampled-repeat 10 0 7 0 2 6",
+    "TRACE sampled-repeat 11 0 7 0 2 7",
+    "TRACE sampled-repeat 12 0 10 0 2 7",
+    "TRACE sampled-repeat 13 0 10 0 3 7",
+    "TRACE sampled-repeat 14 0 11 0 3 7",
+    "TRACE sampled-repeat 15 0 11 0 3 9"
+  ],
+  "clones": [
+    "TRACE repeat-clones 2 7 0 7 2 7"
+  ],
+  "boundary": [
+    "TRACE repeat-boundary 1 0 1 1 1"
+  ],
+  "parallel": []
+}

@@ -1,0 +1,23 @@
+{
+  "basic": [
+    "TRACE basic BLUE GREEN BLUE 9"
+  ],
+  "class_scope": [
+    "TRACE class 4 8 ILLEGAL"
+  ],
+  "locals": [
+    "TRACE locals 2"
+  ],
+  "packed": [
+    "TRACE packed 6a RUN"
+  ],
+  "unsigned_initializers": [
+    "TRACE unsigned ff ffffffff 1ffffffff 1fffffffffffffffe 1fffffffffffffffffffffffffffffffe -128"
+  ],
+  "unsigned_package": [
+    "TRACE coverage 00000004 FIELD_VALS 00000000ffffffff"
+  ],
+  "unsigned_clones": [
+    "TRACE clones ffffffff 1ffffffffffffffff 1ffffffffffffffffffffffffffffffff"
+  ]
+}

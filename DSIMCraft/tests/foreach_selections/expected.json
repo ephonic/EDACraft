@@ -1,0 +1,20 @@
+{
+  "selected": [
+    "TRACE foreach selections observed=14 calls=3"
+  ],
+  "subarrays": [
+    "TRACE foreach subarrays observed=399"
+  ],
+  "deep": [
+    "TRACE foreach deep observed=11"
+  ],
+  "clones": [
+    "TRACE foreach clones results=17,513"
+  ],
+  "rollback": [
+    "TRACE foreach selections rollback=9"
+  ],
+  "suspended": [
+    "TRACE foreach suspended observed=14 calls=4"
+  ]
+}

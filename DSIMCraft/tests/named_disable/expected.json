@@ -1,0 +1,25 @@
+{
+  "lexical": [
+    "TRACE lexical 3 9 3"
+  ],
+  "nested": [
+    "TRACE nested 3 0 0 26000"
+  ],
+  "outer": [
+    "TRACE outer 1 0 22000"
+  ],
+  "nba": [
+    "TRACE joined 0 0 0 2000",
+    "TRACE retained 11 22 0 6000"
+  ],
+  "labels": [
+    "TRACE labels 7 1000"
+  ],
+  "scopes": [
+    "TRACE scopes 12 4 13 32000"
+  ],
+  "events": [
+    "TRACE events 0 0 3 17000"
+  ],
+  "parallel": []
+}

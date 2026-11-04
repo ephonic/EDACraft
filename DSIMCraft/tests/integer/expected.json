@@ -1,0 +1,35 @@
+{
+  "design": [
+    "TRACE initial xxxxxxxx -7",
+    "TRACE arithmetic 4 28 -4 -3 -16 fffffffffffffff9 fffffff9",
+    "TRACE overflow -2147483648 -2147483648",
+    "TRACE four xxzz1234 0000zz12"
+  ],
+  "scopes": [
+    "TRACE scope 1 11 12 1fffffffffffffffd",
+    "TRACE scope 4 12 16 1fffffffffffffffd",
+    "TRACE scope 7 13 20 1fffffffffffffffd",
+    "TRACE outer 7 2",
+    "TRACE sibling 105",
+    "TRACE module 10 20"
+  ],
+  "anonymous": [
+    "TRACE nested 7 7",
+    "TRACE parent -3 4",
+    "TRACE independent 100",
+    "TRACE top 20 4"
+  ],
+  "memory": [
+    "TRACE memory -3 -10 fffffffffffffffb fffffffbffffff9dfffffff6fffffffe fffffff4fffffffd",
+    "TRACE select ffffff80",
+    "TRACE invalid xxxxxxxx"
+  ],
+  "parallel": [],
+  "generate": [
+    "TRACE generated 0 -5 -2 07",
+    "TRACE generated 1 -5 1 07"
+  ],
+  "runtime_initializer": [
+    "TRACE runtime initializer"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "simulator": "dsim",
+  "complete_uvm_source": true,
+  "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+  "uvm_source_files": 181,
+  "uvm_pkg_sha256": "4c1516f91172fc24e9d8f023911ffcb5718da281f285f3062547553c09be60e6",
+  "smoke_sha256": "50ebc1e47978deadf909f33a798590d17c3ed530b532b6ca1f60ef574d5b7ad9",
+  "stages": {
+    "compile": {
+      "status": "PASS",
+      "command": [
+        "/tmp/dsim-m235-build/dsim",
+        "--shared-functions",
+        "+incdir+/tmp/dsim-m228-uvm-src/src",
+        "+define+UVM_NO_DPI",
+        "/tmp/dsim-m228-uvm-src/src/uvm_pkg.sv",
+        "/tmp/dsim-m235-src/tests/uvm_preprocess/utilities.sv",
+        "--emit-cpp",
+        "/tmp/dsim-m235-full-utilities/model.cpp",
+        "--cxx-flag",
+        "-O0",
+        "-o",
+        "/tmp/dsim-m235-full-utilities/native"
+      ],
+      "exit_code": 0,
+      "seconds": 141.7256453789887
+    },
+    "run": {
+      "status": "PASS",
+      "command": [
+        "/tmp/dsim-m235-full-utilities/native"
+      ],
+      "exit_code": 0,
+      "seconds": 1.1669514460372739
+    }
+  },
+  "model_generated": true,
+  "native_generated": true,
+  "hello_pass": true,
+  "defines": [
+    "UVM_NO_DPI"
+  ],
+  "native_optimization_override": "-O0"
+}

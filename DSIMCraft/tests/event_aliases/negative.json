@@ -1,0 +1,30 @@
+{
+  "integral_source": {
+    "source": "class Box;event pulse;endclass module top;Box box;initial begin box=new();box.pulse=1;end endmodule\n",
+    "diagnostic": "event assignment requires an event value or null"
+  },
+  "integral_target": {
+    "source": "class Box;event pulse;endclass module top;Box box;int data;initial begin box=new();data=box.pulse;end endmodule\n",
+    "diagnostic": "event handles are not integral values"
+  },
+  "nba": {
+    "source": "class Box;event pulse;endclass module top;Box a,b;initial begin a=new();b=new();a.pulse<=b.pulse;end endmodule\n",
+    "diagnostic": "event aliases require immediate blocking assignment"
+  },
+  "delay": {
+    "source": "class Box;event pulse;endclass module top;Box a,b;initial begin a=new();b=new();a.pulse=#1 b.pulse;end endmodule\n",
+    "diagnostic": "event aliases require immediate blocking assignment"
+  },
+  "packed_select": {
+    "source": "class Box;event pulse;endclass module top;Box box;initial begin box=new();box.pulse[0]=1;end endmodule\n",
+    "diagnostic": "event handles"
+  },
+  "local_private": {
+    "source": "class Box;local event pulse;endclass module top;Box a,b;initial begin a=new();b=new();a.pulse=b.pulse;end endmodule\n",
+    "diagnostic": "local"
+  },
+  "module_destination": {
+    "source": "module top;event first,second;initial first=second;endmodule\n",
+    "diagnostic": "alias destinations currently require a class member or automatic local event"
+  }
+}

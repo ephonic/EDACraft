@@ -1,0 +1,6 @@
+{
+  "types": ["TRACE export types 5 7 7 3"],
+  "chains": ["TRACE export chains 27 29 -2 8"],
+  "shared": ["TRACE export shared 11 1 4 3"],
+  "wildcards": ["TRACE export wildcards 3 4 7 23"]
+}

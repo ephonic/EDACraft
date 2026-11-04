@@ -1,0 +1,1 @@
+module top;int value;task automatic launch(ref int v,input int delta);int saved=delta;fork begin #2;v+=saved;end join_none endtask initial begin launch(value,7);wait fork;$display("TRACE background %0d %0d",value,$time);end endmodule

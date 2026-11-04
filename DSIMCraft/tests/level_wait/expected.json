@@ -1,0 +1,7 @@
+{
+  "handshake": ["TRACE handshake 3 3 37"],
+  "conditions": ["TRACE conditions 3 0 0"],
+  "functions": ["TRACE functions 1 0 1 1 2 -128"],
+  "controls": ["TRACE controls 14 20 2 2 0"],
+  "parallel": []
+}

@@ -1,0 +1,6 @@
+#pragma once
+#include <string>
+#include <vector>
+namespace dsim {
+inline const std::vector<std::string> default_model_cxx_flags={@DSIM_MODEL_FLAGS_CPP@};
+}

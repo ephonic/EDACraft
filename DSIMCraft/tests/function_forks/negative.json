@@ -1,0 +1,27 @@
+{
+  "join": {
+    "source": "module top;function automatic void f();fork begin #1;end join endfunction initial f();endmodule\n",
+    "diagnostic": "fork is not allowed in functions unless join_none is used"
+  },
+  "join_any": {
+    "source": "module top;function automatic void f();fork begin #1;end join_any endfunction initial f();endmodule\n",
+    "diagnostic": "fork is not allowed in functions unless join_none is used"
+  },
+  "delay": {
+    "source": "module top;function automatic void f();#0;endfunction initial f();endmodule\n",
+    "diagnostic": "functions require zero-time"
+  },
+  "wait": {
+    "source": "module top;int ready;function automatic void f();wait(ready);endfunction initial f();endmodule\n",
+    "diagnostic": "functions require zero-time"
+  },
+  "wait_fork": {
+    "source": "module top;function automatic void f();wait fork;endfunction initial f();endmodule\n",
+    "diagnostic": "fork control is not allowed in functions"
+  },
+  "final": {
+    "source": "module top;int hits;function automatic void start();fork hits++;join_none endfunction function automatic void middle();start();endfunction initial middle();final middle();endmodule\n",
+    "diagnostic": "final block",
+    "oracle_rejection": false
+  }
+}

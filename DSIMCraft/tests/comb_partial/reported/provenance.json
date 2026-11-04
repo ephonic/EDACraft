@@ -1,0 +1,8 @@
+{
+  "original_case": "rtlagent-dual-20261025T020420-68e90d9f-blocking",
+  "sources": {
+    "rtl.sv": "a3d47c6bf2eb1b94f5c567ff9413fe4498f5ad7bd4014680781d1ca216f8a936",
+    "tb.sv": "ed42cc6bcbf807148baca2acfffa5033f1eb44797b9aa24569c38bee0d10926a"
+  },
+  "reference": "Original case VCS run.log; rerun same source in validation/m88-comb-partial"
+}

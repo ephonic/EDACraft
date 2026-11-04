@@ -1,0 +1,66 @@
+{
+  "missing_first": [
+    "class C#(int W);endclass C c;",
+    "missing class parameter: W"
+  ],
+  "missing_tail": [
+    "class C#(int W=1,N);endclass C#(2) c;",
+    "missing class parameter: N"
+  ],
+  "missing_bare": [
+    "class C#(W);endclass C c;",
+    "missing class parameter: W"
+  ],
+  "empty_named_required": [
+    "class C#(int W);endclass C#(.W()) c;",
+    "missing class parameter: W"
+  ],
+  "missing_packed": [
+    "class C#(parameter logic[64:0] X,Y);endclass C#(.X(1)) c;",
+    "missing class parameter: Y"
+  ],
+  "type_number": [
+    "class C#(type T=int,U=3);endclass C c;",
+    "class type parameter requires a data type"
+  ],
+  "type_arithmetic": [
+    "class C#(type T=int,U=1+2);endclass C c;",
+    "class type parameter requires a data type"
+  ],
+  "value_type": [
+    "class C#(int X=1,Y=longint);endclass C c;",
+    "class value parameter requires a constant expression"
+  ],
+  "bare_type": [
+    "class C#(X=longint);endclass C c;",
+    "class value parameter requires a constant expression"
+  ],
+  "wrong_actual_kind": [
+    "class C#(type T=int,U=T);endclass C#(.U(2)) c;",
+    "class type parameter requires a data type"
+  ],
+  "missing_type_tail": [
+    "class C#(type T=int,U);endclass C c;",
+    "missing class type parameter"
+  ],
+  "duplicate": [
+    "class C#(type T=int,T=int);endclass C c;",
+    "duplicate class parameter: T"
+  ],
+  "unknown_actual": [
+    "class C#(type T=int,U=T);endclass C#(.V(int)) c;",
+    "unknown class parameter: V"
+  ],
+  "mixed_actuals": [
+    "class C#(type T=int,U=T);endclass C#(int,.U(int)) c;",
+    "class arguments cannot mix positional and named parameters"
+  ],
+  "value_nonconstant": [
+    "int runtime_value;class C#(int W,N=W);endclass C#(runtime_value) c;",
+    "class value parameter requires a constant expression"
+  ],
+  "width_nonconstant": [
+    "int runtime_value;class C#(parameter logic[runtime_value:0] W=1,X=2);endclass C c;",
+    "range"
+  ]
+}

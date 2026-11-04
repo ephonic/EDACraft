@@ -1,0 +1,57 @@
+{
+  "class_queue": [
+    "TRACE class queue 3 56 34 12"
+  ],
+  "empty": [
+    "TRACE empty 0"
+  ],
+  "fixed": [
+    "TRACE fixed a b"
+  ],
+  "inverse": [
+    "TRACE inverse 1010001011 1011100010"
+  ],
+  "mixed": [
+    "TRACE mixed a 3 b c d e"
+  ],
+  "partial": [
+    "TRACE partial 3 a c c"
+  ],
+  "partial_left": [
+    "TRACE partial left 3 3 b 8"
+  ],
+  "uvm": [
+    "TRACE stream target 8 01101001"
+  ],
+  "fixed_left": [
+    "TRACE fixed left b a"
+  ],
+  "mixed_partial": [
+    "TRACE mixed partial 2 a c 3"
+  ],
+  "multi_dynamic": [
+    "TRACE multiple 3 0 a b c"
+  ],
+  "bounded": [
+    "TRACE bounded 2 12 34"
+  ],
+  "nested": [
+    "TRACE nested a 3 d c b e"
+  ],
+  "address": [
+    "TRACE address 1 5 0"
+  ],
+  "subarray": [
+    "TRACE subarray 1 a b 0 0"
+  ],
+  "four_state": [
+    "TRACE states xz01 10zx 2 4"
+  ],
+  "wide": [
+    "TRACE wide target 2 123456789abcdef01234 56789abcdef012345678"
+  ],
+  "source_snapshot": [
+    "TRACE source order 2 0 5 1",
+    "TRACE self snapshot 3 3 2 1"
+  ]
+}

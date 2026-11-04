@@ -1,0 +1,13 @@
+{
+  "p21_sra_cond": [
+    "direct=ffffffff cond=ffffffff tern=003fffff func=ffffffff ifelse=ffffffff (tern unsigned=003fffff)",
+    "PROBE_SRA: PASS (unsigned ternary context: tern=003fffff)"
+  ],
+  "p27_signed_ternary": [
+    "PROBE_CONTEXT: PASS standalone=ffffffff,00000000,fffffffe unsigned_ternary=7fffffff,55555554,00000002"
+  ],
+  "p29_ternary_context": [
+    "PROBE_CONTEXT: unsigned=7fffffff,55555554,00000002 signed=ffffffff,00000000,fffffffe",
+    "PROBE_CONTEXT: PASS"
+  ]
+}

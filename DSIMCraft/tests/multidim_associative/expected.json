@@ -1,0 +1,36 @@
+{
+  "branches": [
+    "TRACE absent 0 0 0",
+    "TRACE walk -1 x 4",
+    "TRACE walk 2 a 5",
+    "TRACE walk 2 z 3",
+    "TRACE empty 2 0 1",
+    "TRACE copy 4 6",
+    "TRACE assignempty 1 0"
+  ],
+  "uvm_shape": [
+    "TRACE uvm shape 24 35 DEFAULT DONE",
+    "TRACE uvm delete 2 0 1"
+  ],
+  "typed_axes": [
+    "TRACE typed axes 13 13"
+  ],
+  "foreach_effects": [
+    "TRACE effects 2 3 50 13"
+  ],
+  "rollback": [
+    "TRACE rollback 18 1 0 7"
+  ],
+  "constraints": [
+    "TRACE constraints PASS"
+  ],
+  "sparse_constraints": [
+    "TRACE sparse constraints PASS"
+  ],
+  "storage": [
+    "TRACE storage 26 5"
+  ],
+  "receiver": [
+    "TRACE receiver 2 7"
+  ]
+}

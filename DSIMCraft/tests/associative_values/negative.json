@@ -1,0 +1,18 @@
+{
+  "key": {
+    "source": "module top;int data[int];function automatic void f(input int values[string]);endfunction initial f(data);endmodule\n",
+    "diagnostic": "matching key types"
+  },
+  "rank": {
+    "source": "module top;int data[string][int];function automatic void f(input int values[string]);endfunction initial f(data);endmodule\n",
+    "diagnostic": "matching key types"
+  },
+  "output": {
+    "source": "module top;int data[int];function automatic void f(output int values[string]);endfunction initial f(data);endmodule\n",
+    "diagnostic": "matching key types"
+  },
+  "element": {
+    "source": "module top;typedef enum{A}E;typedef enum{B}F;E data[int];function automatic void f(inout F values[int]);endfunction initial f(data);endmodule\n",
+    "diagnostic": "compatible element types"
+  }
+}

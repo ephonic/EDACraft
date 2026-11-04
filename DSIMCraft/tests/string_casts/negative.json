@@ -1,0 +1,12 @@
+{
+ "real_cast":"string text;initial text=string'(1.25);",
+ "class_cast":"class C;endclass C c;string s;initial begin c=new();s=string'(c);end",
+ "numeric_string_parameter":"parameter int VALUE=string'(32'h4142);",
+ "implicit_string_parameter":"parameter string VALUE=32'h4142;",
+ "string_arithmetic":"localparam VALUE=string'(8'h41)+string'(8'h42);",
+ "string_bits_parameter":"localparam string TEXT=\"AB\";localparam BITS=$bits(TEXT);",
+ "mixed_string_comparison":"localparam VALUE=string'(8'h41)==8'h41;",
+ "mixed_string_concat":"localparam VALUE={string'(8'h41),8'h42};",
+ "mixed_string_conditional":"localparam VALUE=1?string'(8'h41):8'h42;",
+ "unsigned_extern_type":"class C;extern function unsigned f();endclass function unsigned [1:0] C::f();return 1;endfunction"
+}

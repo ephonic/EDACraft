@@ -1,0 +1,103 @@
+library(sequential_cells) {
+  cell(DFFP) {
+    ff(IQ,IQN) { clocked_on : "C"; next_state : "D"; }
+    pin(C) { direction : input; }
+    pin(D) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(DFFN) {
+    ff(IQ,IQN) { clocked_on : "C'"; next_state : "D"; }
+    pin(C) { direction : input; }
+    pin(D) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(DFFR) {
+    ff(IQ,IQN) { clocked_on : "C"; next_state : "D"; clear : "R"; }
+    pin(C) { direction : input; }
+    pin(D) { direction : input; }
+    pin(R) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(DFFS) {
+    ff(IQ,IQN) { clocked_on : "C"; next_state : "D"; preset : "S"; }
+    pin(C) { direction : input; }
+    pin(D) { direction : input; }
+    pin(S) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(DFFSR) {
+    ff(IQ,IQN) { clocked_on : "C"; next_state : "D"; clear : "R"; preset : "S"; clear_preset_var1 : L; clear_preset_var2 : L; }
+    pin(C) { direction : input; }
+    pin(D) { direction : input; }
+    pin(R) { direction : input; }
+    pin(S) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(DFFTN) {
+    ff(IQ,IQN) { clocked_on : "C"; next_state : "D"; clear : "R"; preset : "S"; clear_preset_var1 : T; clear_preset_var2 : N; }
+    pin(C) { direction : input; }
+    pin(D) { direction : input; }
+    pin(R) { direction : input; }
+    pin(S) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(DFFE) {
+    ff(IQ,IQN) { clocked_on : "C"; next_state : "D E + IQ E'"; }
+    pin(C) { direction : input; }
+    pin(D) { direction : input; }
+    pin(E) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(TFF) {
+    ff(IQ,IQN) { clocked_on : "C"; next_state : "IQ'"; clear : "R"; }
+    pin(C) { direction : input; }
+    pin(R) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(LATCHP) {
+    latch(IQ,IQN) { enable : "G"; data_in : "D"; }
+    pin(G) { direction : input; }
+    pin(D) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(LATCHN) {
+    latch(IQ,IQN) { enable : "G'"; data_in : "D"; }
+    pin(G) { direction : input; }
+    pin(D) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(LATCHR) {
+    latch(IQ,IQN) { enable : "G"; data_in : "D"; clear : "R"; }
+    pin(G) { direction : input; }
+    pin(D) { direction : input; }
+    pin(R) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(SRLATCH) {
+    latch(IQ,IQN) { clear : "R"; preset : "S"; clear_preset_var1 : L; clear_preset_var2 : H; }
+    pin(R) { direction : input; }
+    pin(S) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+  }
+  cell(DFFOUT) {
+    ff(IQ,IQN) { clocked_on : "C"; next_state : "D"; }
+    pin(C) { direction : input; } pin(D) { direction : input; }
+    pin(A) { direction : input; } pin(E) { direction : input; }
+    pin(Q) { direction : output; function : "IQ"; }
+    pin(QN) { direction : output; function : "IQN"; }
+    pin(Y) { direction : output; function : "IQ & A"; }
+    pin(TQ) { direction : output; function : "IQ"; three_state : "!E"; }
+  }
+}

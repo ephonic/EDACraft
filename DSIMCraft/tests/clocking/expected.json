@@ -1,0 +1,29 @@
+{
+  "sampling": [
+    "TRACE samples 0 0 1",
+    "TRACE samples 1 1 2",
+    "TRACE samples 2 2 3"
+  ],
+  "drives": [
+    "TRACE clocking drives 9 7"
+  ],
+  "cycles": [
+    "TRACE clocking cycles 5"
+  ],
+  "hierarchy": [
+    "TRACE clocking hierarchy pass"
+  ],
+  "delayed_regions": [
+    "TRACE clocking delayed regions pass"
+  ],
+  "rollback": [
+    "TRACE clocking rollback 9"
+  ],
+  "cancel": [
+    "TRACE clocking cancellation 2"
+  ],
+  "selects": [
+    "TRACE clocking selects 65",
+    "TRACE clocking selects 129"
+  ]
+}

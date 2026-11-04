@@ -1,0 +1,7 @@
+{
+  "expressions": ["TRACE expressions 3 3 4 2 3 1"],
+  "selections": ["TRACE selections 2 2 4 2"],
+  "edges": ["TRACE edges 8 3 3 2"],
+  "tasks": ["TRACE tasks 6 6"],
+  "parallel": []
+}

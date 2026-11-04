@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "compile": {
+    "event_function": {
+      "status": "ACCEPTED",
+      "exit_code": 0,
+      "source_sha256": "5a84015c994802501ac23f92af82c64f69638ab88fd36d5bfc26779c012500dd"
+    }
+  },
+  "runtime": {}
+}

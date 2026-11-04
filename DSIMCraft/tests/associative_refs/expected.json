@@ -1,0 +1,39 @@
+{
+  "automatic": [
+    "TRACE sum 13"
+  ],
+  "basic": [
+    "TRACE basic 2 0 7 12"
+  ],
+  "capture": [
+    "TRACE capture 1 23 0"
+  ],
+  "copies": [
+    "TRACE copy 47 1 0"
+  ],
+  "forward": [
+    "TRACE forward 13 2"
+  ],
+  "handles": [
+    "TRACE handles 37 1 1"
+  ],
+  "multidim": [
+    "TRACE multidim 44 1 2"
+  ],
+  "objects": [
+    "TRACE objects 30 2 13"
+  ],
+  "parameterized": [
+    "TRACE checker 1 0"
+  ],
+  "queues": [
+    "TRACE queues 43 1 5"
+  ],
+  "typed": [
+    "TRACE typed 38 1 1"
+  ],
+  "waits": [
+    "TRACE wait 17",
+    "TRACE done 17 1"
+  ]
+}

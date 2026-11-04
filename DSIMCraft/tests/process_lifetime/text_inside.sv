@@ -1,0 +1,1 @@
+module top;string rights="RW";int observed;function automatic string get();return rights;endfunction initial begin observed=(get() inside {"RW","WO"});$display("TRACE inside %0d %0d",observed,(get() inside {"RO","WO"}));end endmodule

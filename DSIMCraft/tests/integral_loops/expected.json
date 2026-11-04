@@ -1,0 +1,22 @@
+{
+  "arithmetic": [
+    "TRACE arithmetic e0fcf1ee 10003"
+  ],
+  "controls": [
+    "TRACE controls 6 13 7000",
+    "TRACE repeat 16"
+  ],
+  "fourstate": [
+    "TRACE fourstate xx xx 4 4",
+    "TRACE unknown_condition 0"
+  ],
+  "observers": [
+    "TRACE observed 39 3a 2",
+    "TRACE force 51 7"
+  ],
+  "parallel": [],
+  "widths": [
+    "TRACE widths 7f 124 6b794e89a5c54373 0364 1070 4",
+    "TRACE while f3 7"
+  ]
+}

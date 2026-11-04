@@ -1,0 +1,1 @@
+module top;class Child;rand int value;endclass class Item;rand Child child;endclass function automatic int maybe(Item item,bit enabled);if(enabled)return item.randomize();return 7;endfunction Item item;int observed;initial begin item=new();observed=maybe(item,0);$display("TRACE optional %0d",observed);end endmodule

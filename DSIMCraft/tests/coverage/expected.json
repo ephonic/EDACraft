@@ -1,0 +1,47 @@
+{
+  "manual": [
+    "TRACE manual 100"
+  ],
+  "objects": [
+    "TRACE objects 100"
+  ],
+  "automatic": [
+    "TRACE automatic 100"
+  ],
+  "merged": [
+    "TRACE merged 100"
+  ],
+  "signed_bins": [
+    "TRACE signed 100"
+  ],
+  "weighted": [
+    "TRACE weighted 63"
+  ],
+  "report_gap6": [
+    "PROBE_COVER: coverage=100.000000"
+  ],
+  "rollback": [
+    "TRACE rollback 7"
+  ],
+  "cross": [
+    "TRACE cross 100"
+  ],
+  "queries": [
+    "TRACE default first 50.000000 0.000000 0.000000",
+    "TRACE default both 100.000000 0.000000 0.000000",
+    "TRACE threshold 50.000000 0.000000 0.000000",
+    "TRACE goals 25.000000 25.000000"
+  ],
+  "point_queries": [
+    "TRACE point queries 50"
+  ],
+  "event_nba": [
+    "TRACE event nba 100.000000 1"
+  ],
+  "enumerated": [
+    "TRACE enum bins 67"
+  ],
+  "clones": [
+    "TRACE clones 50"
+  ]
+}

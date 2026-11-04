@@ -1,0 +1,6 @@
+{
+  "storage": ["TRACE storage 00011000 xz0110zx 000000000000000007fffffffffffffff 1 2"],
+  "timing": ["TRACE timing 00010010 xz10zx01 00010010 1 1"],
+  "calls": ["TRACE calls 00000000 zzzzzzzz"],
+  "parallel": []
+}

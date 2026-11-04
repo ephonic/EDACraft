@@ -1,0 +1,665 @@
+{
+  "schema": "dsim.parser-reorganization.v1",
+  "previous_dsim_commit": "d39fa2131015d83c945c64e58cf57bb4e42367ed",
+  "files": [
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/CMakeLists.txt",
+      "path": "docs/parser-origin/CMakeLists.txt",
+      "sha256_before_reorganization": "2d8ee610e44d3dd9bc475dd5f5b3c0becac2417b52d5de9375b9620e62989a36",
+      "sha256_after_reorganization": "2d8ee610e44d3dd9bc475dd5f5b3c0becac2417b52d5de9375b9620e62989a36"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/README.md",
+      "path": "docs/parser-origin/README.md",
+      "sha256_before_reorganization": "9e2c483f520526c7fb512742c7e9ad022e2878efc72be16b6e46a5550bf0ff9d",
+      "sha256_after_reorganization": "9e2c483f520526c7fb512742c7e9ad022e2878efc72be16b6e46a5550bf0ff9d"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/SHA256SUMS",
+      "path": "docs/parser-origin/SHA256SUMS",
+      "sha256_before_reorganization": "8fa8fe724e91baeaf68adbbe486ca602567ee198cc817fd65990fdf600e0ee45",
+      "sha256_after_reorganization": "8fa8fe724e91baeaf68adbbe486ca602567ee198cc817fd65990fdf600e0ee45"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/SOURCE_MANIFEST.json",
+      "path": "docs/parser-origin/SOURCE_MANIFEST.json",
+      "sha256_before_reorganization": "dac95f1ccf808e5ec7aace511bc0b8443e213c0b9aad2747071b8783d16d160e",
+      "sha256_after_reorganization": "dac95f1ccf808e5ec7aace511bc0b8443e213c0b9aad2747071b8783d16d160e"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/VALIDATION.md",
+      "path": "docs/parser-origin/VALIDATION.md",
+      "sha256_before_reorganization": "bd424e399fa1c1f72e68e1fc62b83fb8a5a3fec53ced828ef59eae485465f744",
+      "sha256_after_reorganization": "bd424e399fa1c1f72e68e1fc62b83fb8a5a3fec53ced828ef59eae485465f744"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/edacraft_core/include/edacraft/core/ids.hpp",
+      "path": "parsers/common/edacraft/core/ids.hpp",
+      "sha256_before_reorganization": "c0aa693c47792ed1289bfb9458aabe31d8c531e096d49bb5d12fa824c85450b5",
+      "sha256_after_reorganization": "c0aa693c47792ed1289bfb9458aabe31d8c531e096d49bb5d12fa824c85450b5"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/edacraft_core/include/edacraft/core/liberty_db.hpp",
+      "path": "parsers/common/edacraft/core/liberty_db.hpp",
+      "sha256_before_reorganization": "b1f49143c0b396c6db3a6396fe34f3d16e631cc9d729633cdfd9ba0e8479de6c",
+      "sha256_after_reorganization": "b1f49143c0b396c6db3a6396fe34f3d16e631cc9d729633cdfd9ba0e8479de6c"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/edacraft_core/include/edacraft/core/object_table.hpp",
+      "path": "parsers/common/edacraft/core/object_table.hpp",
+      "sha256_before_reorganization": "680229b7ed88c00fababe387e188105b7c07111ae91398c01f425d1f074476a6",
+      "sha256_after_reorganization": "680229b7ed88c00fababe387e188105b7c07111ae91398c01f425d1f074476a6"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/edacraft_core/include/edacraft/core/parasitic_db.hpp",
+      "path": "parsers/common/edacraft/core/parasitic_db.hpp",
+      "sha256_before_reorganization": "d23ba985007d01a884f0d14738c8ae3a77b7a2ba8dc52a04063d83e4d7f6480d",
+      "sha256_after_reorganization": "d23ba985007d01a884f0d14738c8ae3a77b7a2ba8dc52a04063d83e4d7f6480d"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/edacraft_core/include/edacraft/core/string_pool.hpp",
+      "path": "parsers/common/edacraft/core/string_pool.hpp",
+      "sha256_before_reorganization": "31e1a1bd71637a20c9fde84a1aa0576c5cafc7e6eba12aaf3307c4ba37e057f4",
+      "sha256_after_reorganization": "31e1a1bd71637a20c9fde84a1aa0576c5cafc7e6eba12aaf3307c4ba37e057f4"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/examples/parser_bundle_smoke.cc",
+      "path": "parsers/test/examples/parser_bundle_smoke.cc",
+      "sha256_before_reorganization": "ec79f5fb15e3617fe48a4b2e13e9033d19b06e6f8b57e8ddf3c38465817241be",
+      "sha256_after_reorganization": "dacdbcc6bd60e7153af82983de7a2c394bc227eff4220bf2478c23a57649ca46"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/examples/tiny.spef",
+      "path": "parsers/test/examples/tiny.spef",
+      "sha256_before_reorganization": "cb41ce5229711dcad095e95fd36489e74473d2d987e43e861479d2b378b64a31",
+      "sha256_after_reorganization": "cb41ce5229711dcad095e95fd36489e74473d2d987e43e861479d2b378b64a31"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/examples/tiny.v",
+      "path": "parsers/test/examples/tiny.v",
+      "sha256_before_reorganization": "95fe085a7a2662bd2e48e7b303736a7fbebf40b6007233d4c2c947f2604d7117",
+      "sha256_after_reorganization": "95fe085a7a2662bd2e48e7b303736a7fbebf40b6007233d4c2c947f2604d7117"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/include/time_engine/liberty_io.hh",
+      "path": "parsers/common/time_engine/liberty_io.hh",
+      "sha256_before_reorganization": "9c3032c8aa388a90359ec137c1ae1a2c5f3f4f39dbf50891910773125c75761d",
+      "sha256_after_reorganization": "9c3032c8aa388a90359ec137c1ae1a2c5f3f4f39dbf50891910773125c75761d"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/include/time_engine/types.hh",
+      "path": "parsers/common/time_engine/types.hh",
+      "sha256_before_reorganization": "1118e2fc4d1437f979b6e510206fa431bf71659f2000f36403e835f15ad06b54",
+      "sha256_after_reorganization": "1118e2fc4d1437f979b6e510206fa431bf71659f2000f36403e835f15ad06b54"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/liberty/liberty_binary.cc",
+      "path": "parsers/liberty/liberty_binary.cc",
+      "sha256_before_reorganization": "e3af0ae0fd1e4df7f07a7e7c2c94d3885a5d7ebdba9c4ad43ceb80c62feea00b",
+      "sha256_after_reorganization": "e15410fa87c556cf434b78c88fc3da96f4ea6209b3c714162fbb2cc68afcf144"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/liberty/liberty_binary.hh",
+      "path": "parsers/liberty/liberty_binary.hh",
+      "sha256_before_reorganization": "50e9a64ab93b6a5d36ad3e3afd653eafeea1df35be28506aa740db9a5462940a",
+      "sha256_after_reorganization": "50e9a64ab93b6a5d36ad3e3afd653eafeea1df35be28506aa740db9a5462940a"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/liberty/liberty_compress.cc",
+      "path": "parsers/liberty/liberty_compress.cc",
+      "sha256_before_reorganization": "6c15b495f6c6c502d2d5e5284d75bf759b96fa8ab31ab164bb6d692f3c4d6f8d",
+      "sha256_after_reorganization": "6c15b495f6c6c502d2d5e5284d75bf759b96fa8ab31ab164bb6d692f3c4d6f8d"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/liberty/liberty_compress.hh",
+      "path": "parsers/liberty/liberty_compress.hh",
+      "sha256_before_reorganization": "ccf827f56ba6f4fa6ee55c98ed1f8be442e4893564915cc22f70573456def8ba",
+      "sha256_after_reorganization": "ccf827f56ba6f4fa6ee55c98ed1f8be442e4893564915cc22f70573456def8ba"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/network/network.hh",
+      "path": "parsers/common/network/network.hh",
+      "sha256_before_reorganization": "696155db4b6e78834c901bd6bd759c214b586f5947368960c7ff1351bc3b2b4e",
+      "sha256_after_reorganization": "696155db4b6e78834c901bd6bd759c214b586f5947368960c7ff1351bc3b2b4e"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parasitics/timing_parasitics.hh",
+      "path": "parsers/common/parasitics/timing_parasitics.hh",
+      "sha256_before_reorganization": "7c8d69bda3995440956112c7fd49713a22baa9eb8112f178cdad3b9656074c5d",
+      "sha256_after_reorganization": "7c8d69bda3995440956112c7fd49713a22baa9eb8112f178cdad3b9656074c5d"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parser/gate_netlist_parser.cc",
+      "path": "parsers/gate/gate_netlist_parser.cc",
+      "sha256_before_reorganization": "bf8c8863afad75f02a17d002d1876263f491d592318675920fb04df00bfe7cb0",
+      "sha256_after_reorganization": "bf8c8863afad75f02a17d002d1876263f491d592318675920fb04df00bfe7cb0"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parser/gate_netlist_parser.hh",
+      "path": "parsers/gate/gate_netlist_parser.hh",
+      "sha256_before_reorganization": "a5867317b023b35c05a5c665c58cb2575ddabdf1c89fd1bd3e0691718e964bfe",
+      "sha256_after_reorganization": "a5867317b023b35c05a5c665c58cb2575ddabdf1c89fd1bd3e0691718e964bfe"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parser/liberty_parser.cc",
+      "path": "parsers/liberty/liberty_parser.cc",
+      "sha256_before_reorganization": "4de9c42d2708ee9da1e3ae8d2338bf9c0322d330bde1e37d421a84d8e31f4b24",
+      "sha256_after_reorganization": "4de9c42d2708ee9da1e3ae8d2338bf9c0322d330bde1e37d421a84d8e31f4b24"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parser/liberty_parser.hh",
+      "path": "parsers/liberty/liberty_parser.hh",
+      "sha256_before_reorganization": "757009032b232c653892cd1d4d58e83159b41d6861cbba008a4d298163ce9f95",
+      "sha256_after_reorganization": "757009032b232c653892cd1d4d58e83159b41d6861cbba008a4d298163ce9f95"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parser/spef_parser.cc",
+      "path": "parsers/spef/spef_parser.cc",
+      "sha256_before_reorganization": "91d63f00d88518d15c3f7f6cee176edd1057c39cae856cbb8d3c9e3ce6d68e19",
+      "sha256_after_reorganization": "91d63f00d88518d15c3f7f6cee176edd1057c39cae856cbb8d3c9e3ce6d68e19"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parser/spef_parser.hh",
+      "path": "parsers/spef/spef_parser.hh",
+      "sha256_before_reorganization": "d9fc7f0392cef176efe1da5a31d5a3504bacd6c37edc53cbf72c3ffa58216c87",
+      "sha256_after_reorganization": "d9fc7f0392cef176efe1da5a31d5a3504bacd6c37edc53cbf72c3ffa58216c87"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parser/verilog_parser_adapter.cc",
+      "path": "parsers/gate/verilog_parser_adapter.cc",
+      "sha256_before_reorganization": "502cd743ba9f17e742f050f8373fb2b0569bfc3fd9d67eacbb7bf01b54dd4d9d",
+      "sha256_after_reorganization": "502cd743ba9f17e742f050f8373fb2b0569bfc3fd9d67eacbb7bf01b54dd4d9d"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/parser/verilog_parser_adapter.hh",
+      "path": "parsers/gate/verilog_parser_adapter.hh",
+      "sha256_before_reorganization": "90205fdf45316c7749fbcb492bef1900ee1a8d172aa95cf3bd9f47c3be0851dd",
+      "sha256_after_reorganization": "90205fdf45316c7749fbcb492bef1900ee1a8d172aa95cf3bd9f47c3be0851dd"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/src/tools/lib2ftlib.cc",
+      "path": "parsers/tools/lib2ftlib.cc",
+      "sha256_before_reorganization": "2ebd9462c32d323c477dc8a149b3dc999454c6f3f629efd5bc881238470f3705",
+      "sha256_after_reorganization": "e21411c18d9b1ef78f451c52dae006802d71c6c36b9fa2fb02dd4705cfe63134"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/test/compare/csm_cell.lib",
+      "path": "parsers/test/liberty/csm_cell.lib",
+      "sha256_before_reorganization": "386ad0d5bdbd984b8091deaad5a2fcd18239b25506a8a796f7990b64cddb56bb",
+      "sha256_after_reorganization": "386ad0d5bdbd984b8091deaad5a2fcd18239b25506a8a796f7990b64cddb56bb"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/test/compare/seq_cell.lib",
+      "path": "parsers/test/liberty/seq_cell.lib",
+      "sha256_before_reorganization": "37df991f6cc49c4b7c04ba860e27cf5225b408aeac7d5be710d0ddbed169d7df",
+      "sha256_after_reorganization": "37df991f6cc49c4b7c04ba860e27cf5225b408aeac7d5be710d0ddbed169d7df"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/ftimer_craft/tests/test_liberty_binary.cc",
+      "path": "parsers/test/test_liberty_binary.cc",
+      "sha256_before_reorganization": "bb81f648b97fb64318212f7122ced9795ec27a5900a459649997e77377e86ee1",
+      "sha256_after_reorganization": "abec615902a5037928490fd77251d680eb442858bf6d0593fea9ced6a06473bf"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/validation/ctest_results.txt",
+      "path": "docs/parser-origin/validation/ctest_results.txt",
+      "sha256_before_reorganization": "c0ab347ee819fd641769dff7aab669bdec6936ae3afc5e0e7e43c79acb57604d",
+      "sha256_after_reorganization": "c0ab347ee819fd641769dff7aab669bdec6936ae3afc5e0e7e43c79acb57604d"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/CMakeLists.txt",
+      "path": "docs/parser-origin/rtl-CMakeLists.txt",
+      "sha256_before_reorganization": "7a48af8fc1196567c51dfac01902000c036ebda6916a66375a01aa2966f37bd9",
+      "sha256_after_reorganization": "7a48af8fc1196567c51dfac01902000c036ebda6916a66375a01aa2966f37bd9"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/Readme.md",
+      "path": "parsers/rtl/Readme.md",
+      "sha256_before_reorganization": "432ea04d781dfc07334ca8e00018b4d66fe5d1ec23e57e2d4aa66f45d367cc01",
+      "sha256_after_reorganization": "432ea04d781dfc07334ca8e00018b4d66fe5d1ec23e57e2d4aa66f45d367cc01"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/SEMANTIC_MEMORY_FIX_20261016.md",
+      "path": "parsers/rtl/SEMANTIC_MEMORY_FIX_20261016.md",
+      "sha256_before_reorganization": "bb074e6192d592c2fc8e6936abdb203b8f701b84182c6ac91e3ebb6ef4768865",
+      "sha256_after_reorganization": "bb074e6192d592c2fc8e6936abdb203b8f701b84182c6ac91e3ebb6ef4768865"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/err/general_err.hpp",
+      "path": "parsers/rtl/src/err/general_err.hpp",
+      "sha256_before_reorganization": "c87fbd3c6b9287d3033ed1b8d31bab1042b6ea96195691a63438ab77ab4e071c",
+      "sha256_after_reorganization": "c87fbd3c6b9287d3033ed1b8d31bab1042b6ea96195691a63438ab77ab4e071c"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/err/parser_err/veri_err.cpp",
+      "path": "parsers/rtl/src/err/parser_err/veri_err.cpp",
+      "sha256_before_reorganization": "c0fd514c4c353a3241a560920ea1bd40d4874564baccadb563598b33ad1a2283",
+      "sha256_after_reorganization": "c0fd514c4c353a3241a560920ea1bd40d4874564baccadb563598b33ad1a2283"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/err/parser_err/veri_err.hpp",
+      "path": "parsers/rtl/src/err/parser_err/veri_err.hpp",
+      "sha256_before_reorganization": "7194a8b508186c5bb75a5f65a5306811f842d71603c6a0528164126d5a90fcac",
+      "sha256_after_reorganization": "7194a8b508186c5bb75a5f65a5306811f842d71603c6a0528164126d5a90fcac"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/err/parser_err/veri_err_token.hpp",
+      "path": "parsers/rtl/src/err/parser_err/veri_err_token.hpp",
+      "sha256_before_reorganization": "2b5148103146449d017db4a9bd60121fdfe751f11e5d6983b19f6570bf070928",
+      "sha256_after_reorganization": "2b5148103146449d017db4a9bd60121fdfe751f11e5d6983b19f6570bf070928"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/err/util_err/util_err_token.hpp",
+      "path": "parsers/rtl/src/err/util_err/util_err_token.hpp",
+      "sha256_before_reorganization": "97208b354018662e6d4a7ae4d64ab86036fd36eacdc2059b145f5d93264fa8ea",
+      "sha256_after_reorganization": "97208b354018662e6d4a7ae4d64ab86036fd36eacdc2059b145f5d93264fa8ea"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/mgr/cfg_mgr.hpp",
+      "path": "parsers/rtl/src/mgr/cfg_mgr.hpp",
+      "sha256_before_reorganization": "2296d295c87a97bd4e07d331efdf008b43014b70e012b09294fa84d79200ed3e",
+      "sha256_after_reorganization": "2296d295c87a97bd4e07d331efdf008b43014b70e012b09294fa84d79200ed3e"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/mgr/src_mgr.hpp",
+      "path": "parsers/rtl/src/mgr/src_mgr.hpp",
+      "sha256_before_reorganization": "2385257d601f73f9aa32035e8144495a8628ea7c0748439da7451c2e0a44e13c",
+      "sha256_after_reorganization": "2385257d601f73f9aa32035e8144495a8628ea7c0748439da7451c2e0a44e13c"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_ast_drawer.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_ast_drawer.cpp",
+      "sha256_before_reorganization": "17426f872c2c50dbefed61640aee18849bc02023ecc7a47de12455eca4f735e7",
+      "sha256_after_reorganization": "17426f872c2c50dbefed61640aee18849bc02023ecc7a47de12455eca4f735e7"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_ast_drawer.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_ast_drawer.hpp",
+      "sha256_before_reorganization": "06711e89742fce3b9fb24fe151bb53f0a8329cda144787a45cf8947de3f13bd9",
+      "sha256_after_reorganization": "06711e89742fce3b9fb24fe151bb53f0a8329cda144787a45cf8947de3f13bd9"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_ast_node.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_ast_node.hpp",
+      "sha256_before_reorganization": "2345da1e97e9a69ce437af6c0e121cffcbcd52550d4600b1e0d960a4dfbb1e85",
+      "sha256_after_reorganization": "2345da1e97e9a69ce437af6c0e121cffcbcd52550d4600b1e0d960a4dfbb1e85"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_const_function.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_const_function.cpp",
+      "sha256_before_reorganization": "8ff51091d17ce50a6a3c7641e34479e389163a454aaad9f2daeae0c53fa35847",
+      "sha256_after_reorganization": "8ff51091d17ce50a6a3c7641e34479e389163a454aaad9f2daeae0c53fa35847"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_decl.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_decl.cpp",
+      "sha256_before_reorganization": "66c714d6579c822b182d6f75e8f0a6278c3b11a71ce0e6c96051d931d20f1916",
+      "sha256_after_reorganization": "1a7ae4a0d23af1f81f26c8e3a2ce530bcd091c5501ee00cc215b15c0469163a3"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_decl.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_decl.hpp",
+      "sha256_before_reorganization": "c58f1b566715d4e75bdcf82301f3773a18e011272ee95b0069f6d21f0b8f8e07",
+      "sha256_after_reorganization": "c58f1b566715d4e75bdcf82301f3773a18e011272ee95b0069f6d21f0b8f8e07"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_exp.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_exp.cpp",
+      "sha256_before_reorganization": "bb38c855cbc9c813e856eceba5160e25bf96f1fbc27b0a0a0f6511242de77167",
+      "sha256_after_reorganization": "bb38c855cbc9c813e856eceba5160e25bf96f1fbc27b0a0a0f6511242de77167"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_exp.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_exp.hpp",
+      "sha256_before_reorganization": "851d95ef8621a91418d25da96896876f3fa608895d7f28a9d2f3c911b691746f",
+      "sha256_after_reorganization": "851d95ef8621a91418d25da96896876f3fa608895d7f28a9d2f3c911b691746f"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_inst.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_inst.cpp",
+      "sha256_before_reorganization": "f7695ba7da957d198ab07855b685af8a64e992ae83b60e3b7d46d5d15fbbf2ad",
+      "sha256_after_reorganization": "f7695ba7da957d198ab07855b685af8a64e992ae83b60e3b7d46d5d15fbbf2ad"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_inst.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_inst.hpp",
+      "sha256_before_reorganization": "38b0521a62bfb7b588ace4d6a66097ea08dda0da8a1e7fd2c7e2cadcbb8f92ae",
+      "sha256_after_reorganization": "38b0521a62bfb7b588ace4d6a66097ea08dda0da8a1e7fd2c7e2cadcbb8f92ae"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_mod_container.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_mod_container.cpp",
+      "sha256_before_reorganization": "41cf6a0e1a74744dc304d9cecd03673d14db57e7f0cad3a5d188c5ca0903f652",
+      "sha256_after_reorganization": "41cf6a0e1a74744dc304d9cecd03673d14db57e7f0cad3a5d188c5ca0903f652"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_mod_container.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_mod_container.hpp",
+      "sha256_before_reorganization": "bda99f7a230db7e08f125ab831329ac78b3619bf514f3dfadbf23a782d6e3b3c",
+      "sha256_after_reorganization": "bda99f7a230db7e08f125ab831329ac78b3619bf514f3dfadbf23a782d6e3b3c"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_module.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_module.cpp",
+      "sha256_before_reorganization": "bfa4ee4d5ad78207f516db5bf7e37ae06ae4c6910a47bf3edc557f0b22cf18da",
+      "sha256_after_reorganization": "bfa4ee4d5ad78207f516db5bf7e37ae06ae4c6910a47bf3edc557f0b22cf18da"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_module.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_module.hpp",
+      "sha256_before_reorganization": "7a0c0359cb7394cca15eabd3e3360087a5d87a874633e52fcf6969e5aa28b833",
+      "sha256_after_reorganization": "7a0c0359cb7394cca15eabd3e3360087a5d87a874633e52fcf6969e5aa28b833"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_node.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_node.hpp",
+      "sha256_before_reorganization": "03d9c1470e09cdc872b7dc0862374457fcf6b681c06267d23e7f11421c350803",
+      "sha256_after_reorganization": "03d9c1470e09cdc872b7dc0862374457fcf6b681c06267d23e7f11421c350803"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_node_pool.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_node_pool.cpp",
+      "sha256_before_reorganization": "8fd70118ca815113c1950e9d9f79071a150acc2b9bd04ecd5f90bd16ef2c89cf",
+      "sha256_after_reorganization": "8fd70118ca815113c1950e9d9f79071a150acc2b9bd04ecd5f90bd16ef2c89cf"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_node_pool.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_node_pool.hpp",
+      "sha256_before_reorganization": "1d23281f048a61439ffbb387e4022dc9593eeaa25ca5d6dde78ad650e27274b4",
+      "sha256_after_reorganization": "1d23281f048a61439ffbb387e4022dc9593eeaa25ca5d6dde78ad650e27274b4"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_num.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_num.cpp",
+      "sha256_before_reorganization": "340e989801552f48644a61abbb56a3b481f6bad8744e29850aa8ccff5fc2e0c1",
+      "sha256_after_reorganization": "340e989801552f48644a61abbb56a3b481f6bad8744e29850aa8ccff5fc2e0c1"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_num.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_num.hpp",
+      "sha256_before_reorganization": "a0e60465aef5e4f58528984af64a4cc4b573e989c16d97b0b7a8624c2dc413f7",
+      "sha256_after_reorganization": "a0e60465aef5e4f58528984af64a4cc4b573e989c16d97b0b7a8624c2dc413f7"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_parser.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_parser.cpp",
+      "sha256_before_reorganization": "eb2446a47725ab4258e4c82615212a0d20d7dbe0191c443b1c0d369e9b0e40a1",
+      "sha256_after_reorganization": "eb2446a47725ab4258e4c82615212a0d20d7dbe0191c443b1c0d369e9b0e40a1"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_parser.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_parser.hpp",
+      "sha256_before_reorganization": "406521ee9f569cc12d1cbd1259ddaee603b7df111b1ff41825b41665d4d9e67e",
+      "sha256_after_reorganization": "406521ee9f569cc12d1cbd1259ddaee603b7df111b1ff41825b41665d4d9e67e"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_stmt.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_stmt.cpp",
+      "sha256_before_reorganization": "208afddfcfab7331cc81f80321c46841082cad3678541d92f6a518dd5e263081",
+      "sha256_after_reorganization": "208afddfcfab7331cc81f80321c46841082cad3678541d92f6a518dd5e263081"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_stmt.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_stmt.hpp",
+      "sha256_before_reorganization": "e49a6964476c4fbccf7b2c6bc0a2d2ebd39ab46137783e7679c8679430191fef",
+      "sha256_after_reorganization": "e49a6964476c4fbccf7b2c6bc0a2d2ebd39ab46137783e7679c8679430191fef"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_str.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_str.cpp",
+      "sha256_before_reorganization": "d9c307e4232dcfe5e40aa49f6da4426c63ccfc2fda284cad84aebac47a6a57ff",
+      "sha256_after_reorganization": "d9c307e4232dcfe5e40aa49f6da4426c63ccfc2fda284cad84aebac47a6a57ff"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_str.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_str.hpp",
+      "sha256_before_reorganization": "832ccc4f993ffd3b7c43488eec8094f7d7340a5c8035e1aa6d1e0817399eccb7",
+      "sha256_after_reorganization": "832ccc4f993ffd3b7c43488eec8094f7d7340a5c8035e1aa6d1e0817399eccb7"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_symbol_table.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_symbol_table.cpp",
+      "sha256_before_reorganization": "47c202d0fda5db67d6bd9993f73eb6279dce1f479918a8294150a61eb749b235",
+      "sha256_after_reorganization": "47c202d0fda5db67d6bd9993f73eb6279dce1f479918a8294150a61eb749b235"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_symbol_table.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_symbol_table.hpp",
+      "sha256_before_reorganization": "940e4b339fbf59db8f7cd0d9782b49bbcf3f0777dc634d875fb40575bb956ce0",
+      "sha256_after_reorganization": "940e4b339fbf59db8f7cd0d9782b49bbcf3f0777dc634d875fb40575bb956ce0"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_tfmg.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_tfmg.cpp",
+      "sha256_before_reorganization": "772d5757885c15d88908e4460b7590c9062991eab7bdd98ecf8887cc944a36bc",
+      "sha256_after_reorganization": "772d5757885c15d88908e4460b7590c9062991eab7bdd98ecf8887cc944a36bc"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_tfmg.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_tfmg.hpp",
+      "sha256_before_reorganization": "5cf2b3a358568d76ebebb7223ef4f66fde82870f601702284935b6e97f7ef744",
+      "sha256_after_reorganization": "5cf2b3a358568d76ebebb7223ef4f66fde82870f601702284935b6e97f7ef744"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_var.cpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_var.cpp",
+      "sha256_before_reorganization": "771195b33070a5b64559b2bad992fa71d72c3f78cda32c424fab877b5879bfb3",
+      "sha256_after_reorganization": "771195b33070a5b64559b2bad992fa71d72c3f78cda32c424fab877b5879bfb3"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/veri_var.hpp",
+      "path": "parsers/rtl/src/parser/verilog/veri_var.hpp",
+      "sha256_before_reorganization": "af8555b26adbb6db9c02299569e63df98cd544c0f70bb31f81995edbe2ce2064",
+      "sha256_after_reorganization": "af8555b26adbb6db9c02299569e63df98cd544c0f70bb31f81995edbe2ce2064"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/verilog.l",
+      "path": "parsers/rtl/src/parser/verilog/verilog.l",
+      "sha256_before_reorganization": "c64f0bd28f121e71c9334697b7f0c1428596f81f31d24f02b7d7191fda0226f7",
+      "sha256_after_reorganization": "c64f0bd28f121e71c9334697b7f0c1428596f81f31d24f02b7d7191fda0226f7"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/verilog.y",
+      "path": "parsers/rtl/src/parser/verilog/verilog.y",
+      "sha256_before_reorganization": "0ec80b458626bb12f6a33c363c15f1147f5498b9618f2c94401275398dc0d1a5",
+      "sha256_after_reorganization": "0ec80b458626bb12f6a33c363c15f1147f5498b9618f2c94401275398dc0d1a5"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/verilog_lex.cpp",
+      "path": "parsers/rtl/src/parser/verilog/verilog_lex.cpp",
+      "sha256_before_reorganization": "2fae5bdfd8405bc24c94a932d39912713f37e241ad52b674cf005d1b6a2cfaed",
+      "sha256_after_reorganization": "66b36ea5d988e2b8527bda20f7900f669e7a7331f29571e94e7135281206751c"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/verilog_yacc.cpp",
+      "path": "parsers/rtl/src/parser/verilog/verilog_yacc.cpp",
+      "sha256_before_reorganization": "904e438d8aeb0b87ed69c021d3d3159c4ae7991ac962ae64261b955bba1220e8",
+      "sha256_after_reorganization": "981800e3907094b1509f0461d1878ffcf30e75b59b975dbd22629578f1c9c1eb"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/parser/verilog/verilog_yacc.hpp",
+      "path": "parsers/rtl/src/parser/verilog/verilog_yacc.hpp",
+      "sha256_before_reorganization": "edd5896a765353f290131e2414a974b10074b4154c79c6d2ba3d2f21703599a5",
+      "sha256_after_reorganization": "f4478efae39c0554f0a1778145e1a522316ec7833473e1da7efc6fac7e868c1f"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/preproc/verilog/veri_define.cpp",
+      "path": "parsers/rtl/src/preproc/verilog/veri_define.cpp",
+      "sha256_before_reorganization": "15c4b65d3aac3f838ebda752883cd61e6e77b03143169da8970c0a14dbc5d1cc",
+      "sha256_after_reorganization": "15c4b65d3aac3f838ebda752883cd61e6e77b03143169da8970c0a14dbc5d1cc"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/preproc/verilog/veri_define.hpp",
+      "path": "parsers/rtl/src/preproc/verilog/veri_define.hpp",
+      "sha256_before_reorganization": "8dc3f6e55e25ebbe5b17ae62a979a46f241cecfdcff6bcd521dffa7ec5f62012",
+      "sha256_after_reorganization": "8dc3f6e55e25ebbe5b17ae62a979a46f241cecfdcff6bcd521dffa7ec5f62012"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/preproc/verilog/veri_hash_define.cpp",
+      "path": "parsers/rtl/src/preproc/verilog/veri_hash_define.cpp",
+      "sha256_before_reorganization": "7c933b742e6b8cd005f6742546b9069d02ad6b822e2d14cddda167d6cdd9d6ab",
+      "sha256_after_reorganization": "7c933b742e6b8cd005f6742546b9069d02ad6b822e2d14cddda167d6cdd9d6ab"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/preproc/verilog/veri_hash_define.hpp",
+      "path": "parsers/rtl/src/preproc/verilog/veri_hash_define.hpp",
+      "sha256_before_reorganization": "80a0d9c49261adb4b1fcea55b2e00c13fd83f67cf7bdcb6df1ae3bcfe4e9567b",
+      "sha256_after_reorganization": "80a0d9c49261adb4b1fcea55b2e00c13fd83f67cf7bdcb6df1ae3bcfe4e9567b"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/preproc/verilog/veri_preproc.cpp",
+      "path": "parsers/rtl/src/preproc/verilog/veri_preproc.cpp",
+      "sha256_before_reorganization": "f9e0c175f1ed146cb2a8294b84d8bf6ff456ed7e43dcb06d634b3eb5a0bf6b80",
+      "sha256_after_reorganization": "f9e0c175f1ed146cb2a8294b84d8bf6ff456ed7e43dcb06d634b3eb5a0bf6b80"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/preproc/verilog/veri_preproc.hpp",
+      "path": "parsers/rtl/src/preproc/verilog/veri_preproc.hpp",
+      "sha256_before_reorganization": "13bac9bb1c32e0ff27a24fcf4a5a12c08774c138218598d4829dd7cb6d61515c",
+      "sha256_after_reorganization": "13bac9bb1c32e0ff27a24fcf4a5a12c08774c138218598d4829dd7cb6d61515c"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/preproc/verilog/veri_preproc_tokens_status.hpp",
+      "path": "parsers/rtl/src/preproc/verilog/veri_preproc_tokens_status.hpp",
+      "sha256_before_reorganization": "d8824b944c41563f2da03f1cb89cd22ed1f049fcffdca27f35614b092571e4d0",
+      "sha256_after_reorganization": "d8824b944c41563f2da03f1cb89cd22ed1f049fcffdca27f35614b092571e4d0"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/preproc/verilog/veri_pretoken.hpp",
+      "path": "parsers/rtl/src/preproc/verilog/veri_pretoken.hpp",
+      "sha256_before_reorganization": "a7bbad43d68c35e1d7848ff6c81b403051e9dd4db55291236a37d38fc18ad9a4",
+      "sha256_after_reorganization": "a7bbad43d68c35e1d7848ff6c81b403051e9dd4db55291236a37d38fc18ad9a4"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/tcl_engine/external_commands.cpp",
+      "path": "parsers/rtl/src/tcl_engine/external_commands.cpp",
+      "sha256_before_reorganization": "dd89fc3dd1ccde3c70196fed638b8d0d0eadc57da39db628343fee81c78f1806",
+      "sha256_after_reorganization": "dd89fc3dd1ccde3c70196fed638b8d0d0eadc57da39db628343fee81c78f1806"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/tcl_engine/external_commands.hpp",
+      "path": "parsers/rtl/src/tcl_engine/external_commands.hpp",
+      "sha256_before_reorganization": "cd01e3fad3c4be218179e06682f4aa42aebd849397683cf614a30bff312d893c",
+      "sha256_after_reorganization": "cd01e3fad3c4be218179e06682f4aa42aebd849397683cf614a30bff312d893c"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/tcl_engine/tcl_engine.cpp",
+      "path": "parsers/rtl/src/tcl_engine/tcl_engine.cpp",
+      "sha256_before_reorganization": "c2642bcb196cbb9d03d7e36f66be729e59737038e99ba47926c5fc8e69202164",
+      "sha256_after_reorganization": "c2642bcb196cbb9d03d7e36f66be729e59737038e99ba47926c5fc8e69202164"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/tcl_engine/tcl_engine.hpp",
+      "path": "parsers/rtl/src/tcl_engine/tcl_engine.hpp",
+      "sha256_before_reorganization": "f0d22d434746c3e352c899d8181079b257c32f5f582a6484c58c3d94ea134681",
+      "sha256_after_reorganization": "f0d22d434746c3e352c899d8181079b257c32f5f582a6484c58c3d94ea134681"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/tcl_engine/tcl_token.hpp",
+      "path": "parsers/rtl/src/tcl_engine/tcl_token.hpp",
+      "sha256_before_reorganization": "283796fd8f9e8746feeb0a7f6e79023326cf3849ea4d8108f8d49d62c9db8ba0",
+      "sha256_after_reorganization": "283796fd8f9e8746feeb0a7f6e79023326cf3849ea4d8108f8d49d62c9db8ba0"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/token/c_token.hpp",
+      "path": "parsers/rtl/src/token/c_token.hpp",
+      "sha256_before_reorganization": "8a6906b4f586890d9edc158ed265fbb64a8027913e8414813bf41817f9a278a8",
+      "sha256_after_reorganization": "8a6906b4f586890d9edc158ed265fbb64a8027913e8414813bf41817f9a278a8"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/token/c_token_status.hpp",
+      "path": "parsers/rtl/src/token/c_token_status.hpp",
+      "sha256_before_reorganization": "34f7343e29afa11f00131f332302cd7ec9ad0c0ef0c0dd5da2fef7d28a5ebe14",
+      "sha256_after_reorganization": "34f7343e29afa11f00131f332302cd7ec9ad0c0ef0c0dd5da2fef7d28a5ebe14"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/token/verilog_token.hpp",
+      "path": "parsers/rtl/src/token/verilog_token.hpp",
+      "sha256_before_reorganization": "345eb35a424032ad3ebf6312fc74c3a92072039f51c9d36aed67e7614e621a28",
+      "sha256_after_reorganization": "345eb35a424032ad3ebf6312fc74c3a92072039f51c9d36aed67e7614e621a28"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/src/util/singleton/singleton.hpp",
+      "path": "parsers/rtl/src/util/singleton/singleton.hpp",
+      "sha256_before_reorganization": "e732e76111120dd25bf9930fab24271aaa343e0b23c19bfdc799ff6229d83ab9",
+      "sha256_after_reorganization": "e732e76111120dd25bf9930fab24271aaa343e0b23c19bfdc799ff6229d83ab9"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/test/semantic_memory.cpp",
+      "path": "parsers/rtl/test/semantic_memory.cpp",
+      "sha256_before_reorganization": "91407c31ed31a9db04a800348eed2a83839a4483ed0104575db64bb588f35b6d",
+      "sha256_after_reorganization": "91407c31ed31a9db04a800348eed2a83839a4483ed0104575db64bb588f35b6d"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/test/test.v",
+      "path": "parsers/rtl/test/test.v",
+      "sha256_before_reorganization": "de563455e7068d8eaa23b2830352c8ebfea09ed785e939238935bfdee1c2d35a",
+      "sha256_after_reorganization": "de563455e7068d8eaa23b2830352c8ebfea09ed785e939238935bfdee1c2d35a"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/barr_modmult_flat.v",
+      "path": "parsers/rtl/testcases/first_100/barr_modmult_flat.v",
+      "sha256_before_reorganization": "964916f98e57b959acc278cf28e2a73f4aafbacced6767921945f6f5fa33f289",
+      "sha256_after_reorganization": "964916f98e57b959acc278cf28e2a73f4aafbacced6767921945f6f5fa33f289"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/barr_modmult_flat_fixed.v",
+      "path": "parsers/rtl/testcases/first_100/barr_modmult_flat_fixed.v",
+      "sha256_before_reorganization": "6ddc5543bf773165d1974b027b1fe89d6627961942ef34cea355340f31786a61",
+      "sha256_after_reorganization": "6ddc5543bf773165d1974b027b1fe89d6627961942ef34cea355340f31786a61"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/barr_modmult_flat_fixed2.v",
+      "path": "parsers/rtl/testcases/first_100/barr_modmult_flat_fixed2.v",
+      "sha256_before_reorganization": "02c07f934f5a27a8c1b1d6412eed2770fef957ec0176ea108f83ee241c44c186",
+      "sha256_after_reorganization": "02c07f934f5a27a8c1b1d6412eed2770fef957ec0176ea108f83ee241c44c186"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/barr_modmult_flat_fixed3.v",
+      "path": "parsers/rtl/testcases/first_100/barr_modmult_flat_fixed3.v",
+      "sha256_before_reorganization": "5639de2f6e19eb1358e4fa9aac88a46c84f6120e74966944650853c25044bf30",
+      "sha256_after_reorganization": "5639de2f6e19eb1358e4fa9aac88a46c84f6120e74966944650853c25044bf30"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/barr_modmult_flat_fixed4.v",
+      "path": "parsers/rtl/testcases/first_100/barr_modmult_flat_fixed4.v",
+      "sha256_before_reorganization": "43c49caca34ce81ae804a6f9d81dc47eb3316aa8ddc2ec4fd02692167d1b42b6",
+      "sha256_after_reorganization": "43c49caca34ce81ae804a6f9d81dc47eb3316aa8ddc2ec4fd02692167d1b42b6"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/barr_modmult_flat_full.v",
+      "path": "parsers/rtl/testcases/first_100/barr_modmult_flat_full.v",
+      "sha256_before_reorganization": "9d917768fd27e2ce4a471927e6180ad66bb5bc59050e87fdaabd68ad6c9c3115",
+      "sha256_after_reorganization": "9d917768fd27e2ce4a471927e6180ad66bb5bc59050e87fdaabd68ad6c9c3115"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/barr_modmult_flat_noattr.v",
+      "path": "parsers/rtl/testcases/first_100/barr_modmult_flat_noattr.v",
+      "sha256_before_reorganization": "cb313293fe3c7ce2bcdb70403d425bd1d56c783aad28b0517a9e25ec4d130270",
+      "sha256_after_reorganization": "cb313293fe3c7ce2bcdb70403d425bd1d56c783aad28b0517a9e25ec4d130270"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/mul8.v",
+      "path": "parsers/rtl/testcases/first_100/mul8.v",
+      "sha256_before_reorganization": "dfa9886864dc31ad09443bf52160f4b3a7e114c115032a399b1d6221ca6e89df",
+      "sha256_after_reorganization": "dfa9886864dc31ad09443bf52160f4b3a7e114c115032a399b1d6221ca6e89df"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/testcases/first_100/pip_mul8.v",
+      "path": "parsers/rtl/testcases/first_100/pip_mul8.v",
+      "sha256_before_reorganization": "82be1fc9a137d9bc731b11931db9b1636bc80c446b6e6db92d6c4a0a9859583c",
+      "sha256_after_reorganization": "82be1fc9a137d9bc731b11931db9b1636bc80c446b6e6db92d6c4a0a9859583c"
+    },
+    {
+      "original_path": "third_party/edacraft_parsers_20261017/verilog_parser/vsyn.cpp",
+      "path": "parsers/rtl/vsyn.cpp",
+      "sha256_before_reorganization": "b24ab3452709edeec2ea94590fe0f22a22cd20eb4c2f8f39b3f11a80e6940167",
+      "sha256_after_reorganization": "b24ab3452709edeec2ea94590fe0f22a22cd20eb4c2f8f39b3f11a80e6940167"
+    }
+  ],
+  "notes": [
+    "Original namespaces, copyright notices and generator license notices are retained.",
+    "Changed bytes: include/fixture paths, regenerated source line paths, and typedef/packed-field signed or ascending bounds validation.",
+    "The original bundle build files and manifests are historical records under docs/parser-origin; active CMake is parsers/CMakeLists.txt."
+  ]
+}

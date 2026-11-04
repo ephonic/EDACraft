@@ -1,0 +1,34 @@
+{
+  "integer": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;virtual bus_if vif;initial vif=123;endmodule\n",
+    "diagnostic": "compatible interface type"
+  },
+  "wrong_type": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\ninterface other_if;logic[7:0] data;endinterface module top;other_if a();virtual bus_if vif;initial vif=a;endmodule\n",
+    "diagnostic": "compatible interface type"
+  },
+  "view_widen": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if.drive writer;virtual bus_if vif;initial begin writer=a;vif=writer;end endmodule\n",
+    "diagnostic": "compatible interface type"
+  },
+  "input_write": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if.observe reader;initial begin reader=a;reader.data=1;end endmodule\n",
+    "diagnostic": "cannot write input member"
+  },
+  "invisible": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if.drive writer;initial begin writer=a;writer.hidden=1;end endmodule\n",
+    "diagnostic": "not visible via modport"
+  },
+  "arithmetic": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial begin vif=a;$display(\"%0d\",vif+1);end endmodule\n",
+    "diagnostic": "virtual interface cannot be used in integral operation"
+  },
+  "packed_select": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if vif;initial begin vif=a;vif[0]=0;end endmodule\n",
+    "diagnostic": "compatible interface type"
+  },
+  "wrong_ref": {
+    "source": "interface bus_if;logic clk;logic[7:0] data;modport drive(input clk,output data);modport observe(input clk,data);endinterface\nmodule top;bus_if a();virtual bus_if vif;task automatic alter(ref longint unsigned value);value=0;endtask initial begin vif=a;alter(vif);end endmodule\n",
+    "diagnostic": "equivalent argument types"
+  }
+}

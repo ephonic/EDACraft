@@ -1,0 +1,13 @@
+{
+  "dollar_outside": "module top;int a;initial a=$;endmodule",
+  "fixed_last": "module top;int a[3];initial a[$]=2;endmodule",
+  "dynamic_last": "module top;int a[];initial begin a=new[3];a[$]=2;end endmodule",
+  "packed_last": "module top;logic [7:0] q[$];initial q[0][$]=1;endmodule",
+  "nested_fixed_last": "module top;int q[$],a[3];initial q[a[$]]=1;endmodule",
+  "key_copy_sign": "module top;int a[int],b[int unsigned];initial a=b;endmodule",
+  "unsigned_bad_cursor": "module top;int a[int unsigned];shortint i;initial if(a.first(i))$display(i);endmodule",
+  "queue_slice": "module top;int q[$],r[$];initial r=q[$:0];endmodule",
+  "nested_packed_last": "module top;int q[$];logic[7:0] bits;initial q[bits[$]]=1;endmodule",
+  "nested_string_last": "module top;int q[$];string text;initial q[text[$]]=1;endmodule",
+  "nested_object_last": "module top;class C;int a[int unsigned];endclass C c=new;int q[$];initial q[c.a[$]]=1;endmodule"
+}

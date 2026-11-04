@@ -1,0 +1,6 @@
+{
+  "constants": [
+    [["top", "gen[0].e"], ["top", "gen[0]", "e"]],
+    [["top", "gen[1].e"], ["top", "gen[1]", "e"]]
+  ]
+}

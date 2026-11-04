@@ -1,0 +1,22 @@
+{
+  "nested": [
+    "TRACE nested 11 13 1 3000"
+  ],
+  "scopes": [
+    "TRACE scopes 21 51 3 9000"
+  ],
+  "events": [
+    "TRACE events 11 22 5000",
+    "TRACE pending 11 22 6000",
+    "TRACE delivered 33 22 7000"
+  ],
+  "nba": [
+    "TRACE join 0 0",
+    "TRACE inactive 0 0",
+    "TRACE settled 11 22"
+  ],
+  "parallel": [],
+  "always": [
+    "TRACE always 3 6 9000"
+  ]
+}

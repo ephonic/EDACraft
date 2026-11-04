@@ -1,0 +1,43 @@
+{
+  "associative": [
+    "TRACE empty 0 0 12 0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "TRACE key -5 10",
+    "TRACE key -1 40",
+    "TRACE key 2 24",
+    "TRACE key 9 30",
+    "TRACE totals 3 4 104 4 0 1",
+    "TRACE first 1 -5",
+    "TRACE next 1 -1",
+    "TRACE last 1 9",
+    "TRACE end 0 9",
+    "TRACE prev 1 2",
+    "TRACE reduce 104 208",
+    "TRACE delete 0 3 0"
+  ],
+  "lifetime": [
+    "TRACE functions 6 8",
+    "TRACE task 3 0 1 4",
+    "TRACE task 5 0 1 6",
+    "TRACE total 18",
+    "TRACE task 7 0 1 8",
+    "TRACE again 33"
+  ],
+  "parallel": [],
+  "queues": [
+    "TRACE queue 3 -2 7 11 4",
+    "TRACE copy 3 3 3 7 9",
+    "TRACE foreach 18 18 -198",
+    "TRACE update 1 1 6 1",
+    "TRACE bound 3 9 8 1",
+    "TRACE assign 3 -2 7 11",
+    "TRACE clear 0 0 0 0"
+  ],
+  "report_q05": [
+    "PROBE_ADTS: ok"
+  ],
+  "wide": [
+    "TRACE wide 123456789abc000000000001 xxxxxxxxxxxxxxxxxxxxxxxx ffffffffffffffffffffffff 000000000000000000000000 zzzzzzzzzzzzzzzzzzzzzzzz",
+    "TRACE context 000000000000000100000000 000000000000000100000001",
+    "TRACE default xxxxxxxxxxxxxxxxxxxxxxxx 123456789abc000000000001 xxxxxxxxxxxxxxxxxxxxxxxx 0"
+  ]
+}

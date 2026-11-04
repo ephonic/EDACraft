@@ -1,0 +1,21 @@
+*SPEF "IEEE 1481-1998"
+*DESIGN "top"
+*DIVIDER /
+*DELIMITER :
+*BUS_DELIMITER [ ]
+*T_UNIT 1 NS
+*C_UNIT 1 PF
+*R_UNIT 1 OHM
+*NAME_MAP
+*1 a
+*2 u0
+*D_NET *1 0.03
+*CONN
+*P a I
+*I *2:A I
+*CAP
+1 a 0.01
+2 *2:A 0.02
+*RES
+1 a *2:A 10
+*END

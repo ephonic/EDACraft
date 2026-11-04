@@ -1,0 +1,161 @@
+{
+  "status": "PASS",
+  "captures": 27,
+  "models": {
+    "basic": {
+      "trace": [
+        "TRACE vif call 6 2 7"
+      ],
+      "source_sha256": "ba6aa484eee73871810d25936b51b12dab0c1090066483cc3ade9624dc04d48b",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "bbe92e5c4fdc4214afb23b7443129a1b26b00f0e1ea00cb59be02ba49339f17c"
+        },
+        "shared": {
+          "cpp_sha256": "9b942621bbd1e351baa043718759cf423676430bb62a2a0f6acd572ce18ad142"
+        },
+        "wheel": {
+          "cpp_sha256": "c7e5062667a56573a2130bd0aad1d1946281a11177cad825c6a87ea3ec6d2e8b"
+        }
+      }
+    },
+    "capture": {
+      "trace": [
+        "TRACE vif capture 1 6 16 16 10"
+      ],
+      "source_sha256": "3ee7d9124fb09747e5c95632fe70c4b940f6a38c1526a09950aab569d79675f1",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "330d2488eb0a590443a4c361c53bfa9246c9614cdc4362732f2ff360de69ed28"
+        },
+        "shared": {
+          "cpp_sha256": "790ffa9db0bb7b3028746f4c99146d0a5da2867ffb2e908561a8d8b69a96d927"
+        },
+        "wheel": {
+          "cpp_sha256": "4128461724e1ed8758491788ab94195cb3e1fcb42b81238fd4a6f2ab0b16cb17"
+        }
+      }
+    },
+    "reentry": {
+      "trace": [
+        "TRACE vif reentry 10 20 10 20"
+      ],
+      "source_sha256": "2c11f1f5d486e1034ae7d667d4b886bbe3dcfc4dd7361055b7d2f6e5e34d232e",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "05fdf7806760ce58f23592f34c0cbdf5763f49df30f9dab0b71777f2767141d9"
+        },
+        "shared": {
+          "cpp_sha256": "f49272a7ef9edcd62d1a584deda6fa9ca1a8f4da7356173e4bfd8c8274795e70"
+        },
+        "wheel": {
+          "cpp_sha256": "9279cde76323aade651551306919981f9fbbede5b1cad2d4b0cb296f8320870b"
+        }
+      }
+    },
+    "arguments": {
+      "trace": [
+        "TRACE vif arguments 8 17 33 35 sum:35"
+      ],
+      "source_sha256": "18b9840dbbdbac6539205b91b87b379ddfded9fe1f42723a3302a7c4e3840044",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "0a16064d4dfbf31d6cf4d03dc47694c44fbb46aa27937d0dbcb15e007aa0a4c9"
+        },
+        "shared": {
+          "cpp_sha256": "5cc60bf7d35f7e0019b759bd10a8ce61b59c062fc33d68ad9fda0eb1a112a7ed"
+        },
+        "wheel": {
+          "cpp_sha256": "3a36d5f21134e6ef9cd1521c69ccfd7d87cafd9cef015bda200140950fee513c"
+        }
+      }
+    },
+    "types": {
+      "trace": [
+        "TRACE vif types HIGH fedcba987654321001234567 1.25"
+      ],
+      "source_sha256": "504e0a847eaecc7530aa339a972debdda9c4e0014326ff61f63f1116978afb19",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "96739910f5ab5b1123f1d04ee3e7cf056a7c52b8a46ea3f69a59d6066a597b11"
+        },
+        "shared": {
+          "cpp_sha256": "fbb73b6c20bbc04d356eaaaab796ba746d09907502d22a4e172b26ac4deb221f"
+        },
+        "wheel": {
+          "cpp_sha256": "d152d40807055f042b50257a8640db0f7e86d772a27986e792615df73552caf1"
+        }
+      }
+    },
+    "nested": {
+      "trace": [
+        "TRACE vif nested 6 6 6 6"
+      ],
+      "source_sha256": "bec7cb01552af63400a8cf6a627e4fde43675eedf017645328932d8e8aad6452",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "9e59e50436b1d53e7303f46468057c1a2cbd2120b47a0758e12c8fd8630f4eab"
+        },
+        "shared": {
+          "cpp_sha256": "675dbcfaf836cd03584c66decb0516da8db3911806dafda293860d17905411c4"
+        },
+        "wheel": {
+          "cpp_sha256": "759c03cc4ef7bee273eb5ec6d242edb341c42dd99891ba3fdbb1c771e34e83be"
+        }
+      }
+    },
+    "arrays": {
+      "trace": [
+        "TRACE vif arrays 7 6 11 12"
+      ],
+      "source_sha256": "17ceef3a0606cc350df9873b9970c20bf51c5206e3c5683bc983904874fd43b1",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "838f306698f287fb06d7ea8f29f6326671ba53958629c1a929a124688549584a"
+        },
+        "shared": {
+          "cpp_sha256": "f8846f8e432f130b8faf9b82e0630026008c4e6d3c39b8fc1729015ec104f314"
+        },
+        "wheel": {
+          "cpp_sha256": "0ffdd840c9ca8f4d32b2d809675fb9f9828c14dfeafd39ea7a054bcf3f637190"
+        }
+      }
+    },
+    "timing": {
+      "trace": [
+        "TRACE vif timing 3.00 0.30"
+      ],
+      "source_sha256": "1dd46416d1ce0dab56309a6bbf1165e88f3b058057191263c7ab2669961d6476",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "f34c56ae56b4adccd4f078dae3e6c16c1222267354b5113f0d10ab7f6e5e762e"
+        },
+        "shared": {
+          "cpp_sha256": "f623d49cb212f000457ee8a5674cee8a926fda1a4aea750c49115a55b8434639"
+        },
+        "wheel": {
+          "cpp_sha256": "6a299a36b652431ba410f9d4f62d2dd042ce051fb3bbfbdb00cf13c9dc983b2f"
+        }
+      }
+    },
+    "static": {
+      "trace": [
+        "TRACE vif static 1 1 2 2"
+      ],
+      "source_sha256": "3ce9f7f8e6630d1e1e449ab990158c0b5881c1ab55a714dd8d79d0b0e5c86ce5",
+      "captures": {
+        "serial": {
+          "cpp_sha256": "a51e7ba65d0df8c20b46b6de385e2f5bc5a128256eac86d88b7ee6e4a73ed76d"
+        },
+        "shared": {
+          "cpp_sha256": "dc182e2be6237cef40be504249b99ae498f133fedb7955b11c6ac195ac855ef2"
+        },
+        "wheel": {
+          "cpp_sha256": "284e1c17655c4c33b5d60b23519cd1cb32c4a36ecfa61a008a2061e33e42b768"
+        }
+      }
+    }
+  },
+  "negative_cases": 6,
+  "runtime_rejections": 2
+}

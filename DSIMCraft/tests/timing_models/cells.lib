@@ -1,0 +1,7 @@
+library(l) {
+  cell(C) {
+    pin(A) {direction:input;} pin(B) {direction:input;}
+    pin(Z) {direction:output;function:"A&B";}
+    pin(Y) {direction:output;function:"A|B";}
+  }
+}

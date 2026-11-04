@@ -1,0 +1,1 @@
+module top;string a,b;int observed;task automatic worker(input string prefix,input int ticks,output string result);string mode[2];mode[0]=prefix;#ticks;mode[1]={mode[0],"X"};result=mode[1];endtask initial begin fork worker("A",2,a);worker("B",1,b);join observed=a.len()+b.len();$display("TRACE string_tasks %s %s %0d",a,b,observed);end endmodule

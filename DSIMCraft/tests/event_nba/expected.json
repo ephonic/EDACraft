@@ -1,0 +1,19 @@
+{
+  "sample": [
+    "TRACE sample 1 1 1 145 1 1"
+  ],
+  "targets": [
+    "TRACE targets 3040 1 32 2 1"
+  ],
+  "repetition": [
+    "TRACE first 11 77 21",
+    "TRACE second 12",
+    "TRACE third 13"
+  ],
+  "expressions": [
+    "TRACE expr1 11 0 0",
+    "TRACE expr2 11 22 0",
+    "TRACE expr3 11 22 33"
+  ],
+  "parallel": []
+}

@@ -1,0 +1,21 @@
+{
+  "copy": [
+    "TRACE startup 2 00 00",
+    "TRACE copy 84 ff 84 09",
+    "TRACE wide 00123456789abcdef0012345 abcdef987654321011234567 1",
+    "TRACE independent 84 01 387"
+  ],
+  "arguments": [
+    "TRACE input 134 1",
+    "TRACE inout 3 85 02 aa",
+    "TRACE output 2 84 ff"
+  ],
+  "fixed": [
+    "TRACE fixed 85 aa 84",
+    "TRACE open 86 bb 387 84 ff"
+  ],
+  "control": [
+    "TRACE control 58 3 22 16"
+  ],
+  "parallel": []
+}

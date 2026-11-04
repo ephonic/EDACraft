@@ -1,0 +1,6 @@
+library(test) {
+  cell(BUF) {
+    pin(A) { direction : input; }
+    pin(Z) { direction : output; function : "A"; }
+  }
+}

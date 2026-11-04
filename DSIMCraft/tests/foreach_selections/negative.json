@@ -1,0 +1,10 @@
+{
+  "final_expression": "int a[3];initial foreach(a[k+1])$display(\"%0d\",k);",
+  "final_number": "int a[3];initial foreach(a[0])$display(\"bad\");",
+  "missing_iterators": "int a[3];initial foreach(a)$display(\"bad\");",
+  "empty_iterators": "int a[3];initial foreach(a[])$display(\"bad\");",
+  "empty_selection": "int a[2][3];initial foreach(a[][k])$display(\"bad\");",
+  "comma_selection": "int a[2][3];initial foreach(a[i,j][k])$display(\"bad\");",
+  "duplicate_iterators": "int a[2][3];initial foreach(a[k,k])$display(\"bad\");",
+  "iterator_write": "int a[2][3];initial foreach(a[0][k])k=1;"
+}

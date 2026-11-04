@@ -1,0 +1,22 @@
+{
+  "stop": {
+    "eof": "",
+    "run": "run\n",
+    "quit": "quit\n"
+  },
+  "stop_startup": {
+    "eof": "",
+    "run": "run\n",
+    "quit": "quit\n"
+  },
+  "stops": {
+    "eof": "",
+    "run": "run\nrun\n",
+    "quit": "quit\n"
+  },
+  "final_stop": {
+    "eof": "",
+    "run": "run\n",
+    "quit": "quit\n"
+  }
+}

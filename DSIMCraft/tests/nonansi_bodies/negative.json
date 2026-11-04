@@ -1,0 +1,6 @@
+{
+ "mismatched_label":"function int f;return 1;endfunction:g initial $finish;",
+ "function_delay":"function int f;#1;return 1;endfunction initial begin int n;n=f();$finish;end",
+ "statement_before_input":"function int f;f=1;input int n;endfunction initial $finish;",
+ "missing_function_name":"function int;return 1;endfunction initial $finish;"
+}

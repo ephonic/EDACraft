@@ -1,0 +1,17 @@
+{
+  "unknown_type": "module top;initial for(Missing v=0;v<2;v++);endmodule",
+  "scope_escape": "module top;typedef int T;initial begin for(T v=0;v<2;v++);v=3;end endmodule",
+  "duplicate": "module top;typedef int T;initial for(T v=0,v=1;v<2;v++);endmodule",
+  "missing_initializer": "module top;class C;endclass initial for(C v;v!=null;v=null);endmodule",
+  "handle_assignment": "module top;class C;endclass initial for(C v=1;v!=null;v=null);endmodule",
+  "incompatible_classes": "module top;class A;endclass class B;endclass A a=new;initial for(B v=a;v!=null;v=null);endmodule",
+  "bad_specialization": "module top;class C#(type T=int);T n;endclass initial for(C#(Missing) v=new;v!=null;v=null);endmodule",
+  "array_declarator": "module top;typedef int T;initial for(T v[2]='{1,2};v[0]<2;v[0]++);endmodule",
+  "nba_automatic_alias": "module top;typedef int T;initial for(T v=0;v<2;v++)v<=1;endmodule",
+  "nba_automatic_integral": "module top;initial for(int v=0;v<2;v++)v<=1;endmodule",
+  "bad_enum": "module top;typedef enum int {A=1,B=2} E;initial for(E v=0;v<=B;v=v.next());endmodule",
+  "task_step": "module top;int i;task bump();i++;endtask initial for(i=0;i<2;bump());endmodule",
+  "function_initializer": "module top;int i;function int bump();i++;return i;endfunction initial for(bump();i<2;i++);endmodule",
+  "mailbox_task_step": "module top;mailbox#(int) m=new;int i;initial for(i=0;i<1;m.put(i));endmodule",
+  "semaphore_task_step": "module top;semaphore s=new(1);int i;initial for(i=0;i<1;s.get());endmodule"
+}

@@ -1,0 +1,26 @@
+{
+  "net": [
+    "module child;wire[7:0] x;endmodule module top;child u();initial u.x=3;endmodule",
+    "procedural assignment to a net"
+  ],
+  "parameter": [
+    "module child;parameter int N=2;endmodule module top;child u();initial u.N=3;endmodule",
+    "hierarchical assignment requires a variable target"
+  ],
+  "whole_array": [
+    "module child;reg[7:0] x[2];endmodule module top;child u();initial u.x=3;endmodule",
+    "requires all element indices"
+  ],
+  "ref_part": [
+    "module child;logic[7:0] x;endmodule module top;child u();task automatic f(ref logic[3:0] x);x=0;endtask initial f(u.x[3:0]);endmodule",
+    "ref does not support packed bit/part selections"
+  ],
+  "ref_net": [
+    "module child;wire[7:0] x;endmodule module top;child u();task automatic f(ref logic[7:0] x);x=0;endtask initial f(u.x);endmodule",
+    "ref actual must be a variable"
+  ],
+  "ref_type": [
+    "module child;logic[7:0] x;endmodule module top;child u();task automatic f(ref bit[7:0] x);x=0;endtask initial f(u.x);endmodule",
+    "ref requires equivalent argument types"
+  ]
+}

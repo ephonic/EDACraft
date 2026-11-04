@@ -1,0 +1,1 @@
+module top;int row=0;logic[3:0] data[0:1][0:1];int observed;initial begin data='{'{0,0},'{0,0}};{>>{row[0],data[row]}}=9'h1ab;observed=data[0][0];$display("TRACE subarray %0d %h %h %h %h",row,data[0][0],data[0][1],data[1][0],data[1][1]);end endmodule

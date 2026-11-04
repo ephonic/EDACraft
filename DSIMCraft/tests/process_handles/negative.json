@@ -1,0 +1,17 @@
+{
+  "construct": "module top;process p=new;endmodule",
+  "parameterized": "module top;process #(int) p;endmodule",
+  "unknown_method": "module top;process p;initial p.missing();endmodule",
+  "self_args": "module top;process p;initial p=process::self(1);endmodule",
+  "state_args": "module top;process p;string s;initial s=p.get_randstate(1);endmodule",
+  "seed_args": "module top;process p;initial p.srandom();endmodule",
+  "set_args": "module top;process p;initial p.set_randstate();endmodule",
+  "void_value": "module top;process p;int x;initial x=p.srandom(1);endmodule",
+  "void_state": "module top;process p;int x;initial x=p.set_randstate(\"x\");endmodule",
+  "seed_string": "module top;process p;string seed=\"x\";initial p.srandom(seed);endmodule",
+  "seed_object": "module top;process p;initial p.srandom(p);endmodule",
+  "global_self": "module top;process p=process::self();endmodule",
+  "static_state": "module top;string s;initial s=process::get_randstate();endmodule",
+  "control_suspend": "module top;process p;initial p.suspend();endmodule",
+  "control_resume": "module top;process p;initial p.resume();endmodule"
+}

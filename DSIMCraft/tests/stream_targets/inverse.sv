@@ -1,0 +1,1 @@
+module top;logic[9:0] value;logic[9:0] check_value;int observed;initial begin {<<4{value}}=10'b1100101010;check_value={<<4{value}};observed=1;$display("TRACE inverse %b %b",value,check_value);end endmodule

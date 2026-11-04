@@ -1,0 +1,102 @@
+{
+  "retained_memory_codec": {
+    "archive": "rtlagent-dual-20261029T003424-023c0c90-retained_memory_codec",
+    "events": 15418,
+    "outputs": [
+      [
+        "out_ready",
+        1
+      ],
+      [
+        "out_valid",
+        1
+      ],
+      [
+        "out_value",
+        64
+      ],
+      [
+        "out_tag",
+        13
+      ],
+      [
+        "_agent_mem_word_0",
+        64
+      ],
+      [
+        "_agent_mem_word_1",
+        64
+      ],
+      [
+        "_agent_mem_word_2",
+        64
+      ],
+      [
+        "_agent_mem_word_3",
+        64
+      ],
+      [
+        "_agent_mem_word_4",
+        64
+      ],
+      [
+        "_agent_mem_word_5",
+        64
+      ],
+      [
+        "_agent_mem_word_6",
+        64
+      ],
+      [
+        "_agent_mem_word_7",
+        64
+      ],
+      [
+        "_agent_mem_word_8",
+        64
+      ],
+      [
+        "_agent_mem_word_9",
+        64
+      ],
+      [
+        "_agent_mem_word_10",
+        64
+      ],
+      [
+        "_agent_mem_word_11",
+        64
+      ],
+      [
+        "_agent_mem_word_12",
+        64
+      ],
+      [
+        "_agent_mem_word_13",
+        64
+      ],
+      [
+        "_agent_mem_word_14",
+        64
+      ],
+      [
+        "_agent_mem_word_15",
+        64
+      ]
+    ],
+    "files": [
+      "rtl.sv",
+      "tb.sv",
+      "stimulus.hex"
+    ],
+    "input_sha256": {
+      "rtl.sv": "07f570e32cb439a0abd13ad2b1ba145c9e7a27cb00c83be38531c9ccdf175ccd",
+      "tb.sv": "09db9202d27d2f61054ad900e2a92012710ca2f9500b404643ef3ff09d719a79",
+      "stimulus.hex": "1606c063f58132358ae311c5329d027df0a6afd4239b404b35e5ac333dc69583"
+    },
+    "expected_trace_sha256": "0fc610257659f9ccc4b3573d39e1cb5b6c5c348fed5ccc4c368880e78fdca1b7",
+    "oracle_events_sha256": "fd652c6f9738c7b86bf0362d704950969dadeaee1cee21b1e3ad2329b028de24",
+    "independent_cycle_oracle": false,
+    "reference": "Qualified original VCS cycle trace; independent numeric transaction/memory history was separately checked by original producer"
+  }
+}

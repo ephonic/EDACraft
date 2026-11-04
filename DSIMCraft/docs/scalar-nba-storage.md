@@ -1,0 +1,9 @@
+# Scalar whole-variable NBA storage
+
+The RTL compiler selects `DSIM_COMPACT_NBA_STORAGE` when the design has only whole-variable NBA stores and no wide or text values. Nonblocking slices, concatenations, event-controlled stores and dynamic elements select the original representation. Gate compilation also retains the original representation. The selection uses lowered target metadata, independently of the RTL and gate parsers.
+
+On 64-bit targets a compact NBA record occupies 32 bytes instead of 56. Whole-variable updates store the two scalar bit planes and target ID; the target's width determines resizing during commit. `assign_nba` passes those planes in integer registers. Queue insertion order, batch boundaries, Active/Inactive/NBA regions, event budgets and process PCs are unchanged. Delayed updates and checkpoints own their payloads. A deep-copyable optional selection preserves the kernel API's partial-write behavior, including the original RHS width; compiler-generated partial-NBA designs use the original representation because the extra allocation regressed a partial-write stress test.
+
+`DSIM_REFERENCE_NBA_STORAGE=1` restores the original storage and argument path when compiling generated C++. Before measurement, this path's `.text` section must match the frozen M111 executable. The full AXI4 workload contains partial NBA writes and retains identical default `.text` too.
+
+The focused regression checks complete ordered and settled VCD histories, exact budget/state boundaries, prediction commit/rollback, mixed delayed/whole/partial queue ownership, two-state conversion and real independent parallel partitions. Performance acceptance uses unchanged complete RTL workloads on the same host, GCC options, CPU affinity and VCS input; small queue stress tests are diagnostic only.

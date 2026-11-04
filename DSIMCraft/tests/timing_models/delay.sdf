@@ -1,0 +1,12 @@
+(DELAYFILE (SDFVERSION "3.0") (TIMESCALE 1ns)
+  (CELL (CELLTYPE "C") (INSTANCE u)
+    (DELAY
+      (ABSOLUTE
+        (IOPATH A Z (0.051) (0.061))
+        (IOPATH B Y (0.071) (0.081))
+        (COND B==1'b0 (IOPATH A Z (0.091)))
+        (CONDELSE (IOPATH A Z (0.101)))
+        (IOPATH (posedge A) Y (0.111) (0.121)))
+      (INCREMENT (IOPATH A Z (0.005) (-0.014)))))
+  (CELL (CELLTYPE "C") (INSTANCE v)
+    (DELAY (INCREMENT (IOPATH B Z (0.005) (0.005))))))

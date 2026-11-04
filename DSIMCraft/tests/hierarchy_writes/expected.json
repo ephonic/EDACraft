@@ -1,0 +1,12 @@
+{
+  "basic": [
+    "TRACE hierarchy basic 12f4 10e7 abce a234"
+  ],
+  "wide": [
+    "TRACE hierarchy wide 1fdb97530eca864200000000000000000 123456789abcdef010123456789abcdef 1e1e1e1e1e1e1e1e10123456789abcdef"
+  ],
+  "nulls": [
+    "TRACE hierarchy nulls 4 9"
+  ],
+  "parallel": []
+}

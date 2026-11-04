@@ -1,0 +1,1 @@
+module top;logic[39:0] q[$]='{40'h123456789a,40'hbcdefffedc};logic[127:0] value;logic[79:0] swapped;int observed;initial begin value={>>{q}};swapped={<<40{q}};observed=q.size();$display("TRACE wide %h %h %0d",value,swapped,observed);end endmodule

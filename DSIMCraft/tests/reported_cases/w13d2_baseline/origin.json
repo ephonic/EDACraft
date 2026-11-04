@@ -1,0 +1,8 @@
+{
+  "path": "/Users/yangfan/vibe-coding/dsim-test/cases/harness-rejected/rtlagent-dual-20261023T050412-58f8039f-w13d2_baseline",
+  "case": "w13d2_baseline",
+  "original_rtl_sha256": "93751648022e27c3a1029e55cd8873a4b495a6244663f1720e56e2b1de44238b",
+  "original_tb_sha256": "a676219c794c00a51c3a199c5b7f93b78173216fe211e4f60a2b31b5292b2a30",
+  "original_stimulus_sha256": "908cb1f57a7e41a7ba39876b7bd2d74d1601dbcbded42d285f70899ea28a92b6",
+  "change": "Data inputs drive, #1 settle, clock/reset controls drive, #3 observe; original period and observation inventory preserved."
+}

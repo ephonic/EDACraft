@@ -1,0 +1,6 @@
+{
+ "values":["TRACE locators values count=3"],
+ "classes":["TRACE locators classes count=3"],
+ "functions":["TRACE locators functions total=6"],
+ "rollback":["TRACE locators rollback value=9"]
+}

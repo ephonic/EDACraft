@@ -1,0 +1,1 @@
+module top;int data[2];task automatic fill(input int n,output int values[2]);if(n==0)begin values='{1,2};return;end fill(n-1,values);#1;values[0]+=n;endtask initial begin fill(2,data);$display("TRACE arrays %0d %0d %0d",data[0],data[1],$time);end endmodule

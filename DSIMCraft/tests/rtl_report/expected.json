@@ -1,0 +1,36 @@
+{
+  "assert_nba": [
+    "TRACE assert 1"
+  ],
+  "ff_initializer": [
+    "TRACE ff 0"
+  ],
+  "hierarchy": [
+    "TRACE hierarchy 07"
+  ],
+  "hierarchy_timing": [
+    "TRACE hierarchy_timing 2 4 10 6 1 -2 1",
+    "TRACE hierarchy_edge 9000 1"
+  ],
+  "input_var": [
+    "TRACE var 1"
+  ],
+  "p1": [
+    "p1 a=0"
+  ],
+  "p2": [
+    "p2 a=1"
+  ],
+  "p3": [
+    "p3 a=1 clk=1"
+  ],
+  "replication": [
+    "TRACE replication 7 ff"
+  ],
+  "task_definition": [
+    "TRACE definition 1"
+  ],
+  "typed_formal": [
+    "TRACE struct 21"
+  ]
+}

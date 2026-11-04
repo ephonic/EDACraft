@@ -1,0 +1,10 @@
+{
+  "cast_partial": {
+    "source": "module top;typedef logic[3:0] qs_t[$];qs_t value;initial begin value=qs_t'(10'b1010100110);$display(\"TRACE cast_partial %0d\",value.size());end endmodule\n",
+    "diagnostic": "bit-stream cast size mismatch"
+  },
+  "array_to_packed": {
+    "source": "module top;byte q[$]='{8'h12,8'h34};int value;initial begin value=int'(q);$display(\"TRACE array_to_packed %h\",value);end endmodule\n",
+    "diagnostic": "bit-stream cast size mismatch"
+  }
+}

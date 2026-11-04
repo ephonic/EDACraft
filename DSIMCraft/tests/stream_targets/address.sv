@@ -1,0 +1,1 @@
+module top;int index=0;logic[3:0] data[0:1];int observed;initial begin data='{0,0};{>>{index[3:0],data[index]}}=8'h15;observed=data[0];$display("TRACE address %0d %h %h",index,data[0],data[1]);end endmodule

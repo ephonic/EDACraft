@@ -1,0 +1,1 @@
+module top;typedef logic[3:0] q_t[$];logic[4:0] q[$]='{5'b10101,5'b00110};q_t value;int observed;initial begin value=q_t'({>>{q}});observed=value.size();$display("TRACE stream_cast_partial %0d %h %h %h",value.size(),value[0],value[1],value[2]);end endmodule

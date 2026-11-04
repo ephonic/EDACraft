@@ -1,0 +1,14 @@
+{
+  "defaults": [
+    "TRACE defaults 7 11 9 2 2 2 3 2 3 2 2 2 3"
+  ],
+  "overlap": [
+    "TRACE short 3000 17 12",
+    "TRACE long 5000 7 6",
+    "TRACE overlap 0 2"
+  ],
+  "parallel": [],
+  "signatures": [
+    "TRACE signatures 1562 1568"
+  ]
+}

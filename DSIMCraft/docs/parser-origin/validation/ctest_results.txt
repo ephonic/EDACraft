@@ -1,0 +1,16 @@
+Test project G:/vibe-codeing/EDACraft_dev/scratch/parser_bundle_validation_20261017
+    Start 1: rtl_semantic_memory
+1/2 Test #1: rtl_semantic_memory ..............***Failed    0.11 sec
+[DEBUG] reg_var_symbol redefine check: name=z node_type=16 existing_inout=2 current_inout=0 current_net=17
+parse result 1
+Assertion failed: result==expected, file G:/vibe-codeing/EDACraft_dev/packages/edacraft_parsers_20261017/verilog_parser/test/semantic_memory.cpp, line 47
+
+    Start 2: parser_bundle_smoke
+2/2 Test #2: parser_bundle_smoke ..............   Passed    0.04 sec
+
+50% tests passed, 1 tests failed out of 2
+
+Total Test time (real) =   0.16 sec
+
+The following tests FAILED:
+	  1 - rtl_semantic_memory (Failed)

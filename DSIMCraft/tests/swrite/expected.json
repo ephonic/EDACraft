@@ -1,0 +1,40 @@
+{
+  "formats": [
+    "TRACE mixed <A         -7B5C253>",
+    "TRACE dynamic <[5]>",
+    "TRACE text <a5b>",
+    "TRACE escape <hello %>",
+    "TRACE realfmt <[3.00]>",
+    "TRACE consumed <4%0d          8>",
+    "TRACE literals <[4142/D/]>",
+    "TRACE time <top/1.0ns>"
+  ],
+  "functions": [
+    "TRACE record <[         17]/1>",
+    "TRACE effects <          1/          2> 2",
+    "TRACE radix <af> 1",
+    "TRACE again <[         -9]/2>"
+  ],
+  "numeric": [
+    "TRACE int <         -7> 11",
+    "TRACE nums <         -3253 3  X>",
+    "TRACE wide <1361129467683753853853498429727072845823>",
+    "TRACE real <1.25>",
+    "TRACE null <                   0>",
+    "TRACE empty <>"
+  ],
+  "radix": [
+    "TRACE hex <fffffff9fd>",
+    "TRACE binary <0011xz10>",
+    "TRACE octal <017Xx>",
+    "TRACE override <-7/0f>",
+    "TRACE empty <>"
+  ],
+  "targets": [
+    "TRACE packed <def> 646566",
+    "TRACE wide <          ABC  7> 00000000000000000000414243202037",
+    "TRACE indexed <17> 0",
+    "TRACE self <old/  3>",
+    "TRACE concat <ABCD>"
+  ]
+}

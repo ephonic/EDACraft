@@ -1,0 +1,1 @@
+library(l){cell(S){pin(A){direction:input;}pin(Z){direction:output;function:"A";}}cell(D){pin(A){direction:input;}pin(Z){direction:output;function:"A";}}}

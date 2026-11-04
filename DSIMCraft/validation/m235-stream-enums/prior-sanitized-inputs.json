@@ -1,0 +1,75 @@
+{
+  "status": "PASS",
+  "models": {
+    "stream_targets/uvm": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "stream_targets/nested": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "stream_targets/address": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "stream_targets/subarray": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "stream_targets/four_state": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "stream_targets/wide": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/binding": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/events": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/typed": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/capture": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/reference": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/compound": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/wait_binding": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/hierarchy": {
+      "status": "PASS",
+      "complete_cpp_identity": true,
+      "complete_waveform_identity": true
+    }
+  }
+}

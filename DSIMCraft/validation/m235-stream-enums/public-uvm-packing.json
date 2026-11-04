@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "simulator": "dsim",
+  "complete_uvm_source": true,
+  "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+  "uvm_source_files": 181,
+  "uvm_pkg_sha256": "4c1516f91172fc24e9d8f023911ffcb5718da281f285f3062547553c09be60e6",
+  "smoke_sha256": "16d8d5dd9156f9dae343aa8b922f4b33f09122ed0880702150554e18bf30cde8",
+  "stages": {
+    "compile": {
+      "status": "PASS",
+      "command": [
+        "/Users/yangfan/vibe-coding/dsim/build-m217/dsim",
+        "--shared-functions",
+        "+incdir+/Users/yangfan/vibe-coding/dsim-test/evidence/m152-abstract-casts/uvm-reference/accellera-2020.3.1/src",
+        "+define+UVM_NO_DPI",
+        "/Users/yangfan/vibe-coding/dsim-test/evidence/m152-abstract-casts/uvm-reference/accellera-2020.3.1/src/uvm_pkg.sv",
+        "/Users/yangfan/vibe-coding/dsim/tests/uvm_preprocess/packing.sv",
+        "--emit-cpp",
+        "/Users/yangfan/vibe-coding/dsim-test/evidence/m235-stream-enums/uvm-packing/model.cpp",
+        "--cxx-flag",
+        "-O0",
+        "-o",
+        "/Users/yangfan/vibe-coding/dsim-test/evidence/m235-stream-enums/uvm-packing/native"
+      ],
+      "exit_code": 0,
+      "seconds": 113.75075183302397
+    },
+    "run": {
+      "status": "PASS",
+      "command": [
+        "/Users/yangfan/vibe-coding/dsim-test/evidence/m235-stream-enums/uvm-packing/native"
+      ],
+      "exit_code": 0,
+      "seconds": 4.141175541008124
+    }
+  },
+  "model_generated": true,
+  "native_generated": true,
+  "hello_pass": true,
+  "defines": [
+    "UVM_NO_DPI"
+  ],
+  "native_optimization_override": "-O0"
+}

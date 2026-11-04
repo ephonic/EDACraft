@@ -1,0 +1,263 @@
+library (seq_cell) {
+  delay_model : "table_lookup";
+  time_unit : "1ns";
+  capacitive_load_unit (1,pf);
+  voltage_unit : "1V";
+  current_unit : "1mA";
+  leakage_power_unit : "1pW";
+  pulling_resistance_unit : "1kohm";
+
+  nom_process : 1.0;
+  nom_temperature : 25.0;
+  nom_voltage : 1.0;
+
+  input_threshold_pct_rise : 50;
+  input_threshold_pct_fall : 50;
+  output_threshold_pct_rise : 50;
+  output_threshold_pct_fall : 50;
+  slew_lower_threshold_pct_rise : 20;
+  slew_lower_threshold_pct_fall : 20;
+  slew_upper_threshold_pct_rise : 80;
+  slew_upper_threshold_pct_fall : 80;
+  slew_derate_from_library : 1.0;
+
+  lu_table_template (delay_template_3x3) {
+    variable_1 : input_net_transition;
+    variable_2 : total_output_net_capacitance;
+    index_1 ("0.01, 0.05, 0.1");
+    index_2 ("0.001, 0.01, 0.1");
+  }
+
+  lu_table_template (constraint_template_3x3) {
+    variable_1 : related_pin_transition;
+    variable_2 : constrained_pin_transition;
+    index_1 ("0.01, 0.05, 0.1");
+    index_2 ("0.01, 0.05, 0.1");
+  }
+
+  cell (DFFx1) {
+    area : 2.0;
+    pin (CLK) {
+      direction : "input";
+      capacitance : 0.001;
+    }
+    pin (D) {
+      direction : "input";
+      capacitance : 0.001;
+      timing () {
+        related_pin : "CLK";
+        timing_type : "setup_rising";
+        rise_constraint (constraint_template_3x3) {
+          values ( \
+            "0.05, 0.06, 0.08", \
+            "0.06, 0.07, 0.09", \
+            "0.08, 0.09, 0.12" \
+          );
+        }
+        fall_constraint (constraint_template_3x3) {
+          values ( \
+            "0.04, 0.05, 0.07", \
+            "0.05, 0.06, 0.08", \
+            "0.07, 0.08, 0.10" \
+          );
+        }
+      }
+      timing () {
+        related_pin : "CLK";
+        timing_type : "hold_rising";
+        rise_constraint (constraint_template_3x3) {
+          values ( \
+            "0.03, 0.04, 0.05", \
+            "0.04, 0.05, 0.06", \
+            "0.05, 0.06, 0.08" \
+          );
+        }
+        fall_constraint (constraint_template_3x3) {
+          values ( \
+            "0.02, 0.03, 0.04", \
+            "0.03, 0.04, 0.05", \
+            "0.04, 0.05, 0.07" \
+          );
+        }
+      }
+    }
+    pin (Q) {
+      direction : "output";
+      timing () {
+        related_pin : "CLK";
+        timing_sense : "positive_unate";
+        timing_type : "rising_edge";
+        cell_rise (delay_template_3x3) {
+          values ( \
+            "0.15, 0.20, 0.30", \
+            "0.18, 0.24, 0.36", \
+            "0.22, 0.30, 0.42" \
+          );
+        }
+        cell_fall (delay_template_3x3) {
+          values ( \
+            "0.12, 0.16, 0.24", \
+            "0.14, 0.19, 0.28", \
+            "0.18, 0.24, 0.34" \
+          );
+        }
+        rise_transition (delay_template_3x3) {
+          values ( \
+            "0.06, 0.10, 0.18", \
+            "0.08, 0.12, 0.22", \
+            "0.10, 0.15, 0.26" \
+          );
+        }
+        fall_transition (delay_template_3x3) {
+          values ( \
+            "0.05, 0.08, 0.15", \
+            "0.06, 0.10, 0.18", \
+            "0.08, 0.12, 0.22" \
+          );
+        }
+      }
+    }
+  }
+
+  cell (INVx1) {
+    area : 1.0;
+    pin (A) {
+      capacitance : 0.001;
+      direction : "input";
+    }
+    pin (Y) {
+      direction : "output";
+      timing () {
+        related_pin : "A";
+        timing_sense : "negative_unate";
+        timing_type : "combinational";
+        cell_rise (delay_template_3x3) {
+          values ( \
+            "0.10, 0.15, 0.25", \
+            "0.12, 0.18, 0.30", \
+            "0.15, 0.22, 0.35" \
+          );
+        }
+        cell_fall (delay_template_3x3) {
+          values ( \
+            "0.08, 0.12, 0.20", \
+            "0.10, 0.15, 0.25", \
+            "0.13, 0.20, 0.32" \
+          );
+        }
+        rise_transition (delay_template_3x3) {
+          values ( \
+            "0.05, 0.08, 0.15", \
+            "0.06, 0.10, 0.18", \
+            "0.08, 0.13, 0.22" \
+          );
+        }
+        fall_transition (delay_template_3x3) {
+          values ( \
+            "0.04, 0.07, 0.12", \
+            "0.05, 0.09, 0.16", \
+            "0.07, 0.11, 0.20" \
+          );
+        }
+      }
+    }
+  }
+
+  cell (BUFx1) {
+    area : 1.0;
+    pin (A) {
+      capacitance : 0.001;
+      direction : "input";
+    }
+    pin (Y) {
+      direction : "output";
+      timing () {
+        related_pin : "A";
+        timing_sense : "positive_unate";
+        timing_type : "combinational";
+        cell_rise (delay_template_3x3) {
+          values ( \
+            "0.10, 0.15, 0.25", \
+            "0.12, 0.18, 0.30", \
+            "0.15, 0.22, 0.35" \
+          );
+        }
+        cell_fall (delay_template_3x3) {
+          values ( \
+            "0.08, 0.12, 0.20", \
+            "0.10, 0.15, 0.25", \
+            "0.13, 0.20, 0.32" \
+          );
+        }
+        rise_transition (delay_template_3x3) {
+          values ( \
+            "0.05, 0.08, 0.15", \
+            "0.06, 0.10, 0.18", \
+            "0.08, 0.13, 0.22" \
+          );
+        }
+        fall_transition (delay_template_3x3) {
+          values ( \
+            "0.04, 0.07, 0.12", \
+            "0.05, 0.09, 0.16", \
+            "0.07, 0.11, 0.20" \
+          );
+        }
+      }
+    }
+  }
+
+  cell (ICGx1) {
+    area : 1.5;
+    clock_gating_integrated_cell : latch_posedge_precontrol;
+    pin (CLK) {
+      direction : "input";
+      clock : true;
+      clock_gate_clock_pin : true;
+      capacitance : 0.001;
+    }
+    pin (EN) {
+      direction : "input";
+      clock_gate_enable_pin : true;
+      capacitance : 0.001;
+    }
+    pin (GCLK) {
+      direction : "output";
+      clock_gate_out_pin : true;
+      function : "CLK & EN";
+      timing () {
+        related_pin : "CLK";
+        timing_sense : "positive_unate";
+        timing_type : "combinational";
+        cell_rise (delay_template_3x3) {
+          values ( \
+            "0.05, 0.05, 0.05", \
+            "0.05, 0.05, 0.05", \
+            "0.05, 0.05, 0.05" \
+          );
+        }
+        cell_fall (delay_template_3x3) {
+          values ( \
+            "0.05, 0.05, 0.05", \
+            "0.05, 0.05, 0.05", \
+            "0.05, 0.05, 0.05" \
+          );
+        }
+        rise_transition (delay_template_3x3) {
+          values ( \
+            "0.02, 0.02, 0.02", \
+            "0.02, 0.02, 0.02", \
+            "0.02, 0.02, 0.02" \
+          );
+        }
+        fall_transition (delay_template_3x3) {
+          values ( \
+            "0.02, 0.02, 0.02", \
+            "0.02, 0.02, 0.02", \
+            "0.02, 0.02, 0.02" \
+          );
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "basic": [
+    "TRACE first 1 <> 9 3",
+    "TRACE next 1 <a> 3",
+    "TRACE class 2 0 1 0",
+    "TRACE member 1 <x> 255",
+    "TRACE delete 0"
+  ],
+  "copy": [
+    "TRACE copy 3 9 9 0",
+    "TRACE states 01000110 01000110"
+  ],
+  "foreach": [
+    "TRACE key <> 3",
+    "TRACE key <a> 5",
+    "TRACE key <ab> 7",
+    "TRACE totals 18 3 18 0"
+  ],
+  "keys": [
+    "TRACE key 0 0 11",
+    "TRACE key 1 97 12",
+    "TRACE key 2 97 3",
+    "TRACE key 1 122 4",
+    "TRACE key 1 -128 5",
+    "TRACE key 1 -1 6",
+    "TRACE exhausted 0 1 6",
+    "TRACE last 1 -1",
+    "TRACE prev 1 ab",
+    "TRACE next 1 ab",
+    "TRACE wide 1111011011100101110101001100001110110010101000011001000010000000000010001001000100011001101000100010101010110011001110111z10x0110 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "TRACE state 2 2 0 6",
+    "TRACE empty 0 2 0"
+  ],
+  "class_maps": [
+    "TRACE first 1 x 2",
+    "TRACE class 111101101110010111010100110000111011001010100001100100001000000000001000100100010001100110100010001010101011001100111011110001000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 2 0 23 0",
+    "TRACE handles 1 23 1",
+    "TRACE selected 1111011011100101110101001100001110110010101000011001000010000z1x00001000100100010001100110100010001010101011001100111011110001000"
+  ],
+  "lifetime": [
+    "TRACE lifetime 9 17 10 18"
+  ],
+  "enums": [
+    "TRACE enum ALL LOW 1 2",
+    "TRACE enum-missing xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 2"
+  ],
+  "rollback": [
+    "TRACE rollback 24 2 1"
+  ],
+  "parallel": []
+}

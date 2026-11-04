@@ -1,0 +1,1 @@
+module top;process worker;int observed;process::state state;initial begin fork begin worker=process::self();#3;end join_none wait(worker!=null);#1;state=worker.status();observed=(state==process::WAITING);worker.await();$display("TRACE status %0d %0d",observed,worker.status());end endmodule

@@ -1,0 +1,2 @@
+module agent_generic_module #(parameter int WIDTH=8,AW=8,BW=3)(input logic clk,rst_n,input logic [AW-1:0] in_a,input logic [BW-1:0] in_b,input logic [WIDTH-1:0] in_data,output logic [WIDTH-1:0] out_word,out_old_word);logic [AW-1:0] flags;logic [WIDTH-1:0] next_word;always_comb begin flags=in_a;flags[AW-1]=in_b[0];next_word=out_word;if(flags)next_word=in_data;end
+always_ff @(posedge clk or negedge rst_n)if(!rst_n)begin {out_word,out_old_word}<=16'd0;end else begin out_old_word<=out_word;out_word<=next_word;end endmodule

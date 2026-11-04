@@ -1,0 +1,1 @@
+module top;byte q[$]='{8'h12,8'h34};int calls;logic[23:0] value;function automatic byte update();calls++;q[0]=8'h56;return 8'h78;endfunction initial begin value={>>{q,update()}};$display("TRACE capture %h %02h %0d",value,q[0],calls);end endmodule

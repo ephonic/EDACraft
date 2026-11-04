@@ -1,0 +1,977 @@
+{
+  "schema": "dsimcraft.source-release.validation.v1",
+  "version": "0.13.0",
+  "date": "2026-11-04",
+  "upstream_commit": "14f9e3dedbd716f7a748415866c00e47983133d1",
+  "status": "PASS",
+  "scope": "Independent builds of exported source and explicitly selected regression tests; no exported-source VCS, sanitizer or performance rerun; not full language/UVM coverage.",
+  "hosts": {
+    "macos": {
+      "platform": "macOS ARM64",
+      "os": "macOS 27.0.1",
+      "compiler": "Apple Clang 21.0.0",
+      "status": "PASS",
+      "counter_trace": "DSIMCRAFT COUNTER PASS 4",
+      "groups": {
+        "rtl-virtual-interface-calls": {
+          "status": "PASS",
+          "captures": 30,
+          "models": {
+            "basic": {
+              "trace": [
+                "TRACE vif call 6 2 7"
+              ],
+              "source_sha256": "ba6aa484eee73871810d25936b51b12dab0c1090066483cc3ade9624dc04d48b",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "bbe92e5c4fdc4214afb23b7443129a1b26b00f0e1ea00cb59be02ba49339f17c"
+                },
+                "shared": {
+                  "cpp_sha256": "9b942621bbd1e351baa043718759cf423676430bb62a2a0f6acd572ce18ad142"
+                },
+                "wheel": {
+                  "cpp_sha256": "c7e5062667a56573a2130bd0aad1d1946281a11177cad825c6a87ea3ec6d2e8b"
+                }
+              }
+            },
+            "capture": {
+              "trace": [
+                "TRACE vif capture 1 6 16 16 10"
+              ],
+              "source_sha256": "1627b4ab410e8641921d4f16335dcdda8e9021a872ca8896e7daa65474a6ca69",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "a7eca097beeee6429e786563853287a67a60b0d581ccbb1138d9ae63ce4511c5"
+                },
+                "shared": {
+                  "cpp_sha256": "1cf47af8eaf248af188291996820d3ee1b76938c0ceb8e680e8cb08006a55a19"
+                },
+                "wheel": {
+                  "cpp_sha256": "258af9e691418dc67df2a4ae0b4e1f6d5a97020567b3ab731407eaf51c9c8811"
+                }
+              }
+            },
+            "reentry": {
+              "trace": [
+                "TRACE vif reentry 10 20 10 20"
+              ],
+              "source_sha256": "2c11f1f5d486e1034ae7d667d4b886bbe3dcfc4dd7361055b7d2f6e5e34d232e",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "05fdf7806760ce58f23592f34c0cbdf5763f49df30f9dab0b71777f2767141d9"
+                },
+                "shared": {
+                  "cpp_sha256": "f49272a7ef9edcd62d1a584deda6fa9ca1a8f4da7356173e4bfd8c8274795e70"
+                },
+                "wheel": {
+                  "cpp_sha256": "9279cde76323aade651551306919981f9fbbede5b1cad2d4b0cb296f8320870b"
+                }
+              }
+            },
+            "arguments": {
+              "trace": [
+                "TRACE vif arguments 8 17 33 35 sum:35"
+              ],
+              "source_sha256": "18b9840dbbdbac6539205b91b87b379ddfded9fe1f42723a3302a7c4e3840044",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "0a16064d4dfbf31d6cf4d03dc47694c44fbb46aa27937d0dbcb15e007aa0a4c9"
+                },
+                "shared": {
+                  "cpp_sha256": "5cc60bf7d35f7e0019b759bd10a8ce61b59c062fc33d68ad9fda0eb1a112a7ed"
+                },
+                "wheel": {
+                  "cpp_sha256": "3a36d5f21134e6ef9cd1521c69ccfd7d87cafd9cef015bda200140950fee513c"
+                }
+              }
+            },
+            "types": {
+              "trace": [
+                "TRACE vif types HIGH fedcba987654321001234567 1.25"
+              ],
+              "source_sha256": "504e0a847eaecc7530aa339a972debdda9c4e0014326ff61f63f1116978afb19",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "96739910f5ab5b1123f1d04ee3e7cf056a7c52b8a46ea3f69a59d6066a597b11"
+                },
+                "shared": {
+                  "cpp_sha256": "fbb73b6c20bbc04d356eaaaab796ba746d09907502d22a4e172b26ac4deb221f"
+                },
+                "wheel": {
+                  "cpp_sha256": "d152d40807055f042b50257a8640db0f7e86d772a27986e792615df73552caf1"
+                }
+              }
+            },
+            "nested": {
+              "trace": [
+                "TRACE vif nested 6 6 6 6"
+              ],
+              "source_sha256": "bec7cb01552af63400a8cf6a627e4fde43675eedf017645328932d8e8aad6452",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "9e59e50436b1d53e7303f46468057c1a2cbd2120b47a0758e12c8fd8630f4eab"
+                },
+                "shared": {
+                  "cpp_sha256": "675dbcfaf836cd03584c66decb0516da8db3911806dafda293860d17905411c4"
+                },
+                "wheel": {
+                  "cpp_sha256": "759c03cc4ef7bee273eb5ec6d242edb341c42dd99891ba3fdbb1c771e34e83be"
+                }
+              }
+            },
+            "arrays": {
+              "trace": [
+                "TRACE vif arrays 7 6 11 12"
+              ],
+              "source_sha256": "17ceef3a0606cc350df9873b9970c20bf51c5206e3c5683bc983904874fd43b1",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "838f306698f287fb06d7ea8f29f6326671ba53958629c1a929a124688549584a"
+                },
+                "shared": {
+                  "cpp_sha256": "f8846f8e432f130b8faf9b82e0630026008c4e6d3c39b8fc1729015ec104f314"
+                },
+                "wheel": {
+                  "cpp_sha256": "0ffdd840c9ca8f4d32b2d809675fb9f9828c14dfeafd39ea7a054bcf3f637190"
+                }
+              }
+            },
+            "timing": {
+              "trace": [
+                "TRACE vif timing 3.00 0.30"
+              ],
+              "source_sha256": "1dd46416d1ce0dab56309a6bbf1165e88f3b058057191263c7ab2669961d6476",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "f34c56ae56b4adccd4f078dae3e6c16c1222267354b5113f0d10ab7f6e5e762e"
+                },
+                "shared": {
+                  "cpp_sha256": "f623d49cb212f000457ee8a5674cee8a926fda1a4aea750c49115a55b8434639"
+                },
+                "wheel": {
+                  "cpp_sha256": "6a299a36b652431ba410f9d4f62d2dd042ce051fb3bbfbdb00cf13c9dc983b2f"
+                }
+              }
+            },
+            "static": {
+              "trace": [
+                "TRACE vif static 1 1 2 2"
+              ],
+              "source_sha256": "3ce9f7f8e6630d1e1e449ab990158c0b5881c1ab55a714dd8d79d0b0e5c86ce5",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "a51e7ba65d0df8c20b46b6de385e2f5bc5a128256eac86d88b7ee6e4a73ed76d"
+                },
+                "shared": {
+                  "cpp_sha256": "dc182e2be6237cef40be504249b99ae498f133fedb7955b11c6ac195ac855ef2"
+                },
+                "wheel": {
+                  "cpp_sha256": "284e1c17655c4c33b5d60b23519cd1cb32c4a36ecfa61a008a2061e33e42b768"
+                }
+              }
+            },
+            "events": {
+              "trace": [
+                "TRACE vif events 3 3"
+              ],
+              "source_sha256": "738441aaceaa25b3c21c77848c46b0086b99ffd790094360f50797d2287be33e",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "c0ba5553c87de95a5ccaf63fd586c35e335f1eaf1bb36496fe64b85a99a03e9c"
+                },
+                "shared": {
+                  "cpp_sha256": "ffca5f696dbc7ebb652201e961f6776a9e2989a3ae5517184aa9eb6f40bf9166"
+                },
+                "wheel": {
+                  "cpp_sha256": "99e9ec4146033b332a72395845288b66cb8e31159bf8ed88e1180ca0591851ba"
+                }
+              }
+            }
+          },
+          "negative_cases": 6,
+          "runtime_rejections": 2
+        },
+        "rtl-virtual-interfaces": {
+          "status": "PASS",
+          "captures": 33,
+          "models": {
+            "basic": {
+              "trace": [
+                "TRACE GAP virtual_interface 1"
+              ],
+              "source_sha256": "ebf2d20b3a4bc6ed0580b8e6edafb791bb04365a4f8d5cd9581714e08c763ec0",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "0bb4e575a0c791722926089abfe9a360a60db4e1bcfc9ddb63adb0eb8b57ba45"
+                },
+                "shared": {
+                  "cpp_sha256": "92ed8362d0431c9d420535e4ba23df1915a2c066df7c5f656a5f7b188ac04da5"
+                },
+                "wheel": {
+                  "cpp_sha256": "3450ebb1c526c4c19c2714caaa93bcf7f9026fb751b0f4b87c0acf5d0312ee48"
+                }
+              }
+            },
+            "binding": {
+              "trace": [
+                "TRACE virtual binding 3c a6 1"
+              ],
+              "source_sha256": "8a7a5a61aaefd26786cd5e6a211da2f6712a6ca70f07495f916688014f0420ef",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "ab0ae0e932ae0702afe1b0b9e1c51d0ae827a3fba455526fe2b08142ce2cf68d"
+                },
+                "shared": {
+                  "cpp_sha256": "a831311a7868e2376cac00eda52dc37ad6ffcd788132a06d221ed4cab40b3214"
+                },
+                "wheel": {
+                  "cpp_sha256": "9ba9b0130e295fb76e53b96ed3451b6c4082a67d5fc6d4e8af2f37ee21a0e27f"
+                }
+              }
+            },
+            "events": {
+              "trace": [
+                "TRACE virtual events 25 13 1 37"
+              ],
+              "source_sha256": "659e0dfd19383473ae3ec8524ac2a15629427e602160c66143f3a89f0d0aed5e",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "f16dda0a563eca1cbfe8b6bac0c8604ffc126c51c0acb1056d1921e3b505ac8b"
+                },
+                "shared": {
+                  "cpp_sha256": "2157c1699a1b07f811fb9ee56ba2c9bf41a504f160b6a1e1c4200cbac8ccc7ad"
+                },
+                "wheel": {
+                  "cpp_sha256": "367c906aeba69acc13f5db72459fcd2cdc97a70f578c392b50e51f627cf93cf5"
+                }
+              }
+            },
+            "typed": {
+              "trace": [
+                "TRACE virtual typed 1234 5678"
+              ],
+              "source_sha256": "97e43e3a46658d944b9dcb27997ca2d37e1c5ee5d61828483514d86a6b9f6a27",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "d9b09bb3b01b9ca03979211148747d80684eb134ce5f9173e9ad429ceff46b80"
+                },
+                "shared": {
+                  "cpp_sha256": "78eabd938a5f1ab55597e02b19c7d45e2a1a4e6e9ff347d45d12ee23c7920ce7"
+                },
+                "wheel": {
+                  "cpp_sha256": "7de2a7fa3267ff22aeb0540d19e9d289709979e828efdd36c4ba74b44a410d9a"
+                }
+              }
+            },
+            "capture": {
+              "trace": [
+                "TRACE virtual capture b 0 1"
+              ],
+              "source_sha256": "3f6e37b6b4f63b0ea448f18cc53655a0f425b633aeb5255f225379a7b5dbd34d",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "a11bebd292d425e91c86a0f2c0958c173f528a18b01f17a4f1e2e4db51343337"
+                },
+                "shared": {
+                  "cpp_sha256": "cdbfcc4e21322358e7cd4b2a953966ce2cfe02d0203addfc4c0305614bd99c8f"
+                },
+                "wheel": {
+                  "cpp_sha256": "66832970fc924efe24156f23a3dc25424486810c422469b431be13bd8e9357b0"
+                }
+              }
+            },
+            "prototype": {
+              "trace": [
+                "TRACE virtual package 1"
+              ],
+              "source_sha256": "83815002c1b70fbe57ef596049711fe0ea0b59345bd4a84c4a82124701d6d22c",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "31f321f175dda7e28f0e3282d5caa5157ee60639528dde93a5326756ebf916e3"
+                },
+                "shared": {
+                  "cpp_sha256": "011ecddd4d3888fea7b5df26e6e79089fe48ba76071235c7c627aac13a218b26"
+                },
+                "wheel": {
+                  "cpp_sha256": "3a89d35fcfb21000a95dd3ce5303fa6288e8f60e37acd577eda8c58025e6c83d"
+                }
+              }
+            },
+            "reference": {
+              "trace": [
+                "TRACE virtual ref 5a 0"
+              ],
+              "source_sha256": "0c6e824f9fe2073dd8cdd79d94bb8da6f06d3f3fbaa9355c67f7bf0a637985d8",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "862fbd38de139cdd6adb266b67c0996703fcce2c5e28f9753e392debd7557b0e"
+                },
+                "shared": {
+                  "cpp_sha256": "711cc73fb450b274419911dd5ee21f6dc0488c554bad39b2f0ca9f279afc814c"
+                },
+                "wheel": {
+                  "cpp_sha256": "f829edba265358b6353f5c1c1fc6b28b9c14d589f9282b11be49fa5b42d4f91d"
+                }
+              }
+            },
+            "compound": {
+              "trace": [
+                "TRACE virtual compound -4 4 1 11 2"
+              ],
+              "source_sha256": "33c23e59b993b4edfe76cf3f29a88b662e272ec1923aaddc8a87072a82694994",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "12def81198271a342a0519f60f182a388edf0e221d793e31c6389aa458f85112"
+                },
+                "shared": {
+                  "cpp_sha256": "23057b20484f929adc742f5087413ee3476917d52fef4c1ee15da2ac93c19656"
+                },
+                "wheel": {
+                  "cpp_sha256": "16da962c5ea201254ff5e2aee5a1cf7f4b6a029f57ae4274b8ac149f3927696a"
+                }
+              }
+            },
+            "wait_binding": {
+              "trace": [
+                "TRACE virtual wait binding 3"
+              ],
+              "source_sha256": "91a4e25425e41face1a00de454abda3c29f171743123deb08335145a87628bcb",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "3cfea69e0f890f80add95f52838548a8de6af6752741724ec85fedf02484d843"
+                },
+                "shared": {
+                  "cpp_sha256": "7ff21f86b86c5cb417f30c3f0157490f32112ebec948167672d68cb1c955b565"
+                },
+                "wheel": {
+                  "cpp_sha256": "46020a112270cbd211126f7a8439e5dbaf2822c95754d1ea145bf9eaeb678d85"
+                }
+              }
+            },
+            "hierarchy": {
+              "trace": [
+                "TRACE virtual hierarchy ac"
+              ],
+              "source_sha256": "50fab2af9a5fff6e17ecf3665c3d54b2823a11981964764440e81c337b966ae9",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "1edd4420445c77c6868e9eaf54e65aed827c8167b68cc7306270c38160c1aa23"
+                },
+                "shared": {
+                  "cpp_sha256": "683cbcdaa9107fe2e94771f9f0691d2a3a2c1c528fd3c317dbf5545c581ea685"
+                },
+                "wheel": {
+                  "cpp_sha256": "031d68b55d6d39700b6123f13c305e250b9c0859122bd651d74278e240d17731"
+                }
+              }
+            },
+            "lexical": {
+              "trace": [
+                "TRACE virtual lexical 8 a5"
+              ],
+              "source_sha256": "511cd682e1e2f3f10dfd686049c1ab81a3171a03a99661149adbf25921a25906",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "249db59d1c14543b06c9aa1733d13e285779c8ff7d56f9dbb0b6c905fcec1a92"
+                },
+                "shared": {
+                  "cpp_sha256": "6c7be876a3122a5138a57840e1d5ef8c8094a619894e07c4dd947be66907fc6d"
+                },
+                "wheel": {
+                  "cpp_sha256": "9e989591b00b6eda57f90510d8f668762044130f3a465957712a33f4b9c7c634"
+                }
+              }
+            }
+          },
+          "negative_cases": 8,
+          "runtime_rejections": 3
+        },
+        "rtl-interface-subroutines": {
+          "status": "PASS",
+          "models": {
+            "basic": {
+              "status": "PASS",
+              "source_sha256": "0eb212244d4cebdff067f87a837d90dea5a5d0b27d5d63c06f8ca2cd77fcdb09",
+              "trace": [
+                "TRACE basic driver 3 7 6",
+                "TRACE basic top 5 6"
+              ],
+              "parallel_partitions": 1
+            },
+            "arguments": {
+              "status": "PASS",
+              "source_sha256": "0c2817fb439c232f7b2f7278e37b8debae2ab3c2459498b63ebcb2abc74d5e25",
+              "trace": [
+                "TRACE arguments 7 16 32 34 sum:34"
+              ],
+              "parallel_partitions": 1
+            },
+            "clones": {
+              "status": "PASS",
+              "source_sha256": "92edbb91709881f12a5a08fd49560e75306302949e0fd04c5fbb6cc845fab93c",
+              "trace": [
+                "TRACE clones 1 0 -9 1 2",
+                "TRACE clones 2 0 -8 1 2",
+                "TRACE clones 3 0 -7 1 2",
+                "TRACE clones 4 0 -6 1 2"
+              ],
+              "parallel_partitions": 1
+            },
+            "timing": {
+              "status": "PASS",
+              "source_sha256": "fd33dae318e2496b93f265e157800afac2aa3fccf76c1d1dcc49820884885bed",
+              "trace": [
+                "TRACE timing 13000 0 9"
+              ],
+              "parallel_partitions": 1
+            },
+            "sensitivity": {
+              "status": "PASS",
+              "source_sha256": "c49d8709089445b7e0094210e3de2c0293feb77403b832dd521c012150a6584d",
+              "trace": [
+                "TRACE sensitivity f6 5 a3"
+              ],
+              "parallel_partitions": 1
+            },
+            "parallel": {
+              "status": "PASS",
+              "source_sha256": "a7bd3754312817d54a4b5f155a2c4ed044e745e0d9958b6ea30915b44ace6a2a",
+              "trace": [],
+              "parallel_partitions": 2
+            },
+            "activation": {
+              "status": "PASS",
+              "source_sha256": "d9201c3c96b667bff6cff1b70f5b697e56a8f3da32863ad1f17ad8544eee8ffc",
+              "trace": [
+                "TRACE activation 9 8 5 8"
+              ],
+              "parallel_partitions": 1
+            }
+          },
+          "captures": 35,
+          "rollbacks": 7,
+          "commits": 7,
+          "checkpoint_restores": 2,
+          "negative_cases": 21,
+          "independent_oracle": "explicit fixture numeric/string/timing checks; parallel final values and zero errors"
+        }
+      },
+      "additional_tests": {
+        "parser_bundle_smoke": "PASS",
+        "sdf_parser": "PASS",
+        "gate_source": "PASS",
+        "runtime": "PASS"
+      },
+      "counter_text_vcd": "PASS"
+    },
+    "linux": {
+      "platform": "Linux x86_64",
+      "os": "CentOS Stream 9",
+      "compiler": "Intel icpx 2026.1.1",
+      "status": "PASS",
+      "counter_trace": "DSIMCRAFT COUNTER PASS 4",
+      "groups": {
+        "rtl-virtual-interface-calls": {
+          "status": "PASS",
+          "captures": 30,
+          "models": {
+            "basic": {
+              "trace": [
+                "TRACE vif call 6 2 7"
+              ],
+              "source_sha256": "ba6aa484eee73871810d25936b51b12dab0c1090066483cc3ade9624dc04d48b",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "bbe92e5c4fdc4214afb23b7443129a1b26b00f0e1ea00cb59be02ba49339f17c"
+                },
+                "shared": {
+                  "cpp_sha256": "9b942621bbd1e351baa043718759cf423676430bb62a2a0f6acd572ce18ad142"
+                },
+                "wheel": {
+                  "cpp_sha256": "c7e5062667a56573a2130bd0aad1d1946281a11177cad825c6a87ea3ec6d2e8b"
+                }
+              }
+            },
+            "capture": {
+              "trace": [
+                "TRACE vif capture 1 6 16 16 10"
+              ],
+              "source_sha256": "1627b4ab410e8641921d4f16335dcdda8e9021a872ca8896e7daa65474a6ca69",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "a7eca097beeee6429e786563853287a67a60b0d581ccbb1138d9ae63ce4511c5"
+                },
+                "shared": {
+                  "cpp_sha256": "1cf47af8eaf248af188291996820d3ee1b76938c0ceb8e680e8cb08006a55a19"
+                },
+                "wheel": {
+                  "cpp_sha256": "258af9e691418dc67df2a4ae0b4e1f6d5a97020567b3ab731407eaf51c9c8811"
+                }
+              }
+            },
+            "reentry": {
+              "trace": [
+                "TRACE vif reentry 10 20 10 20"
+              ],
+              "source_sha256": "2c11f1f5d486e1034ae7d667d4b886bbe3dcfc4dd7361055b7d2f6e5e34d232e",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "05fdf7806760ce58f23592f34c0cbdf5763f49df30f9dab0b71777f2767141d9"
+                },
+                "shared": {
+                  "cpp_sha256": "f49272a7ef9edcd62d1a584deda6fa9ca1a8f4da7356173e4bfd8c8274795e70"
+                },
+                "wheel": {
+                  "cpp_sha256": "9279cde76323aade651551306919981f9fbbede5b1cad2d4b0cb296f8320870b"
+                }
+              }
+            },
+            "arguments": {
+              "trace": [
+                "TRACE vif arguments 8 17 33 35 sum:35"
+              ],
+              "source_sha256": "18b9840dbbdbac6539205b91b87b379ddfded9fe1f42723a3302a7c4e3840044",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "0a16064d4dfbf31d6cf4d03dc47694c44fbb46aa27937d0dbcb15e007aa0a4c9"
+                },
+                "shared": {
+                  "cpp_sha256": "5cc60bf7d35f7e0019b759bd10a8ce61b59c062fc33d68ad9fda0eb1a112a7ed"
+                },
+                "wheel": {
+                  "cpp_sha256": "3a36d5f21134e6ef9cd1521c69ccfd7d87cafd9cef015bda200140950fee513c"
+                }
+              }
+            },
+            "types": {
+              "trace": [
+                "TRACE vif types HIGH fedcba987654321001234567 1.25"
+              ],
+              "source_sha256": "504e0a847eaecc7530aa339a972debdda9c4e0014326ff61f63f1116978afb19",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "96739910f5ab5b1123f1d04ee3e7cf056a7c52b8a46ea3f69a59d6066a597b11"
+                },
+                "shared": {
+                  "cpp_sha256": "fbb73b6c20bbc04d356eaaaab796ba746d09907502d22a4e172b26ac4deb221f"
+                },
+                "wheel": {
+                  "cpp_sha256": "d152d40807055f042b50257a8640db0f7e86d772a27986e792615df73552caf1"
+                }
+              }
+            },
+            "nested": {
+              "trace": [
+                "TRACE vif nested 6 6 6 6"
+              ],
+              "source_sha256": "bec7cb01552af63400a8cf6a627e4fde43675eedf017645328932d8e8aad6452",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "9e59e50436b1d53e7303f46468057c1a2cbd2120b47a0758e12c8fd8630f4eab"
+                },
+                "shared": {
+                  "cpp_sha256": "675dbcfaf836cd03584c66decb0516da8db3911806dafda293860d17905411c4"
+                },
+                "wheel": {
+                  "cpp_sha256": "759c03cc4ef7bee273eb5ec6d242edb341c42dd99891ba3fdbb1c771e34e83be"
+                }
+              }
+            },
+            "arrays": {
+              "trace": [
+                "TRACE vif arrays 7 6 11 12"
+              ],
+              "source_sha256": "17ceef3a0606cc350df9873b9970c20bf51c5206e3c5683bc983904874fd43b1",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "838f306698f287fb06d7ea8f29f6326671ba53958629c1a929a124688549584a"
+                },
+                "shared": {
+                  "cpp_sha256": "f8846f8e432f130b8faf9b82e0630026008c4e6d3c39b8fc1729015ec104f314"
+                },
+                "wheel": {
+                  "cpp_sha256": "0ffdd840c9ca8f4d32b2d809675fb9f9828c14dfeafd39ea7a054bcf3f637190"
+                }
+              }
+            },
+            "timing": {
+              "trace": [
+                "TRACE vif timing 3.00 0.30"
+              ],
+              "source_sha256": "1dd46416d1ce0dab56309a6bbf1165e88f3b058057191263c7ab2669961d6476",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "f34c56ae56b4adccd4f078dae3e6c16c1222267354b5113f0d10ab7f6e5e762e"
+                },
+                "shared": {
+                  "cpp_sha256": "f623d49cb212f000457ee8a5674cee8a926fda1a4aea750c49115a55b8434639"
+                },
+                "wheel": {
+                  "cpp_sha256": "6a299a36b652431ba410f9d4f62d2dd042ce051fb3bbfbdb00cf13c9dc983b2f"
+                }
+              }
+            },
+            "static": {
+              "trace": [
+                "TRACE vif static 1 1 2 2"
+              ],
+              "source_sha256": "3ce9f7f8e6630d1e1e449ab990158c0b5881c1ab55a714dd8d79d0b0e5c86ce5",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "a51e7ba65d0df8c20b46b6de385e2f5bc5a128256eac86d88b7ee6e4a73ed76d"
+                },
+                "shared": {
+                  "cpp_sha256": "dc182e2be6237cef40be504249b99ae498f133fedb7955b11c6ac195ac855ef2"
+                },
+                "wheel": {
+                  "cpp_sha256": "284e1c17655c4c33b5d60b23519cd1cb32c4a36ecfa61a008a2061e33e42b768"
+                }
+              }
+            },
+            "events": {
+              "trace": [
+                "TRACE vif events 3 3"
+              ],
+              "source_sha256": "738441aaceaa25b3c21c77848c46b0086b99ffd790094360f50797d2287be33e",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "c0ba5553c87de95a5ccaf63fd586c35e335f1eaf1bb36496fe64b85a99a03e9c"
+                },
+                "shared": {
+                  "cpp_sha256": "ffca5f696dbc7ebb652201e961f6776a9e2989a3ae5517184aa9eb6f40bf9166"
+                },
+                "wheel": {
+                  "cpp_sha256": "99e9ec4146033b332a72395845288b66cb8e31159bf8ed88e1180ca0591851ba"
+                }
+              }
+            }
+          },
+          "negative_cases": 6,
+          "runtime_rejections": 2
+        },
+        "rtl-virtual-interfaces": {
+          "status": "PASS",
+          "captures": 33,
+          "models": {
+            "basic": {
+              "trace": [
+                "TRACE GAP virtual_interface 1"
+              ],
+              "source_sha256": "ebf2d20b3a4bc6ed0580b8e6edafb791bb04365a4f8d5cd9581714e08c763ec0",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "0bb4e575a0c791722926089abfe9a360a60db4e1bcfc9ddb63adb0eb8b57ba45"
+                },
+                "shared": {
+                  "cpp_sha256": "92ed8362d0431c9d420535e4ba23df1915a2c066df7c5f656a5f7b188ac04da5"
+                },
+                "wheel": {
+                  "cpp_sha256": "3450ebb1c526c4c19c2714caaa93bcf7f9026fb751b0f4b87c0acf5d0312ee48"
+                }
+              }
+            },
+            "binding": {
+              "trace": [
+                "TRACE virtual binding 3c a6 1"
+              ],
+              "source_sha256": "8a7a5a61aaefd26786cd5e6a211da2f6712a6ca70f07495f916688014f0420ef",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "ab0ae0e932ae0702afe1b0b9e1c51d0ae827a3fba455526fe2b08142ce2cf68d"
+                },
+                "shared": {
+                  "cpp_sha256": "a831311a7868e2376cac00eda52dc37ad6ffcd788132a06d221ed4cab40b3214"
+                },
+                "wheel": {
+                  "cpp_sha256": "9ba9b0130e295fb76e53b96ed3451b6c4082a67d5fc6d4e8af2f37ee21a0e27f"
+                }
+              }
+            },
+            "events": {
+              "trace": [
+                "TRACE virtual events 25 13 1 37"
+              ],
+              "source_sha256": "659e0dfd19383473ae3ec8524ac2a15629427e602160c66143f3a89f0d0aed5e",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "f16dda0a563eca1cbfe8b6bac0c8604ffc126c51c0acb1056d1921e3b505ac8b"
+                },
+                "shared": {
+                  "cpp_sha256": "2157c1699a1b07f811fb9ee56ba2c9bf41a504f160b6a1e1c4200cbac8ccc7ad"
+                },
+                "wheel": {
+                  "cpp_sha256": "367c906aeba69acc13f5db72459fcd2cdc97a70f578c392b50e51f627cf93cf5"
+                }
+              }
+            },
+            "typed": {
+              "trace": [
+                "TRACE virtual typed 1234 5678"
+              ],
+              "source_sha256": "97e43e3a46658d944b9dcb27997ca2d37e1c5ee5d61828483514d86a6b9f6a27",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "d9b09bb3b01b9ca03979211148747d80684eb134ce5f9173e9ad429ceff46b80"
+                },
+                "shared": {
+                  "cpp_sha256": "78eabd938a5f1ab55597e02b19c7d45e2a1a4e6e9ff347d45d12ee23c7920ce7"
+                },
+                "wheel": {
+                  "cpp_sha256": "7de2a7fa3267ff22aeb0540d19e9d289709979e828efdd36c4ba74b44a410d9a"
+                }
+              }
+            },
+            "capture": {
+              "trace": [
+                "TRACE virtual capture b 0 1"
+              ],
+              "source_sha256": "3f6e37b6b4f63b0ea448f18cc53655a0f425b633aeb5255f225379a7b5dbd34d",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "a11bebd292d425e91c86a0f2c0958c173f528a18b01f17a4f1e2e4db51343337"
+                },
+                "shared": {
+                  "cpp_sha256": "cdbfcc4e21322358e7cd4b2a953966ce2cfe02d0203addfc4c0305614bd99c8f"
+                },
+                "wheel": {
+                  "cpp_sha256": "66832970fc924efe24156f23a3dc25424486810c422469b431be13bd8e9357b0"
+                }
+              }
+            },
+            "prototype": {
+              "trace": [
+                "TRACE virtual package 1"
+              ],
+              "source_sha256": "83815002c1b70fbe57ef596049711fe0ea0b59345bd4a84c4a82124701d6d22c",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "31f321f175dda7e28f0e3282d5caa5157ee60639528dde93a5326756ebf916e3"
+                },
+                "shared": {
+                  "cpp_sha256": "011ecddd4d3888fea7b5df26e6e79089fe48ba76071235c7c627aac13a218b26"
+                },
+                "wheel": {
+                  "cpp_sha256": "3a89d35fcfb21000a95dd3ce5303fa6288e8f60e37acd577eda8c58025e6c83d"
+                }
+              }
+            },
+            "reference": {
+              "trace": [
+                "TRACE virtual ref 5a 0"
+              ],
+              "source_sha256": "0c6e824f9fe2073dd8cdd79d94bb8da6f06d3f3fbaa9355c67f7bf0a637985d8",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "862fbd38de139cdd6adb266b67c0996703fcce2c5e28f9753e392debd7557b0e"
+                },
+                "shared": {
+                  "cpp_sha256": "711cc73fb450b274419911dd5ee21f6dc0488c554bad39b2f0ca9f279afc814c"
+                },
+                "wheel": {
+                  "cpp_sha256": "f829edba265358b6353f5c1c1fc6b28b9c14d589f9282b11be49fa5b42d4f91d"
+                }
+              }
+            },
+            "compound": {
+              "trace": [
+                "TRACE virtual compound -4 4 1 11 2"
+              ],
+              "source_sha256": "33c23e59b993b4edfe76cf3f29a88b662e272ec1923aaddc8a87072a82694994",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "12def81198271a342a0519f60f182a388edf0e221d793e31c6389aa458f85112"
+                },
+                "shared": {
+                  "cpp_sha256": "23057b20484f929adc742f5087413ee3476917d52fef4c1ee15da2ac93c19656"
+                },
+                "wheel": {
+                  "cpp_sha256": "16da962c5ea201254ff5e2aee5a1cf7f4b6a029f57ae4274b8ac149f3927696a"
+                }
+              }
+            },
+            "wait_binding": {
+              "trace": [
+                "TRACE virtual wait binding 3"
+              ],
+              "source_sha256": "91a4e25425e41face1a00de454abda3c29f171743123deb08335145a87628bcb",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "3cfea69e0f890f80add95f52838548a8de6af6752741724ec85fedf02484d843"
+                },
+                "shared": {
+                  "cpp_sha256": "7ff21f86b86c5cb417f30c3f0157490f32112ebec948167672d68cb1c955b565"
+                },
+                "wheel": {
+                  "cpp_sha256": "46020a112270cbd211126f7a8439e5dbaf2822c95754d1ea145bf9eaeb678d85"
+                }
+              }
+            },
+            "hierarchy": {
+              "trace": [
+                "TRACE virtual hierarchy ac"
+              ],
+              "source_sha256": "50fab2af9a5fff6e17ecf3665c3d54b2823a11981964764440e81c337b966ae9",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "1edd4420445c77c6868e9eaf54e65aed827c8167b68cc7306270c38160c1aa23"
+                },
+                "shared": {
+                  "cpp_sha256": "683cbcdaa9107fe2e94771f9f0691d2a3a2c1c528fd3c317dbf5545c581ea685"
+                },
+                "wheel": {
+                  "cpp_sha256": "031d68b55d6d39700b6123f13c305e250b9c0859122bd651d74278e240d17731"
+                }
+              }
+            },
+            "lexical": {
+              "trace": [
+                "TRACE virtual lexical 8 a5"
+              ],
+              "source_sha256": "511cd682e1e2f3f10dfd686049c1ab81a3171a03a99661149adbf25921a25906",
+              "captures": {
+                "serial": {
+                  "cpp_sha256": "249db59d1c14543b06c9aa1733d13e285779c8ff7d56f9dbb0b6c905fcec1a92"
+                },
+                "shared": {
+                  "cpp_sha256": "6c7be876a3122a5138a57840e1d5ef8c8094a619894e07c4dd947be66907fc6d"
+                },
+                "wheel": {
+                  "cpp_sha256": "9e989591b00b6eda57f90510d8f668762044130f3a465957712a33f4b9c7c634"
+                }
+              }
+            }
+          },
+          "negative_cases": 8,
+          "runtime_rejections": 3
+        },
+        "rtl-interface-subroutines": {
+          "status": "PASS",
+          "models": {
+            "basic": {
+              "status": "PASS",
+              "source_sha256": "0eb212244d4cebdff067f87a837d90dea5a5d0b27d5d63c06f8ca2cd77fcdb09",
+              "trace": [
+                "TRACE basic driver 3 7 6",
+                "TRACE basic top 5 6"
+              ],
+              "parallel_partitions": 1
+            },
+            "arguments": {
+              "status": "PASS",
+              "source_sha256": "0c2817fb439c232f7b2f7278e37b8debae2ab3c2459498b63ebcb2abc74d5e25",
+              "trace": [
+                "TRACE arguments 7 16 32 34 sum:34"
+              ],
+              "parallel_partitions": 1
+            },
+            "clones": {
+              "status": "PASS",
+              "source_sha256": "92edbb91709881f12a5a08fd49560e75306302949e0fd04c5fbb6cc845fab93c",
+              "trace": [
+                "TRACE clones 1 0 -9 1 2",
+                "TRACE clones 2 0 -8 1 2",
+                "TRACE clones 3 0 -7 1 2",
+                "TRACE clones 4 0 -6 1 2"
+              ],
+              "parallel_partitions": 1
+            },
+            "timing": {
+              "status": "PASS",
+              "source_sha256": "fd33dae318e2496b93f265e157800afac2aa3fccf76c1d1dcc49820884885bed",
+              "trace": [
+                "TRACE timing 13000 0 9"
+              ],
+              "parallel_partitions": 1
+            },
+            "sensitivity": {
+              "status": "PASS",
+              "source_sha256": "c49d8709089445b7e0094210e3de2c0293feb77403b832dd521c012150a6584d",
+              "trace": [
+                "TRACE sensitivity f6 5 a3"
+              ],
+              "parallel_partitions": 1
+            },
+            "parallel": {
+              "status": "PASS",
+              "source_sha256": "a7bd3754312817d54a4b5f155a2c4ed044e745e0d9958b6ea30915b44ace6a2a",
+              "trace": [],
+              "parallel_partitions": 2
+            },
+            "activation": {
+              "status": "PASS",
+              "source_sha256": "d9201c3c96b667bff6cff1b70f5b697e56a8f3da32863ad1f17ad8544eee8ffc",
+              "trace": [
+                "TRACE activation 9 8 5 8"
+              ],
+              "parallel_partitions": 1
+            }
+          },
+          "captures": 35,
+          "rollbacks": 7,
+          "commits": 7,
+          "checkpoint_restores": 2,
+          "negative_cases": 21,
+          "independent_oracle": "explicit fixture numeric/string/timing checks; parallel final values and zero errors"
+        }
+      }
+    }
+  },
+  "cross_host_model_traces": "PASS",
+  "uvm_exported_source_macos": {
+    "results": {
+      "status": "PASS",
+      "simulator": "dsim",
+      "complete_uvm_source": true,
+      "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+      "uvm_source_files": 181,
+      "uvm_pkg_sha256": "4c1516f91172fc24e9d8f023911ffcb5718da281f285f3062547553c09be60e6",
+      "smoke_sha256": "cebcfc4562d2608bee7dae5b3e56501820d612b20923427e5cb14a8e92bac2bb",
+      "stages": {
+        "compile": {
+          "status": "PASS",
+          "command": [
+            "/Users/yangfan/vibe-coding/dsim-test/evidence/dsimcraft-source-build/dsim",
+            "--shared-functions",
+            "+incdir+/Users/yangfan/vibe-coding/dsim-test/evidence/m152-abstract-casts/uvm-reference/accellera-2020.3.1/src",
+            "+define+UVM_NO_DPI",
+            "/Users/yangfan/vibe-coding/dsim-test/evidence/m152-abstract-casts/uvm-reference/accellera-2020.3.1/src/uvm_pkg.sv",
+            "/Users/yangfan/vibe-coding/EDACraft/DSIMCraft/tests/uvm_preprocess/interface_calls.sv",
+            "--emit-cpp",
+            "/Users/yangfan/vibe-coding/dsim-test/evidence/dsimcraft-uvm-source-check/model.cpp",
+            "--cxx-flag",
+            "-O0",
+            "-o",
+            "/Users/yangfan/vibe-coding/dsim-test/evidence/dsimcraft-uvm-source-check/native"
+          ],
+          "exit_code": 0,
+          "seconds": 79.20213454100303
+        },
+        "run": {
+          "status": "PASS",
+          "command": [
+            "/Users/yangfan/vibe-coding/dsim-test/evidence/dsimcraft-uvm-source-check/native"
+          ],
+          "exit_code": 0,
+          "seconds": 5.029826457990566
+        }
+      },
+      "model_generated": true,
+      "native_generated": true,
+      "hello_pass": true,
+      "defines": [
+        "UVM_NO_DPI"
+      ],
+      "native_optimization_override": "-O0"
+    },
+    "trace": [
+      "TRACE UVM_PIN 100",
+      "TRACE UVM_PIN 101",
+      "TRACE UVM_PIN 102",
+      "TRACE UVM_DUT 3 303",
+      "TRACE REAL_UVM_SMOKE VIRTUAL_INTERFACE_CALLS 3 303"
+    ],
+    "uvm_error": 0,
+    "uvm_fatal": 0,
+    "uvm_warning": 2
+  }
+}

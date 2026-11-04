@@ -1,0 +1,6 @@
+{
+ "sample": ["TRACE values X205 a2cd ff2f 12377bf89abcdef0012345Z7 20 def", "TRACE clipped 5205 a2ca xx01 1010", "TRACE invalid 5205 x xxx 000"],
+ "arguments": ["TRACE arguments a264 ac6b 1"],
+ "control": ["TRACE delay 1234 9bcd", "TRACE event 1254 9bcd", "TRACE local 1254 5"],
+ "parallel": []
+}

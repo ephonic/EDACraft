@@ -1,0 +1,4 @@
+TRACE scalar 1 1 1 1 1
+TRACE stores 0 1 x 0 0
+TRACE scalar-z z z
+TRACE dimensions 1

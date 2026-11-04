@@ -1,0 +1,126 @@
+{
+  "missing": [
+    "class C;extern function int f();endclass  ",
+    "prototype has no definition"
+  ],
+  "duplicate": [
+    "class C;extern function int f();endclass function int C::f();return 1;endfunction function int C::f();return 2;endfunction ",
+    "more than one definition"
+  ],
+  "no_extern": [
+    "class C;function int f();return 1;endfunction endclass function int C::f();return 1;endfunction ",
+    "requires an extern prototype"
+  ],
+  "no_prototype": [
+    "class C;endclass function int C::f();return 1;endfunction ",
+    "has no prototype"
+  ],
+  "before_class": [
+    "function int C::f();return 1;endfunction class C;extern function int f();endclass",
+    "preceding class in the same scope"
+  ],
+  "outside": [
+    "extern function int f();",
+    "prototype requires class scope"
+  ],
+  "count": [
+    "class C;extern function int f(int x);endclass function int C::f(int x,int y);return x;endfunction ",
+    "formal count mismatch"
+  ],
+  "names": [
+    "class C;extern function int f(int x);endclass function int C::f(int y);return y;endfunction ",
+    "formal name mismatch"
+  ],
+  "default": [
+    "class C;extern function int f(int x=2);endclass function int C::f(int x=3);return x;endfunction ",
+    "default argument mismatch"
+  ],
+  "extra_default": [
+    "class C;extern function int f(int x);endclass function int C::f(int x=2);return x;endfunction ",
+    "default argument mismatch"
+  ],
+  "direction": [
+    "class C;extern task f(output int x);endclass task C::f(input int x);endtask ",
+    "formal type/direction mismatch"
+  ],
+  "ref_const": [
+    "class C;extern function int f(const ref int x);endclass function int C::f(ref int x);return x;endfunction ",
+    "formal type/direction mismatch"
+  ],
+  "width": [
+    "class C;extern function int f(logic[8:0] x);endclass function int C::f(logic[7:0] x);return x;endfunction ",
+    "formal type/direction mismatch"
+  ],
+  "signedness": [
+    "class C;extern function int f(int x);endclass function int C::f(int unsigned x);return x;endfunction ",
+    "formal type/direction mismatch"
+  ],
+  "packed_shape": [
+    "class C;extern function int f(logic[1:0][3:0] x);endclass function int C::f(logic[7:0] x);return x;endfunction ",
+    "formal type/direction mismatch"
+  ],
+  "unpacked": [
+    "class C;extern function int f(int x[2]);endclass function int C::f(int x[3]);return x[0];endfunction ",
+    "formal type/direction mismatch"
+  ],
+  "kind": [
+    "class C;extern task f();endclass function int C::f();return 1;endfunction ",
+    "function/task kind mismatch"
+  ],
+  "return_type": [
+    "class C;extern function int f();endclass function byte C::f();return 1;endfunction ",
+    "return type mismatch"
+  ],
+  "return_array": [
+    "typedef int a_t[2];typedef int b_t[3];class C;extern function a_t f();endclass function b_t C::f();b_t x;return x;endfunction ",
+    "return type mismatch"
+  ],
+  "return_queue": [
+    "typedef int a_t[$];typedef int b_t[];class C;extern function a_t f();endclass function b_t C::f();b_t x;return x;endfunction ",
+    "return type mismatch"
+  ],
+  "type_shadow": [
+    "typedef int T;class C;extern function int f(T x);typedef byte T;endclass function int C::f(T x);return x;endfunction ",
+    "formal type/direction mismatch"
+  ],
+  "access": [
+    "class C;extern local function int f();endclass function int C::f();return 1;endfunction C c;int x;initial begin c=new;x=c.f();end",
+    "inaccessible local"
+  ],
+  "static_lifetime": [
+    "class C;extern function int f();endclass function static int C::f();return 1;endfunction ",
+    "cannot have static lifetime"
+  ],
+  "constructor_return": [
+    "class C;extern function new();endclass function int C::new();endfunction ",
+    "constructor cannot declare a return type"
+  ],
+  "end_label": [
+    "class C;extern function int f();endclass function int C::f();return 1;endfunction:wrong ",
+    "function closing label does not match"
+  ],
+  "unqualified_return": [
+    "class C;typedef byte T;extern function T f();endclass function T C::f();return 1;endfunction",
+    "unknown integral type T"
+  ],
+  "unqualified_return_bound": [
+    "class C #(parameter int W=6);extern function logic[W-1:0] f();endclass function logic[W-1:0] C::f();return 1;endfunction C#() c;",
+    "identifier is unknown or not visible in this scope 'W'"
+  ],
+  "outer_return_shadow": [
+    "typedef byte T;class C;typedef int T;extern function T f();endclass function T C::f();return 1;endfunction",
+    "return type mismatch"
+  ],
+  "self_return_mismatch": [
+    "class C #(type T=int);extern function C#(T) self();endclass function C#(longint) C::self();return null;endfunction C#(byte) c;",
+    "return type mismatch"
+  ],
+  "same_shape_formal_shadow": [
+    "typedef int T;class C;extern function int f(T x);typedef int T;endclass function int C::f(T x);return x;endfunction",
+    "formal type/direction mismatch"
+  ],
+  "same_shape_return_shadow": [
+    "typedef int T;class C;typedef int T;extern function T f();endclass function T C::f();return 1;endfunction",
+    "return type mismatch"
+  ]
+}

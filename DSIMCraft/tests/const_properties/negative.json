@@ -1,0 +1,13 @@
+{
+ "outside_constructor":"class C;const int n;function new();n=2;endfunction endclass C c;initial begin c=new;c.n=3;$finish;end",
+ "ordinary_method":"class C;const int n;function void bad();n=3;endfunction endclass C c;initial begin c=new;c.bad();$finish;end",
+ "initialized_in_constructor":"class C;const int n=2;function new();n=3;endfunction endclass C c;initial begin c=new;$finish;end",
+ "initialized_slice":"class C;const bit[7:0] n=2;endclass C c;initial begin c=new;c.n[1]=1;$finish;end",
+ "increment":"class C;const int n=2;endclass C c;initial begin c=new;c.n++;$finish;end",
+ "static_assignment":"class C;static const int n=2;endclass initial begin C::n=3;$finish;end",
+ "static_ref":"class C;static const int n=2;endclass function automatic void bump(ref int n);n++;endfunction initial begin bump(C::n);$finish;end",
+ "static_uninitialized":"class C;static const int n;endclass initial $finish;",
+ "base_assignment":"class B;const int n;endclass class D extends B;function new();n=3;endfunction endclass D d;initial begin d=new;$finish;end",
+ "const_method":"class C;const function int f();return 1;endfunction endclass initial $finish;",
+ "duplicate_const":"class C;const const int n=1;endclass initial $finish;"
+}

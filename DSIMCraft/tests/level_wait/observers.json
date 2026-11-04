@@ -1,0 +1,6 @@
+{
+  "conditions": {
+    "top.words[0]": ["top.observe_words", 0, 8],
+    "top.words[1]": ["top.observe_words", 8, 8]
+  }
+}

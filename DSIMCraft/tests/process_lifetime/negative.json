@@ -1,0 +1,26 @@
+{
+  "kill_arg": {
+    "source": "module top;process p;initial p.kill(1); endmodule\n",
+    "diagnostic": "argument"
+  },
+  "await_arg": {
+    "source": "module top;process p;initial p.await(1); endmodule\n",
+    "diagnostic": "argument"
+  },
+  "status_arg": {
+    "source": "module top;process p;int n;initial n=p.status(1); endmodule\n",
+    "diagnostic": "argument"
+  },
+  "await_function": {
+    "source": "module top;process p;function automatic void f();p.await();endfunction initial f(); endmodule\n",
+    "diagnostic": "task statement"
+  },
+  "kill_value": {
+    "source": "module top;process p;int n;initial n=p.kill(); endmodule\n",
+    "diagnostic": "void method"
+  },
+  "direct_random_handle": {
+    "source": "module top;class Child;rand int n;endclass class Bad;rand Child child;endclass Bad item;initial begin item=new();if(!item.randomize())$finish;end endmodule\n",
+    "diagnostic": "joint object-graph"
+  }
+}

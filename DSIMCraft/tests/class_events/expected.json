@@ -1,0 +1,10 @@
+{
+  "basic": ["TRACE class event 1"],
+  "isolation": ["TRACE class isolation 1 1 1"],
+  "rebind": ["TRACE class rebind 33 1"],
+  "triggered": ["TRACE class triggered 1 1 0 1 0 1"],
+  "nba": ["TRACE class nba 2 0 1"],
+  "tasks": ["TRACE class tasks 17 31 4"],
+  "mixed": ["TRACE class mixed 2 1 1 1"],
+  "rollback": ["TRACE class rollback 2 7"]
+}

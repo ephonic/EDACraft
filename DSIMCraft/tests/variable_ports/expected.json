@@ -1,0 +1,26 @@
+{
+  "basic": [
+    "TRACE basic 81 81 ff81 ffffff81",
+    "TRACE unknown 10xz01z1 10000101 1111111110xz01z1",
+    "TRACE final 2a 2a 002a 0000002a"
+  ],
+  "parts": [
+    "TRACE parts 956 1001zzzz a6 c6 1",
+    "TRACE parts 23b 0010zzzz ab cb 1"
+  ],
+  "hierarchy": [
+    "TRACE hierarchy 3f f",
+    "TRACE hierarchy 00 0",
+    "TRACE hierarchy 82 2"
+  ],
+  "types": [
+    "TRACE types fffffffffffffffffffffffffffffffffd 3fffffffffffffffffffffffffffffffd 99 9999",
+    "TRACE types fe00000000000000000000000000000005 200000000000000000000000000000005 xz01xz01 xz01xz01xz01xz01",
+    "TRACE types 0123456789abcdef0123456789abcdef01 123456789abcdef0123456789abcdef01 66 6666"
+  ],
+  "timing": [
+    "TRACE timing 31           1",
+    "TRACE timing 92           2"
+  ],
+  "parallel": []
+}

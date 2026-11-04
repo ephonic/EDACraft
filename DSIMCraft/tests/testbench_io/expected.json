@@ -1,0 +1,42 @@
+{
+  "args": [
+    "TRACE TEST 1 1 0 0",
+    "TRACE DEC 1 -12",
+    "TRACE BAD 1 00000000",
+    "TRACE ABSENT 0 00000000",
+    "TRACE HEX 1 0000000000000000000000003abcdxz12",
+    "TRACE STR 1 <hello world>",
+    "TRACE PACK 1 <orld> 6f726c64",
+    "TRACE DYNAMIC 1 -12"
+  ],
+  "format": [
+    "TRACE FMT <literal % top -3 axz xz10 A>",
+    "TRACE DYNAMIC <hello -3 A top>",
+    "TRACE TASK <[      hi][  -3][1361129467683753853853498429727072845823]>",
+    "TRACE PACK 646566 <def>",
+    "TRACE TIME <1.00ns>"
+  ],
+  "targets": [
+    "TRACE MISS 0 1 0",
+    "TRACE HIT 1 3 0 0 12",
+    "TRACE WIDE 1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1",
+    "TRACE BAD 1 00000000",
+    "TRACE OCT 1 0000000000000000000000000000001XX"
+  ],
+  "automatic": [
+    "TRACE AUTO <top.load one/payload value/6/1> <top.load two/payload value/7/1> 7 2 <top.tag:9>",
+    "TRACE FINAL <top:7:1>"
+  ],
+  "parallel": [],
+  "writes": [
+    "TRACE SLICE 1 001579XXZ2468ac000000000000000000",
+    "TRACE CONCAT 1 a5 f0",
+    "TRACE WRITE 315d <[abc:-1]>",
+    "TRACE OCTAL 1 0000000000000000000000000000001XX",
+    "TRACE BINARY 1 zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzX"
+  ],
+  "numeric": [
+    "TRACE TYPES 00000000 xxxxxxxx xxxxxxxx xxxx xxxxxxxxx xxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "TRACE HEX 00000000 xxxx xxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  ]
+}

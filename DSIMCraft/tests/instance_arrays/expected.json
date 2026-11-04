@@ -1,0 +1,31 @@
+{
+  "generated": [
+    "TRACE generated 234 0864",
+    "TRACE generated 345 0c85"
+  ],
+  "mapping": [
+    "TRACE map 123 123 a",
+    "TRACE four xz5 xz5",
+    "TRACE off zzz zzz z"
+  ],
+  "nets": [
+    "TRACE net az az 1z",
+    "TRACE resolve Xc Xc",
+    "TRACE outside 3c 3c"
+  ],
+  "parallel": [],
+  "primitives": [
+    "TRACE gates 0110 1001 1010 0111 1110 0001 1010 0101",
+    "TRACE tri 1z1z z0z0 0z0z z1z1 1010",
+    "TRACE unknown xx11 0000 xx01 xxxx xx01"
+  ],
+  "state": [
+    "TRACE state 104",
+    "TRACE state 334",
+    "TRACE state 335"
+  ],
+  "wide": [
+    "TRACE wide 123456789abcdef0123456789abcdef0123456789abcdef012345 123456789abcdef0123456789abcdef0123456789abcdef012345",
+    "TRACE boundary x z 1 1 1 x"
+  ]
+}

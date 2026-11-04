@@ -1,0 +1,36 @@
+{
+  "uvm": [
+    "TRACE scalar pending 7",
+    "TRACE scalar output 9"
+  ],
+  "aliases": [
+    "TRACE alias pending 11 20 0",
+    "TRACE aliases 13 20 0"
+  ],
+  "waits": [
+    "TRACE ref wait 7 7",
+    "TRACE field wait 9 9"
+  ],
+  "values": [
+    "TRACE values 123456789abcdef00000000X 0 AB 2.50"
+  ],
+  "inheritance": [
+    "TRACE inheritance 7 25"
+  ],
+  "recursive": [
+    "TRACE recursive ref 18 6"
+  ],
+  "handles": [
+    "TRACE handles 17 1 1"
+  ],
+  "cancel": [
+    "TRACE cancel ref 7"
+  ],
+  "receiver_effect": [
+    "TRACE alias pending 11 20 1",
+    "TRACE aliases 13 20 1"
+  ],
+  "aggregate": [
+    "TRACE aggregate 0 xz01 AB"
+  ]
+}

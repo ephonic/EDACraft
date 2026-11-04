@@ -1,0 +1,33 @@
+{
+  "basic": [
+    "TRACE null <null>",
+    "TRACE item <'{count:8, signed_value:-3, byte_value:'hfa, x:'hxz, flag:'h1, negative:-1, mode:SECOND, value:1.25, text:\"a\"\\\"}>",
+    "TRACE update <'{count:9, signed_value:-7, byte_value:'hfa, x:'hxz, flag:'h1, negative:-1, mode:SECOND, value:1.25, text:\"a\"\\\"}>"
+  ],
+  "containers": [
+    "TRACE empty <'{q:'{}, texts:'{}, data:'{}, map:'{}, table2:'{}, shared_q:'{}}>",
+    "TRACE populated <'{q:'{1, -2} , texts:'{\"A\", \"B\"} , data:'{4, -5} , map:'{\"A\":-4, \"Z\":3} , table2:'{0xffffffff:'{\"A\":7} , 0x2:'{\"B\":6} } , shared_q:'{8, 9} }>"
+  ],
+  "events": [
+    "TRACE before <'{ev:OFF, common:OFF, value:3}>",
+    "TRACE triggered <'{ev:ON, common:ON, value:3}>",
+    "TRACE later <'{ev:OFF, common:OFF, value:3}>"
+  ],
+  "functions": [
+    "TRACE effects <'{count:0, value:1}/7> 1",
+    "TRACE function <'{count:0, value:42}>",
+    "TRACE formatted <['{count:0, value:42}]>",
+    "TRACE task <'{count:0, value:42}>",
+    "TRACE null <null>"
+  ],
+  "inheritance": [
+    "TRACE dynamic <'{count:2, a:-3, hidden:7, a:11, leaf:null}>",
+    "TRACE reference <'{count:2, a:-3, hidden:7, a:11, leaf:{ ref to class Leaf#(5)}}>",
+    "TRACE cycle <'{value:1, next:{ ref to class Node}}>"
+  ],
+  "updates": [
+    "TRACE initial <'{count:1, value:2}>",
+    "TRACE static <'{count:9, value:2}>",
+    "TRACE member <'{count:9, value:7}>"
+  ]
+}

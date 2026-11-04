@@ -1,0 +1,16 @@
+{
+  "packed_string": "module top;typedef struct packed {string s;} t;t a;endmodule",
+  "packed_nested": "module top;typedef struct {string s;} t;typedef struct packed {t a;} p;p x;endmodule",
+  "arithmetic": "module top;typedef struct {string s;} t;t a,b;initial a=a+b;endmodule",
+  "integer_assignment": "module top;typedef struct {string s;} t;t a;initial a=1;endmodule",
+  "distinct_types": "module top;typedef struct {string s;} t;typedef struct {string s;} u;t a;u b;initial a=b;endmodule",
+  "concat": "module top;typedef struct {string s;} t;t a;logic [1:0] x;initial x={a,a};endmodule",
+  "bits_query": "module top;typedef struct {string s;} t;t a;initial $display(\"%0d\",$bits(a));endmodule",
+  "argument_type": "module top;typedef struct {string s;} t;typedef struct {string s;} u;t a;u b;function automatic int f(t x);return 1;endfunction initial $display(\"%d\",f(b));endmodule",
+  "struct_nba": "module top;typedef struct {string s;} t;t a,b;initial a<=b;endmodule",
+  "string_field_nba": "module top;typedef struct {string s;} t;t a;initial a.s<=\"x\";endmodule",
+  "integral_field_nba": "module top;typedef struct {string s;int n;} t;t a;initial a.n<=7;endmodule",
+  "struct_array_nba": "module top;typedef struct {string s;} t;t a[2],b[2];initial a<=b;endmodule",
+  "associative_array": "module top;typedef struct {string s;} A;A a[int][$];endmodule",
+  "fixed_class_property": "module top;typedef struct {string s;} t;class C;t a[2];endclass C c;initial c=new;endmodule"
+}

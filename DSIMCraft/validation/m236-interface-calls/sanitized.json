@@ -1,0 +1,49 @@
+{
+  "status": "PASS",
+  "models": {
+    "capture": {
+      "trace": [
+        "TRACE vif capture 1 6 16 16 10"
+      ],
+      "cpp_sha256": "790ffa9db0bb7b3028746f4c99146d0a5da2867ffb2e908561a8d8b69a96d927"
+    },
+    "reentry": {
+      "trace": [
+        "TRACE vif reentry 10 20 10 20"
+      ],
+      "cpp_sha256": "f49272a7ef9edcd62d1a584deda6fa9ca1a8f4da7356173e4bfd8c8274795e70"
+    },
+    "arguments": {
+      "trace": [
+        "TRACE vif arguments 8 17 33 35 sum:35"
+      ],
+      "cpp_sha256": "5cc60bf7d35f7e0019b759bd10a8ce61b59c062fc33d68ad9fda0eb1a112a7ed"
+    },
+    "types": {
+      "trace": [
+        "TRACE vif types HIGH fedcba987654321001234567 1.25"
+      ],
+      "cpp_sha256": "fbb73b6c20bbc04d356eaaaab796ba746d09907502d22a4e172b26ac4deb221f"
+    },
+    "arrays": {
+      "trace": [
+        "TRACE vif arrays 7 6 11 12"
+      ],
+      "cpp_sha256": "f8846f8e432f130b8faf9b82e0630026008c4e6d3c39b8fc1729015ec104f314"
+    },
+    "timing": {
+      "trace": [
+        "TRACE vif timing 3.00 0.30"
+      ],
+      "cpp_sha256": "f623d49cb212f000457ee8a5674cee8a926fda1a4aea750c49115a55b8434639"
+    },
+    "static": {
+      "trace": [
+        "TRACE vif static 1 1 2 2"
+      ],
+      "cpp_sha256": "dc182e2be6237cef40be504249b99ae498f133fedb7955b11c6ac195ac855ef2"
+    }
+  },
+  "frontend_sanitized": true,
+  "native_sanitized": true
+}

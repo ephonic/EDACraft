@@ -1,0 +1,10 @@
+{
+  "case": "rtlagent-dual-20261025T024801-6f61ede0-overlap48_hand",
+  "events": 196,
+  "hashes": {
+    "rtl.sv": "9539c8f7b5399f4514a74bd7d1a74ecdd57e46eecd9392afb41e59bfe29c38b0",
+    "tb.sv": "c830254a168d2f93aac9271162fce6b3e5250027849ff66c36d6c1e5f053aef2",
+    "events.json": "119fcc57314b52cc0092fcb8d356f9dd51e1395ef9279b3721303bdf89e88ab7",
+    "spec.json": "a4e66e3d4a270f466843a7b139cc0c9461c907593f17d0455cf38dddcf6ad7eb"
+  }
+}

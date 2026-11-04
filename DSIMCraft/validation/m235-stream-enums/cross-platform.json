@@ -1,0 +1,205 @@
+{
+  "status": "PASS",
+  "source_commit": "a0cc8b571775ce42279f0dba7a8b66166f39bb0a",
+  "source_sha256": "8991211ac28a0f2823ff3ccfaada039d66bd3c217bb3a24e9633ac63bd62d666",
+  "cpp_files": 96,
+  "complete_waveforms": 96,
+  "actual_entry_models": 32,
+  "models": {
+    "virtual_interfaces/basic": {
+      "trace": [
+        "TRACE GAP virtual_interface 1"
+      ],
+      "source_sha256": "ebf2d20b3a4bc6ed0580b8e6edafb791bb04365a4f8d5cd9581714e08c763ec0"
+    },
+    "virtual_interfaces/binding": {
+      "trace": [
+        "TRACE virtual binding 3c a6 1"
+      ],
+      "source_sha256": "8a7a5a61aaefd26786cd5e6a211da2f6712a6ca70f07495f916688014f0420ef"
+    },
+    "virtual_interfaces/events": {
+      "trace": [
+        "TRACE virtual events 25 13 1 37"
+      ],
+      "source_sha256": "659e0dfd19383473ae3ec8524ac2a15629427e602160c66143f3a89f0d0aed5e"
+    },
+    "virtual_interfaces/typed": {
+      "trace": [
+        "TRACE virtual typed 1234 5678"
+      ],
+      "source_sha256": "97e43e3a46658d944b9dcb27997ca2d37e1c5ee5d61828483514d86a6b9f6a27"
+    },
+    "virtual_interfaces/capture": {
+      "trace": [
+        "TRACE virtual capture b 0 1"
+      ],
+      "source_sha256": "3f6e37b6b4f63b0ea448f18cc53655a0f425b633aeb5255f225379a7b5dbd34d"
+    },
+    "virtual_interfaces/prototype": {
+      "trace": [
+        "TRACE virtual package 1"
+      ],
+      "source_sha256": "83815002c1b70fbe57ef596049711fe0ea0b59345bd4a84c4a82124701d6d22c"
+    },
+    "virtual_interfaces/reference": {
+      "trace": [
+        "TRACE virtual ref 5a 0"
+      ],
+      "source_sha256": "0c6e824f9fe2073dd8cdd79d94bb8da6f06d3f3fbaa9355c67f7bf0a637985d8"
+    },
+    "virtual_interfaces/compound": {
+      "trace": [
+        "TRACE virtual compound -4 4 1 11 2"
+      ],
+      "source_sha256": "33c23e59b993b4edfe76cf3f29a88b662e272ec1923aaddc8a87072a82694994"
+    },
+    "virtual_interfaces/wait_binding": {
+      "trace": [
+        "TRACE virtual wait binding 3"
+      ],
+      "source_sha256": "91a4e25425e41face1a00de454abda3c29f171743123deb08335145a87628bcb"
+    },
+    "virtual_interfaces/hierarchy": {
+      "trace": [
+        "TRACE virtual hierarchy ac"
+      ],
+      "source_sha256": "50fab2af9a5fff6e17ecf3665c3d54b2823a11981964764440e81c337b966ae9"
+    },
+    "virtual_interfaces/lexical": {
+      "trace": [
+        "TRACE virtual lexical 8 a5"
+      ],
+      "source_sha256": "511cd682e1e2f3f10dfd686049c1ab81a3171a03a99661149adbf25921a25906"
+    },
+    "stream_targets/class_queue": {
+      "trace": [
+        "TRACE class queue 3 56 34 12"
+      ],
+      "source_sha256": "b1a01bcdbd109f6c6763b477c360307ad1ebaaf531be66fb1316afca86a36870"
+    },
+    "stream_targets/empty": {
+      "trace": [
+        "TRACE empty 0"
+      ],
+      "source_sha256": "062bebd883ce0aab55bdce2a54a8bba2459acc584cb23c898b9e97132ffff6ff"
+    },
+    "stream_targets/fixed": {
+      "trace": [
+        "TRACE fixed a b"
+      ],
+      "source_sha256": "32a5c8ba1cd82cea04a014c8c3970ca63668d13e242d193c76bbdf032ad946aa"
+    },
+    "stream_targets/inverse": {
+      "trace": [
+        "TRACE inverse 1010001011 1011100010"
+      ],
+      "source_sha256": "684255a48e06b09d764842ffe82dcee8d4937c7eb7befb3f1a7ab074f01156dd"
+    },
+    "stream_targets/mixed": {
+      "trace": [
+        "TRACE mixed a 3 b c d e"
+      ],
+      "source_sha256": "696637851fd075c0d49b3c4c131676bd73d043d3284625af380a20aa52831ece"
+    },
+    "stream_targets/partial": {
+      "trace": [
+        "TRACE partial 3 a c c"
+      ],
+      "source_sha256": "f1905d635525e199cbf8adc3b7abf2044ed8a3a8d76fda18b38c418c9d11f003"
+    },
+    "stream_targets/partial_left": {
+      "trace": [
+        "TRACE partial left 3 3 b 8"
+      ],
+      "source_sha256": "f68f152265affbbaa0b06e4b2276092b2bf5f77b45563318582122fb823b48b0"
+    },
+    "stream_targets/uvm": {
+      "trace": [
+        "TRACE stream target 8 01101001"
+      ],
+      "source_sha256": "9ed2a20072951ec8d61894cd53da7d37dfbeb14e729d78ca6b59021e2adc61f3"
+    },
+    "stream_targets/fixed_left": {
+      "trace": [
+        "TRACE fixed left b a"
+      ],
+      "source_sha256": "911c1e2b2536f7459e4c77747a359f2b9304ab2213385816c1437d5fd2cbb85f"
+    },
+    "stream_targets/mixed_partial": {
+      "trace": [
+        "TRACE mixed partial 2 a c 3"
+      ],
+      "source_sha256": "a24b5657a7fd869155ae6c44f0bc181c7228111f85bd35d5a3d2e3b778f28c7b"
+    },
+    "stream_targets/multi_dynamic": {
+      "trace": [
+        "TRACE multiple 3 0 a b c"
+      ],
+      "source_sha256": "a9c41342f4f813bb9ccc7f112bd02d1658245b099b4ce5222226b00b0c769ba6"
+    },
+    "stream_targets/bounded": {
+      "trace": [
+        "TRACE bounded 2 12 34"
+      ],
+      "source_sha256": "12e5a6278a08515444ae1ef763add5847e143ac279e25a974d54540997158cf6"
+    },
+    "stream_targets/nested": {
+      "trace": [
+        "TRACE nested a 3 d c b e"
+      ],
+      "source_sha256": "4533261d5a872adbae20c5e7589d0aafe13dff9614b3bae5c4f7e26492b6a2c0"
+    },
+    "stream_targets/address": {
+      "trace": [
+        "TRACE address 1 5 0"
+      ],
+      "source_sha256": "485e7b3f976dbd8aeb39467bb70dbe7794374a73ea270c2a93118846b0c85115"
+    },
+    "stream_targets/subarray": {
+      "trace": [
+        "TRACE subarray 1 a b 0 0"
+      ],
+      "source_sha256": "50dc5d41834f92268201a6f7bc95d20e0b96ee3b8d4be90b59b344096bfb0069"
+    },
+    "stream_targets/four_state": {
+      "trace": [
+        "TRACE states xz01 10zx 2 4"
+      ],
+      "source_sha256": "4dfa8bb6f5217d2275063a0091a86b8f6b2592f11ea322fb91d729c0dcb95063"
+    },
+    "stream_targets/wide": {
+      "trace": [
+        "TRACE wide target 2 123456789abcdef01234 56789abcdef012345678"
+      ],
+      "source_sha256": "53d21883cfa7c2ec7b7acadcdf9c9f7a32ed5fd2c2929cf6256d0b9343ded4c7"
+    },
+    "stream_targets/source_snapshot": {
+      "trace": [
+        "TRACE source order 2 0 5 1",
+        "TRACE self snapshot 3 3 2 1"
+      ],
+      "source_sha256": "2a25a7d9f6c55f00808626f31f761b431e9e795b816b959bc6a794e4c82b85fb"
+    },
+    "stream_enum_casts/basic": {
+      "trace": [
+        "TRACE stream enum 3 A"
+      ],
+      "source_sha256": "f1e7d47b6671a3c66ca65a2b56049db5195cf2291f2d7d895c730b08581f3939"
+    },
+    "stream_enum_casts/property": {
+      "trace": [
+        "TRACE stream enum property -2 NEG"
+      ],
+      "source_sha256": "42934710ec9d493f97f49850d8341d15b3fc58d32d8cd8e79da685aaa1071a22"
+    },
+    "stream_enum_casts/function": {
+      "trace": [
+        "TRACE stream enum function 10 B"
+      ],
+      "source_sha256": "a8e995c3fd51b8c463dac682ab6162c16e9974f5a538850407d0feeafd774ccc"
+    }
+  },
+  "mac_release": "/Users/yangfan/vibe-coding/dsim-test/releases/20261104T060449560625Z-8991211ac28a",
+  "linux_release": "/apps/EDAs/own/dsim/releases/20261104T060449622672Z-8991211ac28a"
+}

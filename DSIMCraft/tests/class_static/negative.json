@@ -1,0 +1,42 @@
+{
+  "static_this": [
+    "class C;int n;static function int f();return n;endfunction endclass int x;initial x=C::f();",
+    "requires an object receiver"
+  ],
+  "static_this_call": [
+    "class C;function int g();return 1;endfunction static function int f();return g();endfunction endclass int x;initial x=C::f();",
+    "requires an object receiver"
+  ],
+  "namespace_instance": [
+    "class C;int n;endclass int x;initial x=C::n;",
+    "requires an object receiver"
+  ],
+  "namespace_method": [
+    "class C;function int f();return 1;endfunction endclass int x;initial x=C::f();",
+    "requires an object receiver"
+  ],
+  "static_constructor": [
+    "class C;static function new();begin end endfunction endclass",
+    "constructors cannot be static"
+  ],
+  "outside_class": [
+    "static function int f();return 1;endfunction",
+    "require a class declaration"
+  ],
+  "missing_member": [
+    "class C;static int n;endclass int x;initial x=C::missing;",
+    "class member not found"
+  ],
+  "bad_namespace": [
+    "int n;initial n=Missing::x;",
+    "unknown or not yet declared package"
+  ],
+  "static_net": [
+    "class C;static wire n;endclass",
+    "class property requires variable storage"
+  ],
+  "bad_static_lifetime": [
+    "class C;static function static int f();return 1;endfunction endclass int x;initial x=C::f();",
+    "class methods require automatic lifetime"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "abstract_new": [
+    "virtual class B;endclass B b;initial b=new;",
+    "cannot construct a virtual class"
+  ],
+  "pure_nonabstract": [
+    "class B;pure virtual function int f();endclass",
+    "pure virtual methods require a virtual class"
+  ],
+  "missing_function": [
+    "virtual class B;pure virtual function int f();endclass class D extends B;endclass",
+    "must implement pure virtual method"
+  ],
+  "missing_task": [
+    "virtual class B;pure virtual task run();endclass class D extends B;endclass",
+    "must implement pure virtual method"
+  ],
+  "bad_override": [
+    "virtual class B;pure virtual function int f(int n);endclass class D extends B;function int f(bit n);return n;endfunction endclass",
+    "override signature mismatch"
+  ],
+  "super_function": [
+    "virtual class B;pure virtual function int f();endclass class D extends B;function int f();return super.f();endfunction endclass D d;initial begin d=new;$display(\"%0d\",d.f());end",
+    "pure virtual method has no implementation"
+  ],
+  "super_task": [
+    "virtual class B;pure virtual task run();endclass class D extends B;task run();super.run();endtask endclass D d;initial begin d=new;d.run();end",
+    "pure virtual method has no implementation"
+  ],
+  "cast_literal": [
+    "int a;initial a=$cast(1,2);",
+    ""
+  ],
+  "cast_arity": [
+    "int a;initial a=$cast(a);",
+    "exactly two arguments"
+  ],
+  "cast_whole_array": [
+    "int a[2],b[2],ok;initial ok=$cast(a,b);",
+    "requires singular arguments"
+  ],
+  "pure_constructor": [
+    "virtual class B;pure virtual function new();endclass",
+    ""
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "ref_direction": [
+    "class C#(type T=int);endclass task automatic f(ref C#(int) a,C#(int) b);endtask C#(int) x;initial begin x=new;f(x,null);end",
+    "ref arguments require matching class handle types"
+  ],
+  "ref_type": [
+    "class C#(type T=int);endclass task automatic f(int n,ref C#(int) a);endtask C#(byte) x;initial begin x=new;f(0,x);end",
+    "ref arguments require matching class handle types"
+  ],
+  "wrong_handle": [
+    "class C#(type T=int);endclass function int f(int n,C#(int) a);return n;endfunction C#(byte) x;initial begin x=new;f(0,x);end",
+    "class assignment requires a compatible"
+  ],
+  "unknown_type": [
+    "class C#(type T=int);endclass function int f(int n,Missing#(int) a);return n;endfunction",
+    "unknown integral type Missing"
+  ],
+  "extra_actual": [
+    "class C#(type T=int);endclass function int f(int n,C#(int,int) a);return n;endfunction",
+    "too many class parameter actuals"
+  ],
+  "broken_nesting": [
+    "class C#(type T=int);endclass function int f(int n,C#(int] a);return n;endfunction",
+    "syntax error"
+  ],
+  "unterminated_string": [
+    "class C#(type T=int);endclass function int f(int n,C#($bits(\"not closed)) a);return n;endfunction",
+    "newline in string literal"
+  ],
+  "unterminated_comment": [
+    "class C#(type T=int);endclass function int f(int n,C#(int /* not closed",
+    "unterminated block comment"
+  ]
+}

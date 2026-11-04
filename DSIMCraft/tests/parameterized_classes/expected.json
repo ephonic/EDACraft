@@ -1,0 +1,33 @@
+{
+  "basic": [
+    "TRACE basic 1fedcba9876543210 65 4 9 17"
+  ],
+  "inheritance": [
+    "TRACE inheritance 0 9"
+  ],
+  "nested": [
+    "TRACE nested 23 ffffffff1111222233334444 1ffffffffffffffff"
+  ],
+  "clones": [
+    "TRACE clones ff 1ffffffffffffffffffffffffffffffff"
+  ],
+  "package": [
+    "TRACE package 7 7f ffffffffffffffffffffffff 96"
+  ],
+  "enums": [
+    "TRACE enums LAST ffffffffffffffffd"
+  ],
+  "signatures": [
+    "TRACE signatures 1ffffffffffffffff"
+  ],
+  "rollback": [
+    "TRACE rollback 7 1"
+  ],
+  "parallel": [],
+  "forward": [
+    "TRACE forward 1ffffffffffffffff 65 1"
+  ],
+  "forward_clones": [
+    "TRACE forward clones 1fffffffffffffffc 1fffffffffffffffffffffffffffffffc"
+  ]
+}

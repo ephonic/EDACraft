@@ -1,0 +1,1 @@
+module top;byte q[$]='{8'h12,8'h34,8'h56};byte r[$];bit bits[$];int sum;initial begin r={>>{q}};$display("TRACE right %0d %02h %02h %02h",r.size(),r[0],r[1],r[2]);r={<<8{q}};$display("TRACE left8 %0d %02h %02h %02h",r.size(),r[0],r[1],r[2]);bits={<<{q}};foreach(bits[i])sum=(sum<<1)|bits[i];$display("TRACE bits %0d %0h",bits.size(),sum);end endmodule

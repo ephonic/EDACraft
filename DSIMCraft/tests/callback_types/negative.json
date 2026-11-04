@@ -1,0 +1,26 @@
+{
+  "downcast": {
+    "source": "class Base;endclass class Derived extends Base;endclass module top;Base base;Derived derived;initial derived=base;endmodule\n",
+    "diagnostic": "class assignment requires a compatible object handle or null"
+  },
+  "unrelated": {
+    "source": "class A;int value;endclass class B;int value;endclass module top;A a;B b;initial a=b;endmodule\n",
+    "diagnostic": "class assignment requires a compatible object handle or null"
+  },
+  "parameters": {
+    "source": "class Family#(type T=int);T value;endclass module top;Family#(int) a;Family#(byte) b;initial a=b;endmodule\n",
+    "diagnostic": "class assignment requires a compatible object handle or null"
+  },
+  "wrong_base": {
+    "source": "class Base#(type T=int);endclass class Leaf#(type T=int) extends Base#(T);endclass module top;Base#(int) a;Leaf#(byte) b;initial a=b;endmodule\n",
+    "diagnostic": "class assignment requires a compatible object handle or null"
+  },
+  "ref": {
+    "source": "class Base;endclass class Derived extends Base;endclass module top;Derived derived;function automatic void f(ref Base value);value=null;endfunction initial f(derived);endmodule\n",
+    "diagnostic": "ref arguments require matching class handle types"
+  },
+  "const_ref": {
+    "source": "class Base;endclass class Derived extends Base;endclass module top;Derived derived;function automatic void f(const ref Base value);endfunction initial f(derived);endmodule\n",
+    "diagnostic": "ref arguments require matching class handle types"
+  }
+}

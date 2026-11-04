@@ -1,0 +1,30 @@
+(DELAYFILE (SDFVERSION "3.0") (DIVIDER /) (TIMESCALE 1ns)
+(CELL (CELLTYPE "dut") (INSTANCE) (DELAY (ABSOLUTE
+ (INTERCONNECT a h/a (0.125))
+ (INTERCONNECT h/y v/A (0:0.001:0.002))
+ (INTERCONNECT v/Y y (0.1))
+ (INTERCONNECT b literal\/slash/A (0.2))
+)))
+(CELL (CELLTYPE "branch") (INSTANCE h) (DELAY (ABSOLUTE
+ (INTERCONNECT a u/A (0.01))
+ (IOPATH a y (0.1:0.2:0.3))
+)))
+(CELL (CELLTYPE "INV") (INSTANCE *) (DELAY (ABSOLUTE
+ (IOPATH A Y (0.5:1:1.5) (0.6:1.2:1.8))
+)))
+(CELL (CELLTYPE "INV") (INSTANCE h/u)
+ (DELAY
+  (ABSOLUTE
+   (COND "low" (A == 1'b0) (IOPATH (posedge A) Y (RETAIN (0.1)) ((0.1:0.2:0.3)(0.01)(0.02))))
+   (CONDELSE (IOPATH A Y (1:2:3)))
+   (PORT A (1::3))
+   (DEVICE (0.4))
+  )
+  (INCREMENT (IOPATH A Y (-0.1:-0.2:-0.3)))
+ )
+ (TIMINGCHECK
+  (SETUP (posedge A) A (0.1:0.2:0.3))
+  (WIDTH (COND A (posedge A)) (0.2))
+ )
+)
+)

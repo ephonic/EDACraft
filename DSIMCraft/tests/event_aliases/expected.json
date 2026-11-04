@@ -1,0 +1,35 @@
+{
+  "copy": [
+    "TRACE alias 0 1",
+    "TRACE captured 1 1"
+  ],
+  "deferred": [
+    "TRACE deferred 1 1"
+  ],
+  "locals": [
+    "TRACE locals 11"
+  ],
+  "module_source": [
+    "TRACE module 1 1 1"
+  ],
+  "receivers": [
+    "TRACE receivers 1 1 1"
+  ],
+  "reset": [
+    "TRACE reset 0",
+    "TRACE handles 1 1"
+  ],
+  "null": [
+    "TRACE null 0",
+    "TRACE frozen 0 0"
+  ],
+  "null_format": [
+    "TRACE format '{pulse:null, value:3}"
+  ],
+  "explicit": [
+    "TRACE explicit 1"
+  ],
+  "local_alias": [
+    "TRACE local alias 1 1"
+  ]
+}

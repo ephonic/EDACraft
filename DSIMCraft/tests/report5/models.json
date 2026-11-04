@@ -1,0 +1,18 @@
+{
+  "p21_sra_cond": {
+    "source": "tests/report4/p21_sra_cond.sv",
+    "top": "tb"
+  },
+  "p27_signed_ternary": {
+    "source": "tests/report3/p27_signed_ternary.sv",
+    "top": "tb"
+  },
+  "p28_string_mix": {
+    "source": "tests/report5/p28_string_mix.sv",
+    "top": "tb"
+  },
+  "p29_ternary_context": {
+    "source": "tests/report5/p29_ternary_context.sv",
+    "top": "tb"
+  }
+}

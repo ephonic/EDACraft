@@ -1,0 +1,16 @@
+{
+  "values": [
+    "TRACE values ff 80 0501 0000000100000000 200000000000000000000000000000000"
+  ],
+  "scopes": [
+    "TRACE nested 0009 1fff",
+    "TRACE scopes 80 ff 0000000100000000 00"
+  ],
+  "effects": [
+    "TRACE effects 4 0000000000000000 ffffffffffffff80 00 80"
+  ],
+  "hierarchy": [
+    "TRACE hierarchy 3ffffffffffffffffffffffffffffff80 000000000000000000000000000000080"
+  ],
+  "parallel": []
+}

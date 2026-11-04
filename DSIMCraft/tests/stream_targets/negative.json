@@ -1,0 +1,22 @@
+{
+  "short_source": {
+    "source": "module top;logic[7:0] target;initial {>>{target}}=4'hf;endmodule\n",
+    "diagnostic": "source is smaller than destination"
+  },
+  "associative": {
+    "source": "module top;int target[int];initial {>>{target}}=32'h12345678;endmodule\n",
+    "diagnostic": "integral elements without associative storage"
+  },
+  "handles": {
+    "source": "module top;class C;endclass C target[];initial {>>{target}}=64'h0;endmodule\n",
+    "diagnostic": "integral elements"
+  },
+  "nba": {
+    "source": "module top;bit target[];initial {>>{target}}<=8'ha5;endmodule\n",
+    "diagnostic": "immediate blocking assignment"
+  },
+  "slice": {
+    "source": "module top;bit target[];initial {<<0{target}}=8'ha5;endmodule\n",
+    "diagnostic": "known positive integral constant"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "argument": "module top;\nint a[2];initial a.sort(3);\nendmodule",
+  "iterator_argument": "module top;\nint a[2];initial a.sort(3) with(item);\nendmodule",
+  "iterator_arity": "module top;\nint a[2];initial a.sort(a,b) with(a);\nendmodule",
+  "multidimensional": "module top;\nint a[2][2];initial a.sort;\nendmodule",
+  "associative": "module top;\nint a[string];initial a.sort();\nendmodule",
+  "class_key": "module top;\nclass C;endclass C a[$];initial a.sort;\nendmodule",
+  "void_value": "module top;\nint a[2],result;initial result=a.sort();\nendmodule",
+  "void_discard": "module top;\nint a[2];initial void'(a.sort());\nendmodule",
+  "reverse_with": "module top;\nint a[2];initial a.reverse with(item);\nendmodule",
+  "readonly_iterator": "module top;\nint a[2];initial a.sort with(item++);\nendmodule",
+  "readonly_ref": "module top;\nint a[$];task automatic order(const ref int b[$]);b.sort;endtask initial order(a);\nendmodule",
+  "array_key": "module top;\nint a[2],b[2];initial a.sort with(b);\nendmodule"
+}

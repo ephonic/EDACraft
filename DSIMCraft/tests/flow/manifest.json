@@ -1,0 +1,197 @@
+{
+  "cases": [
+    {
+      "name": "rtl",
+      "sources": [
+        "../cases/counter.v"
+      ],
+      "expected_trace": [
+        "TRACE q=1 plus=2",
+        "TRACE q=3 plus=4",
+        "TRACE q=5 plus=6",
+        "TRACE q=7 plus=8"
+      ],
+      "vcs": {
+        "sources": [
+          "../cases/counter.v"
+        ]
+      }
+    },
+    {
+      "name": "gate",
+      "sources": [
+        "../gate/hierarchy.tb.v"
+      ],
+      "gate_netlist": "../gate/hierarchy.net.v",
+      "gate_top": "dut",
+      "liberty": [
+        "../gate/cells.lib"
+      ],
+      "expected_trace": [
+        "TRACE a=0 y=0 constant=1 floating=z",
+        "TRACE a=1 y=1 constant=1 floating=z",
+        "TRACE a=x y=x constant=1 floating=z",
+        "TRACE a=z y=x constant=1 floating=z"
+      ],
+      "vcs": {
+        "sources": [
+          "../gate/hierarchy.tb.v",
+          "../gate/hierarchy.net.v",
+          "../gate/cells.v"
+        ]
+      }
+    },
+    {
+      "name": "sdf",
+      "sources": [
+        "sdf/native-tb.v"
+      ],
+      "gate_netlist": "sdf/net.v",
+      "gate_top": "dut",
+      "liberty": [
+        "sdf/cells.lib"
+      ],
+      "gate_models": [
+        "sdf/cells.v"
+      ],
+      "sdf": "sdf/delay.sdf",
+      "expected_trace": [
+        "TRACE t=9 x=0 y=x",
+        "TRACE t=16 x=0 y=0",
+        "TRACE t=108 x=1 y=0",
+        "TRACE t=114 x=1 y=1",
+        "TRACE t=211 x=z y=1",
+        "TRACE t=218 x=z y=z",
+        "TRACE t=308 x=x y=z",
+        "TRACE t=314 x=x y=x",
+        "TRACE t=409 x=0 y=x",
+        "TRACE t=416 x=0 y=0",
+        "TRACE t=508 x=x y=0",
+        "TRACE t=514 x=x y=x",
+        "TRACE t=608 x=1 y=x",
+        "TRACE t=614 x=1 y=1",
+        "TRACE t=708 x=x y=1",
+        "TRACE t=714 x=x y=x",
+        "TRACE t=811 x=z y=x",
+        "TRACE t=818 x=z y=z",
+        "TRACE t=909 x=0 y=z",
+        "TRACE t=916 x=0 y=0",
+        "TRACE t=1011 x=z y=0",
+        "TRACE t=1018 x=z y=z",
+        "TRACE t=1108 x=1 y=z",
+        "TRACE t=1114 x=1 y=1",
+        "TRACE t=1209 x=0 y=1",
+        "TRACE t=1216 x=0 y=0"
+      ],
+      "vcs": {
+        "sources": [
+          "sdf/native-tb.v",
+          "sdf/net.v",
+          "sdf/cells.v"
+        ],
+        "sdf_instance": "top.d"
+      },
+      "wave_bits": [
+        [
+          "top",
+          "a",
+          null
+        ],
+        [
+          "top",
+          "x",
+          null
+        ],
+        [
+          "top",
+          "y",
+          null
+        ],
+        [
+          "top",
+          "d",
+          "fast",
+          "A",
+          null
+        ],
+        [
+          "top",
+          "d",
+          "slow",
+          "A",
+          null
+        ]
+      ]
+    },
+    {
+      "name": "sdf-prepared",
+      "sources": [
+        "sdf_prepared/tb.v"
+      ],
+      "gate_netlist": "sdf_prepared/net.v",
+      "gate_top": "dut",
+      "liberty": [
+        "sdf_prepared/cells.lib"
+      ],
+      "gate_models": [
+        "sdf_prepared/cells.v"
+      ],
+      "sdf": "sdf_prepared/delay.sdf",
+      "prepare_sdf_models": true,
+      "expected_trace": [
+        "TRACE done c=1 d=0"
+      ],
+      "vcs": {
+        "sources": [
+          "sdf_prepared/tb.v",
+          "sdf_prepared/net.v",
+          "sdf_prepared/cells.v"
+        ],
+        "compile_args": [
+          "+define+VCS_REFERENCE"
+        ],
+        "sdf_instance": "top.d"
+      }
+    },
+    {
+      "name": "rtl-delays",
+      "sources": [
+        "../time/intra_assignment.v"
+      ],
+      "vcs": {
+        "sources": [
+          "../time/intra_assignment.v"
+        ]
+      }
+    },
+    {
+      "name": "rtl-sdf-delays",
+      "sources": [
+        "continuous/tb.v"
+      ],
+      "gate_netlist": "sdf/net.v",
+      "gate_top": "dut",
+      "liberty": [
+        "sdf/cells.lib"
+      ],
+      "gate_models": [
+        "sdf/cells.v"
+      ],
+      "sdf": "sdf/delay.sdf",
+      "expected_trace": [
+        "TRACE combined raw=0 a=0 x=0 y=0",
+        "TRACE combined raw=1 a=1 x=1 y=1",
+        "TRACE combined raw=1 a=z x=z y=z",
+        "TRACE combined raw=x a=x x=x y=x"
+      ],
+      "vcs": {
+        "sources": [
+          "continuous/tb.v",
+          "sdf/net.v",
+          "sdf/cells.v"
+        ],
+        "sdf_instance": "top.d"
+      }
+    }
+  ]
+}

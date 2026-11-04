@@ -1,0 +1,18 @@
+{
+  "escape": [
+    "TRACE escape 12 3"
+  ],
+  "overlap": [
+    "TRACE overlap 24 12"
+  ],
+  "multi": [
+    "TRACE multi 3726 45"
+  ],
+  "control": [
+    "TRACE control 192 96 0 22"
+  ],
+  "parallel": [],
+  "events": [
+    "TRACE events 12 8"
+  ]
+}

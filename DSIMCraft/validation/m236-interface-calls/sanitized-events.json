@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "models": {
+    "events": {
+      "trace": [
+        "TRACE vif events 3 3"
+      ],
+      "cpp_sha256": "ffca5f696dbc7ebb652201e961f6776a9e2989a3ae5517184aa9eb6f40bf9166"
+    }
+  },
+  "frontend_sanitized": true,
+  "native_sanitized": true
+}

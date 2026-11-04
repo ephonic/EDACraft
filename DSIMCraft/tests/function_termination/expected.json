@@ -1,0 +1,111 @@
+{
+  "chain": {
+    "eof": [
+      "TRACE outer",
+      "TRACE inner 3",
+      "TRACE final 3 9"
+    ]
+  },
+  "constructor": {
+    "eof": [
+      "TRACE constructor",
+      "TRACE final 1"
+    ]
+  },
+  "copyout": {
+    "eof": [
+      "TRACE function",
+      "TRACE final 4 9"
+    ]
+  },
+  "final_call": {
+    "eof": [
+      "TRACE final before",
+      "TRACE function",
+      "TRACE function after",
+      "TRACE final after"
+    ]
+  },
+  "final_direct": {
+    "eof": [
+      "TRACE final before",
+      "TRACE final after"
+    ]
+  },
+  "final_stop": {
+    "eof": [
+      "TRACE final before"
+    ],
+    "run": [
+      "TRACE final before",
+      "TRACE final after"
+    ],
+    "quit": [
+      "TRACE final before"
+    ]
+  },
+  "recursive": {
+    "eof": [
+      "TRACE leaf 6",
+      "TRACE final 6 17"
+    ]
+  },
+  "startup": {
+    "eof": [
+      "TRACE startup"
+    ]
+  },
+  "stop": {
+    "eof": [
+      "TRACE stop before"
+    ],
+    "run": [
+      "TRACE stop before",
+      "TRACE stop after",
+      "TRACE caller 2",
+      "TRACE final 2"
+    ],
+    "quit": [
+      "TRACE stop before",
+      "TRACE final 1"
+    ]
+  },
+  "stop_startup": {
+    "eof": [
+      "TRACE startup before"
+    ],
+    "run": [
+      "TRACE startup before",
+      "TRACE startup after",
+      "TRACE later",
+      "TRACE initial 2 3 7",
+      "TRACE final 2"
+    ],
+    "quit": [
+      "TRACE startup before"
+    ]
+  },
+  "stops": {
+    "eof": [
+      "TRACE process before"
+    ],
+    "run": [
+      "TRACE process before",
+      "TRACE process after",
+      "TRACE function before",
+      "TRACE function after",
+      "TRACE caller 4",
+      "TRACE final 4"
+    ],
+    "quit": [
+      "TRACE process before",
+      "TRACE final 1"
+    ]
+  },
+  "virtual": {
+    "eof": [
+      "TRACE die",
+      "TRACE final"
+    ]
+  }
+}

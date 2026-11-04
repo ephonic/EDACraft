@@ -1,0 +1,69 @@
+{
+  "status": "PASS",
+  "models": {
+    "basic": {
+      "status": "PASS",
+      "source_sha256": "0eb212244d4cebdff067f87a837d90dea5a5d0b27d5d63c06f8ca2cd77fcdb09",
+      "trace": [
+        "TRACE basic driver 3 7 6",
+        "TRACE basic top 5 6"
+      ],
+      "parallel_partitions": 1
+    },
+    "arguments": {
+      "status": "PASS",
+      "source_sha256": "0c2817fb439c232f7b2f7278e37b8debae2ab3c2459498b63ebcb2abc74d5e25",
+      "trace": [
+        "TRACE arguments 7 16 32 34 sum:34"
+      ],
+      "parallel_partitions": 1
+    },
+    "clones": {
+      "status": "PASS",
+      "source_sha256": "92edbb91709881f12a5a08fd49560e75306302949e0fd04c5fbb6cc845fab93c",
+      "trace": [
+        "TRACE clones 1 0 -9 1 2",
+        "TRACE clones 2 0 -8 1 2",
+        "TRACE clones 3 0 -7 1 2",
+        "TRACE clones 4 0 -6 1 2"
+      ],
+      "parallel_partitions": 1
+    },
+    "timing": {
+      "status": "PASS",
+      "source_sha256": "fd33dae318e2496b93f265e157800afac2aa3fccf76c1d1dcc49820884885bed",
+      "trace": [
+        "TRACE timing 13000 0 9"
+      ],
+      "parallel_partitions": 1
+    },
+    "sensitivity": {
+      "status": "PASS",
+      "source_sha256": "c49d8709089445b7e0094210e3de2c0293feb77403b832dd521c012150a6584d",
+      "trace": [
+        "TRACE sensitivity f6 5 a3"
+      ],
+      "parallel_partitions": 1
+    },
+    "parallel": {
+      "status": "PASS",
+      "source_sha256": "a7bd3754312817d54a4b5f155a2c4ed044e745e0d9958b6ea30915b44ace6a2a",
+      "trace": [],
+      "parallel_partitions": 2
+    },
+    "activation": {
+      "status": "PASS",
+      "source_sha256": "d9201c3c96b667bff6cff1b70f5b697e56a8f3da32863ad1f17ad8544eee8ffc",
+      "trace": [
+        "TRACE activation 9 8 5 8"
+      ],
+      "parallel_partitions": 1
+    }
+  },
+  "captures": 35,
+  "rollbacks": 7,
+  "commits": 7,
+  "checkpoint_restores": 2,
+  "negative_cases": 21,
+  "independent_oracle": "explicit fixture numeric/string/timing checks; parallel final values and zero errors"
+}

@@ -1,0 +1,31 @@
+{
+  "capture": [
+    "TRACE returns 12 17 0",
+    "TRACE children 2 11"
+  ],
+  "guard": [
+    "TRACE guard 11 22 0"
+  ],
+  "nested": [
+    "TRACE nested 208"
+  ],
+  "original": [
+    "FORKFN: ok"
+  ],
+  "parents": [
+    "TRACE sibling 10",
+    "TRACE cancelled 10"
+  ],
+  "startup": [
+    "TRACE startup 5 10 13"
+  ],
+  "reuse": [
+    "TRACE reuse 48 576"
+  ],
+  "references": [
+    "TRACE references 12 24 32"
+  ],
+  "wrapper": [
+    "TRACE wrapper 2 13"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+ "capture":["TRACE capture 10 4"],
+ "mixed":["TRACE task 6 8 6"],
+ "types":["TRACE types 11 32"],
+ "control":["TRACE control 1236 48 0"],
+ "events":["TRACE events 10 10 10"],
+ "parallel":[]
+}

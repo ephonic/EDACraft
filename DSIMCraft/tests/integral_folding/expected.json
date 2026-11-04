@@ -1,0 +1,20 @@
+{
+  "singleton": [
+    "TRACE singleton 37"
+  ],
+  "handles": [
+    "TRACE handles 1 1 0 9"
+  ],
+  "real_operands": [
+    "TRACE real 1 1 1.25"
+  ],
+  "integral": [
+    "TRACE integral 24 24 24 2"
+  ],
+  "conditional": [
+    "TRACE conditional 4 000000000000000000000000000001x1 10100xx1 -2"
+  ],
+  "shared_bodies": [
+    "TRACE shared 80 128 32"
+  ]
+}

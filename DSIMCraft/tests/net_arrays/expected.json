@@ -1,0 +1,22 @@
+{
+  "inout": [
+    "TRACE pad a 5 a",
+    "TRACE clash x 5 5",
+    "TRACE off z z x"
+  ],
+  "matrix": [
+    "TRACE matrix 11 22 33 44 zz",
+    "TRACE clash XX 22",
+    "TRACE release zz zz"
+  ],
+  "types": [
+    "TRACE wide 200000000000000000000000000000001 100000000000000000000000000000002 39 5a",
+    "TRACE conversion zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 00 5a"
+  ],
+  "timing": [
+    "TRACE pending xx xx",
+    "TRACE sampled 05 09",
+    "TRACE final xx xx"
+  ],
+  "parallel": []
+}

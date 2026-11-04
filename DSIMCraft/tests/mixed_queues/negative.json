@@ -1,0 +1,12 @@
+{
+  "queue_outer": "module top;int a[$][int];endmodule",
+  "two_queue_axes": "module top;int a[int][$][$];endmodule",
+  "fixed_prefix": "module top;int a[2][$];endmodule",
+  "dynamic_tail": "module top;int a[int][];endmodule",
+  "invalid_key": "module top;class Key;endclass int a[Key][$];initial a[3].push_back(1);endmodule",
+  "incompatible_element": "module top;class C;endclass typedef C Q[$];Q a[int];initial a[0].push_back(3);endmodule",
+  "void_value": "module top;int a[int][$],v;initial v=a[0].push_back(3);endmodule",
+  "iterator_store": "module top;int a[int][$];initial a[0].sort with(item++);endmodule",
+  "bounds_copy": "module top;int a[int][$:2],b[int][$:3];initial a=b;endmodule",
+  "leaf_ref": "module top;int a[int][$];task automatic t(ref int q[$]);endtask initial t(a[1]);endmodule"
+}

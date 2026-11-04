@@ -1,0 +1,34 @@
+{
+  "values": [
+    "TRACE name [LONG_ENUM_MEMBER_NAME] [LONG_ENUM_MEMBER_NAME]",
+    "TRACE bad []",
+    "TRACE x [EX]",
+    "TRACE z [EZ]",
+    "TRACE methods 6 65 [bC0] [abc001] [ABC001] 1 0",
+    "TRACE bounds 0 0 [] [] []",
+    "TRACE mux [dfe]",
+    "TRACE concat [AbC001ZZ]"
+  ],
+  "methods": [
+    "TRACE methods 2048 102 1 1 [AbC001/0123456789abcdef] [        ok] [000word]"
+  ],
+  "automatic": [
+    "TRACE automatic 49 3"
+  ],
+  "packages": [
+    "TRACE packages [EZ] 2 1"
+  ],
+  "wide": [
+    "TRACE wide 83 [VERY_LONG_ENUMERATION_LABEL_EXCEEDING_SIXTY_FOUR_CHARACTERS_AND_ANY_PACKED_REGISTER] 1"
+  ],
+  "parallel": [],
+  "report": [
+    "T11_ENUM_NAME PASS RUN"
+  ],
+  "timing": [
+    "TRACE timing [first] [third] 5 3"
+  ],
+  "implicit": [
+    "TRACE timing [first] [third] 5 3"
+  ]
+}

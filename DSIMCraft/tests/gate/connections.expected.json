@@ -1,0 +1,18 @@
+[
+  "TRACE a=0 b=0 y=0 tied=0 missing=0 cx=x cz=z one=1",
+  "TRACE a=0 b=1 y=0 tied=x missing=0 cx=x cz=z one=0",
+  "TRACE a=0 b=x y=0 tied=x missing=0 cx=x cz=z one=x",
+  "TRACE a=0 b=z y=0 tied=x missing=0 cx=x cz=z one=x",
+  "TRACE a=1 b=0 y=1 tied=x missing=x cx=x cz=z one=1",
+  "TRACE a=1 b=1 y=1 tied=x missing=x cx=x cz=z one=0",
+  "TRACE a=1 b=x y=1 tied=x missing=x cx=x cz=z one=x",
+  "TRACE a=1 b=z y=1 tied=x missing=x cx=x cz=z one=x",
+  "TRACE a=x b=0 y=x tied=x missing=x cx=x cz=z one=1",
+  "TRACE a=x b=1 y=x tied=x missing=x cx=x cz=z one=0",
+  "TRACE a=x b=x y=x tied=x missing=x cx=x cz=z one=x",
+  "TRACE a=x b=z y=x tied=x missing=x cx=x cz=z one=x",
+  "TRACE a=z b=0 y=z tied=x missing=x cx=x cz=z one=1",
+  "TRACE a=z b=1 y=z tied=x missing=x cx=x cz=z one=0",
+  "TRACE a=z b=x y=z tied=x missing=x cx=x cz=z one=x",
+  "TRACE a=z b=z y=z tied=x missing=x cx=x cz=z one=x"
+]

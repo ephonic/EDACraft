@@ -1,0 +1,1 @@
+module top;int value;task automatic inner(ref int v);#20;v=99;endtask task automatic outer(ref int v);begin:scope fork begin inner(v);end begin #1;disable scope;end join end v+=2;endtask initial begin outer(value);#30;$display("TRACE disable %0d",value);end endmodule

@@ -1,0 +1,23 @@
+{
+  "cycles": [
+    "TRACE 23 23"
+  ],
+  "receivers": [
+    "TRACE recursive receivers 23 2"
+  ],
+  "virtual": [
+    "TRACE virtual mutual recursion pass"
+  ],
+  "defaults": [
+    "TRACE recursive defaults text pass"
+  ],
+  "rollback": [
+    "TRACE recursive checkpoint heap pass"
+  ],
+  "static": [
+    "TRACE static cycle 11 25 1 5"
+  ],
+  "initializers": [
+    "TRACE recursive initializers cycle pass"
+  ]
+}

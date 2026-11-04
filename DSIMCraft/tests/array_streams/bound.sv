@@ -1,0 +1,1 @@
+module top;typedef bit[7:0] q2_t[$:1];q2_t value;int observed;initial begin value=q2_t'(24'h123456);observed=value.size();$display("TRACE bound %0d %02h %02h",value.size(),value[0],value[1]);end endmodule

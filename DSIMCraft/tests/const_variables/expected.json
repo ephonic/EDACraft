@@ -1,0 +1,11 @@
+{
+  "scopes": [
+    "TRACE const scopes 13 pkg 1.25"
+  ],
+  "automatic": [
+    "TRACE const automatic 12"
+  ],
+  "handles": [
+    "TRACE const handle 8"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "basic": [
+    "TRACE vif call 6 2 7"
+  ],
+  "capture": [
+    "TRACE vif capture 1 6 16 16 10"
+  ],
+  "reentry": [
+    "TRACE vif reentry 10 20 10 20"
+  ],
+  "arguments": [
+    "TRACE vif arguments 8 17 33 35 sum:35"
+  ],
+  "types": [
+    "TRACE vif types HIGH fedcba987654321001234567 1.25"
+  ],
+  "nested": [
+    "TRACE vif nested 6 6 6 6"
+  ],
+  "arrays": [
+    "TRACE vif arrays 7 6 11 12"
+  ],
+  "timing": [
+    "TRACE vif timing 3.00 0.30"
+  ],
+  "static": [
+    "TRACE vif static 1 1 2 2"
+  ],
+  "events": [
+    "TRACE vif events 3 3"
+  ]
+}

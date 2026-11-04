@@ -1,0 +1,262 @@
+{
+  "dimensions": {
+    "top.a[1][4][6]": [
+      "top.image",
+      56,
+      8
+    ],
+    "top.a[1][4][7]": [
+      "top.image",
+      48,
+      8
+    ],
+    "top.a[1][5][6]": [
+      "top.image",
+      40,
+      8
+    ],
+    "top.a[1][5][7]": [
+      "top.image",
+      32,
+      8
+    ],
+    "top.a[2][4][6]": [
+      "top.image",
+      24,
+      8
+    ],
+    "top.a[2][4][7]": [
+      "top.image",
+      16,
+      8
+    ],
+    "top.a[2][5][6]": [
+      "top.image",
+      8,
+      8
+    ],
+    "top.a[2][5][7]": [
+      "top.image",
+      0,
+      8
+    ]
+  },
+  "effects": {
+    "top.a[1][3]": [
+      "top.image",
+      24,
+      8
+    ],
+    "top.a[1][4]": [
+      "top.image",
+      16,
+      8
+    ],
+    "top.a[2][3]": [
+      "top.image",
+      8,
+      8
+    ],
+    "top.a[2][4]": [
+      "top.image",
+      0,
+      8
+    ]
+  },
+  "parallel": {
+    "top.a[1][3]": [
+      "top.image_a",
+      12,
+      4
+    ],
+    "top.a[1][4]": [
+      "top.image_a",
+      8,
+      4
+    ],
+    "top.a[2][3]": [
+      "top.image_a",
+      4,
+      4
+    ],
+    "top.a[2][4]": [
+      "top.image_a",
+      0,
+      4
+    ],
+    "top.b[1][3]": [
+      "top.image_b",
+      12,
+      4
+    ],
+    "top.b[1][4]": [
+      "top.image_b",
+      8,
+      4
+    ],
+    "top.b[2][3]": [
+      "top.image_b",
+      4,
+      4
+    ],
+    "top.b[2][4]": [
+      "top.image_b",
+      0,
+      4
+    ]
+  },
+  "queries": {
+    "top.data[1][4]": [
+      "top.image_data",
+      20,
+      4
+    ],
+    "top.data[1][5]": [
+      "top.image_data",
+      16,
+      4
+    ],
+    "top.data[1][6]": [
+      "top.image_data",
+      12,
+      4
+    ],
+    "top.data[2][4]": [
+      "top.image_data",
+      8,
+      4
+    ],
+    "top.data[2][5]": [
+      "top.image_data",
+      4,
+      4
+    ],
+    "top.data[2][6]": [
+      "top.image_data",
+      0,
+      4
+    ],
+    "top.u.table_data[2][3]": [
+      "top.u.image_table",
+      24,
+      8
+    ],
+    "top.u.table_data[2][4]": [
+      "top.u.image_table",
+      16,
+      8
+    ],
+    "top.u.table_data[3][3]": [
+      "top.u.image_table",
+      8,
+      8
+    ],
+    "top.u.table_data[3][4]": [
+      "top.u.image_table",
+      0,
+      8
+    ]
+  },
+  "types": {
+    "top.words[1][3]": [
+      "top.image",
+      36,
+      12
+    ],
+    "top.words[1][4]": [
+      "top.image",
+      24,
+      12
+    ],
+    "top.words[2][3]": [
+      "top.image",
+      12,
+      12
+    ],
+    "top.words[2][4]": [
+      "top.image",
+      0,
+      12
+    ],
+    "top.state[1][3]": [
+      "top.image_state",
+      6,
+      2
+    ],
+    "top.state[1][4]": [
+      "top.image_state",
+      4,
+      2
+    ],
+    "top.state[2][3]": [
+      "top.image_state",
+      2,
+      2
+    ],
+    "top.state[2][4]": [
+      "top.image_state",
+      0,
+      2
+    ],
+    "top.bits[1][3]": [
+      "top.image_bits",
+      24,
+      8
+    ],
+    "top.bits[1][4]": [
+      "top.image_bits",
+      16,
+      8
+    ],
+    "top.bits[2][3]": [
+      "top.image_bits",
+      8,
+      8
+    ],
+    "top.bits[2][4]": [
+      "top.image_bits",
+      0,
+      8
+    ],
+    "top.signed_data[1][3]": [
+      "top.image_signed_data",
+      96,
+      32
+    ],
+    "top.signed_data[1][4]": [
+      "top.image_signed_data",
+      64,
+      32
+    ],
+    "top.signed_data[2][3]": [
+      "top.image_signed_data",
+      32,
+      32
+    ],
+    "top.signed_data[2][4]": [
+      "top.image_signed_data",
+      0,
+      32
+    ],
+    "top.wide[1][3]": [
+      "top.image_wide",
+      195,
+      65
+    ],
+    "top.wide[1][4]": [
+      "top.image_wide",
+      130,
+      65
+    ],
+    "top.wide[2][3]": [
+      "top.image_wide",
+      65,
+      65
+    ],
+    "top.wide[2][4]": [
+      "top.image_wide",
+      0,
+      65
+    ]
+  }
+}

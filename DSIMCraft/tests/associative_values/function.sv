@@ -1,0 +1,1 @@
+module top;typedef int map_t[int];map_t seed,result_map;int observed;function automatic int build(input map_t values,output map_t result);result[2]=values[1]+1;return result.num();endfunction initial begin seed[1]=5;result_map[9]=99;observed=build(seed,result_map);$display("TRACE function %0d %0d %0d %0d",observed,result_map[2],result_map.exists(9),seed[1]);end endmodule

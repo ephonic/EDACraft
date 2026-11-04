@@ -1,0 +1,5 @@
+# Final processes and native module-type binding
+
+Eight models cover natural completion, early finish before NBA/future work, zero-activity finalization, forward/parameterized type binds, literal `%%m`, two real partitions and final waveform values. Complete ordered/settled streams are compared across serial, time-wheel and threaded backends. A rejected prediction reaches finalization, discards effects/state, and replays; repeated run must not execute finals twice. `kernel.cpp` verifies actual two-partition final output, natural-end time and finish-fence replay independently of the compiler's side-effect domain merging.
+
+Six output-producing model oracles come from fresh VCS W-2024.09 runs. Two partitioned models deliberately avoid printing in lanes (printing merges side-effect domains); their complete waveforms and final values are checked directly. Nine invalid/out-of-scope constructs must fail compilation without leaving generated code. Current support boundaries are recorded in `docs/cases-review-20261025.md`.

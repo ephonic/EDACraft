@@ -1,0 +1,47 @@
+{
+  "uvm": [
+    "TRACE dynamic_stream 16 e3fc"
+  ],
+  "order": [
+    "TRACE right 3 12 34 56",
+    "TRACE left8 3 56 34 12",
+    "TRACE bits 24 6a2c48"
+  ],
+  "partial": [
+    "TRACE partial 3 d 1 4",
+    "TRACE packed a980"
+  ],
+  "cast": [
+    "TRACE cast 16 c73f 2 c7 3f c73f"
+  ],
+  "states": [
+    "TRACE states 1xz0z10x 21 84"
+  ],
+  "bound": [
+    "TRACE bound 2 12 34"
+  ],
+  "packed_cast": [
+    "TRACE packed_cast 12340000"
+  ],
+  "stream_cast_partial": [
+    "TRACE stream_cast_partial 3 a 9 8"
+  ],
+  "strings": [
+    "TRACE strings RW READY 5 2"
+  ],
+  "string_tasks": [
+    "TRACE string_tasks AX BX 4"
+  ],
+  "string_refs": [
+    "TRACE string_refs RW RO 4"
+  ],
+  "wide": [
+    "TRACE wide 123456789abcdefffedc000000000000 bcdefffedc123456789a 2"
+  ],
+  "capture": [
+    "TRACE capture 123478 56 1"
+  ],
+  "empty": [
+    "TRACE empty 0 0000"
+  ]
+}

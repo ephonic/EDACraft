@@ -1,0 +1,18 @@
+{
+  "real_bitwise": "real r;initial r=1.0&2;",
+  "real_modulo": "real r;initial r=1.0%2;",
+  "real_case_equal": "real r;bit b;initial b=r===1.0;",
+  "real_index": "int a[0:1];int r;initial r=a[1.0];",
+  "real_select": "real r;bit b;initial b=r[0];",
+  "real_edge": "real r;initial @(posedge r);",
+  "real_packed": "real [3:0] r;",
+  "real_enum": "typedef enum real {A=1.0} E;E e;",
+  "real_ref": "real r;int i;task automatic f(ref real a);a=1.0;endtask initial f(i);",
+  "real_extern": "class C;extern function real f(real a);endclass function shortreal C::f(real a);return a;endfunction",
+  "real_dynamic": "real a[];initial a=new[2];",
+  "real_stream": "real a;logic[63:0] b;initial b={<<{a}};",
+  "real_bits_type": "initial $display(\"%d\",$bits(real));",
+  "shortreal_bits_type": "initial $display(\"%d\",$bits(shortreal));",
+  "real_bits_value": "real r;initial $display(\"%d\",$bits(r));",
+  "real_bits_alias": "typedef real R;initial $display(\"%d\",$bits(R));"
+}

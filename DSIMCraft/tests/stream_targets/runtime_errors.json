@@ -1,0 +1,10 @@
+{
+  "short_dynamic_source": {
+    "source": "module top;bit source[$];logic[7:0] target;initial {>>{target}}={>>{source}};endmodule\n",
+    "diagnostic": "stream unpacking source is smaller than destination"
+  },
+  "null_target": {
+    "source": "module top;class C;bit target[];endclass C obj;initial {>>{obj.target}}=8'ha5;endmodule\n",
+    "diagnostic": "null or invalid class object access"
+  }
+}

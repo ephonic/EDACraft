@@ -1,0 +1,25 @@
+{
+  "parallel": [
+    "LANE top.u time=3000 result=12",
+    "LANE top.v time=3000 result=13"
+  ],
+  "natural": [
+    "END scope=top time=2000 n=9 done=18 %m"
+  ],
+  "empty": [
+    "EMPTY top"
+  ],
+  "early_parallel": [
+    "LANE top.u time=1000 result=11",
+    "LANE top.v time=1000 result=12"
+  ],
+  "finish": [
+    "END scope=top time=2000 n=5"
+  ],
+  "bind": [
+    "WATCH top.u.watch 5 6",
+    "WATCH top.v.watch 9 10"
+  ],
+  "partitioned": [],
+  "partitioned_early": []
+}

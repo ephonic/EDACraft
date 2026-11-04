@@ -1,0 +1,7 @@
+{
+  "dynamic": [
+    "TRACE literal <'{text:\"a%0d\"}>",
+    "TRACE dynamic <['{text:\"a%0d\"}]>",
+    "TRACE changed <['{text:\"b%h\"}]>"
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "external_local_property": [
+    "class C;local int x;endclass C c;int n;initial begin c=new;n=c.x;end",
+    "inaccessible local"
+  ],
+  "external_protected_property": [
+    "class C;protected int x;endclass C c;initial begin c=new;c.x=3;end",
+    "inaccessible protected"
+  ],
+  "external_local_method": [
+    "class C;local function int f();return 1;endfunction endclass C c;int n;initial begin c=new;n=c.f();end",
+    "inaccessible local"
+  ],
+  "external_protected_task": [
+    "class C;protected task f();#1;endtask endclass C c;initial begin c=new;c.f();end",
+    "inaccessible protected"
+  ],
+  "static_namespace": [
+    "class C;local static int x;endclass int n;initial n=C::x;",
+    "inaccessible local"
+  ],
+  "static_call": [
+    "class C;protected static function int f();return 1;endfunction endclass int n;initial n=C::f();",
+    "inaccessible protected"
+  ],
+  "parameter_namespace": [
+    "class C #(int V=1);local static int x;endclass int n;initial n=C #(2)::x;",
+    "inaccessible local"
+  ],
+  "derived_local_this": [
+    "class B;local int x;endclass class D extends B;function int f();return this.x;endfunction endclass D d;int n;initial begin d=new;n=d.f();end",
+    "inaccessible local"
+  ],
+  "derived_local_super": [
+    "class B;local function int f();return 1;endfunction endclass class D extends B;function int g();return super.f();endfunction endclass D d;int n;initial begin d=new;n=d.g();end",
+    "inaccessible local"
+  ],
+  "unrelated_class": [
+    "class B;protected int x;endclass class C;function int f(B other);return other.x;endfunction endclass C c;B b;int n;initial begin c=new;b=new;n=c.f(b);end",
+    "inaccessible protected"
+  ],
+  "local_constructor": [
+    "class C;local function new();endfunction endclass C c;initial c=new;",
+    "inaccessible local"
+  ],
+  "protected_constructor": [
+    "class C;protected function new();endfunction endclass C c;initial c=new;",
+    "inaccessible protected"
+  ],
+  "local_base_constructor": [
+    "class B;local function new();endfunction endclass class D extends B;endclass",
+    "inaccessible local"
+  ],
+  "different_specialization": [
+    "class C #(int V=1);local int x;function int f(C #(2) other);return other.x;endfunction endclass C #(1) c;C #(2) b;int n;initial begin c=new;b=new;n=c.f(b);end",
+    "inaccessible local"
+  ],
+  "outside_class": [
+    "local int n;",
+    "require a class declaration"
+  ],
+  "duplicate_local": [
+    "class C;local local int n;endclass",
+    "duplicate or conflicting"
+  ],
+  "conflicting": [
+    "class C;local protected int n;endclass",
+    "duplicate or conflicting"
+  ],
+  "wrong_decl": [
+    "class C;protected parameter int n=2;endclass",
+    "requires a property or method"
+  ],
+  "wrong_virtual": [
+    "class C;virtual protected int n;endclass",
+    "virtual requires a class method"
+  ],
+  "duplicate_static": [
+    "class C;static local static function int f();return 1;endfunction endclass",
+    "duplicate static"
+  ],
+  "duplicate_virtual": [
+    "class C;virtual local virtual function int f();return 1;endfunction endclass",
+    "duplicate virtual"
+  ],
+  "virtual_access_widen": [
+    "class B;protected virtual function int f();return 1;endfunction endclass class D extends B;function int f();return 2;endfunction endclass",
+    "virtual method override access mismatch"
+  ],
+  "virtual_access_narrow": [
+    "class B;virtual task f();endtask endclass class D extends B;local task f();endtask endclass",
+    "virtual method override access mismatch"
+  ],
+  "class_dynamic_array_gap": [
+    "class C;local int q[];endclass",
+    "unpacked class properties currently require one associative or queue dimension"
+  ]
+}

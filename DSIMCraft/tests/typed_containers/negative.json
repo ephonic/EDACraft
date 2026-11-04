@@ -1,0 +1,94 @@
+{
+  "enum_integer": [
+    "typedef enum {A=1} E;E q[$];initial q.push_back(1);",
+    "same enum type"
+  ],
+  "enum_other": [
+    "typedef enum {A=1} E;typedef enum {B=1} F;E q[$];initial q.push_back(B);",
+    "same enum type"
+  ],
+  "enum_pop": [
+    "typedef enum {A=1} E;typedef enum {B=1} F;E q[$];F f;initial f=q.pop_front();",
+    "same enum type"
+  ],
+  "enum_copy": [
+    "typedef enum {A=1} E;typedef enum {B=1} F;E q[$];F r[$];initial q=r;",
+    "compatible element types"
+  ],
+  "enum_new": [
+    "typedef enum {A=1} E;E d[];int src[1];initial d=new[1](src);",
+    "compatible element types"
+  ],
+  "class_integer": [
+    "class C;endclass C q[$];initial q.push_back(1);",
+    "compatible object handle"
+  ],
+  "class_unrelated": [
+    "class C;endclass class D;endclass C q[$];D d;initial q.push_back(d);",
+    "compatible object handle"
+  ],
+  "class_pop_integer": [
+    "class C;endclass C q[$];int n;initial n=q.pop_front();",
+    "integral or string"
+  ],
+  "class_downcast": [
+    "class B;endclass class D extends B;endclass D q[$];B b;initial q.push_back(b);",
+    "compatible object handle"
+  ],
+  "class_copy": [
+    "class C;endclass class D;endclass C q[$];D d[$];initial q=d;",
+    "compatible element types"
+  ],
+  "class_new": [
+    "class C;endclass class D;endclass C q[];D d[1];initial q=new[1](d);",
+    "compatible element types"
+  ],
+  "class_copy_downcast": [
+    "class B;endclass class D extends B;endclass D q[$];B b[$];initial q=b;",
+    "compatible element types"
+  ],
+  "class_bit": [
+    "class C;endclass C q[$];int n;initial n=q[0][0];",
+    "class handles cannot be selected"
+  ],
+  "class_reduction": [
+    "class C;endclass C q[$];int n;initial n=q.sum();",
+    "array reduction enum, class"
+  ],
+  "invalid_open_expression": [
+    "typedef int T;T q[];int n;initial n=q[];",
+    "runtime container dimensions require a declaration"
+  ],
+  "runtime_multidimensional": [
+    "typedef int T;T q[$][2];",
+    "mixed runtime container dimensions"
+  ],
+  "key_integer": [
+    "class K;endclass int m[K];initial m[1]=2;",
+    "compatible object handle"
+  ],
+  "key_unrelated": [
+    "class K;endclass class J;endclass int m[K];J j;initial m[j]=2;",
+    "compatible object handle"
+  ],
+  "key_downcast": [
+    "class K;endclass class J extends K;endclass int m[J];K k;initial m[k]=2;",
+    "compatible object handle"
+  ],
+  "key_cursor_derived": [
+    "class K;endclass class J extends K;endclass int m[K];J j;initial if(m.first(j))$display(\"x\");",
+    "declared key class type"
+  ],
+  "key_copy": [
+    "class K;endclass class J;endclass int m[K],n[J];initial m=n;",
+    "matching key types"
+  ],
+  "key_exists": [
+    "class K;endclass int m[K];initial if(m.exists(0))$display(\"x\");",
+    "compatible object handle"
+  ],
+  "key_fixed_array": [
+    "class K;endclass K k;int m[2];initial m[k]=2;",
+    "object handle"
+  ]
+}

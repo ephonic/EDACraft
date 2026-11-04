@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "entries": {
+    "/apps/EDAs/own/dsim/bin/dsim": {
+      "target": "/apps/EDAs/own/dsim/releases/20261104T060449622672Z-8991211ac28a/dsim",
+      "sha256": "b260c0327d42a887c6d82aa0b9df0bc489442293647a4f47dd91e87b2b2cb898"
+    },
+    "/apps/EDAs/own/dsim/dsim": {
+      "target": "/apps/EDAs/own/dsim/releases/20261104T060449622672Z-8991211ac28a/dsim",
+      "sha256": "b260c0327d42a887c6d82aa0b9df0bc489442293647a4f47dd91e87b2b2cb898"
+    }
+  }
+}

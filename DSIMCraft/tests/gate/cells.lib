@@ -1,0 +1,33 @@
+library(test_cells) {
+  cell(AND2) {
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(Y) { direction : output; function : "A & B"; }
+  }
+  cell(INV) {
+    pin(A) { direction : input; }
+    pin(Y) { direction : output; function : "A'"; }
+  }
+  cell(XOR2) {
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(Y) { direction : output; function : "A ^ B"; }
+  }
+  cell(COMPLEX) {
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(C) { direction : input; }
+    pin(RESULT) { direction : output; function : "A B ^ C"; }
+  }
+  cell(HALF) {
+    pin(A) { direction : input; }
+    pin(B) { direction : input; }
+    pin(SUM) { direction : output; function : "A ^ B"; }
+    pin(CARRY) { direction : output; function : "A * B"; }
+  }
+  cell(TBUF) {
+    pin(A) { direction : input; }
+    pin(E) { direction : input; }
+    pin(Y) { direction : output; function : "A"; three_state : "!E"; }
+  }
+}

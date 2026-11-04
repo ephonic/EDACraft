@@ -1,0 +1,8 @@
+[
+  "TRACE a=10 y=x changes=1",
+  "TRACE a=00 y=0 changes=2",
+  "TRACE a=11 y=1 changes=3",
+  "TRACE a=xz y=x changes=4",
+  "TRACE a=zz y=z changes=5",
+  "TRACE a=x1 y=x changes=6"
+]

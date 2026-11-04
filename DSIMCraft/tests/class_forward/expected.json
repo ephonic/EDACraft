@@ -1,0 +1,87 @@
+{
+  "mutual": [
+    "TRACE 1"
+  ],
+  "new_early": [
+    "TRACE 17"
+  ],
+  "early_dep": [
+    "TRACE 23"
+  ],
+  "late_dep": [
+    "TRACE 23"
+  ],
+  "repeat": [
+    "TRACE 19"
+  ],
+  "shadow": [
+    "TRACE 1 2"
+  ],
+  "future_base": [
+    "TRACE 7"
+  ],
+  "alias_before": [
+    "TRACE 12"
+  ],
+  "base_later_dep": [
+    "TRACE 9"
+  ],
+  "signatures": [
+    "TRACE signatures 13 1 1"
+  ],
+  "package": [
+    "TRACE package payload 0000000000000001f123456789abcdef0 1"
+  ],
+  "clones": [
+    "TRACE clones fc 1fffffffffffffffffffffffffffffffc"
+  ],
+  "rollback": [
+    "TRACE rollback 7 1 1"
+  ],
+  "startup": [
+    "TRACE startup 5 11 23 23"
+  ],
+  "parallel": [],
+  "generate": [
+    "TRACE generate 0 1ffffffffffffffff",
+    "TRACE generate 1 3ffffffffffffffff"
+  ],
+  "base_signatures": [
+    "TRACE base signatures 1"
+  ],
+  "extern_init": [
+    "TRACE 28"
+  ],
+  "inline_init": [
+    "TRACE inline 1ffffffffffffffff 1ffffffffffffffffffffffffffffffff"
+  ],
+  "routine_init": [
+    "TRACE routine 23 24 25"
+  ],
+  "integral_init": [
+    "TRACE startup 19"
+  ],
+  "default_call": [
+    "TRACE defaults 22 28 30 31"
+  ],
+  "runtime_init": [
+    "TRACE runtime 65 19 22 19 value=19",
+    "TRACE runtime 129 19 22 19 value=19"
+  ],
+  "alias_types": [
+    "TRACE alias 17 1 1"
+  ],
+  "alias_chain": [
+    "TRACE chain 31 1"
+  ],
+  "alias_clones": [
+    "TRACE clone 65 1ffffffffffffffff",
+    "TRACE clone 129 1ffffffffffffffffffffffffffffffff"
+  ],
+  "alias_package": [
+    "TRACE package alias 78"
+  ],
+  "process_keys": [
+    "TRACE process keys 30 1 1"
+  ]
+}

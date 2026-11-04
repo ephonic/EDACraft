@@ -1,0 +1,16 @@
+{
+  "duplicate_index": "int a[2][2];int x;initial void'(std::randomize(x) with {foreach(a[i,i])x>i;});",
+  "array_index_collision": "int a[2];int x;initial void'(std::randomize(x) with {foreach(a[a])x>a;});",
+  "empty_indices": "int a[2][2];int x;initial void'(std::randomize(x) with {foreach(a[,])x>0;});",
+  "excess_indices": "int a[2];int x;initial void'(std::randomize(x) with {foreach(a[i,j,k])x>0;});",
+  "unknown_array": "int x;initial void'(std::randomize(x) with {foreach(missing[i])x>0;});",
+  "index_write": "int a[2];int x;initial void'(std::randomize(x) with {foreach(a[i])x==i++;});",
+  "index_escape": "class C;int a[int];rand int n;constraint c {foreach(a[i])n>i;n==i;}endclass",
+  "side_effect": "int a[2];int x;initial void'(std::randomize(x) with {foreach(a[i])x==$urandom;});",
+  "wrong_queue_type": "class A;endclass class B;A q[$];endclass B b;initial begin b=new;b.q.push_back(3);end",
+  "wrong_queue_copy": "class A;endclass class B;A q[$];endclass B b;int a[$];initial begin b=new;b.q=a;end",
+  "queue_numeric": "class C;int q[$];endclass C c;int n;initial begin c=new;n=c.q+1;end",
+  "queue_nba": "class C;int q[$];endclass C c;initial begin c=new;c.q[0]<=1;end",
+  "queue_new": "class C;int q[$];endclass C c;initial begin c=new;c.q=new[3];end",
+  "packed_iteration_gap": "int x;initial void'(std::randomize(x) with {foreach(x[i])x>0;});"
+}

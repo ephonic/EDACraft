@@ -1,0 +1,53 @@
+cmake_minimum_required(VERSION 3.19)
+project(vsyn)
+
+set(CMAKE_CXX_STANDARD 11)
+# Fix clang on macOS: use complete SDK C++ headers
+if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/usr/include/c++/v1")
+endif()
+find_package(BISON REQUIRED)
+find_package(FLEX REQUIRED)
+find_package(TCL REQUIRED)
+
+include_directories( 
+${TCL_INCLUDE_PATH}
+src/err src/err/parser_err src/err/util_err src/mgr src/parser/verilog src/preproc/verilog src/tcl_engine src/token src/util/singleton
+)
+
+BISON_TARGET(verilog_parser
+             src/parser/verilog/verilog.y
+             ${CMAKE_CURRENT_SOURCE_DIR}/src/parser/verilog/verilog_yacc.cpp
+			COMPILE_FLAGS "-p verilog -b verilog"
+)
+FLEX_TARGET(verilog_lexer
+            src/parser/verilog/verilog.l
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/parser/verilog/verilog_lex.cpp
+            COMPILE_FLAGS "-Pverilog --nounistd"
+)
+ADD_FLEX_BISON_DEPENDENCY(verilog_lexer verilog_parser)
+
+set ( vsyn_SOURCES src/parser/verilog/veri_const_function.cpp src/err/parser_err/veri_err.cpp src/tcl_engine/external_commands.cpp src/tcl_engine/tcl_engine.cpp src/preproc/verilog/veri_preproc.cpp src/preproc/verilog/veri_define.cpp src/preproc/verilog/veri_hash_define.cpp src/parser/verilog/veri_exp.cpp src/parser/verilog/veri_symbol_table.cpp src/parser/verilog/veri_mod_container.cpp src/parser/verilog/veri_parser.cpp  src/parser/verilog/veri_num.cpp src/parser/verilog/veri_inst.cpp src/parser/verilog/veri_ast_drawer.cpp src/parser/verilog/veri_str.cpp src/parser/verilog/veri_stmt.cpp src/parser/verilog/veri_tfmg.cpp src/parser/verilog/veri_var.cpp src/parser/verilog/veri_node_pool.cpp src/parser/verilog/veri_module.cpp src/parser/verilog/veri_decl.cpp ${FLEX_verilog_lexer_OUTPUTS}  ${BISON_verilog_parser_OUTPUTS} )
+
+add_library(verilog STATIC
+${vsyn_SOURCES}
+)
+
+add_executable(vsyn vsyn.cpp)
+
+target_link_libraries(vsyn PUBLIC 
+verilog
+)
+
+option(VERILOG_BUILD_TESTS "Build parser semantic and memory regression tests" OFF)
+if(VERILOG_BUILD_TESTS)
+    enable_testing()
+    add_executable(test_verilog_semantic_memory test/semantic_memory.cpp)
+    target_link_libraries(test_verilog_semantic_memory PRIVATE verilog ${TCL_LIBRARY})
+    if(MSVC)
+        target_compile_options(test_verilog_semantic_memory PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(test_verilog_semantic_memory PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME verilog_semantic_memory COMMAND test_verilog_semantic_memory)
+endif()

@@ -1,0 +1,19 @@
+library (gates) {
+  cell (g_inv) {
+    area : 1;
+    pin (a) { direction : input; }
+    pin (y) { direction : output; function : "!a"; }
+  }
+  cell (g_and) {
+    area : 2;
+    pin (a) { direction : input; }
+    pin (b) { direction : input; }
+    pin (y) { direction : output; function : "(a & b)"; }
+  }
+  cell (g_or) {
+    area : 2;
+    pin (a) { direction : input; }
+    pin (b) { direction : input; }
+    pin (y) { direction : output; function : "(a | b)"; }
+  }
+}

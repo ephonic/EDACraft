@@ -1,0 +1,14 @@
+{
+  "default_recursive": {
+    "source": "module top;task automatic recur();recur();endtask initial recur();endmodule",
+    "flags": [],
+    "diagnostic": "recursive tasks are not supported yet"
+  },
+  "static_ref": {
+    "source": "module top;int value;task helper(ref int v);v++;endtask initial helper(value);endmodule",
+    "flags": [
+      "--shared-functions"
+    ],
+    "diagnostic": "ref formals require an automatic subroutine"
+  }
+}

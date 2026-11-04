@@ -1,0 +1,15 @@
+{
+  "actions": [
+    "TRACE actions 3 6 2 2"
+  ],
+  "defaults": [
+    "TRACE defaults 1"
+  ],
+  "hierarchy": [
+    "TRACE hierarchy 0 0 1 2 5 5"
+  ],
+  "delays": [
+    "TRACE delays 3 6 0"
+  ],
+  "parallel": []
+}

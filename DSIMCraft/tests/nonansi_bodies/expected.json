@@ -1,0 +1,6 @@
+{
+ "basic":["TRACE nonansi basic value=6"],
+ "classes":["TRACE nonansi classes value=104"],
+ "types":["TRACE nonansi types value=11"],
+ "rollback":["TRACE nonansi rollback value=9"]
+}

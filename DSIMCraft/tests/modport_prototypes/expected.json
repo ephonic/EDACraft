@@ -1,0 +1,29 @@
+{
+  "basic": [
+    "TRACE basic driver 3 7 6",
+    "TRACE basic top 5 6"
+  ],
+  "arguments": [
+    "TRACE arguments 7 16 32 34 sum:34"
+  ],
+  "clones": [
+    "TRACE clones 1 0 -9 1 2",
+    "TRACE clones 2 0 -8 1 2",
+    "TRACE clones 3 0 -7 1 2",
+    "TRACE clones 4 0 -6 1 2"
+  ],
+  "activation": [
+    "TRACE activation 9 8 5 8"
+  ],
+  "parallel": [],
+  "timing": [
+    "TRACE timing 13000 0 9"
+  ],
+  "defaults": [
+    "TRACE defaults 7 10 10 22 8 7",
+    "TRACE defaults direct 4"
+  ],
+  "types": [
+    "TRACE types RUN b5 fffffffffffffffffffd"
+  ]
+}

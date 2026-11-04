@@ -1,0 +1,18 @@
+{
+ "duplicate_class":"class C;endclass class C;endclass module top;endmodule",
+ "duplicate_typedef":"typedef bit[2:0] T;typedef bit[3:0] T;module top;endmodule",
+ "class_type_collision":"typedef int C;class C;endclass module top;endmodule",
+ "explicit_import_collision":"package p;typedef int C;endpackage import p::C;class C;endclass module top;endmodule",
+ "bound_wildcard_collision":"package p;typedef int C;endpackage import p::*;module earlier;C x;endmodule class C;endclass module top;earlier e();endmodule",
+ "late_import":"class C;MissingType x;endclass package p;typedef int MissingType;endpackage import p::*;module top;C x;initial x=new;endmodule",
+ "future_class":"module earlier;C x;initial x=new;endmodule class C;endclass module top;earlier e();endmodule",
+ "package_capture":"typedef bit[3:0] T;package p;T x;endpackage module top;endmodule",
+ "package_class_capture":"class C;endclass package p;C x;endpackage module top;endmodule",
+ "hierarchical_type_capture":"class C;endclass module child;endmodule module top;child u();initial $display(\"%0d\",u.C);endmodule",
+ "undefined_base":"class C extends Missing;endclass module top;endmodule",
+ "wrong_closing_label":"class C;endclass:D module top;endmodule",
+ "forward_gap":"typedef class C;class C;endclass module top;endmodule",
+ "unit_scope_gap":"typedef int T;module top;$unit::T x;endmodule",
+ "unit_variable_gap":"int value=3;module top;initial $display(\"%0d\",value);endmodule",
+ "unit_extern_gap":"class C;extern function int read();endclass function int C::read();return 3;endfunction module top;endmodule"
+}

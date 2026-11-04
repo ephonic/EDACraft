@@ -1,0 +1,38 @@
+{
+  "recursive": [
+    "TRACE recursive 10 5"
+  ],
+  "uvm_reentry": [
+    "TRACE reentry 2 2 2 2 4"
+  ],
+  "concurrent": [
+    "TRACE concurrent 3 13 3"
+  ],
+  "background": [
+    "TRACE background 7 2"
+  ],
+  "mutual": [
+    "TRACE mutual 15 5"
+  ],
+  "kill_reuse": [
+    "TRACE kill 4 0"
+  ],
+  "array_output": [
+    "TRACE arrays 4 2 2"
+  ],
+  "disable": [
+    "TRACE disable 2"
+  ],
+  "optional_random": [
+    "TRACE optional 7"
+  ],
+  "suspended_disable": [
+    "TRACE suspended 2"
+  ],
+  "escaped_disable": [
+    "TRACE escaped 2"
+  ],
+  "clocked": [
+    "TRACE clocked 3"
+  ]
+}

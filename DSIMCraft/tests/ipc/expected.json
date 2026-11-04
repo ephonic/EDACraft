@@ -1,0 +1,33 @@
+{
+  "mailbox": [
+    "TRACE mailbox 40 20 30 2 0"
+  ],
+  "semaphore": [
+    "TRACE semaphore 3 1 1 0"
+  ],
+  "messages": [
+    "TRACE messages 17 hello 37 0"
+  ],
+  "lifetime": [
+    "TRACE lifetime 11 33 1 0"
+  ],
+  "cancel": [
+    "TRACE cancel 3 30 0"
+  ],
+  "peek": [
+    "TRACE peek 81 81 81 0"
+  ],
+  "rollback": [
+    "TRACE rollback 7 1"
+  ],
+  "parallel": [],
+  "payloads": [
+    "TRACE payloads -7 73 51 0"
+  ],
+  "equivalence": [
+    "TRACE equivalence 7 13 -3 0"
+  ],
+  "debt": [
+    "TRACE debt 0 1 0"
+  ]
+}

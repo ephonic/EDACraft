@@ -1,0 +1,1 @@
+module top;process worker;int value=0,seen=0;initial begin fork begin worker=process::self();#2;value=7;end begin wait(worker!=null);worker.await();seen++;end begin wait(worker!=null);wait(worker.status()==process::FINISHED);seen++;end join $display("TRACE completed %0d %0d %0d",worker.status(),value,seen);end endmodule

@@ -1,0 +1,14 @@
+{
+  "remote": "yangfan@10.131.254.103:/home/yangfan/c906/t12",
+  "imported_files": {
+    "db_api.h": {
+      "sha256": "16fa88540d345d1e7a73c889ae602b042ac3e7576380bd77caa6a5abc5035479",
+      "bytes": 21419
+    },
+    "db_api.cc": {
+      "sha256": "37edd6f24ad94c29405f06234875c68a6da6e1f33e0682c47e7be8afe62504ca",
+      "bytes": 99169
+    }
+  },
+  "adaptation": "Native implementation and native structures imported. Removed lc_shell/SDBD process path; local includes; incomplete graph no longer reported as a successful LibertyDB load."
+}

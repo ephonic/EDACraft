@@ -1,0 +1,27 @@
+{
+  "nonintegral": {
+    "source": "module top;class C;endclass C values[$];bit bits[$];initial bits={>>{values}};endmodule",
+    "flags": [],
+    "diagnostic": "bit stream requires integral elements"
+  },
+  "associative": {
+    "source": "module top;int values[int];bit bits[$];initial bits={>>{values}};endmodule",
+    "flags": [],
+    "diagnostic": "bit stream requires integral elements"
+  },
+  "real": {
+    "source": "module top;real value=1.0;bit bits[$];initial bits={>>{value}};endmodule",
+    "flags": [],
+    "diagnostic": "bit stream requires packed integral values"
+  },
+  "dynamic_strings": {
+    "source": "module top;string values[];endmodule",
+    "flags": [],
+    "diagnostic": "dynamic string arrays"
+  },
+  "nba_text": {
+    "source": "module top;string values[2];initial values[0]<=\"RW\";endmodule",
+    "flags": [],
+    "diagnostic": "string nonblocking assignments"
+  }
+}

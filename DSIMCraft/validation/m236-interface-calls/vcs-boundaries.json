@@ -1,0 +1,47 @@
+{
+  "status": "PASS",
+  "compile": {
+    "hidden": {
+      "status": "REJECTED",
+      "exit_code": 255,
+      "source_sha256": "5acab10fa2dfd7bd418b4268502448b67ca485c3d3bdf0fcc30f1473a308f04b"
+    },
+    "missing_member": {
+      "status": "REJECTED",
+      "exit_code": 255,
+      "source_sha256": "803015c351c1bb5ffcd86b1799c693864b17a555bfe888e5246c836ce5955cfd"
+    },
+    "missing_argument": {
+      "status": "REJECTED",
+      "exit_code": 255,
+      "source_sha256": "5bdf2a13be28c2bcae9c7723a3fd6dabe4c444bf5466f3ac1f24ddc72a2b01aa"
+    },
+    "bad_named": {
+      "status": "REJECTED",
+      "exit_code": 255,
+      "source_sha256": "8aa30df6991a94d0553a834484cc905c70670434372d2bdbe155c75f0f7a9c4f"
+    },
+    "task_function": {
+      "status": "REJECTED",
+      "exit_code": 255,
+      "source_sha256": "3813a3f334091d4f9ca28caae52fe050d2d70b75946d3a545855921288ed5374"
+    },
+    "event_function": {
+      "status": "ACCEPTED",
+      "exit_code": 0,
+      "source_sha256": "1833c7a9d900849eb5e2674ea91bc91c7a189e3c399c3143b699499dbdd4cb88"
+    }
+  },
+  "runtime": {
+    "null_function": {
+      "status": "PASS",
+      "exit_code": 0,
+      "source_sha256": "6dc2cad1cd66e1b7354077beeee13ede82eccc699def1228580c35ef54af468a"
+    },
+    "null_task": {
+      "status": "RUNTIME_REJECTED",
+      "exit_code": 255,
+      "source_sha256": "2ebc6fd2c73f55e57986e1c1540d589ebd43cfb17355650bc0bfb642f4090a1a"
+    }
+  }
+}

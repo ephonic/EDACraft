@@ -1,0 +1,35 @@
+module top; reg a,b; wire y,tied,missing,cx,cz; wire [0:0] one;
+dut u(a,b,y,tied,missing,cx,cz,one); initial begin
+a=1'b0; b=1'b0; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'b0; b=1'b1; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'b0; b=1'bx; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'b0; b=1'bz; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'b1; b=1'b0; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'b1; b=1'b1; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'b1; b=1'bx; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'b1; b=1'bz; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'bx; b=1'b0; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'bx; b=1'b1; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'bx; b=1'bx; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'bx; b=1'bz; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'bz; b=1'b0; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'bz; b=1'b1; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'bz; b=1'bx; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+a=1'bz; b=1'bz; #1;
+$display("TRACE a=%b b=%b y=%b tied=%b missing=%b cx=%b cz=%b one=%b",a,b,y,tied,missing,cx,cz,one);
+$finish; end endmodule

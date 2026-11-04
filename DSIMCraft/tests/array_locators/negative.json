@@ -1,0 +1,11 @@
+{
+ "missing_predicate":"int a[2];int q[$];initial q=a.find();",
+ "argument_without_with":"int a[2];int q[$];initial q=a.unique(1);",
+ "iterator_not_identifier":"int a[2];int q[$];initial q=a.unique(1) with(item);",
+ "multidimensional":"int a[2][2];int q[$];initial q=a.unique;",
+ "class_minimum":"class C;endclass C a[$],q[$];initial q=a.min;",
+ "class_unique":"class C;endclass C a[$],q[$];initial q=a.unique;",
+ "class_predicate":"class C;endclass C a[$],q[$];initial q=a.find with(item);",
+ "readonly_iterator":"int a[2];int q[$];initial q=a.find with(item++);",
+ "string_index_queue":"int a[string];int q[$];initial q=a.unique_index;"
+}

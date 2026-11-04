@@ -1,0 +1,11 @@
+{
+  "basic": [
+    "TRACE stream enum 3 A"
+  ],
+  "property": [
+    "TRACE stream enum property -2 NEG"
+  ],
+  "function": [
+    "TRACE stream enum function 10 B"
+  ]
+}

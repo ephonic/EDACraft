@@ -1,0 +1,10 @@
+{
+  "depth": {
+    "source": "module top;task automatic recur();recur();endtask initial recur();endmodule",
+    "diagnostic": "task recursion depth exceeds 1024"
+  },
+  "optional_graph": {
+    "source": "module top;class Child;rand int value;endclass class Item;rand Child child;endclass function automatic int maybe(Item item,bit enabled);if(enabled)return item.randomize();return 7;endfunction Item item;int observed;initial begin item=new();observed=maybe(item,1);$display(\"TRACE optional %0d\",observed);end endmodule\n",
+    "diagnostic": "joint object-graph constraint solving"
+  }
+}

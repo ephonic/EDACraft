@@ -1,0 +1,26 @@
+{
+  "factory": [
+    "TRACE struct_string_queue 7 packet"
+  ],
+  "scalar": [
+    "TRACE struct scalar 12"
+  ],
+  "dynamic": [
+    "TRACE struct dynamic 13"
+  ],
+  "calls": [
+    "TRACE struct calls 11"
+  ],
+  "methods": [
+    "TRACE struct methods 4"
+  ],
+  "wide": [
+    "TRACE struct wide 7"
+  ],
+  "rollback": [
+    "TRACE struct rollback 7"
+  ],
+  "payloads": [
+    "TRACE UVM payloads 2 packet"
+  ]
+}

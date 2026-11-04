@@ -1,0 +1,48 @@
+{
+  "evaluation": [
+    "TRACE evaluation 1 abab",
+    "TRACE zero evaluation 2 0",
+    "TRACE negative evaluation 3 0",
+    "TRACE count function xxx"
+  ],
+  "large": [
+    "TRACE large 32768 abcdefgh abcdefgh"
+  ],
+  "legacy": [
+    "TRACE legacy aa 61626162 1 -86 32"
+  ],
+  "nesting": [
+    "TRACE nested [xyxyxyxyxyxy]",
+    "TRACE conditional xyxy",
+    "TRACE mixed AbAb",
+    "TRACE numeric AA"
+  ],
+  "objects": [
+    "TRACE object uvuvuv",
+    "TRACE queue !!!! uvuvuvuvuvuv"
+  ],
+  "packed": [
+    "TRACE packed 616261626162 6162",
+    "TRACE argument 61626162",
+    "TRACE argument 00006162",
+    "TRACE return 00006162"
+  ],
+  "values": [
+    "TRACE literal 6 ababab",
+    "TRACE direct ababab",
+    "TRACE value ababab",
+    "TRACE zero 0",
+    "TRACE negative 0",
+    "TRACE unknown 0"
+  ],
+  "waits": [
+    "TRACE waits 1 1"
+  ],
+  "wide": [
+    "TRACE wide 4 00000000000078797879",
+    "TRACE wide negative 0",
+    "TRACE wide unknown 0",
+    "TRACE unsigned 255 97",
+    "TRACE empty 0"
+  ]
+}

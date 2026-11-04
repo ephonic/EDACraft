@@ -1,0 +1,6 @@
+{
+  "null": {
+    "source": "module top;class State;int value;endclass State state;function automatic void f(const ref int value);endfunction initial f(state.value);endmodule\n",
+    "diagnostic": "null or invalid class object access"
+  }
+}

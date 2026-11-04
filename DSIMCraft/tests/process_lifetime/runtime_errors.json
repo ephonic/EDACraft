@@ -1,0 +1,18 @@
+{
+  "null_status": {
+    "source": "module top;process p;int observed;initial observed=p.status();endmodule\n",
+    "diagnostic": "null or invalid class object access"
+  },
+  "null_kill": {
+    "source": "module top;process p;initial p.kill();endmodule\n",
+    "diagnostic": "null or invalid class object access"
+  },
+  "null_await": {
+    "source": "module top;process p;initial p.await();endmodule\n",
+    "diagnostic": "null or invalid class object access"
+  },
+  "derived_unsupported": {
+    "source": "module top;class Child;rand int value;endclass virtual class Base;rand int value;endclass class Bad extends Base;rand Child child;endclass Base item;Bad bad;initial begin bad=new();bad.child=new();item=bad;if(!item.randomize())$display(\"BAD\");end endmodule\n",
+    "diagnostic": "joint object-graph constraint solving"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "operators": [
+    "TRACE arithmetic -20 4",
+    "TRACE shifts 7ffa 3fffffffffffffffffffffffffffffff9 000056780000def00003",
+    "TRACE unknown x5 xx"
+  ],
+  "targets": [
+    "TRACE once 00000000000000000100 00000000000000001235 2",
+    "TRACE selects 00000000000000001355 12cc 1333",
+    "TRACE bounds d2cc 00000000000000000100 4"
+  ],
+  "returns": [
+    "TRACE function 00000000000000000003",
+    "TRACE immediate 10 1",
+    "TRACE delayed 15 2",
+    "TRACE event 22 7",
+    "TRACE nested 13 1",
+    "TRACE nba 42",
+    "TRACE fallback ffffffffffffffffff9d"
+  ],
+  "parallel": [],
+  "generate": []
+}

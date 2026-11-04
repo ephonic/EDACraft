@@ -1,0 +1,5 @@
+{
+ "outside_this":"int values[int];initial begin foreach(this.values[k])$display(\"%0d\",k);$finish;end",
+ "outside_super":"int values[int];initial begin foreach(super.values[k])$display(\"%0d\",k);$finish;end",
+ "base_missing":"class C;int values[int];function int total();foreach(super.values[k])return k;return 0;endfunction endclass C c;initial begin c=new;$display(\"%0d\",c.total());$finish;end"
+}

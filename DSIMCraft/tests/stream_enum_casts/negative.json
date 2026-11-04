@@ -1,0 +1,6 @@
+{
+  "implicit": {
+    "source": "module top;typedef enum logic[3:0]{A=3} T;bit bits_value[];T value;initial begin bits_value=new[4];value={>>{bits_value}};end endmodule\n",
+    "diagnostic": "enum assignment requires"
+  }
+}

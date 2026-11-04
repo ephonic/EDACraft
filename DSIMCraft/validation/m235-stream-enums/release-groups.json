@@ -1,0 +1,38 @@
+{
+  "status": "PASS",
+  "per_host": {
+    "captures": 127,
+    "compile_boundaries": 33,
+    "runtime_rejections": 5
+  },
+  "groups": {
+    "virtual_interfaces": {
+      "captures": 33,
+      "negative_cases": 8,
+      "runtime_rejections": 3,
+      "rollbacks": 0,
+      "real_parallel_partitions": 0
+    },
+    "stream_targets": {
+      "captures": 54,
+      "negative_cases": 5,
+      "runtime_rejections": 2,
+      "rollbacks": 0,
+      "real_parallel_partitions": 0
+    },
+    "stream_enum_casts": {
+      "captures": 9,
+      "negative_cases": 1,
+      "runtime_rejections": 0,
+      "rollbacks": 0,
+      "real_parallel_partitions": 0
+    },
+    "interfaces": {
+      "captures": 31,
+      "negative_cases": 19,
+      "runtime_rejections": 0,
+      "rollbacks": 4,
+      "real_parallel_partitions": 2
+    }
+  }
+}

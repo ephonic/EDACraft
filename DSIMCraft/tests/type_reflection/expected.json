@@ -1,0 +1,39 @@
+{
+  "types": [
+    "TRACE builtins [int] [integer] [bit] [logic] [reg]",
+    "TRACE vec [logic signed[3:0][7:0]] [logic signed[3:0][7:0]] [logic signed[3:0][7:0]]",
+    "TRACE arr [int$[2:4]] [int$[$]] [int]",
+    "TRACE other [string] [real] [chandle] [enum p::state]",
+    "TRACE cls [class p::C] [class p::C] [class p::Box#(class p::C,7)] [logic signed[3:0][7:0]]",
+    "TRACE expr [int] [bit[7:0]] [bit[15:0]] [int]",
+    "TRACE side 0"
+  ],
+  "containers": [
+    "TRACE builtin [int] [logic signed[3:1]] [real] [string] [int unsigned]",
+    "TRACE names [int unsigned] [logic signed] [time] [class top.Local]",
+    "TRACE arrays [bit[7:4]$[]] [int$[string]] [int$[int]] [int$[$:5]] [int$[0:1]]",
+    "TRACE classes [class top.Local] [class $unit::Global] [class top.Box#(class top.Local,-2,\"ok\")]",
+    "TRACE enum [enum top.state]",
+    "TRACE struct [struct top.Pair] [struct top.Pair]",
+    "TRACE text [string] [int] 0"
+  ],
+  "text_mux": [
+    "TRACE true [same] 41",
+    "TRACE false [same] 42",
+    "TRACE unknown_same [same] 412",
+    "TRACE unknown_other [] 413",
+    "TRACE null [null] 0",
+    "TRACE object [obj7] 1"
+  ],
+  "stream_join": [
+    "TRACE empty []",
+    "TRACE queue [uvm_join] 4",
+    "TRACE mixed [uvm_join!?] 1",
+    "TRACE packed 4142",
+    "TRACE object [classwords]"
+  ],
+  "selects": [
+    "TRACE selects [bit] [logic] [logic[7:0]] [logic] [reg[3:1]] [bit]",
+    "TRACE ones [bit[0:0]] [bit[0:0]] [logic[0:0]]"
+  ]
+}

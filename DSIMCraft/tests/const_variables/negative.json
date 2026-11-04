@@ -1,0 +1,11 @@
+{
+  "write": "module top;const int n=3;initial n=4;endmodule",
+  "increment": "module top;const int n=3;initial n++;endmodule",
+  "ref": "module top;const int n=3;task automatic change(ref int x);x++;endtask initial change(n);endmodule",
+  "output": "module top;const int n=3;task change(output int x);x=7;endtask initial change(n);endmodule",
+  "package": "package p;const int n=3;endpackage module top;initial p::n=4;endmodule",
+  "string": "module top;const string s=\"hi\";initial s=\"bye\";endmodule",
+  "handle": "module top;class C;endclass const C c=new;initial c=new;endmodule",
+  "local": "module top;function automatic int f(int n);const int x=n;return x++;endfunction int a;initial a=f(1);endmodule",
+  "missing_initializer": "module top;const int n;endmodule"
+}

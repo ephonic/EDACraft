@@ -1,0 +1,72 @@
+{
+  "functions": [
+    [
+      2000,
+      19,
+      "no-match"
+    ]
+  ],
+  "branches": [
+    [
+      1000,
+      5,
+      "overlap"
+    ],
+    [
+      2000,
+      8,
+      "no-match"
+    ],
+    [
+      2000,
+      10,
+      "no-match"
+    ],
+    [
+      4000,
+      14,
+      "overlap"
+    ]
+  ],
+  "events": [
+    [
+      2000,
+      12,
+      "no-match"
+    ],
+    [
+      2000,
+      12,
+      "no-match"
+    ],
+    [
+      2000,
+      12,
+      "no-match"
+    ]
+  ],
+  "cases": [
+    [
+      2000,
+      7,
+      "overlap"
+    ],
+    [
+      4000,
+      12,
+      "no-match"
+    ],
+    [
+      4000,
+      13,
+      "no-match"
+    ],
+    [
+      5000,
+      14,
+      "overlap"
+    ]
+  ],
+  "parallel": [],
+  "glitches": []
+}

@@ -1,0 +1,45 @@
+{
+  "values": [
+    "TRACE queue 3 10 21 2",
+    "TRACE array 4 13 23 21",
+    "TRACE temporary 2",
+    "TRACE frame 1 3"
+  ],
+  "arguments": [
+    "TRACE refs 3 3 3 1",
+    "TRACE copies 4 3 2 4 4",
+    "TRACE open 4"
+  ],
+  "fixed": [
+    "TRACE fixed 7 20 12 93 54",
+    "TRACE grid 40 52"
+  ],
+  "objects": [
+    "TRACE objects 1 17 17",
+    "TRACE identity 30"
+  ],
+  "declarations": [
+    "TRACE aliases 2 00000000000000000000000000000001x 00000000000000000000000000000001z 7",
+    "TRACE clone 1ffffffffffffffff 1ffffffffffffffffffffffffffffffff"
+  ],
+  "initializers": [
+    "TRACE init 5 15 20 3 4",
+    "TRACE init 5 18 20 3 6"
+  ],
+  "types": [
+    "TRACE enum RED BLUE",
+    "TRACE typed 2 BLUE xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1 000000000000000000000000000000001"
+  ],
+  "prototypes": [
+    "TRACE virtual 2 11 3"
+  ],
+  "report_r02": [
+    "PROBE_ADT2: ok (insert/delete/new[n](old)/num/first/next/string keys)"
+  ],
+  "rollback": [
+    "TRACE r1 3",
+    "TRACE r3 12",
+    "TRACE r5 5"
+  ],
+  "parallel": []
+}

@@ -1,0 +1,14 @@
+[
+  "TRACE p0_inactive a=0000x11x b=00000000 wide=00000000000xzz0zx110x11xz1x1z1xz11xx10x11zx11zx01z1z0zx00zz1z111 shifted=000z00z000z0zxz0",
+  "TRACE p0_committed a=00000000 b=zzx1x01x wide=00000000000000000000000000000001zz1x0x1x0x101xz101z11xz1z01zz111 shifted=000zx00x1z011xx1",
+  "TRACE p1_inactive a=0001xx00 b=zzx1zx1x wide=000000000000001x0zx0xx0x0000000000000xz1z0xxz0z101z11xz1z01zz111 shifted=000z0001xz011xx1",
+  "TRACE p1_committed a=1x11101x b=zzx1zx1x wide=0000000000000000000000000000000000000000011xz00000010zxxx1x0z1x0 shifted=000zzz0zz1100xx1",
+  "TRACE p2_inactive a=1x11101x b=zx0z00xz wide=000000000000000000000000000000000000000000000000000000000000z1x0 shifted=000zz0zzxxzzx1x1",
+  "TRACE p2_committed a=xzzz0zzx b=xz01xxxx wide=0000000000000000000000000000000000000000000000zzzzxz00000000z1x0 shifted=01zz100z110x1xxz",
+  "TRACE p3_inactive a=zzxx0z1x b=0z1x0xzx wide=0000000zzx1x0111z1000zx1zz10xzzx00000000000000zzzzxz00000000z1x0 shifted=01xx1x1z1zzz0xxz",
+  "TRACE p3_committed a=zxxz0z1x b=1xzxzzzx wide=000000000000000000000000000000000000000000z0xzx1xzxxxxzx0101zzx0 shifted=00000x10zxxz0xxz",
+  "TRACE p4_inactive a=zx0z1z1x b=1x1z1001 wide=000000000z000000000z010xx1zz1001xzx1xzzzxz01xzxxxxzxxxzx0101zzx0 shifted=xz111101z011z11z",
+  "TRACE p4_committed a=0000000x b=01100xx1 wide=00000000000000000zxxzx1x11z10z1z1x0xz01zxzx00000000z001010xxzzx1 shifted=xz111101z01z0z1z",
+  "TRACE p5_inactive a=0zz0010x b=01100zx1 wide=00000000000000000zxxzx1x11z10z1z1x0xz01zxzx00000000z001010xxzzx1 shifted=xz10x1z0001xzzxx",
+  "TRACE p5_committed a=000001xx b=1z1z0zx1 wide=00z1z0xz1x00xzzzx1z1zxz1z0zxzxzxx01zzz10zzzz0z0z01zz111011x0xxz1 shifted=xz10x1z0001xzzxx"
+]

@@ -1,0 +1,28 @@
+{
+  "report": [
+    "D4 INTERFACE PASS"
+  ],
+  "forwarding": [
+    "TRACE forwarding 21 71 21"
+  ],
+  "parameterized": [
+    "TRACE parameterized 7e 1ffe"
+  ],
+  "generic": [
+    "TRACE generic 28 26"
+  ],
+  "aggregates": [
+    "TRACE aggregates C 16a 81"
+  ],
+  "nets": [
+    "TRACE nets a"
+  ],
+  "parallel": [],
+  "mixed": [
+    "TRACE mixed 21 22 43"
+  ],
+  "ordinary_hierarchy": [
+    "TRACE ordinary 7",
+    "TRACE ordinary 9"
+  ]
+}

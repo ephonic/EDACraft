@@ -1,0 +1,46 @@
+{
+  "copy_key": [
+    "int a[string],b[int];initial a=b;",
+    "matching key types"
+  ],
+  "copy_enum": [
+    "typedef enum{A}E;typedef enum{B}F;E a[string];F b[string];initial a=b;",
+    "compatible element types"
+  ],
+  "cursor_integral": [
+    "int a[string];int k,n;initial n=a.first(k);",
+    "whole string variable"
+  ],
+  "cursor_literal": [
+    "int a[string];int n;initial n=a.first(\"x\");",
+    "assignment target"
+  ],
+  "method_arity": [
+    "int a[string];initial a.delete(\"x\",\"y\");",
+    "argument count"
+  ],
+  "enum_element": [
+    "typedef enum{A}E;E a[string];initial a[\"x\"]=1;",
+    "same enum type"
+  ],
+  "object_element": [
+    "class C;endclass class D;endclass C a[string];D d;initial a[\"x\"]=d;",
+    "compatible object handle"
+  ],
+  "handle_select": [
+    "class C;endclass class S;C a[string];endclass S s;int n;initial begin s=new;n=s.a[\"x\"][0];end",
+    "class handles cannot be selected"
+  ],
+  "unsupported_multidimension": [
+    "int a[string][2];",
+    "mixed runtime container dimensions"
+  ],
+  "unsupported_nba": [
+    "int a[string];initial a[\"x\"]<=1;",
+    "timed/NBA"
+  ],
+  "unsupported_nul_escape": [
+    "string s;initial s=\"a\\000b\";",
+    "embedded NUL string escape"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "clones": [
+    "TRACE clone W=8 bits=fc",
+    "TRACE clone W=129 bits=1fffffffffffffffffffffffffffffffc"
+  ],
+  "constructors": [
+    "TRACE order=2134679 root=2 middle=2134 leaf=213467",
+    "TRACE implicit=135 root=2 other=135",
+    "TRACE viaimplicit=1356 root=2 other=135 last=1356",
+    "TRACE hidden=9 base=4 receiver=4 sum=13"
+  ],
+  "package": [
+    "TRACE package value=13 field=4 eq=1"
+  ],
+  "polymorphism": [
+    "TRACE base=5 derived=21 leaf=136",
+    "TRACE alias=15 nested=13 fixed=5/12 text=derived eq=1",
+    "TRACE leaf=120 nested=117 calls=2 identity=1"
+  ],
+  "q01": [
+    "PROBE_CLASS: ok"
+  ],
+  "rollback": [
+    "TRACE rollback t=6 value=11 old=13 equal=1"
+  ],
+  "signatures": [
+    "TRACE signatures result=13 total=13 label=derived wide=1000000000000000f123456789abcdef0 self=1"
+  ],
+  "tasks": [
+    "TRACE tasks t=3 x=15 y=13 total=28 calls=1/1"
+  ]
+}

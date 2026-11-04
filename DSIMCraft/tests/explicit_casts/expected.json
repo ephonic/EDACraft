@@ -1,0 +1,15 @@
+{
+  "values": [
+    "TRACE values 8 ffffffffffffff80 0000000000000080 00000000000000XZ 0000000100000001 200000000000000000000000000000000"
+  ],
+  "constants": [
+    "TRACE constants 0000000100000000 ff 3fff 00000085 0000000000000000000000001xz001z1 3ffffffffffffffffffffffffffffff80 1 -1 4294967295 ff 00ff"
+  ],
+  "effects": [
+    "TRACE effects 8 264 0000000000000007 04"
+  ],
+  "hierarchy": [
+    "TRACE hierarchy 3ffffffffffffffffffffffffffffff80 3ffffffffffffffffffffffffffffff80"
+  ],
+  "parallel": []
+}

@@ -1,0 +1,21 @@
+{
+  "basic": [
+    "TRACE basic fe 07",
+    "TRACE unknown fe xx",
+    "TRACE final 08 0a"
+  ],
+  "matrix": [
+    "TRACE matrix 04020806",
+    "TRACE matrix 04020306"
+  ],
+  "types": [
+    "TRACE types 3fffffffffffffffffffffffffffffffd 3fffffffffffffffffffffffffffffffd 200000000000000000000000000000005 200000000000000000000000000000005",
+    "TRACE types zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz 000000000000000000000000000000000 123456789abcdef0123456789abcdef01 123456789abcdef0123456789abcdef01"
+  ],
+  "timing": [
+    "TRACE pending xx xx",
+    "TRACE sampled 05 09",
+    "TRACE final 01 02"
+  ],
+  "parallel": []
+}

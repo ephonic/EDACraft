@@ -1,0 +1,20 @@
+{
+  "escape": [
+    "TRACE escape 7"
+  ],
+  "overlap": [
+    "TRACE overlap 6 231 6"
+  ],
+  "sharing": [
+    "TRACE sharing 4 102 103 104 105"
+  ],
+  "events": [
+    "TRACE events early 0 0 0",
+    "TRACE events done 10 10 10"
+  ],
+  "control": [
+    "TRACE control 1000 75 11",
+    "TRACE escaped cancel 16 0 2"
+  ],
+  "parallel": []
+}

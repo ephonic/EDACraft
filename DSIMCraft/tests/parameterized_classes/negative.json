@@ -1,0 +1,90 @@
+{
+  "value_identity": [
+    "class C#(int W=8);int v;endclass C#(4) a;C#(8)b;initial begin a=new;b=a;end",
+    "class assignment requires a compatible"
+  ],
+  "type_identity": [
+    "class C#(type T=int);T v;endclass C#(bit[7:0])a;C#(logic[7:0])b;initial begin a=new;b=a;end",
+    "class assignment requires a compatible"
+  ],
+  "enum_identity": [
+    "typedef enum{A=0} E;typedef enum{B=0} F;class C#(type T=int);T v;endclass C#(E)a;C#(F)b;initial begin a=new;b=a;end",
+    "class assignment requires a compatible"
+  ],
+  "unknown_parameter": [
+    "class C#(int W=8);endclass C#(.X(3))a;",
+    "unknown class parameter: X"
+  ],
+  "duplicate_actual": [
+    "class C#(int W=8);endclass C#(.W(3),.W(4))a;",
+    "duplicate class parameter actual"
+  ],
+  "mixed_actual": [
+    "class C#(int W=8,int N=9);endclass C#(3,.N(4))a;",
+    "cannot mix positional and named"
+  ],
+  "too_many": [
+    "class C#(int W=8);endclass C#(3,4)a;",
+    "too many class parameter actuals"
+  ],
+  "missing_type": [
+    "class C#(type T);T v;endclass C a;",
+    "missing class type parameter"
+  ],
+  "type_value": [
+    "class C#(type T=int);T v;endclass C#(3)a;",
+    "class type parameter requires a data type"
+  ],
+  "value_type": [
+    "class C#(int W=8);endclass C#(int)a;",
+    "class value parameter requires a constant"
+  ],
+  "runtime_value": [
+    "int n;class C#(int W=8);endclass C#(n)a;",
+    "class value parameter requires a constant"
+  ],
+  "duplicate_formal": [
+    "class C#(type T=int,int T=3);endclass C a;",
+    "duplicate class parameter"
+  ],
+  "nongeneric": [
+    "class C;endclass C#(int)a;",
+    "not a parameterized class"
+  ],
+  "alias_application": [
+    "class C#(type T=int);endclass typedef C#(int) Alias;Alias#(bit)a;",
+    "not a parameterized class"
+  ],
+  "bare_name_default": [
+    "class C#(type T=int);function C get();return this;endfunction endclass C#(bit[7:0])a,b;initial begin a=new;b=a.get();end",
+    "function return requires a compatible"
+  ],
+  "unrelated_base": [
+    "class C#(type T=int);endclass class D extends C#(int);endclass C#(bit)a;D b;initial begin b=new;a=b;end",
+    "class assignment requires a compatible"
+  ],
+  "scalar_vector_identity": [
+    "class C#(type T=int);endclass C#(bit)a;C#(bit[0:0])b;initial begin a=new;b=a;end",
+    "class assignment requires a compatible"
+  ],
+  "forward_missing_base": [
+    "typedef class D;typedef D#(int) Early;class D#(type T=int) extends Missing;endclass",
+    "extends requires a previously declared class: Missing"
+  ],
+  "forward_nonclass_base": [
+    "typedef class D;typedef D#(int) Early;typedef int Base;class D#(type T=int) extends Base;endclass",
+    "extends requires a previously declared class: Base"
+  ],
+  "forward_cycle": [
+    "typedef class A;typedef class B;typedef A#(int) Early;class A#(type T=int) extends B#(T);endclass class B#(type T=int) extends A#(T);endclass",
+    "cyclic class inheritance"
+  ],
+  "forward_incompatible": [
+    "typedef class D;typedef D#(int) Early;class Base#(type T=int);endclass class D#(type T=int) extends Base#(T);endclass Early a;D#(bit[7:0]) b;initial a=b;",
+    "compatible object handle"
+  ],
+  "forward_missing_formal": [
+    "typedef class D;typedef D#() Early;class D#(type T) ;endclass",
+    "missing class type parameter actual/default"
+  ]
+}

@@ -1,0 +1,1 @@
+module top;class State;logic[7:0] values[$];endclass State state;int observed;initial begin state=new;{<<8{state.values}}=24'h123456;observed=state.values.size();$display("TRACE class queue %0d %h %h %h",observed,state.values[0],state.values[1],state.values[2]);end endmodule

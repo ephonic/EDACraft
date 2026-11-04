@@ -1,0 +1,12 @@
+{
+  "constants": [
+    "TRACE constants 81534 122744"
+  ],
+  "vectors": [
+    "TRACE vectors 256"
+  ],
+  "effects": [
+    "TRACE effects 1 3 1 5000"
+  ],
+  "parallel": []
+}

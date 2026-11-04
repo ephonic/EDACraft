@@ -1,0 +1,58 @@
+{
+  "ref_kind": [
+    "typedef int Q[$];typedef int D[];Q q;task automatic t(ref D d);endtask initial t(q);",
+    "equivalent container types"
+  ],
+  "ref_bound": [
+    "typedef int Q[$];typedef int B[$:2];Q q;task automatic t(ref B b);endtask initial t(q);",
+    "equivalent container types"
+  ],
+  "ref_const": [
+    "typedef int Q[$];Q q;function automatic int f(const ref Q x);x.push_back(1);return 0;endfunction initial f(q);",
+    "const ref"
+  ],
+  "ref_temporary": [
+    "typedef int Q[$];function automatic Q f();return {1};endfunction task automatic t(ref Q q);endtask initial t(f());",
+    "equivalent container types"
+  ],
+  "return_width": [
+    "typedef logic[7:0] Q[$];typedef logic[8:0] B[$];Q q;function automatic B f();return q;endfunction initial q=f();",
+    "compatible element types"
+  ],
+  "return_rank": [
+    "typedef int F[2];typedef int G[2][2];F a;function automatic G f();G b;return b;endfunction initial a=f();",
+    "array copy rank mismatch"
+  ],
+  "return_size": [
+    "typedef int F[2];typedef int G[3];F a;function automatic G f();G b;return b;endfunction initial a=f();",
+    "dimension size mismatch"
+  ],
+  "scalar_context": [
+    "typedef int Q[$];int x;function automatic Q f();return {1};endfunction initial x=f();",
+    "matching unpacked array operands"
+  ],
+  "nested_dynamic": [
+    "typedef int Q[$];typedef Q Nested[2];Nested n;",
+    "mixed runtime container dimensions"
+  ],
+  "enum_element": [
+    "typedef enum int {A,B} E;typedef E Q[$];Q q;initial q={1};",
+    "enum assignment"
+  ],
+  "net_output": [
+    "typedef logic[31:0] F[2];wire[31:0] a[2];function automatic F f();F b;return b;endfunction initial a=f();",
+    "procedural assignment to a net"
+  ],
+  "override_array_kind": [
+    "class B;typedef int Q[$];virtual function Q get();return {1};endfunction endclass class D extends B;typedef int DA[];virtual function DA get();DA x;return x;endfunction endclass D d;initial d=new();",
+    "override signature mismatch"
+  ],
+  "override_formal_kind": [
+    "class B;typedef int Q[$];virtual function int f(input Q q);return 0;endfunction endclass class D extends B;typedef int DA[];virtual function int f(input DA q);return 0;endfunction endclass D d;initial d=new();",
+    "override signature mismatch"
+  ],
+  "array_recursive": [
+    "typedef int Q[$];function automatic Q f(input int n);if(n)return f(n-1);return {1};endfunction Q q;initial q=f(2);",
+    "recursive functions require"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+ "mixed_queue":["int a[$][int];", "mixed runtime container dimensions"],
+ "mixed_dynamic":["int a[][int];", "mixed runtime container dimensions"],
+ "mixed_fixed":["int a[2][int];", "mixed runtime container dimensions"],
+ "mixed_typedef":["typedef int inner_t[string];inner_t a[2];", "mixed runtime container dimensions"],
+ "rank_copy":["int a[int][string];int b[int];initial a=b;", "matching key types and rank"],
+ "inner_copy":["typedef bit[7:0] key_t;int a[int][key_t],b[int][int];initial a=b;", "matching key types"],
+ "enum_cursor":["typedef enum bit[7:0] {A=1} E;int a[int][E];int k;initial if(a[1].first(k))begin end", "declared enum type"],
+ "width_cursor":["typedef bit[7:0] key_t;int a[int][key_t];int k;initial if(a[1].first(k))begin end", "key width"],
+ "partial_integral":["int a[int][string],v;initial v=a[1];", "matching unpacked array operands"],
+ "missing_key":["int a[int][int];initial a[1:2][3]=1;", "error[6117]"],
+ "class_inner_key":["class C;endclass class D;endclass int a[int][C];D d;initial a[1][d]=1;", "compatible object handle"],
+ "timed_element":["int a[int][int];initial a[1][2]<=1;", "immediate blocking assignment"],
+ "omitted_outer":["int a[int][string];initial foreach(a[,j])begin end", "omitted multidimensional associative foreach"]
+}

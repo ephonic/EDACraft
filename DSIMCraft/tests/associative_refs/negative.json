@@ -1,0 +1,46 @@
+{
+  "key_type": {
+    "source": "module top;int data[string];function automatic void f(ref int items[int]);endfunction initial f(data); endmodule\n",
+    "diagnostic": "matching rank and key types"
+  },
+  "key_width": {
+    "source": "module top;typedef bit[7:0] small_t;int data[small_t];function automatic void f(ref int items[int unsigned]);endfunction initial f(data); endmodule\n",
+    "diagnostic": "matching rank and key types"
+  },
+  "rank": {
+    "source": "module top;int data[string][int];function automatic void f(ref int items[string]);endfunction initial f(data); endmodule\n",
+    "diagnostic": "matching rank and key types"
+  },
+  "element": {
+    "source": "module top;bit[7:0] data[string];function automatic void f(ref logic[7:0] items[string]);endfunction initial f(data); endmodule\n",
+    "diagnostic": "equivalent element types"
+  },
+  "const_write": {
+    "source": "module top;int data[string];function automatic void f(const ref int items[string]);items[\"x\"]=1;endfunction initial f(data); endmodule\n",
+    "diagnostic": "cannot modify const ref"
+  },
+  "const_delete": {
+    "source": "module top;int data[string];function automatic void f(const ref int items[string]);items.delete();endfunction initial f(data); endmodule\n",
+    "diagnostic": "cannot modify const ref"
+  },
+  "const_forward": {
+    "source": "module top;int data[string];function automatic void g(ref int items[string]);items[\"x\"]=1;endfunction function automatic void f(const ref int items[string]);g(items);endfunction initial f(data); endmodule\n",
+    "diagnostic": "cannot modify const ref"
+  },
+  "static": {
+    "source": "module top;int data[string];function void f(ref int items[string]);endfunction initial f(data); endmodule\n",
+    "diagnostic": "automatic subroutine"
+  },
+  "subarray": {
+    "source": "module top;int data[string][int];function automatic void f(ref int items[int]);endfunction initial f(data[\"row\"]); endmodule\n",
+    "diagnostic": "whole associative array"
+  },
+  "key_state": {
+    "source": "module top;typedef integer key_t;int data[key_t];function automatic void f(ref int items[int]);endfunction initial f(data); endmodule\n",
+    "diagnostic": "matching rank and key types"
+  },
+  "queue_bound": {
+    "source": "module top;typedef int bounded[$:2];typedef int unbounded[$];bounded data[string];function automatic void f(ref unbounded items[string]);endfunction initial f(data); endmodule\n",
+    "diagnostic": "matching rank and key types"
+  }
+}

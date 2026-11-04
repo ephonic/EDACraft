@@ -1,0 +1,46 @@
+{
+  "aliasing": [
+    "TRACE inside 2 33 22",
+    "TRACE after 2 33 22"
+  ],
+  "bounded_refs": [
+    "TRACE append 3 3",
+    "TRACE replace 3 6",
+    "TRACE actual 3 8 6"
+  ],
+  "bounds": [
+    "TRACE empty 0",
+    "TRACE bounds 1 12 xx",
+    "TRACE actual 1 12"
+  ],
+  "capture": [
+    "TRACE captured 1 2 77 9"
+  ],
+  "handles": [
+    "TRACE refs 3 3 17",
+    "TRACE handles 3 17 1"
+  ],
+  "methods": [
+    "TRACE copy 2 10000000000000001 10000000000000002",
+    "TRACE independent 10000000000000003 10000000000000001",
+    "TRACE const 10000000000000001"
+  ],
+  "module_bounds": [
+    "TRACE append 3 3",
+    "TRACE replace 3 6",
+    "TRACE append 5 5",
+    "TRACE replace 5 4",
+    "TRACE actual 3 5"
+  ],
+  "queues": [
+    "TRACE text X/B/C",
+    "TRACE bound 3 10 3 5"
+  ],
+  "structs": [
+    "TRACE struct 0 z a 5"
+  ],
+  "waits": [
+    "TRACE wake 3",
+    "TRACE data 9"
+  ]
+}

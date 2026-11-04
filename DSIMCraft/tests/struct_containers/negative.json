@@ -1,0 +1,15 @@
+{
+  "queue_type": "module top;typedef struct{string s;int id;}A;typedef struct{string s;int id;}B;class C;A q[$];endclass C c;B b;initial begin c=new;c.q.push_back(b);end endmodule",
+  "scalar_type": "module top;typedef struct{string s;}A;typedef struct{string s;}B;class C;A a;endclass C c;B b;initial begin c=new;c.a=b;end endmodule",
+  "queue_copy": "module top;typedef struct{string s;}A;typedef struct{string s;}B;A a[$];B b[$];initial a=b;endmodule",
+  "new_copy": "module top;typedef struct{string s;}A;typedef struct{string s;}B;A a[];B b[];initial a=new[2](b);endmodule",
+  "ref_type": "module top;typedef struct{string s;}A;typedef struct{string s;}B;A a[$];task automatic f(ref B b[$]);endtask initial f(a);endmodule",
+  "element_nba": "module top;typedef struct{string s;int id;}A;A a[$],v;initial a[0]<=v;endmodule",
+  "field_nba": "module top;typedef struct{string s;int id;}A;A a[];initial a[0].id<=3;endmodule",
+  "associative": "module top;typedef struct {string s;} A;A a[int][$];endmodule",
+  "fixed_object": "module top;typedef struct{string s;}A;class C;A a[2];endclass endmodule",
+  "sort_without_key": "module top;typedef struct{string s;int id;}A;A q[$];initial q.sort;endmodule",
+  "bad_key": "module top;typedef struct{string s;int id;}A;A q[$];initial q.sort with(item);endmodule",
+  "void_value": "module top;typedef struct{string s;}A;A q[$],v;initial v=q.push_back(v);endmodule",
+  "const_property": "module top;typedef struct{string s;}A;class C;const A value='{s:\"fixed\"};endclass C c;initial begin c=new;c.value.s=\"changed\";end endmodule"
+}

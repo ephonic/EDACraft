@@ -1,0 +1,52 @@
+{
+  "absent": {
+    "args": [],
+    "output": [
+      "TRACE TEST 0 0 0 0",
+      "TRACE DEC 0 777",
+      "TRACE BAD 0 00000309",
+      "TRACE ABSENT 0 00000309",
+      "TRACE HEX 0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "TRACE STR 0 <initial>",
+      "TRACE PACK 0 <    > xxxxxxxx",
+      "TRACE DYNAMIC 0 777"
+    ]
+  },
+  "partial": {
+    "args": [
+      "+mode",
+      "+n=12oops",
+      "+bad=-9",
+      "+h=z0",
+      "+s="
+    ],
+    "output": [
+      "TRACE TEST 1 0 0 0",
+      "TRACE DEC 1 0",
+      "TRACE BAD 1 fffffff7",
+      "TRACE ABSENT 0 fffffff7",
+      "TRACE HEX 1 zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz0",
+      "TRACE STR 1 <>",
+      "TRACE PACK 1 <   0> 00000030",
+      "TRACE DYNAMIC 1 0"
+    ]
+  },
+  "overflow": {
+    "args": [
+      "+n=1361129467683753853853498429727072845823",
+      "+bad=123456789012345678901234567890",
+      "+h=0x12",
+      "+s=abc"
+    ],
+    "output": [
+      "TRACE TEST 0 0 0 0",
+      "TRACE DEC 1 -1",
+      "TRACE BAD 1 4e3f0ad2",
+      "TRACE ABSENT 0 4e3f0ad2",
+      "TRACE HEX 1 000000000000000000000000000000x12",
+      "TRACE STR 1 <abc>",
+      "TRACE PACK 1 < abc> 00616263",
+      "TRACE DYNAMIC 1 -1"
+    ]
+  }
+}

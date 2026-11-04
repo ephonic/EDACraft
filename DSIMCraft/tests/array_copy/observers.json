@@ -1,0 +1,468 @@
+{
+  "basic": {
+    "top.a[2]": [
+      "top.observe_a",
+      0,
+      8
+    ],
+    "top.a[3]": [
+      "top.observe_a",
+      8,
+      8
+    ],
+    "top.b[0]": [
+      "top.observe_b",
+      0,
+      8
+    ],
+    "top.b[1]": [
+      "top.observe_b",
+      8,
+      8
+    ],
+    "top.q[8]": [
+      "top.observe_q",
+      0,
+      8
+    ],
+    "top.q[9]": [
+      "top.observe_q",
+      8,
+      8
+    ]
+  },
+  "matrix": {
+    "top.a[2][6][1]": [
+      "top.observe_a",
+      0,
+      8
+    ],
+    "top.a[2][6][2]": [
+      "top.observe_a",
+      8,
+      8
+    ],
+    "top.a[2][7][1]": [
+      "top.observe_a",
+      16,
+      8
+    ],
+    "top.a[2][7][2]": [
+      "top.observe_a",
+      24,
+      8
+    ],
+    "top.a[3][6][1]": [
+      "top.observe_a",
+      32,
+      8
+    ],
+    "top.a[3][6][2]": [
+      "top.observe_a",
+      40,
+      8
+    ],
+    "top.a[3][7][1]": [
+      "top.observe_a",
+      48,
+      8
+    ],
+    "top.a[3][7][2]": [
+      "top.observe_a",
+      56,
+      8
+    ],
+    "top.b[4][0][8]": [
+      "top.observe_b",
+      0,
+      8
+    ],
+    "top.b[4][0][9]": [
+      "top.observe_b",
+      8,
+      8
+    ],
+    "top.b[4][1][8]": [
+      "top.observe_b",
+      16,
+      8
+    ],
+    "top.b[4][1][9]": [
+      "top.observe_b",
+      24,
+      8
+    ],
+    "top.b[5][0][8]": [
+      "top.observe_b",
+      32,
+      8
+    ],
+    "top.b[5][0][9]": [
+      "top.observe_b",
+      40,
+      8
+    ],
+    "top.b[5][1][8]": [
+      "top.observe_b",
+      48,
+      8
+    ],
+    "top.b[5][1][9]": [
+      "top.observe_b",
+      56,
+      8
+    ],
+    "top.row[0][4]": [
+      "top.observe_row",
+      0,
+      8
+    ],
+    "top.row[0][5]": [
+      "top.observe_row",
+      8,
+      8
+    ],
+    "top.row[1][4]": [
+      "top.observe_row",
+      16,
+      8
+    ],
+    "top.row[1][5]": [
+      "top.observe_row",
+      24,
+      8
+    ]
+  },
+  "types": {
+    "top.e[0]": [
+      "top.observe_e",
+      0,
+      2
+    ],
+    "top.e[1]": [
+      "top.observe_e",
+      2,
+      2
+    ],
+    "top.f[2]": [
+      "top.observe_f",
+      0,
+      2
+    ],
+    "top.f[3]": [
+      "top.observe_f",
+      2,
+      2
+    ],
+    "top.s[0]": [
+      "top.observe_s",
+      0,
+      8
+    ],
+    "top.s[1]": [
+      "top.observe_s",
+      8,
+      8
+    ],
+    "top.v[2]": [
+      "top.observe_v",
+      0,
+      8
+    ],
+    "top.v[3]": [
+      "top.observe_v",
+      8,
+      8
+    ],
+    "top.four[0]": [
+      "top.observe_four",
+      0,
+      8
+    ],
+    "top.four[1]": [
+      "top.observe_four",
+      8,
+      8
+    ],
+    "top.two[0]": [
+      "top.observe_two",
+      0,
+      8
+    ],
+    "top.two[1]": [
+      "top.observe_two",
+      8,
+      8
+    ],
+    "top.a[0]": [
+      "top.observe_a",
+      0,
+      130
+    ],
+    "top.a[1]": [
+      "top.observe_a",
+      130,
+      130
+    ],
+    "top.b[3]": [
+      "top.observe_b",
+      0,
+      130
+    ],
+    "top.b[4]": [
+      "top.observe_b",
+      130,
+      130
+    ],
+    "top.net[0]": [
+      "top.observe_net",
+      0,
+      8
+    ],
+    "top.net[1]": [
+      "top.observe_net",
+      8,
+      8
+    ]
+  },
+  "effects": {
+    "top.source[0]": [
+      "top.observe_source",
+      0,
+      8
+    ],
+    "top.source[1]": [
+      "top.observe_source",
+      8,
+      8
+    ],
+    "top.mirror[2]": [
+      "top.observe_mirror",
+      0,
+      8
+    ],
+    "top.mirror[3]": [
+      "top.observe_mirror",
+      8,
+      8
+    ],
+    "top.out[0]": [
+      "top.observe_out",
+      0,
+      8
+    ],
+    "top.out[1]": [
+      "top.observe_out",
+      8,
+      8
+    ]
+  },
+  "timing": {
+    "top.a[0]": [
+      "top.observe_a",
+      0,
+      8
+    ],
+    "top.a[1]": [
+      "top.observe_a",
+      8,
+      8
+    ],
+    "top.b[2]": [
+      "top.observe_b",
+      0,
+      8
+    ],
+    "top.b[3]": [
+      "top.observe_b",
+      8,
+      8
+    ],
+    "top.c[4]": [
+      "top.observe_c",
+      0,
+      8
+    ],
+    "top.c[5]": [
+      "top.observe_c",
+      8,
+      8
+    ],
+    "top.d[0]": [
+      "top.observe_d",
+      0,
+      8
+    ],
+    "top.d[1]": [
+      "top.observe_d",
+      8,
+      8
+    ],
+    "top.stim[0]": [
+      "top.observe_stim",
+      0,
+      8
+    ],
+    "top.stim[1]": [
+      "top.observe_stim",
+      8,
+      8
+    ],
+    "top.pipe[0]": [
+      "top.observe_pipe",
+      0,
+      8
+    ],
+    "top.pipe[1]": [
+      "top.observe_pipe",
+      8,
+      8
+    ]
+  },
+  "parallel": {
+    "top.left.a[0]": [
+      "top.left.observe_a",
+      0,
+      8
+    ],
+    "top.left.a[1]": [
+      "top.left.observe_a",
+      8,
+      8
+    ],
+    "top.left.q[5]": [
+      "top.left.observe_q",
+      0,
+      8
+    ],
+    "top.left.q[6]": [
+      "top.left.observe_q",
+      8,
+      8
+    ],
+    "top.right.a[0]": [
+      "top.right.observe_a",
+      0,
+      8
+    ],
+    "top.right.a[1]": [
+      "top.right.observe_a",
+      8,
+      8
+    ],
+    "top.right.q[5]": [
+      "top.right.observe_q",
+      0,
+      8
+    ],
+    "top.right.q[6]": [
+      "top.right.observe_q",
+      8,
+      8
+    ],
+    "top.a[0]": [
+      "top.observe_a",
+      0,
+      8
+    ],
+    "top.a[1]": [
+      "top.observe_a",
+      8,
+      8
+    ],
+    "top.b[2]": [
+      "top.observe_b",
+      0,
+      8
+    ],
+    "top.b[3]": [
+      "top.observe_b",
+      8,
+      8
+    ]
+  },
+  "intra_parallel": {
+    "top.left.a[0]": [
+      "top.left.observe_a",
+      0,
+      8
+    ],
+    "top.left.a[1]": [
+      "top.left.observe_a",
+      8,
+      8
+    ],
+    "top.left.q[5]": [
+      "top.left.observe_q",
+      0,
+      8
+    ],
+    "top.left.q[6]": [
+      "top.left.observe_q",
+      8,
+      8
+    ],
+    "top.right.a[0]": [
+      "top.right.observe_a",
+      0,
+      8
+    ],
+    "top.right.a[1]": [
+      "top.right.observe_a",
+      8,
+      8
+    ],
+    "top.right.q[5]": [
+      "top.right.observe_q",
+      0,
+      8
+    ],
+    "top.right.q[6]": [
+      "top.right.observe_q",
+      8,
+      8
+    ],
+    "top.a[0]": [
+      "top.observe_a",
+      0,
+      8
+    ],
+    "top.a[1]": [
+      "top.observe_a",
+      8,
+      8
+    ],
+    "top.b[2]": [
+      "top.observe_b",
+      0,
+      8
+    ],
+    "top.b[3]": [
+      "top.observe_b",
+      8,
+      8
+    ]
+  },
+  "intra_delay": {
+    "top.a[0]": [
+      "top.observe_a",
+      0,
+      130
+    ],
+    "top.a[1]": [
+      "top.observe_a",
+      130,
+      130
+    ],
+    "top.q[2]": [
+      "top.observe_q",
+      0,
+      130
+    ],
+    "top.q[3]": [
+      "top.observe_q",
+      130,
+      130
+    ]
+  }
+}

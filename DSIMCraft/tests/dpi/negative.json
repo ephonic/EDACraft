@@ -1,0 +1,78 @@
+{
+  "language": [
+    "import \"DPI\" function int f();",
+    "only DPI-C"
+  ],
+  "task_import": [
+    "import \"DPI-C\" task f();",
+    "imported tasks are not supported"
+  ],
+  "task_export": [
+    "export \"DPI-C\" task f; task f();endtask",
+    "exported tasks are not supported"
+  ],
+  "pure_void": [
+    "import \"DPI-C\" pure function void f();",
+    "pure DPI functions require a return"
+  ],
+  "pure_output": [
+    "import \"DPI-C\" pure function int f(output int a);",
+    "input-only"
+  ],
+  "packed_result": [
+    "import \"DPI-C\" function bit[7:0] f();",
+    "packed-vector returns"
+  ],
+  "reference": [
+    "import \"DPI-C\" function int f(ref int a);",
+    "cannot use ref"
+  ],
+  "open_array": [
+    "import \"DPI-C\" function int f(input int a[]);",
+    "open/unpacked arrays"
+  ],
+  "fixed_array": [
+    "import \"DPI-C\" function int f(input int a[2]);",
+    "open/unpacked arrays"
+  ],
+  "aggregate": [
+    "typedef struct packed {int x;} packet;import \"DPI-C\" function int f(input packet a);",
+    "aggregates"
+  ],
+  "export_missing": [
+    "export \"DPI-C\" function absent;",
+    "function defined in the same scope"
+  ],
+  "export_import": [
+    "import \"DPI-C\" function int f();export \"DPI-C\" function f;",
+    "cannot export an imported"
+  ],
+  "conflict": [
+    "import \"DPI-C\" same = function int f(input int a);import \"DPI-C\" same = function byte g(input int a);",
+    "conflicting DPI C signatures"
+  ],
+  "duplicate_export": [
+    "function int f();return 1;endfunction export \"DPI-C\" function f;export \"DPI-C\" function f;",
+    "duplicate DPI export"
+  ],
+  "class_import": [
+    "class C;import \"DPI-C\" function int f();endclass",
+    "DPI imports require module"
+  ],
+  "reserved_export": [
+    "function int f();return 1;endfunction export \"DPI-C\" svGetScope = function f;",
+    "reserved"
+  ],
+  "export_direction": [
+    "function int a(input int x);return x;endfunction function int b(output int x);x=0;return 0;endfunction export \"DPI-C\" same = function a;export \"DPI-C\" same = function b;",
+    "conflicting DPI C signatures"
+  ],
+  "export_width": [
+    "function int a(output logic[3:0] x);x=0;return 1;endfunction function int b(output logic[7:0] x);x=0;return 0;endfunction export \"DPI-C\" same = function a;export \"DPI-C\" same = function b;",
+    "identical SV widths and directions"
+  ],
+  "export_copyout": [
+    "function int a(output int x);x=0;return 1;endfunction function int b(inout int x);x=0;return 0;endfunction export \"DPI-C\" same = function a;export \"DPI-C\" same = function b;",
+    "identical SV widths and directions"
+  ]
+}

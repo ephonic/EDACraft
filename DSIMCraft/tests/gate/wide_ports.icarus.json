@@ -1,0 +1,18 @@
+[
+  "TRACE a=0 b=0 direct=00xx cat=00xx rd=00xx rc=0000 rw=0000 trunc=0000 fill=1111 narrow=0001 opened=0000 ri=0x00 leaf=0001 wide=xx00xx tied=x bus=0x00",
+  "TRACE a=0 b=1 direct=00x1 cat=00x1 rd=00x1 rc=0001 rw=0001 trunc=0101 fill=1111 narrow=0001 opened=0001 ri=1100 leaf=0000 wide=xx00x1 tied=0 bus=0101",
+  "TRACE a=0 b=x direct=00xx cat=00xx rd=00xx rc=000x rw=000x trunc=0x0x fill=1111 narrow=0001 opened=000x ri=xx00 leaf=000x wide=xx00xx tied=x bus=0x0x",
+  "TRACE a=0 b=z direct=00x1 cat=00x1 rd=00x1 rc=000z rw=000z trunc=0z0z fill=1111 narrow=0001 opened=000z ri=z100 leaf=000x wide=xx00x1 tied=x bus=010z",
+  "TRACE a=1 b=0 direct=001x cat=001x rd=001x rc=0010 rw=0010 trunc=1010 fill=1111 narrow=0001 opened=0010 ri=0x1x leaf=0001 wide=xx001x tied=x bus=xx10",
+  "TRACE a=1 b=1 direct=0011 cat=0011 rd=0011 rc=0011 rw=0011 trunc=1111 fill=1111 narrow=0001 opened=0011 ri=111x leaf=0000 wide=xx0011 tied=0 bus=x111",
+  "TRACE a=1 b=x direct=001x cat=001x rd=001x rc=001x rw=001x trunc=1x1x fill=1111 narrow=0001 opened=001x ri=xx1x leaf=000x wide=xx001x tied=x bus=xx1x",
+  "TRACE a=1 b=z direct=0011 cat=0011 rd=0011 rc=001z rw=001z trunc=1z1z fill=1111 narrow=0001 opened=001z ri=z11x leaf=000x wide=xx0011 tied=x bus=x11z",
+  "TRACE a=x b=0 direct=00xx cat=00xx rd=00xx rc=00x0 rw=00x0 trunc=x0x0 fill=1111 narrow=0001 opened=00x0 ri=0xxx leaf=0001 wide=xx00xx tied=x bus=xxx0",
+  "TRACE a=x b=1 direct=00x1 cat=00x1 rd=00x1 rc=00x1 rw=00x1 trunc=x1x1 fill=1111 narrow=0001 opened=00x1 ri=11xx leaf=0000 wide=xx00x1 tied=0 bus=x1x1",
+  "TRACE a=x b=x direct=00xx cat=00xx rd=00xx rc=00xx rw=00xx trunc=xxxx fill=1111 narrow=0001 opened=00xx ri=xxxx leaf=000x wide=xx00xx tied=x bus=xxxx",
+  "TRACE a=x b=z direct=00x1 cat=00x1 rd=00x1 rc=00xz rw=00xz trunc=xzxz fill=1111 narrow=0001 opened=00xz ri=z1xx leaf=000x wide=xx00x1 tied=x bus=x1xz",
+  "TRACE a=z b=0 direct=001x cat=001x rd=001x rc=00z0 rw=00z0 trunc=z0z0 fill=1111 narrow=0001 opened=00z0 ri=0xz0 leaf=0001 wide=xx001x tied=x bus=0xz0",
+  "TRACE a=z b=1 direct=0011 cat=0011 rd=0011 rc=00z1 rw=00z1 trunc=z1z1 fill=1111 narrow=0001 opened=00z1 ri=11z0 leaf=0000 wide=xx0011 tied=0 bus=01z1",
+  "TRACE a=z b=x direct=001x cat=001x rd=001x rc=00zx rw=00zx trunc=zxzx fill=1111 narrow=0001 opened=00zx ri=xxz0 leaf=000x wide=xx001x tied=x bus=0xzx",
+  "TRACE a=z b=z direct=0011 cat=0011 rd=0011 rc=00zz rw=00zz trunc=zzzz fill=1111 narrow=0001 opened=00zz ri=z1z0 leaf=000x wide=xx0011 tied=x bus=01zz"
+]

@@ -1,0 +1,24 @@
+{
+  "types": {
+    "top.words[0][2]": [
+      "top.image",
+      12,
+      4
+    ],
+    "top.words[0][3]": [
+      "top.image",
+      8,
+      4
+    ],
+    "top.words[1][2]": [
+      "top.image",
+      4,
+      4
+    ],
+    "top.words[1][3]": [
+      "top.image",
+      0,
+      4
+    ]
+  }
+}

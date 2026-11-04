@@ -1,0 +1,234 @@
+{
+  "status": "PASS",
+  "release": "/apps/EDAs/own/dsim/releases/20261104T060449622672Z-8991211ac28a",
+  "source_commit": "a0cc8b571775ce42279f0dba7a8b66166f39bb0a",
+  "source_sha256": "8991211ac28a0f2823ff3ccfaada039d66bd3c217bb3a24e9633ac63bd62d666",
+  "native_artifacts_reused_after_cpp_identity": true,
+  "models": {
+    "virtual_interfaces/basic": {
+      "trace": [
+        "TRACE GAP virtual_interface 1"
+      ],
+      "cpp_sha256": "92ed8362d0431c9d420535e4ba23df1915a2c066df7c5f656a5f7b188ac04da5",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/binding": {
+      "trace": [
+        "TRACE virtual binding 3c a6 1"
+      ],
+      "cpp_sha256": "a831311a7868e2376cac00eda52dc37ad6ffcd788132a06d221ed4cab40b3214",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/events": {
+      "trace": [
+        "TRACE virtual events 25 13 1 37"
+      ],
+      "cpp_sha256": "2157c1699a1b07f811fb9ee56ba2c9bf41a504f160b6a1e1c4200cbac8ccc7ad",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/typed": {
+      "trace": [
+        "TRACE virtual typed 1234 5678"
+      ],
+      "cpp_sha256": "78eabd938a5f1ab55597e02b19c7d45e2a1a4e6e9ff347d45d12ee23c7920ce7",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/capture": {
+      "trace": [
+        "TRACE virtual capture b 0 1"
+      ],
+      "cpp_sha256": "cdbfcc4e21322358e7cd4b2a953966ce2cfe02d0203addfc4c0305614bd99c8f",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/prototype": {
+      "trace": [
+        "TRACE virtual package 1"
+      ],
+      "cpp_sha256": "011ecddd4d3888fea7b5df26e6e79089fe48ba76071235c7c627aac13a218b26",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/reference": {
+      "trace": [
+        "TRACE virtual ref 5a 0"
+      ],
+      "cpp_sha256": "711cc73fb450b274419911dd5ee21f6dc0488c554bad39b2f0ca9f279afc814c",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/compound": {
+      "trace": [
+        "TRACE virtual compound -4 4 1 11 2"
+      ],
+      "cpp_sha256": "23057b20484f929adc742f5087413ee3476917d52fef4c1ee15da2ac93c19656",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/wait_binding": {
+      "trace": [
+        "TRACE virtual wait binding 3"
+      ],
+      "cpp_sha256": "7ff21f86b86c5cb417f30c3f0157490f32112ebec948167672d68cb1c955b565",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/hierarchy": {
+      "trace": [
+        "TRACE virtual hierarchy ac"
+      ],
+      "cpp_sha256": "683cbcdaa9107fe2e94771f9f0691d2a3a2c1c528fd3c317dbf5545c581ea685",
+      "complete_waveform_identity": true
+    },
+    "virtual_interfaces/lexical": {
+      "trace": [
+        "TRACE virtual lexical 8 a5"
+      ],
+      "cpp_sha256": "6c7be876a3122a5138a57840e1d5ef8c8094a619894e07c4dd947be66907fc6d",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/class_queue": {
+      "trace": [
+        "TRACE class queue 3 56 34 12"
+      ],
+      "cpp_sha256": "d3385364f292006d45479f0900fecf2c612fc2bfdcf38d4cb9a602b8a193fb1b",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/empty": {
+      "trace": [
+        "TRACE empty 0"
+      ],
+      "cpp_sha256": "f39c611db4ee8e3e9041b69d59c2c93925dbb5a7c78eb1a62c0e024ef7a67575",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/fixed": {
+      "trace": [
+        "TRACE fixed a b"
+      ],
+      "cpp_sha256": "5b22ec3d91338fcaa4d0b010bc92e36910bfbb3e82bc43c31ce08ff757aa3f9f",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/inverse": {
+      "trace": [
+        "TRACE inverse 1010001011 1011100010"
+      ],
+      "cpp_sha256": "8fcd15913a1ba8c85f5c6d84b585a137e9b7600fbfc21424b2a7541ead8554de",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/mixed": {
+      "trace": [
+        "TRACE mixed a 3 b c d e"
+      ],
+      "cpp_sha256": "8813c850950e18aeb6daae366672c51dcfe675afea5b3cbb737e9875455b874e",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/partial": {
+      "trace": [
+        "TRACE partial 3 a c c"
+      ],
+      "cpp_sha256": "3e738a7d77767e284b9e6855c6d10ccdec9f84b07e9481953817ad232b0ed291",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/partial_left": {
+      "trace": [
+        "TRACE partial left 3 3 b 8"
+      ],
+      "cpp_sha256": "44b4f6486e3cb92cab983a2a3d00d2f203d160572ad132d143e0ea2ebf158039",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/uvm": {
+      "trace": [
+        "TRACE stream target 8 01101001"
+      ],
+      "cpp_sha256": "414e3c62938f6fef74823a31b3b60b7f95e8426a649826b8d66630c90540493c",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/fixed_left": {
+      "trace": [
+        "TRACE fixed left b a"
+      ],
+      "cpp_sha256": "cf5546183187c4ef7d189279475a6541bd77ff96cb7b5b3a74a362507da8a725",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/mixed_partial": {
+      "trace": [
+        "TRACE mixed partial 2 a c 3"
+      ],
+      "cpp_sha256": "1e928e230618a254b4e6affb4eb8ecbe980fd84fcc26a24ae41e4c6ce8f8313a",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/multi_dynamic": {
+      "trace": [
+        "TRACE multiple 3 0 a b c"
+      ],
+      "cpp_sha256": "5f6a49ae5a8088d5048219c6f7212cc4112d18c60952f380afd40c4ad5f2e4f3",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/bounded": {
+      "trace": [
+        "TRACE bounded 2 12 34"
+      ],
+      "cpp_sha256": "c8d7daae1c5adaf29a163caf715fa3120258e305af6f7623d11df845efc33bbb",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/nested": {
+      "trace": [
+        "TRACE nested a 3 d c b e"
+      ],
+      "cpp_sha256": "354df21e44ddc4d4fa321cab9910ae159c0b39954b112ceb5e5c0ecd374a0c9f",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/address": {
+      "trace": [
+        "TRACE address 1 5 0"
+      ],
+      "cpp_sha256": "0c5947b6a8acf2a991e1e95c83b13608238029e6357a204d4e2e09cf82693c1c",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/subarray": {
+      "trace": [
+        "TRACE subarray 1 a b 0 0"
+      ],
+      "cpp_sha256": "da60ba7b1857b8d5eb883c7a22ee70f6a9770714ee9cef72023b265925324d4a",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/four_state": {
+      "trace": [
+        "TRACE states xz01 10zx 2 4"
+      ],
+      "cpp_sha256": "ad9d68445c439c05c99d500b15ada2532d0c402391ad674019ce94b709e9c0ba",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/wide": {
+      "trace": [
+        "TRACE wide target 2 123456789abcdef01234 56789abcdef012345678"
+      ],
+      "cpp_sha256": "72ad02cabde0b5e082601318ae570b20c90b99755cc7c1d322ab5ed50664f6e7",
+      "complete_waveform_identity": true
+    },
+    "stream_targets/source_snapshot": {
+      "trace": [
+        "TRACE source order 2 0 5 1",
+        "TRACE self snapshot 3 3 2 1"
+      ],
+      "cpp_sha256": "a0eb1908fa4ece9f59939019651330a2bc02f0c451ebeb119e8b3b6b7a1437ca",
+      "complete_waveform_identity": true
+    },
+    "stream_enum_casts/basic": {
+      "trace": [
+        "TRACE stream enum 3 A"
+      ],
+      "cpp_sha256": "8a31c782658975f71cb07aa40b607195b10f3977d0ec750465d29a95fd05d861",
+      "complete_waveform_identity": true
+    },
+    "stream_enum_casts/property": {
+      "trace": [
+        "TRACE stream enum property -2 NEG"
+      ],
+      "cpp_sha256": "7ca5dac53d85f3bfdd0bc807a98cf6c49a5ac146462d4722fed519fbdc558515",
+      "complete_waveform_identity": true
+    },
+    "stream_enum_casts/function": {
+      "trace": [
+        "TRACE stream enum function 10 B"
+      ],
+      "cpp_sha256": "8d7e880ae93a5dd162f30b24e2b5cf82049473e0af1ccd5997349c7c9fa6a5c3",
+      "complete_waveform_identity": true
+    }
+  }
+}

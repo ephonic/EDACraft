@@ -1,0 +1,12 @@
+[
+  "TRACE clock_inactive c=1 y=10101101",
+  "TRACE clock_settled c=1 y=01011101",
+  "TRACE outputs_active c=0 y=0101z001",
+  "TRACE reset_inactive c=0 y=0101z001",
+  "TRACE reset_settled c=0 y=1010z001",
+  "TRACE pulse_rise c=1 y=10100010",
+  "TRACE pulse_fall c=0 y=10100010",
+  "TRACE pulse_settled c=0 y=10100010",
+  "TRACE nba_clock c=0 y=10100010",
+  "TRACE nba_settled c=1 y=01011101"
+]

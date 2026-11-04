@@ -1,0 +1,6 @@
+{
+  "sample": ["TRACE sample 1 1 1 145 1"],
+  "targets": ["TRACE targets 61184 3 64 3 3"],
+  "repetition": ["TRACE repetition 88 77 3 7 1222222"],
+  "parallel": []
+}

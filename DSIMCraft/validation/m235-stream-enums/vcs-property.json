@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "performance_comparison": false,
+  "models": {
+    "property": {
+      "status": "PASS",
+      "trace": [
+        "TRACE stream enum property -2 NEG"
+      ],
+      "source_sha256": "42934710ec9d493f97f49850d8341d15b3fc58d32d8cd8e79da685aaa1071a22",
+      "seconds": 11.33911929797614
+    }
+  }
+}

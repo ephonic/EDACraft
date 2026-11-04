@@ -1,0 +1,21 @@
+{
+  "functions": [
+    "TRACE fn 0123456789abcdef0123 0 1",
+    "TRACE bias 0123456789abcdef0123 6",
+    "TRACE fn 00000000000000000000 16 1",
+    "TRACE unknown xxxxxxxxxxxxxxxxxxxx xxxxxxxx"
+  ],
+  "state": [
+    "TRACE state 2 5 4 a5 0100",
+    "TRACE choice 14 34 34 XX",
+    "TRACE retained 35 36"
+  ],
+  "tasks": [
+    "TRACE task 15 00000000000000000004",
+    "TRACE task 10 00000000000000000008",
+    "TRACE legacy 0000 000f 1",
+    "TRACE event 25"
+  ],
+  "parallel": [],
+  "generate": []
+}

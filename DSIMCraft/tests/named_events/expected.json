@@ -1,0 +1,7 @@
+{
+ "handshake":["TRACE handshake 3 3 37"],
+ "triggered":["TRACE triggered 3 1 1 0 1 0 0 1 0"],
+ "nba_delay":["TRACE nba_delay 2 7 1 99 1 2"],
+ "tasks":["TRACE tasks 14 20 2"],
+ "parallel":[]
+}

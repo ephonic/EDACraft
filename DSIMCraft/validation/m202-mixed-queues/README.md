@@ -1,0 +1,17 @@
+# M202: associative arrays with queue leaves
+
+Support one or more associative dimensions followed by a single bounded or unbounded queue. Preserve each dimension's bound through typedefs and module specialization. RTL and gate parsers remain separate.
+
+The compiled path uses owned queue vectors in the existing associative tree. Queue element/slice stores, methods, ordering, locators, reductions, whole leaf/map copies, class properties, procedural and constraint foreach share the existing notifications, automatic frames and checkpoint state. Addresses are captured before native storage operations; no element pointer survives a mutation. Two-state whole-map copies convert every leaf element.
+
+Ten own same-source models exercise resource precedence handles, bounds, multi-axis traversal, queue values and function inputs/results, string properties, class keys, missing-key effects, constraint enumeration, wide state conversion, automatic locals and rollback. Ten compile rejection cases include both invalid programs and valid but explicitly unsupported forms. They do not imply that VCS rejects all those forms.
+
+Scope limits remain explicit: queue ref arguments selecting an associative leaf, a queue before another runtime dimension, dynamic-array leaves, mixed fixed/runtime dimensions, differing queue bounds in whole-map copies and `$` on these new nested queue selections are not implemented. Existing standalone queue `$` behavior is unchanged. `shuffle` and full UVM are not claimed.
+
+The missing-key probe confirms that reads and size queries do not create keys; methods and empty assignments create a leaf. Even a rejected out-of-range element write creates the empty associative queue. Four-state logic defaults are compared using case equality. The separate default-values probe also measures empty int, logic, bit and string queues directly: dsim and VCS produce the same output, including unknown logic values.
+
+Unchanged pinned Accellera 2020.3.1 with UVM_NO_DPI passes the resource_pool.svh:659 mixed-queue blocker. Its next first error is uvm_factory.svh:622: a queue property of an unpacked struct containing strings. The library remains unmodified; full UVM compilation and execution remain incomplete. Preprocessing is still checked against the pinned 166 dependencies, 1888084 bytes and SHA-256.
+
+Validation, sanitizer and immutable release receipts are added after their checks complete. Failed development regression logs remain separate from final candidate results; a type predicate initially also matched ordinary object queues and was corrected before freezing the candidate.
+
+Mac final publication passed: production d4b8b95f,1408 frozen inputs, source SHA256 5e9008046209fde471641dfcb887cf99499b6def441858b692021d356c65b57c; ten groups,88 models,1590 captures,137 compile rejections,2 runtime rejections,12 rollback/commit pairs and mandatory checks. Stable20261031T162541186540Z-5e9008046209 is active. All ten actual entry models reproduced candidate CPP, full decoded waves and encoded bytes. Ten same-source VCS models and both the frontend and generated runtime ASan/UBSan passed (leak checks disabled). The sanitizer model compiler needed explicit Z3 linking for the constraint fixture; corrected acceptance helper and successful results are retained.278CPP/1590 capture cross-platform reference is ready. Linux Intel+Z3 is running the identical candidate; no Linux success is claimed before final comparison and actual entry checks.
