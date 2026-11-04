@@ -1,0 +1,66 @@
+{
+  "status": "PASS",
+  "full_native_build": {
+    "status": "PASS",
+    "simulator": "dsim",
+    "complete_uvm_source": true,
+    "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+    "uvm_source_files": 181,
+    "uvm_pkg_sha256": "4c1516f91172fc24e9d8f023911ffcb5718da281f285f3062547553c09be60e6",
+    "smoke_sha256": "743c5c3e90e2b49d40df15829b3f958f18e03501945698643aa420d06bc7d2c4",
+    "stages": {
+      "compile": {
+        "status": "PASS",
+        "command": [
+          "/tmp/dsim-m238-package-check/installation with spaces/dsimcraft-0.13.0-m238-linux-x86_64/bin/dsim",
+          "--shared-functions",
+          "+incdir+/tmp/dsim-m228-uvm-src/src",
+          "+define+UVM_NO_DPI",
+          "/tmp/dsim-m228-uvm-src/src/uvm_pkg.sv",
+          "/tmp/dsim-m238-src/tests/uvm_preprocess/parameterized_interface.sv",
+          "--emit-cpp",
+          "/tmp/dsim-m238-uvm-package/model.cpp",
+          "--cxx-flag",
+          "-O0",
+          "-o",
+          "/tmp/dsim-m238-uvm-package/native"
+        ],
+        "exit_code": 0,
+        "seconds": 142.2968027020106
+      },
+      "run": {
+        "status": "PASS",
+        "command": [
+          "/tmp/dsim-m238-uvm-package/native"
+        ],
+        "exit_code": 0,
+        "seconds": 3.4979919280158356
+      }
+    },
+    "model_generated": true,
+    "native_generated": true,
+    "hello_pass": true,
+    "defines": [
+      "UVM_NO_DPI"
+    ],
+    "native_optimization_override": "-O0"
+  },
+  "final_compiler_check": {
+    "status": "PASS",
+    "complete_uvm_source": true,
+    "uvm_source_tree_sha256": "65296510b8010f96fccb3cd294936a68ec1fc7f71c9fe540af181bfddf45fe6f",
+    "test_sha256": "743c5c3e90e2b49d40df15829b3f958f18e03501945698643aa420d06bc7d2c4",
+    "compiler": "/tmp/dsim-m238-package-final-check/installation with spaces/dsimcraft-0.13.0-m238-linux-x86_64/bin/dsim",
+    "native_optimization": "-O0",
+    "native_reused_after_complete_cpp_identity": true,
+    "trace": [
+      "TRACE UVM_PIN 100",
+      "TRACE UVM_PIN 101",
+      "TRACE UVM_PIN 102",
+      "TRACE UVM_DUT 3 303",
+      "TRACE REAL_UVM_SMOKE PARAMETERIZED_VIRTUAL_INTERFACE 3 303"
+    ],
+    "cpp_sha256": "3132a2699519e633f3d6d80be088bf5c6d39d0edd02bf14796f4627b32165a97"
+  },
+  "note": "The final -no-intel-lib compiler emits byte-identical complete C++ to the freshly built native input before its reuse/run; library/test hashes and all TRACE match."
+}

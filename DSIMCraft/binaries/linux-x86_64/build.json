@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "source_commit": "6958112ed747a4165b74d61ae25a95070c0de250",
+  "compiler": "Intel icpx 2026.1.1",
+  "model_default": "c++",
+  "CMAKE_CXX_FLAGS": "-no-intel-lib",
+  "unavailable_default_resources": "/__dsim_binary_only__/",
+  "platform": "CentOS Stream 9 x86_64",
+  "archive_bytes": 25357436,
+  "archive_sha256": "22eb1454b1522a30a495f1cec1822f54538b6b33b1bd55406e1d9f1125d53869",
+  "original_intel_support_candidate_published": false,
+  "intel_static_support_audit": "PASS: no __intel/_intel_fast/__svml/__libm_ defined symbols",
+  "build_and_packaging": "https://github.com/ephonic/dsim/blob/main/docs/binary-release.md"
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "dsim.binary.v1",
+  "version": "0.13.0",
+  "milestone": "M238",
+  "platform": "linux-x86_64",
+  "source_repository": "https://github.com/ephonic/dsim",
+  "source_commit": "6958112ed747a4165b74d61ae25a95070c0de250",
+  "binary_sha256": "874fe2d445b2418d67571e956b930b01c9043715b1a5079a2c27e80f6fc7aca1",
+  "dependencies": {
+    "z3": "4.15.4",
+    "zstd": "1.5.5",
+    "tcl": "8.6",
+    "zlib": "1.2.11"
+  },
+  "runtime_sha256": {
+    "constraint.hpp": "cee479fcbdd056ba2f16d369e896bda0822b64fa223dc4d0f3cab2dda3b83456",
+    "dpi.hpp": "a07fa0894d5874f9962abc23afc9f83b2d08e1017b9e3059ae83c64f42be88d7",
+    "parallel.hpp": "4f5ea640277dbfc2f4ee1efc464687c03e340f181e68c01316b76163b9d16787",
+    "parallel_waveform.hpp": "0deb408bc00f31e7dc16657bea514a8a1a6ce5de28656b94f7444f3f0429747b",
+    "partition.hpp": "69eaec5e0ee111a989aa55b6a1b83f3a4780550b852cacae82e744ba56df7e6f",
+    "path.hpp": "1c2265583c97660d2a1c4b181579fafb0b4bc52ba6320162b284e6064521c482",
+    "path_dictionary.hpp": "5bb934f95fefd83156d5b1b5ca3efc494a9e01190c593e96d31e5781ffcd81c3",
+    "runtime.hpp": "1f4c952f1c2ff9f354647870761826a635e53ad96953a057f0eca6f7edbd1f04",
+    "svdpi.h": "35592f82a6e070f5781dd5da23cf95e3e46a03d9ce5ebecc3ba378c2085151c8",
+    "waveform.hpp": "f42109700a35ea5ec7b5b5f19895dcaa9893eff162f447130cdcb845d542e62f",
+    "wide_value.hpp": "e88b3b75877b42aaeb1834cf36e1252d84132ef299ba46fbf7263dc19f086b83"
+  }
+}

@@ -1,5 +1,9 @@
 # 发布记录
 
+## v0.13.0 / M238 Linux x86_64 二进制发行 — 2026-11-04
+
+新增可重定位 Linux 二进制包，基于 ephonic/dsim 的 `6958112ed747a4165b74d61ae25a95070c0de250`，包含 M237 参数化 virtual interface 与 M238 资源路径配置。包内提供 runtime、Z3/Zstd 静态库、Tcl/zlib 运行库、示例与许可，使用系统 C++17 编译器生成模型；发布说明与校验和见 [binaries](binaries/README.md)。下列首次源码发行的固定提交保持不变，后续功能开发继续在 ephonic/dsim。
+
 ## v0.13.0 — 2026-11-04
 
 首次在 EDACraft/DSIMCraft 发布纯源码工程版本，固定上游 `ephonic/dsim` 的 `14f9e3dedbd716f7a748415866c00e47983133d1`，保持引擎、parser、runtime 和测试源码一致。增加本发行的 README、最小计数器示例、来源及完整性清单。没有平台二进制包，也没有商业 EDA/UVM 库。

@@ -1,0 +1,109 @@
+{
+  "status": "PASS",
+  "os": "CentOS Stream 9 x86_64",
+  "build_compiler": "Intel icpx 2026.1.1",
+  "model_compiler": "GCC 11.5.0",
+  "CMAKE_CXX_FLAGS": "-no-intel-lib",
+  "objects": {
+    "compiler": {
+      "required_symbol_versions": {
+        "GLIBC": "2.34",
+        "GLIBCXX": "3.4.29",
+        "CXXABI": "1.3.9"
+      },
+      "ldd": [
+        "\tlinux-vdso.so.1 (0x00007ffdd4dfe000)",
+        "\tlibtcl8.6.so => /tmp/dsim-m238-package-final-check/installation with spaces/dsimcraft-0.13.0-m238-linux-x86_64/lib/libtcl8.6.so (0x00007fe469d71000)",
+        "\tlibz.so.1 => /tmp/dsim-m238-package-final-check/installation with spaces/dsimcraft-0.13.0-m238-linux-x86_64/lib/libz.so.1 (0x00007fe469d57000)",
+        "\tlibstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007fe469a00000)",
+        "\tlibm.so.6 => /lib64/libm.so.6 (0x00007fe469c6d000)",
+        "\tlibgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007fe469c4e000)",
+        "\tlibc.so.6 => /lib64/libc.so.6 (0x00007fe469600000)",
+        "\t/lib64/ld-linux-x86-64.so.2 (0x00007fe469f20000)"
+      ]
+    },
+    "tcl": {
+      "required_symbol_versions": {
+        "GLIBC": "2.34"
+      },
+      "ldd": [
+        "\tlinux-vdso.so.1 (0x00007fff335ed000)",
+        "\tlibz.so.1 => /tmp/dsim-m238-package-final-check/installation with spaces/dsimcraft-0.13.0-m238-linux-x86_64/lib/libz.so.1 (0x00007f48305f6000)",
+        "\tlibm.so.6 => /lib64/libm.so.6 (0x00007f483050c000)",
+        "\tlibc.so.6 => /lib64/libc.so.6 (0x00007f4830200000)",
+        "\t/lib64/ld-linux-x86-64.so.2 (0x00007f48307bf000)"
+      ]
+    },
+    "zlib": {
+      "required_symbol_versions": {
+        "GLIBC": "2.14"
+      },
+      "ldd": [
+        "\tlinux-vdso.so.1 (0x00007ffde5bdd000)",
+        "\tlibc.so.6 => /lib64/libc.so.6 (0x00007f830c600000)",
+        "\t/lib64/ld-linux-x86-64.so.2 (0x00007f830c8a1000)"
+      ]
+    },
+    "counter": {
+      "required_symbol_versions": {
+        "GLIBC": "2.34",
+        "GLIBCXX": "3.4.29",
+        "CXXABI": "1.3.13"
+      },
+      "ldd": [
+        "\tlinux-vdso.so.1 (0x00007ffd0ebd5000)",
+        "\tlibstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007f7bc8600000)",
+        "\tlibm.so.6 => /lib64/libm.so.6 (0x00007f7bc883c000)",
+        "\tlibgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f7bc85e3000)",
+        "\tlibc.so.6 => /lib64/libc.so.6 (0x00007f7bc8200000)",
+        "\t/lib64/ld-linux-x86-64.so.2 (0x00007f7bc8928000)"
+      ]
+    },
+    "random": {
+      "required_symbol_versions": {
+        "GLIBC": "2.34",
+        "GLIBCXX": "3.4.29",
+        "CXXABI": "1.3.9"
+      },
+      "ldd": [
+        "\tlinux-vdso.so.1 (0x00007fffdb9dc000)",
+        "\tlibstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007f5d65a00000)",
+        "\tlibm.so.6 => /lib64/libm.so.6 (0x00007f5d65925000)",
+        "\tlibgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f5d65ce1000)",
+        "\tlibc.so.6 => /lib64/libc.so.6 (0x00007f5d65600000)",
+        "\t/lib64/ld-linux-x86-64.so.2 (0x00007f5d65d0f000)"
+      ]
+    },
+    "interfaces": {
+      "required_symbol_versions": {
+        "GLIBC": "2.34",
+        "GLIBCXX": "3.4.29",
+        "CXXABI": "1.3.9"
+      },
+      "ldd": [
+        "\tlinux-vdso.so.1 (0x00007ffccc9f5000)",
+        "\tlibstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007f25ec400000)",
+        "\tlibm.so.6 => /lib64/libm.so.6 (0x00007f25ec325000)",
+        "\tlibgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f25ec639000)",
+        "\tlibc.so.6 => /lib64/libc.so.6 (0x00007f25ec000000)",
+        "\t/lib64/ld-linux-x86-64.so.2 (0x00007f25ec667000)"
+      ]
+    },
+    "sdf": {
+      "required_symbol_versions": {
+        "GLIBC": "2.34",
+        "GLIBCXX": "3.4.29",
+        "CXXABI": "1.3.13"
+      },
+      "ldd": [
+        "\tlinux-vdso.so.1 (0x00007ffcec7c3000)",
+        "\tlibstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007fd252200000)",
+        "\tlibm.so.6 => /lib64/libm.so.6 (0x00007fd2524f1000)",
+        "\tlibgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007fd2524d4000)",
+        "\tlibc.so.6 => /lib64/libc.so.6 (0x00007fd251e00000)",
+        "\t/lib64/ld-linux-x86-64.so.2 (0x00007fd2525dd000)"
+      ]
+    }
+  },
+  "intel_static_support_symbols_absent": true
+}

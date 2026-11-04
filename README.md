@@ -10,7 +10,7 @@ EDACraft is a monorepo hosting multiple EDA sub-projects, each focusing on diffe
 
 ### [DSIMCraft](DSIMCraft/README.md) (`DSIMCraft/`)
 
-DSIMCraft v0.13.0 is a **source-only engineering release** of the compiled
+DSIMCraft v0.13.0 provides a **source snapshot and a prebuilt Linux x86_64 package** of the compiled
 Verilog/SystemVerilog simulator from [ephonic/dsim](https://github.com/ephonic/dsim).
 It generates C++17 simulation programs and maintains separate RTL and gate-level
 parsers, with supported subsets of four-state simulation, delays/SDF, library
@@ -31,8 +31,10 @@ cmake --build build/dsimcraft --target dsim -j 4
 ```
 
 The directory includes buildable sources, parsers/runtime headers, examples,
-tests, documentation, source provenance and checksums; no platform executables,
-commercial EDA tools, or UVM distribution are bundled.
+tests, documentation, source provenance and checksums. The [Linux binary package](DSIMCraft/binaries/README.md)
+includes the M237 parameterized-interface improvements and M238 relocatable
+resources; the source snapshot and binary commit identities are documented
+separately. No commercial EDA tools, C++ toolchain or UVM distribution is bundled.
 
 ### [RTLCraft / rtlgen](RTLCraft/README.md) (`RTLCraft/`)
 
