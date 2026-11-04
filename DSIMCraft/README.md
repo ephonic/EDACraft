@@ -1,6 +1,6 @@
 # DSIMCraft
 
-DSIMCraft 是编译式 Verilog / SystemVerilog 数字电路仿真器，将设计降为 IR，生成 C++17，再编译为本机仿真程序。本目录发布 **v0.13.0 纯源码工程版**；不包含平台可执行文件、商业 EDA 软件、UVM 库或第三方工具链。
+DSIMCraft 是编译式 Verilog / SystemVerilog 数字电路仿真器，将设计降为 IR，生成 C++17，再编译为本机仿真程序。本目录发布 **v0.13.0 纯源码工程版**；不包含平台可执行文件、UVM 库或第三方工具链。
 
 源码来自 [ephonic/dsim](https://github.com/ephonic/dsim)，固定版本为 [`14f9e3de`](https://github.com/ephonic/dsim/commit/14f9e3dedbd716f7a748415866c00e47983133d1)。逐文件来源见 [SOURCE_ORIGIN.json](SOURCE_ORIGIN.json)，发布记录见 [CHANGELOG.md](CHANGELOG.md)，本源码快照的实际验收见 [VERIFICATION.md](VERIFICATION.md)。
 
