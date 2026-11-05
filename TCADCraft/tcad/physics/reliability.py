@@ -53,6 +53,9 @@ class TrapKinetics:
         for name, value in positive.items():
             if not np.isfinite(value) or value <= 0.0:
                 raise ValueError(f"{name} must be finite and > 0")
+        for name in ("trap_energy", "activation_energy", "field_acceleration"):
+            if not np.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be finite")
         if not 0.0 <= self.neutral_occupancy <= 1.0:
             raise ValueError("neutral_occupancy must lie in [0, 1]")
         if self.poole_frenkel_epsilon_r is not None:
@@ -109,11 +112,17 @@ class TrapKinetics:
             raise ValueError("dt must be finite and > 0")
         if not np.all(np.isfinite(phi)) or not np.all(np.isfinite(field_mag)):
             raise ValueError("phi/electric_field must contain finite values")
-        if self.occupancy is None or self.occupancy.size != phi.size:
-            self.initialize(phi.size)
-
+        if phi.size == 0:
+            raise ValueError("phi must be non-empty")
         active = self._active_mask(phi.size)
         f_eq = self.equilibrium_occupancy(phi, temperature)
+        # Validate the entire update before initializing or replacing state.
+        occupancy = self.occupancy
+        if occupancy is None or occupancy.size != phi.size:
+            occupancy = np.full(phi.size, self.neutral_occupancy, dtype=float)
+        if (not np.all(np.isfinite(occupancy))
+                or np.any(occupancy < 0.0) or np.any(occupancy > 1.0)):
+            raise ValueError("trap occupancy must be finite and in [0, 1]")
         thermal_exponent = -self.activation_energy / K_B_EV * (
             1.0 / temperature - 1.0 / self.reference_temperature
         )
@@ -135,9 +144,17 @@ class TrapKinetics:
         rate = acceleration * (
             f_eq / self.capture_tau + (1.0 - f_eq) / self.emission_tau
         )
-        decay = np.exp(-np.minimum(rate * dt, 700.0))
-        updated = f_eq + (self.occupancy - f_eq) * decay
-        self.occupancy[active] = np.clip(updated[active], 0.0, 1.0)
+        # Compute the retained fraction with expm1. The direct expression
+        # f_eq + (occupancy-f_eq)*exp(-x) rounds to the old occupancy when x
+        # is small, silently dropping a real retention increment.
+        exponent = rate * dt
+        decay_loss = -np.expm1(-np.minimum(exponent, 700.0))
+        updated = occupancy - (occupancy - f_eq) * decay_loss
+        candidate = occupancy.copy()
+        candidate[active] = np.clip(updated[active], 0.0, 1.0)
+        if not np.all(np.isfinite(candidate)):
+            raise ValueError("trap update produced non-finite occupancy")
+        self.occupancy = candidate
         return self.charge_density()
 
     def charge_density(self) -> np.ndarray:
@@ -153,7 +170,11 @@ class TrapKinetics:
 
 @dataclass
 class CyclingDegradation:
-    """Competing wake-up and fatigue state equations versus cycle count."""
+    """Wake-up versus cycle count, fatigue versus accumulated field exposure.
+
+    Each advance integrates its own stress segment. Lower subsequent stress
+    cannot erase damage accumulated under an earlier higher field.
+    """
 
     wakeup_cycles: float = 1.0e3
     fatigue_cycles: float = 1.0e6
@@ -164,23 +185,35 @@ class CyclingDegradation:
     cycles: float = field(default=0.0, init=False)
     wakeup_state: float = field(default=0.0, init=False)
     fatigue_state: float = field(default=0.0, init=False)
+    fatigue_exposure: float = field(default=0.0, init=False)
 
     def __post_init__(self) -> None:
         for name in ("wakeup_cycles", "fatigue_cycles", "reference_field"):
             value = getattr(self, name)
             if not np.isfinite(value) or value <= 0.0:
                 raise ValueError(f"{name} must be finite and > 0")
-        if self.wakeup_gain < 0.0 or not 0.0 <= self.fatigue_loss <= 1.0:
+        if (not np.isfinite(self.wakeup_gain) or self.wakeup_gain < 0.0
+                or not 0.0 <= self.fatigue_loss <= 1.0):
             raise ValueError("wakeup_gain must be >=0 and fatigue_loss in [0,1]")
+        if not np.isfinite(self.field_exponent) or self.field_exponent < 0.0:
+            raise ValueError("field_exponent must be finite and >= 0")
 
     def advance(self, cycles: float = 1.0, electric_field: float = 0.0) -> float:
         if not np.isfinite(cycles) or cycles <= 0.0:
             raise ValueError("cycles must be finite and > 0")
-        self.cycles += float(cycles)
+        if not np.isfinite(electric_field):
+            raise ValueError("electric_field must be finite")
         accel = max(abs(float(electric_field)) / self.reference_field, 1.0e-12)
-        accel = accel ** self.field_exponent
-        self.wakeup_state = 1.0 - np.exp(-self.cycles / self.wakeup_cycles)
-        self.fatigue_state = 1.0 - np.exp(-self.cycles * accel / self.fatigue_cycles)
+        with np.errstate(over="ignore", invalid="ignore"):
+            accel = np.float64(accel) ** self.field_exponent
+            exposure = self.fatigue_exposure + float(cycles) * accel
+            total_cycles = self.cycles + float(cycles)
+        if not np.isfinite(exposure) or not np.isfinite(total_cycles):
+            raise ValueError("cycling update exceeds the finite exposure domain")
+        self.cycles = total_cycles
+        self.fatigue_exposure = float(exposure)
+        self.wakeup_state = float(-np.expm1(-self.cycles / self.wakeup_cycles))
+        self.fatigue_state = float(-np.expm1(-exposure / self.fatigue_cycles))
         return self.active_fraction
 
     @property

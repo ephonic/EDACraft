@@ -5,6 +5,7 @@
 """
 
 import numpy as np
+from collections.abc import Mapping
 from abc import ABC, abstractmethod
 from typing import Callable, Any, Dict, List, Optional, Tuple
 
@@ -55,39 +56,29 @@ class BaseValidationTest(ABC):
     def _compute_relative_error(self, result1: Any, result2: Any, 
                                 field: str = 'phi') -> float:
         """计算两个结果的相对误差"""
-        # 支持字典和对象两种访问方式
-        if isinstance(result1, dict):
-            val1 = result1.get(field, np.zeros(1))
-        else:
-            val1 = getattr(result1, field, np.zeros(1))
-        
-        if isinstance(result2, dict):
-            val2 = result2.get(field, np.zeros(1))
-        else:
-            val2 = getattr(result2, field, np.zeros(1))
-        
-        # 避免除零
-        denominator = np.maximum(np.abs(val1), 1e-10)
-        relative_error = np.abs(val1 - val2) / denominator
-        
-        return float(np.max(relative_error))
+        val1, val2 = comparison_fields(result1, result2, field)
+        # Normalize before subtraction; do not hide tiny signals behind a
+        # unit-dependent absolute floor or overflow opposite large values.
+        scale = np.maximum(np.abs(val1), np.abs(val2))
+        scale = np.where(scale == 0., 1., scale)
+        with np.errstate(under='ignore', over='ignore', divide='ignore', invalid='ignore'):
+            a, b = val1/scale, val2/scale
+            difference = np.abs(a-b)
+            error = np.where(difference == 0., 0., difference/np.abs(a))
+        return float(np.max(error))
     
     def _compute_l2_error(self, result1: Any, result2: Any, 
                           field: str = 'phi') -> float:
         """计算两个结果的L2误差"""
-        # 支持字典和对象两种访问方式
-        if isinstance(result1, dict):
-            val1 = result1.get(field, np.zeros(1))
-        else:
-            val1 = getattr(result1, field, np.zeros(1))
-        
-        if isinstance(result2, dict):
-            val2 = result2.get(field, np.zeros(1))
-        else:
-            val2 = getattr(result2, field, np.zeros(1))
-        
-        l2_error = np.sqrt(np.mean((val1 - val2) ** 2))
-        return float(l2_error)
+        val1, val2 = comparison_fields(result1, result2, field)
+        scale = float(max(np.max(np.abs(val1)), np.max(np.abs(val2))))
+        if scale == 0.:
+            return 0.
+        with np.errstate(under='ignore'):
+            rms = float(np.sqrt(np.mean((val1/scale-val2/scale)**2)))
+        if rms > 1. and scale > np.finfo(float).max/rms:
+            return float('inf')
+        return rms*scale
     
     def _compute_convergence_rate(self, errors: List[float], 
                                   refinements: List[float]) -> float:
@@ -108,6 +99,59 @@ class BaseValidationTest(ABC):
                 rates.append(rate)
         
         return float(np.mean(rates)) if rates else 0.0
+
+
+_MISSING = object()
+
+
+def _get(result, name):
+    return result.get(name, _MISSING) if isinstance(result, Mapping) else getattr(result, name, _MISSING)
+
+
+def measured_field(result, field):
+    """Require actual finite real measurements and respect supplied failure flags.
+
+    Legacy objects without flags remain usable. Any supplied flag must be an
+    explicit true boolean. Raw histories require caller-specified extraction.
+    """
+    for flag in ('converged', 'valid'):
+        value = _get(result, flag)
+        if value is not _MISSING and (not isinstance(value, (bool, np.bool_)) or not value):
+            raise ValueError(f'comparison requires {flag}=True when supplied')
+    value = _get(result, field)
+    if value is _MISSING:
+        raise ValueError(f'comparison requires measured field {field}')
+    original = np.asarray(value)
+    if original.dtype.kind not in 'iuf' or not original.size:
+        raise ValueError(f'{field} must be a nonempty real numeric array')
+    with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        values = original.astype(float)
+    if (not np.all(np.isfinite(values)) or
+            np.any((values == 0.) & (original != 0))):
+        raise ValueError(f'{field} must be finite and representable as float64')
+    return values
+
+
+def comparison_fields(left, right, field):
+    """Require matching measurement shapes and clocks when provided."""
+    a, b = measured_field(left, field), measured_field(right, field)
+    if a.shape != b.shape:
+        raise ValueError(f'{field} comparison requires identical shapes; align explicitly')
+    for clock in ('time_s', 'times_s'):
+        x, y = _get(left, clock), _get(right, clock)
+        if x is _MISSING and y is _MISSING:
+            continue
+        x, y = measured_field(left, clock), measured_field(right, clock)
+        if x.shape != y.shape or not np.array_equal(x, y):
+            raise ValueError('comparison requires matching clocks; align explicitly')
+        if np.any(x < 0.):
+            raise ValueError('comparison clocks must be nonnegative')
+        if clock == 'time_s' and x.shape != ():
+            raise ValueError('time_s must be a scalar snapshot clock')
+        if clock == 'times_s' and (x.ndim != 1 or not a.ndim or len(x) != a.shape[0]
+                or not np.all(x[1:] > x[:-1])):
+            raise ValueError('times_s must increase strictly and match the first measurement dimension')
+    return a, b
 
 
 def compute_total_charge(result: Any) -> float:

@@ -389,6 +389,9 @@ def test_automatic_continuation_preserves_schottky_workfunction():
         def set_initial_guess(self, *_args):
             pass
 
+        def set_history_updates_enabled(self, _enabled):
+            pass
+
         def solve(self):
             empty = np.zeros(1)
             return {
@@ -404,6 +407,8 @@ def test_automatic_continuation_preserves_schottky_workfunction():
     sim._contact_voltages = {"top": 1.0}
     sim._contact_workfunctions = {"top": 4.8}
     sim._pending_contact_ramps = {}
+    sim._accepted_contact_voltages = {}
+    sim._accepted_initial_guess = None
     sim.results = None
     calls = []
 

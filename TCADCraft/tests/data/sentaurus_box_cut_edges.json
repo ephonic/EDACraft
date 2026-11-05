@@ -1,0 +1,63 @@
+{
+  "scope": "Linear lossless charge-free planar three-layer capacitor; static commercial comparison, native transient charge/storage audit. No commercial transient run.",
+  "commercial": [
+    {
+      "cells": 8,
+      "charges_C": [
+        -7.11693734542458e-18,
+        7.11693734542458e-18
+      ],
+      "surface_charges_C": [
+        -7.116937345424541e-18,
+        7.116937345424581e-18
+      ],
+      "sampled_phi_V": [
+        0.0,
+        0.096949711459192,
+        0.2
+      ],
+      "charge_relative_error": 1.7763568394002505e-15,
+      "charge_surface_relative_error": 5.440092820663267e-15
+    },
+    {
+      "cells": 16,
+      "charges_C": [
+        -7.1169373454246e-18,
+        7.11693734542459e-18
+      ],
+      "surface_charges_C": [
+        -7.1169373454245e-18,
+        7.116937345424581e-18
+      ],
+      "sampled_phi_V": [
+        0.0,
+        0.0969497114591918,
+        0.2
+      ],
+      "charge_relative_error": 4.440892098500626e-15,
+      "charge_surface_relative_error": 1.4099832412739488e-14
+    }
+  ],
+  "tool": "Sentaurus Device W-2024.09",
+  "reference_axis": "x",
+  "voltage_V": 0.2,
+  "geometry_um": {
+    "length": 1,
+    "height": 1,
+    "depth": 1,
+    "film_interval": [
+      0.23,
+      0.27
+    ]
+  },
+  "relative_permittivity": {
+    "base": 3.9,
+    "film": 15
+  },
+  "relative_budget": 1e-05,
+  "physical_validated": false,
+  "raw_sha256": {
+    "docs/validation/box_cut_edges_20261017/commercial_m16/raw.json": "2513daae4055bc963e2f1850cd1a7fa76d10c263e2c2e364cb886470b7f8e8cd",
+    "docs/validation/box_cut_edges_20261017/commercial_m8/raw.json": "b041682c119b7f9e58b1efeb98d0d1b74093fc197b76ecd545c6b9bff47fdd91"
+  }
+}

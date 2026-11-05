@@ -324,9 +324,11 @@ class TestSimulator:
 class TestSimulateDevice:
     def test_one_shot(self):
         dev = Device.pnjunction(L=1e-6, W=1e-6, H=1e-6)
-        sim, results = simulate_device(dev, resolution=(0.5e-6, 0.5e-6, 0.5e-6), quantum=False, max_iter=10, tol=1e-6)
+        sim, results = simulate_device(dev, resolution=(0.5e-6, 0.5e-6, 0.5e-6), quantum=False, max_iter=50, tol=1e-6)
         assert sim.results is not None
         assert "phi" in results
+        assert results["converged"] and results["valid"] and results["target_reached"]
+        assert results["steady_equation_audit"]["equations_pass"]
 
 
 class TestSimulateSweep:

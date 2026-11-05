@@ -1,7 +1,7 @@
 """Adaptive mesh refinement for structured Cartesian grids.
 
 Refinement strategy:
-1. Feature-based pre-refinement: doping gradients, material interfaces, contacts.
+1. Feature-based pre-refinement: doping gradients and sampled material interfaces.
 2. Solution-based post-refinement: potential / carrier density gradients after a coarse solve.
 3. Multi-round adaptive loop: coarse solve -> estimate error -> refine -> prolongate -> re-solve.
 """
@@ -15,6 +15,56 @@ from .generator import structured_mesh_from_device
 from tcad.geometry.device_builder import Device
 
 
+def _coordinate_metrics(grid):
+    coordinates = grid.axis_coordinates()
+    spacing = []
+    for axis, coords in enumerate(coordinates):
+        shape = [1, 1, 1]
+        shape[axis] = len(coords) - 1
+        spacing.append(np.diff(coords).reshape(shape))
+    return coordinates, spacing
+
+
+def _cell_shape(grid):
+    """Keep one logical extrusion cell on each singleton axis."""
+    return tuple(max(n - 1, 1) for n in grid.shape())
+
+
+def _incident_cells(flags, edge_axis=None):
+    """Map nodal/edge flags to every incident tensor cell, including outer faces."""
+    cells = flags
+    for axis in range(3):
+        if axis == edge_axis or cells.shape[axis] == 1:
+            continue
+        low, high = [slice(None)] * 3, [slice(None)] * 3
+        low[axis], high[axis] = slice(None, -1), slice(1, None)
+        cells = cells[tuple(low)] | cells[tuple(high)]
+    return cells
+
+
+def _nonnegative_integer(value, name):
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)) or value < 0:
+        raise ValueError(f"{name} must be a nonnegative integer")
+    return int(value)
+
+
+def _coordinate_laplacian(data, coordinates, spacing):
+    """Differences of edge slopes over adjacent half-edge widths."""
+    lap = np.zeros_like(data)
+    for axis, coords in enumerate(coordinates):
+        if len(coords) < 3:
+            continue
+        h = np.diff(coords)
+        shape = [1, 1, 1]
+        shape[axis] = len(coords) - 2
+        widths = (.5 * h[:-1] + .5 * h[1:]).reshape(shape)
+        slopes = np.diff(data, axis=axis) / spacing[axis]
+        interior = [slice(None)] * 3
+        interior[axis] = slice(1, -1)
+        lap[tuple(interior)] += np.diff(slopes, axis=axis) / widths
+    return lap
+
+
 class AdaptiveRefiner:
     """
     Adaptive refinement controller for structured grids.
@@ -25,17 +75,21 @@ class AdaptiveRefiner:
     base_resolution : tuple
         Mesh spacing (dx, dy, dz) in meters.
     max_level : int
-        Maximum refinement level (default 3).
+        Maximum subdivision exponent per refinement call (default 3).
+        This is not a cumulative limit across adaptive rounds.
     refinement_ratio : int
         Subdivision factor per level (default 2).
     axis_refinement : dict, optional
-        Per-axis maximum refinement multipliers.  Example:
-        ``{"x": 4, "y": 2, "z": 2}`` refines x up to 4x, y/z up to 2x.
+        Per-axis maximum subdivision exponents per call. Example:
+        ``{"x": 4, "y": 2, "z": 2}`` with ratio=2 allows factors 16, 4, 4.
         If omitted, all axes use ``max_level``.
     directional_thresholds : dict, optional
         Per-axis doping-gradient thresholds [cm^-3 / m].  Example:
         ``{"x": 1e20, "y": 5e19, "z": 5e19}``.
         If omitted, 1e20 is used for all axes.
+    base_shape : tuple(int, int, int), optional
+        Explicit base node counts. Set inactive axes to 1 for an extruded
+        1-D/2-D mesh; otherwise base_resolution determines all node counts.
     """
 
     def __init__(
@@ -46,20 +100,31 @@ class AdaptiveRefiner:
         refinement_ratio: int = 2,
         axis_refinement: Optional[Dict[str, int]] = None,
         directional_thresholds: Optional[Dict[str, float]] = None,
+        base_shape: Optional[Tuple[int, int, int]] = None,
     ):
         self.device = device
         self.base_resolution = base_resolution
-        self.max_level = max_level
-        self.ratio = refinement_ratio
+        self.max_level = _nonnegative_integer(max_level, 'max_level')
+        self.ratio = _nonnegative_integer(refinement_ratio, 'refinement_ratio')
+        if self.ratio < 2:
+            raise ValueError('refinement_ratio must be at least 2')
         self.axis_refinement = axis_refinement or {}
         self.directional_thresholds = directional_thresholds or {}
+        for key, value in self.axis_refinement.items():
+            if key not in ('x', 'y', 'z'):
+                raise ValueError('axis_refinement keys must be x, y or z')
+            _nonnegative_integer(value, 'axis_refinement level')
+        if base_shape is not None:
+            if len(base_shape) != 3 or any(_nonnegative_integer(n, 'base_shape count') < 1 for n in base_shape):
+                raise ValueError('base_shape requires three positive integer node counts')
+            base_shape = tuple(int(n) for n in base_shape)
+        self.base_shape = base_shape
 
     def generate_feature_refined_mesh(self, level: int = 1, preset: Optional[str] = None) -> StructuredGrid:
         """
         Generate a mesh refined based on device geometry features:
         - PN junctions (doping gradient)
         - Material interfaces (epsilon change)
-        - Contact edges
 
         Parameters
         ----------
@@ -74,152 +139,27 @@ class AdaptiveRefiner:
         if preset is not None:
             self._apply_preset(preset)
 
-        # Start with base mesh
-        coarse = structured_mesh_from_device(self.device, resolution=self.base_resolution)
-
-        # Compute feature markers on coarse grid (per-axis)
-        markers = self._compute_feature_markers(coarse)
-
-        # Determine local resolutions
-        nx, ny, nz = coarse.nx, coarse.ny, coarse.nz
-        dx = np.diff(np.linspace(coarse.xmin, coarse.xmax, nx))
-        dy = np.diff(np.linspace(coarse.ymin, coarse.ymax, ny))
-        dz = np.diff(np.linspace(coarse.zmin, coarse.zmax, nz))
-
-        # Refinement factors per axis
-        rx = np.ones(nx - 1, dtype=int)
-        ry = np.ones(ny - 1, dtype=int)
-        rz = np.ones(nz - 1, dtype=int)
-
-        # Per-axis max ratios
-        max_rx = self.ratio ** self.axis_refinement.get("x", self.max_level)
-        max_ry = self.ratio ** self.axis_refinement.get("y", self.max_level)
-        max_rz = self.ratio ** self.axis_refinement.get("z", self.max_level)
-
-        # Mark cells for refinement (vectorized, per-axis)
-        for _ in range(level):
-            marked_i, _, _ = np.where(markers["x"])
-            if marked_i.size > 0:
-                rx[marked_i] *= self.ratio
-            _, marked_j, _ = np.where(markers["y"])
-            if marked_j.size > 0:
-                ry[marked_j] *= self.ratio
-            _, _, marked_k = np.where(markers["z"])
-            if marked_k.size > 0:
-                rz[marked_k] *= self.ratio
-
-        # Clamp to per-axis limits
-        rx = np.clip(rx, 1, max_rx)
-        ry = np.clip(ry, 1, max_ry)
-        rz = np.clip(rz, 1, max_rz)
-
-        # Build new node coordinates
-        x_nodes = [coarse.xmin]
-        for i in range(nx - 1):
-            seg = np.linspace(x_nodes[-1], coarse.X[i + 1, 0, 0], rx[i] + 1)
-            x_nodes.extend(seg[1:].tolist())
-
-        y_nodes = [coarse.ymin]
-        for j in range(ny - 1):
-            seg = np.linspace(y_nodes[-1], coarse.Y[0, j + 1, 0], ry[j] + 1)
-            y_nodes.extend(seg[1:].tolist())
-
-        z_nodes = [coarse.zmin]
-        for k in range(nz - 1):
-            seg = np.linspace(z_nodes[-1], coarse.Z[0, 0, k + 1], rz[k] + 1)
-            z_nodes.extend(seg[1:].tolist())
-
-        # Re-sample device fields onto new mesh
-        from .base import Node, Mesh
-        new_grid = StructuredGrid.__new__(StructuredGrid)
-        Mesh.__init__(new_grid)  # Initialize fields, nodes, elements
-        new_grid.xmin, new_grid.xmax = coarse.xmin, coarse.xmax
-        new_grid.ymin, new_grid.ymax = coarse.ymin, coarse.ymax
-        new_grid.zmin, new_grid.zmax = coarse.zmin, coarse.zmax
-        new_grid.nx = len(x_nodes)
-        new_grid.ny = len(y_nodes)
-        new_grid.nz = len(z_nodes)
-        new_grid.dx = (new_grid.xmax - new_grid.xmin) / max(new_grid.nx - 1, 1)
-        new_grid.dy = (new_grid.ymax - new_grid.ymin) / max(new_grid.ny - 1, 1)
-        new_grid.dz = (new_grid.zmax - new_grid.zmin) / max(new_grid.nz - 1, 1)
-
-        x = np.array(x_nodes)
-        y = np.array(y_nodes)
-        z = np.array(z_nodes)
-        new_grid.X, new_grid.Y, new_grid.Z = np.meshgrid(x, y, z, indexing="ij")
-        # Node-ordered flat coordinates (i fastest) — Audit §19.
-        new_grid._flat_x = new_grid.X.transpose(2, 1, 0).ravel()
-        new_grid._flat_y = new_grid.Y.transpose(2, 1, 0).ravel()
-        new_grid._flat_z = new_grid.Z.transpose(2, 1, 0).ravel()
-
-        # Vectorized node construction
-        idx = np.arange(new_grid.nx * new_grid.ny * new_grid.nz)
-        xi = idx % new_grid.nx
-        yi = (idx // new_grid.nx) % new_grid.ny
-        zi = idx // (new_grid.nx * new_grid.ny)
-        new_grid.nodes = [
-            Node(int(i), float(x[xi[i]]), float(y[yi[i]]), float(z[zi[i]]))
-            for i in idx
-        ]
-        new_grid.build_node_array()
-        new_grid._material_shapes = [
-            (region.shape, rid)
-            for rid, region in enumerate(self.device.regions)
-        ]
-
-        # Re-sample fields (node-ordered coords)
-        sampled = self.device.sample_on_grid(new_grid._flat_x, new_grid._flat_y, new_grid._flat_z)
-        for name, data in sampled.items():
-            new_grid.add_field(name, data)
-
-        contacts = self.device.get_contacts_on_grid(new_grid._flat_x, new_grid._flat_y, new_grid._flat_z)
-        for name, mask in contacts.items():
-            new_grid.add_field(f"contact_{name}", mask.astype(float))
-
-        return new_grid
+        level = _nonnegative_integer(level, 'level')
+        counts = dict(zip(('nx', 'ny', 'nz'), self.base_shape)) if self.base_shape else {}
+        coarse = structured_mesh_from_device(self.device, resolution=self.base_resolution, **counts)
+        return self._refine_from_markers(coarse, self._compute_feature_markers(coarse), level)
 
     def _compute_feature_markers(self, grid: StructuredGrid) -> Dict[str, np.ndarray]:
-        """Per-axis boolean marker arrays indicating cells to refine."""
-        nx, ny, nz = grid.nx, grid.ny, grid.nz
-        thresholds = {
-            "x": self.directional_thresholds.get("x", 1e20),
-            "y": self.directional_thresholds.get("y", 1e20),
-            "z": self.directional_thresholds.get("z", 1e20),
-        }
-
-        markers = {
-            "x": np.zeros((nx - 1, ny - 1, nz - 1), dtype=bool),
-            "y": np.zeros((nx - 1, ny - 1, nz - 1), dtype=bool),
-            "z": np.zeros((nx - 1, ny - 1, nz - 1), dtype=bool),
-        }
-
-        if "doping" in grid.fields:
-            doping = grid.to_3d(grid.fields["doping"])
-            # x-direction gradient
-            gx = np.abs(np.diff(doping, axis=0)) / grid.dx
-            gx_c = gx[:, :ny - 1, :nz - 1]
-            markers["x"] |= gx_c > thresholds["x"]
-            # y-direction gradient
-            gy = np.abs(np.diff(doping, axis=1)) / grid.dy
-            gy_c = gy[:nx - 1, :, :nz - 1]
-            markers["y"] |= gy_c > thresholds["y"]
-            # z-direction gradient
-            gz = np.abs(np.diff(doping, axis=2)) / grid.dz
-            gz_c = gz[:nx - 1, :ny - 1, :]
-            markers["z"] |= gz_c > thresholds["z"]
-
-        if "epsilon" in grid.fields:
-            # B档修复: must use to_3d (node order i+nx*(j+ny*k), i fastest), NOT
-            # plain .reshape(nx,ny,nz) (C-order, k fastest) — the latter scrambles
-            # i,j,k and flags material interfaces on the wrong axis in 3D.
-            eps = grid.to_3d(grid.fields["epsilon"])
-            de_x = (eps[:-1, :-1, :-1] != eps[1:, :-1, :-1])
-            de_y = (eps[:-1, :-1, :-1] != eps[:-1, 1:, :-1])
-            de_z = (eps[:-1, :-1, :-1] != eps[:-1, :-1, 1:])
-            markers["x"] |= de_x
-            markers["y"] |= de_y
-            markers["z"] |= de_z
-
+        """Doping/interface edge flags on logical cells; inactive axes stay false."""
+        coordinates, spacing = _coordinate_metrics(grid)
+        markers = {a: np.zeros(_cell_shape(grid), dtype=bool) for a in 'xyz'}
+        for axis, name in enumerate('xyz'):
+            if len(coordinates[axis]) == 1:
+                continue
+            if 'doping' in grid.fields:
+                doping = grid.to_3d(grid.fields['doping'])
+                gradient = np.abs(np.diff(doping, axis=axis)) / spacing[axis]
+                flags = gradient > self.directional_thresholds.get(name, 1e20)
+                markers[name] |= _incident_cells(flags, edge_axis=axis)
+            if 'epsilon' in grid.fields:
+                epsilon = grid.to_3d(grid.fields['epsilon'])
+                flags = np.diff(epsilon, axis=axis) != 0
+                markers[name] |= _incident_cells(flags, edge_axis=axis)
         return markers
 
     def _apply_preset(self, preset: str) -> None:
@@ -277,56 +217,34 @@ class AdaptiveRefiner:
         dict
             Per-axis boolean arrays matching `_compute_feature_markers` format.
         """
-        nx, ny, nz = grid.nx, grid.ny, grid.nz
-        markers = {
-            "x": np.zeros((nx - 1, ny - 1, nz - 1), dtype=bool),
-            "y": np.zeros((nx - 1, ny - 1, nz - 1), dtype=bool),
-            "z": np.zeros((nx - 1, ny - 1, nz - 1), dtype=bool),
-        }
+        _nonnegative_integer(level, 'level')
+        if mode not in ('gradient', 'residual'):
+            raise ValueError("mode must be 'gradient' or 'residual'")
+        coordinates, spacing = _coordinate_metrics(grid)
+        markers = {a: np.zeros(_cell_shape(grid), dtype=bool) for a in 'xyz'}
         if fields is None:
-            fields = ["phi", "n", "p"]
-
-        # Thresholds tighten with refinement level: higher level = more selective
-        # so we focus only on the strongest features.
-        grad_threshold = 1e-2 * (0.5 ** level)  # relative threshold
+            fields = ['phi', 'n', 'p']
+        # These remain derivative heuristics in physical coordinates, not
+        # equation residuals or certified error bounds.
+        grad_threshold = 1e-2 * (0.5 ** level)
         residual_threshold = 1e-4 * (0.5 ** level)
-
         for fname in fields:
             if fname not in results:
                 continue
-            # B档修复: to_3d (node order i fastest), not plain reshape (scrambles
-            # i,j,k in 3D — corrupts gradient/error markers and convergence metric).
             data = grid.to_3d(results[fname])
-            # Normalize to [0, 1] for scale-invariant thresholds
             dmin, dmax = data.min(), data.max()
-            span = max(dmax - dmin, 1e-30)
-            normed = (data - dmin) / span
-
-            if mode == "gradient":
-                gx = np.abs(np.diff(normed, axis=0)) / grid.dx
-                gy = np.abs(np.diff(normed, axis=1)) / grid.dy
-                gz = np.abs(np.diff(normed, axis=2)) / grid.dz
-                # Map to cell centers
-                gx_c = gx[:, :ny - 1, :nz - 1]
-                gy_c = gy[:nx - 1, :, :nz - 1]
-                gz_c = gz[:nx - 1, :ny - 1, :]
-                markers["x"] |= gx_c > grad_threshold
-                markers["y"] |= gy_c > grad_threshold
-                markers["z"] |= gz_c > grad_threshold
-
-            elif mode == "residual":
-                # Discrete Laplacian: lap(u)_ijk = sum(u_nbr - u_ijk) / h^2
-                lap = np.zeros_like(normed)
-                lap[1:-1, :, :] += (normed[:-2, :, :] - 2 * normed[1:-1, :, :] + normed[2:, :, :]) / (grid.dx * grid.dx)
-                lap[:, 1:-1, :] += (normed[:, :-2, :] - 2 * normed[:, 1:-1, :] + normed[:, 2:, :]) / (grid.dy * grid.dy)
-                lap[:, :, 1:-1] += (normed[:, :, :-2] - 2 * normed[:, :, 1:-1] + normed[:, :, 2:]) / (grid.dz * grid.dz)
-                lap_c = np.abs(lap)[:nx - 1, :ny - 1, :nz - 1]
-                # Mark cells where residual exceeds threshold in any axis
-                flagged = lap_c > residual_threshold
-                markers["x"] |= flagged
-                markers["y"] |= flagged
-                markers["z"] |= flagged
-
+            normed = (data - dmin) / max(dmax - dmin, 1e-30)
+            if mode == 'gradient':
+                for axis, name in enumerate('xyz'):
+                    if len(coordinates[axis]) > 1:
+                        flags = np.abs(np.diff(normed, axis=axis)) / spacing[axis] > grad_threshold
+                        markers[name] |= _incident_cells(flags, edge_axis=axis)
+            else:
+                lap = _coordinate_laplacian(normed, coordinates, spacing)
+                flagged = _incident_cells(np.abs(lap) > residual_threshold)
+                for axis, name in enumerate('xyz'):
+                    if len(coordinates[axis]) > 1:
+                        markers[name] |= flagged
         return markers
 
     def refine_from_solution(
@@ -361,6 +279,8 @@ class AdaptiveRefiner:
         StructuredGrid
             Refined mesh.
         """
+        if combine not in ('union', 'intersection'):
+            raise ValueError("combine must be 'union' or 'intersection'")
         feature_markers = self._compute_feature_markers(grid)
         solution_markers = self._compute_solution_error_markers(grid, results, level, fields, mode)
 
@@ -384,83 +304,36 @@ class AdaptiveRefiner:
         level: int,
     ) -> StructuredGrid:
         """Internal: apply refinement given pre-computed per-axis markers."""
-        nx, ny, nz = grid.nx, grid.ny, grid.nz
-
-        rx = np.ones(nx - 1, dtype=int)
-        ry = np.ones(ny - 1, dtype=int)
-        rz = np.ones(nz - 1, dtype=int)
-
-        max_rx = self.ratio ** self.axis_refinement.get("x", self.max_level)
-        max_ry = self.ratio ** self.axis_refinement.get("y", self.max_level)
-        max_rz = self.ratio ** self.axis_refinement.get("z", self.max_level)
-
-        for _ in range(level):
-            marked_i, _, _ = np.where(markers["x"])
-            if marked_i.size > 0:
-                rx[marked_i] *= self.ratio
-            _, marked_j, _ = np.where(markers["y"])
-            if marked_j.size > 0:
-                ry[marked_j] *= self.ratio
-            _, _, marked_k = np.where(markers["z"])
-            if marked_k.size > 0:
-                rz[marked_k] *= self.ratio
-
-        rx = np.clip(rx, 1, max_rx)
-        ry = np.clip(ry, 1, max_ry)
-        rz = np.clip(rz, 1, max_rz)
-
-        # Build new node coordinates
-        x_nodes = [grid.xmin]
-        for i in range(nx - 1):
-            seg = np.linspace(x_nodes[-1], grid.X[i + 1, 0, 0], rx[i] + 1)
-            x_nodes.extend(seg[1:].tolist())
-
-        y_nodes = [grid.ymin]
-        for j in range(ny - 1):
-            seg = np.linspace(y_nodes[-1], grid.Y[0, j + 1, 0], ry[j] + 1)
-            y_nodes.extend(seg[1:].tolist())
-
-        z_nodes = [grid.zmin]
-        for k in range(nz - 1):
-            seg = np.linspace(z_nodes[-1], grid.Z[0, 0, k + 1], rz[k] + 1)
-            z_nodes.extend(seg[1:].tolist())
-
-        # Build new grid
-        from .base import Node, Mesh
-        new_grid = StructuredGrid.__new__(StructuredGrid)
-        Mesh.__init__(new_grid)
-        new_grid.xmin, new_grid.xmax = grid.xmin, grid.xmax
-        new_grid.ymin, new_grid.ymax = grid.ymin, grid.ymax
-        new_grid.zmin, new_grid.zmax = grid.zmin, grid.zmax
-        new_grid.nx = len(x_nodes)
-        new_grid.ny = len(y_nodes)
-        new_grid.nz = len(z_nodes)
-        new_grid.dx = (new_grid.xmax - new_grid.xmin) / max(new_grid.nx - 1, 1)
-        new_grid.dy = (new_grid.ymax - new_grid.ymin) / max(new_grid.ny - 1, 1)
-        new_grid.dz = (new_grid.zmax - new_grid.zmin) / max(new_grid.nz - 1, 1)
-
-        x = np.array(x_nodes)
-        y = np.array(y_nodes)
-        z = np.array(z_nodes)
-        new_grid.X, new_grid.Y, new_grid.Z = np.meshgrid(x, y, z, indexing="ij")
-        # Node-ordered flat coordinates (i fastest) — Audit §19.
-        new_grid._flat_x = new_grid.X.transpose(2, 1, 0).ravel()
-        new_grid._flat_y = new_grid.Y.transpose(2, 1, 0).ravel()
-        new_grid._flat_z = new_grid.Z.transpose(2, 1, 0).ravel()
-
-        idx = np.arange(new_grid.nx * new_grid.ny * new_grid.nz)
-        xi = idx % new_grid.nx
-        yi = (idx // new_grid.nx) % new_grid.ny
-        zi = idx // (new_grid.nx * new_grid.ny)
-        new_grid.nodes = [
-            Node(int(i), float(x[xi[i]]), float(y[yi[i]]), float(z[zi[i]]))
-            for i in idx
-        ]
-        new_grid.build_node_array()
+        level = _nonnegative_integer(level, 'level')
+        coords = grid.axis_coordinates()
+        axes = []
+        for axis, name in enumerate('xyz'):
+            marker = np.asarray(markers[name], dtype=bool)
+            if marker.shape != _cell_shape(grid):
+                raise ValueError('markers must match the logical cell shape (singleton axes have one cell)')
+            if len(coords[axis]) == 1:
+                if marker.any():
+                    raise ValueError('singleton axes cannot be marked for subdivision')
+                axes.append(coords[axis])
+                continue
+            marked = marker.any(axis=tuple(a for a in range(3) if a != axis))
+            exponent = min(level, self.axis_refinement.get(name, self.max_level))
+            factors = np.where(marked, self.ratio ** exponent, 1)
+            nodes = [coords[axis][0]]
+            for i, factor in enumerate(factors):
+                segment = np.linspace(coords[axis][i], coords[axis][i+1], int(factor)+1)
+                nodes.extend(segment[1:].tolist())
+            axes.append(np.asarray(nodes))
+        bbox = ((grid.xmin, grid.xmax), (grid.ymin, grid.ymax), (grid.zmin, grid.zmax))
+        new_grid = StructuredGrid(bbox, *(len(a) for a in axes), axes=axes)
         new_grid._material_shapes = [
             (region.shape, rid)
             for rid, region in enumerate(self.device.regions)
         ]
+        new_grid._material_permittivity = {
+            rid: region.material.epsilon_r * 8.854187817e-12
+            for rid, region in enumerate(self.device.regions)
+        }
 
         # Re-sample device fields (node-ordered coords)
         sampled = self.device.sample_on_grid(new_grid._flat_x, new_grid._flat_y, new_grid._flat_z)
@@ -470,6 +343,9 @@ class AdaptiveRefiner:
         contacts = self.device.get_contacts_on_grid(new_grid._flat_x, new_grid._flat_y, new_grid._flat_z)
         for name, mask in contacts.items():
             new_grid.add_field(f"contact_{name}", mask.astype(float))
+
+        from tcad.configuration import remember_device_fields
+        remember_device_fields(new_grid)
 
         return new_grid
 
@@ -489,9 +365,7 @@ class AdaptiveRefiner:
             raise KeyError(f"Field '{field_name}' not found on coarse grid")
 
         data = coarse.to_3d(coarse.fields[field_name])  # [i,j,k] — Audit §19
-        x = np.linspace(coarse.xmin, coarse.xmax, coarse.nx)
-        y = np.linspace(coarse.ymin, coarse.ymax, coarse.ny)
-        z = np.linspace(coarse.zmin, coarse.zmax, coarse.nz)
+        x, y, z = coarse.axis_coordinates()
 
         interpolator = RegularGridInterpolator(
             (x, y, z),
@@ -514,9 +388,7 @@ class AdaptiveRefiner:
         from scipy.interpolate import RegularGridInterpolator
 
         arr = coarse.to_3d(data)  # [i,j,k] — Audit §19
-        x = np.linspace(coarse.xmin, coarse.xmax, coarse.nx)
-        y = np.linspace(coarse.ymin, coarse.ymax, coarse.ny)
-        z = np.linspace(coarse.zmin, coarse.zmax, coarse.nz)
+        x, y, z = coarse.axis_coordinates()
 
         interpolator = RegularGridInterpolator(
             (x, y, z),
@@ -544,9 +416,7 @@ class AdaptiveRefiner:
             raise KeyError(f"Field '{field_name}' not found on fine grid")
 
         data = fine.to_3d(fine.fields[field_name])  # [i,j,k] — Audit §19
-        x = np.linspace(fine.xmin, fine.xmax, fine.nx)
-        y = np.linspace(fine.ymin, fine.ymax, fine.ny)
-        z = np.linspace(fine.zmin, fine.zmax, fine.nz)
+        x, y, z = fine.axis_coordinates()
 
         interpolator = RegularGridInterpolator(
             (x, y, z),
@@ -584,7 +454,8 @@ class AdaptiveRefiner:
         Parameters
         ----------
         simulator : Simulator
-            Simulator instance (will have its mesh replaced each round).
+            Configuration template, left unchanged. Each round inherits its
+            explicit physics, boundary and solver settings on a refined mesh.
         max_rounds : int
             Maximum adaptive refinement cycles.
         tol : float
@@ -617,6 +488,10 @@ class AdaptiveRefiner:
         """
         if sim_kwargs is None:
             sim_kwargs = {}
+        sim_kwargs = dict(sim_kwargs)
+        # Refinement is a numerical re-solve at one physical bias, not a clock
+        # advancement of FE/trap/reliability history.
+        sim_kwargs.setdefault('physical_step', False)
         if error_fields is None:
             error_fields = ["phi", "n", "p"]
 
@@ -625,7 +500,8 @@ class AdaptiveRefiner:
         history: Dict[str, List[float]] = {"npts": [], "max_error": [], "delta_phi": []}
 
         # Round 0: feature-based pre-refined mesh + initial solve
-        mesh = self.generate_feature_refined_mesh(level=initial_level)
+        mesh = self._refine_from_markers(simulator.mesh,
+            self._compute_feature_markers(simulator.mesh), initial_level)
         prev_result = None
 
         for rnd in range(max_rounds):
@@ -635,15 +511,14 @@ class AdaptiveRefiner:
                       f"({mesh.npts()} nodes)")
 
             # Build simulator on current mesh
-            from tcad.simulator import Simulator
-            sim = Simulator(mesh, temperature=simulator.temperature)
-            sim.set_material_from_mesh()
+            sim = simulator.clone_on_mesh(mesh)
 
             # Re-apply contacts from the original simulator's mesh
             # (contact names are encoded in the device)
             for name in self.device.contacts:
-                shape, voltage = self.device.contacts[name]
-                sim.set_contact(name, float(voltage))
+                if name not in sim._contact_voltages:
+                    shape, voltage = self.device.contacts[name]
+                    sim.set_contact(name, float(voltage))
 
             # Propagate previous solution as initial guess
             if prev_result is not None:
@@ -653,10 +528,6 @@ class AdaptiveRefiner:
                     prev_result["p"].astype(np.float64),
                 )
 
-            # Use PETSc for large meshes, dense for small
-            from tcad.core import SolverType
-            if mesh.npts() > 2000:
-                sim.set_solver_type(SolverType.PETSC, SolverType.PETSC)
             result = sim.run(**sim_kwargs)
             grids.append(mesh)
             results.append(result)
@@ -665,6 +536,8 @@ class AdaptiveRefiner:
             error = self._compute_global_error(mesh, result, error_fields, error_mode)
             history["npts"].append(float(mesh.npts()))
             history["max_error"].append(float(error))
+            phi = result["phi"]
+            history["delta_phi"].append(float(phi.max() - phi.min()))
 
             # Check convergence
             if len(history["max_error"]) >= 2:
@@ -677,9 +550,8 @@ class AdaptiveRefiner:
                             print(f"  converged: error change {rel_change:.2e} < tol {tol:.2e}")
                         break
 
-            # Compute delta_phi for history
-            phi = result["phi"]
-            history["delta_phi"].append(float(phi.max() - phi.min()))
+            if rnd + 1 == max_rounds:
+                break
 
             # Check if refinement would actually add nodes
             new_mesh = self.refine_from_solution(
@@ -713,10 +585,13 @@ class AdaptiveRefiner:
     ) -> float:
         """Scalar global error indicator from solution fields.
 
-        Returns the L2-norm of normalized gradients across all requested fields,
-        giving a single number that decreases as the mesh resolves features.
+        Returns RMS normalized derivatives in physical coordinates. This is
+        a heuristic indicator, not an error bound; it need not decrease under
+        refinement. Singleton axes have no derivative contribution.
         """
-        nx, ny, nz = grid.nx, grid.ny, grid.nz
+        if mode not in ('gradient', 'residual'):
+            raise ValueError("mode must be 'gradient' or 'residual'")
+        coordinates, spacing = _coordinate_metrics(grid)
         total_error = 0.0
 
         for fname in fields:
@@ -730,18 +605,10 @@ class AdaptiveRefiner:
             normed = (data - dmin) / span
 
             if mode == "gradient":
-                gx = np.diff(normed, axis=0) / grid.dx
-                gy = np.diff(normed, axis=1) / grid.dy
-                gz = np.diff(normed, axis=2) / grid.dz
-                # L2 norm of gradient magnitudes
-                total_error += float(np.sqrt(
-                    (gx**2).mean() + (gy**2).mean() + (gz**2).mean()
-                ))
+                slopes = [np.diff(normed, axis=a) / spacing[a] for a in range(3)]
+                total_error += float(np.sqrt(sum(float((s*s).mean()) for s in slopes if s.size)))
             elif mode == "residual":
-                lap = np.zeros_like(normed)
-                lap[1:-1, :, :] += (normed[:-2, :, :] - 2 * normed[1:-1, :, :] + normed[2:, :, :]) / (grid.dx * grid.dx)
-                lap[:, 1:-1, :] += (normed[:, :-2, :] - 2 * normed[:, 1:-1, :] + normed[:, 2:, :]) / (grid.dy * grid.dy)
-                lap[:, :, 1:-1] += (normed[:, :, :-2] - 2 * normed[:, :, 1:-1] + normed[:, :, 2:]) / (grid.dz * grid.dz)
+                lap = _coordinate_laplacian(normed, coordinates, spacing)
                 total_error += float(np.sqrt((lap**2).mean()))
 
         return total_error

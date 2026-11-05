@@ -39,7 +39,7 @@ struct SolverOptions {
     size_t max_iter = 10000;
     // 1e-16: quad-justified but far cheaper than 1e-25 (BiCGStab iteration
     // count scales with log(1/tol); 1e-25 made 2D/3D sweeps impractically slow).
-    real_t tol = 1e-16Q;
+    real_t tol = TCAD_CONST(1e-16);
     size_t restart = 30; // For GMRES
     bool verbose = false;
     PreconditionerType prec = PreconditionerType::ILU0;
@@ -50,8 +50,19 @@ public:
     explicit LinearSolver(const SolverOptions& opt = {});
     ~LinearSolver();
 
+    // Copies own fresh backend resources; assignment releases our cache.
+    LinearSolver(const LinearSolver& other) : opt_(other.opt_) {}
+    LinearSolver& operator=(const LinearSolver& other);
+
     // Solve A*x = b, returns number of iterations, throws on failure
     size_t solve(const SparseMatrix& A, const Vector& b, Vector& x);
+
+    // Validate before changing native device or replay configuration.
+    static void validate_solver_type(int type);
+
+    // Attempt an exact narrow-band solve after symmetric graph ordering.
+    // Never allocate dense n*n storage; leave x unchanged if unavailable.
+    bool try_banded_direct(const SparseMatrix& A, const Vector& b, Vector& x);
 
     static SolverOptions default_poisson_options();
     static SolverOptions default_continuity_options();
@@ -64,7 +75,7 @@ private:
     size_t cg(const SparseMatrix& A, const Vector& b, Vector& x);
     size_t jacobi(const SparseMatrix& A, const Vector& b, Vector& x);
     size_t gauss_seidel(const SparseMatrix& A, const Vector& b, Vector& x);
-    size_t dense_direct(const SparseMatrix& A, const Vector& b, Vector& x);
+    size_t dense_direct(const SparseMatrix& A, const Vector& b, Vector& x, bool banded_only = false);
     size_t solve_ir_bicgstab(const SparseMatrix& A, const Vector& b, Vector& x);
 #ifdef TCAD_USE_PETSC
     size_t solve_petsc(const SparseMatrix& A, const Vector& b, Vector& x);
@@ -76,6 +87,7 @@ private:
     KSP petsc_ksp_ = nullptr;
     Vec petsc_b_ = nullptr, petsc_x_ = nullptr;
     PetscInt petsc_n_ = -1;
+    std::vector<size_t> petsc_row_offsets_, petsc_col_indices_;
     void petsc_free();
 #endif
 };

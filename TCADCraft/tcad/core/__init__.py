@@ -3,7 +3,7 @@
 from enum import IntEnum
 
 try:
-    from ._bindings import PyDeviceSimulator
+    from ._bindings import PyDeviceSimulator, native_precision, native_constants
 except ImportError as exc:
     raise ImportError(
         "TCAD core extension not built. Run: python setup.py build_ext --inplace"
@@ -19,7 +19,22 @@ class SolverType(IntEnum):
     JACOBI = 4
     GAUSS_SEIDEL = 5
     DENSE_DIRECT = 6
-    PETSC = 7
+    IR_BICGSTAB = 7
+    PETSC = 8
 
 
-__all__ = ["PyDeviceSimulator", "SolverType"]
+def require_constants_profile(expected):
+    """Reject a binary with the wrong charge profile before running a case."""
+    if expected not in ("si", "legacy-charge"):
+        raise ValueError("Expected constants profile must be 'si' or 'legacy-charge'")
+    actual = native_constants()
+    if actual["profile"] != expected:
+        raise RuntimeError(
+            f"TCAD constants profile mismatch: expected {expected!r}, "
+            f"loaded {actual['profile']!r}. Rebuild or select the matching binary."
+        )
+    return actual
+
+
+__all__ = ["PyDeviceSimulator", "SolverType", "native_precision", "native_constants",
+           "require_constants_profile"]

@@ -1,0 +1,38 @@
+{
+  "version": "0.3.0rc1",
+  "base_git_commit": "cd39133c5a4d1e5c1901120fcd73e06eb0bf36b7",
+  "build_input_archive_sha256": "b6519557738602629a67104c8bf73750adb98895f37b61929d1a5eda96ff3e74",
+  "collected_artifacts_archive_sha256": "a73f995a99e134a56d0e6514c948c10d06ea341a3869d11c80b565232e056240",
+  "frozen_development_files": 1078,
+  "packaged_changes_from_frozen_development": [
+    "README.md",
+    "CHANGELOG.md",
+    "RELEASE_NOTES.md",
+    "pyproject.toml",
+    "MANIFEST.in",
+    "tcad/__init__.py",
+    "setup.py"
+  ],
+  "packaging_fix": "Explicit PEP 517 build-helper loading and shared precision/profile build-base isolation for wheel extension placement",
+  "post_build_changes": "Publication-only README, Git ignore rules retaining hand-written core C++ sources, validation report links, binaries, checksums and this inventory",
+  "numerical_implementation_changes_after_build": false,
+  "build_cache_layout_control": "Four configurations share their own Python/native library root and retain disjoint caches; only SI float128 wheel built",
+  "artifacts": {
+    "binaries/linux-x86_64/tcad-0.3.0rc1-cp313-cp313-linux_x86_64.whl": {
+      "bytes": 2584535,
+      "sha256": "7af7b14800921ccdeb3a2b8d86deacc8c9d80f474cba96c81b09a2a6bf88590d"
+    },
+    "binaries/source/tcad-0.3.0rc1.tar.gz": {
+      "bytes": 5188167,
+      "sha256": "d2de7167d006131f0d5b792a8f4639203fbdfc2d983fb6554e37b972ce58a1e2"
+    }
+  },
+  "verification": "passed_clean_sdist_wheel_install_and_targeted_checks",
+  "junit": {
+    "tests": 1055,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "production_deployment_changed": false
+}

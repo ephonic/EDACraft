@@ -14,6 +14,10 @@ __pycache__/
 # Cython generated (keep src/*.cpp)
 *.cpp
 !src/*.cpp
+!tcad/core/*.cpp
+tcad/core/_bindings.cpp
+!tests/cpp/*.cpp
+!tests/*.cpp
 
 # Virtual environments
 venv/

@@ -12,12 +12,15 @@ left to ad-hoc scripts).
 
 from __future__ import annotations
 from contextlib import contextmanager
+from collections.abc import Mapping
 import os
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 import warnings
 
 import numpy as np
+
+from .fe_readout import polarization_readout, _real_array, _weighted_polarization
 
 
 @contextmanager
@@ -48,41 +51,137 @@ def _suppress_solver_stdio():
 
 
 def _fe_mask(sim) -> np.ndarray:
-    """Return the material-defined ferroelectric-node mask."""
+    """Return the configured FE domain, or material mask for a test double."""
+    configured = getattr(sim, "_fe_node_mask", None)
+    if configured is not None:
+        mask = np.asarray(configured).ravel()
+        if (mask.size != sim.mesh.npts() or not np.all(np.isfinite(mask))
+                or not np.all((mask == 0) | (mask == 1))):
+            raise ValueError("configured FE mask must contain one binary value per node")
+        return mask.astype(bool)
     if "fe_alpha" in sim.mesh.fields:
-        return np.abs(sim.mesh.fields["fe_alpha"].ravel()) > 0.0
+        alpha = np.asarray(sim.mesh.fields["fe_alpha"], dtype=float).ravel()
+        if alpha.size != sim.mesh.npts() or not np.all(np.isfinite(alpha)):
+            raise ValueError("fe_alpha must contain one finite value per mesh node")
+        return np.abs(alpha) > 0.0
     return np.ones(sim.mesh.npts(), dtype=bool)
 
 
+def _require_real_scalar(value, name, *, positive=False, nonnegative=False):
+    """Validate a protocol scalar before it can touch simulator state."""
+    array = np.asarray(value)
+    if (array.shape != () or array.dtype.kind not in "iuf"
+            or isinstance(value, (bool, np.bool_)) or not np.isfinite(array)):
+        raise ValueError(f"{name} must be a finite real scalar")
+    value = float(array)
+    if not np.isfinite(value):
+        raise ValueError(f"{name} must be representable as a finite real scalar")
+    if positive and value <= 0.0:
+        raise ValueError(f"{name} must be finite and > 0")
+    if nonnegative and value < 0.0:
+        raise ValueError(f"{name} must be finite and >= 0")
+    return value
+
+
 def _read_axial_polarization(sim, result, mask=None) -> float:
-    """Read FE-layer mean polarization along the configured polar axis."""
+    """Read FE-volume-weighted polarization along the configured polar axis."""
     if "P" not in result or result["P"] is None:
-        return 0.0
+        raise ValueError("polarization measurement requires result['P']")
     if mask is None:
         mask = _fe_mask(sim)
-    P = np.asarray(result["P"]).reshape(-1, 3)
-    axis = int(getattr(sim, "_fe_polar_axis", 0))
-    if axis not in (0, 1, 2):
-        axis = 0
-    values = P[:, axis]
-    return float(np.mean(values[mask])) if np.any(mask) else float(np.mean(values))
+    readout = polarization_readout(
+        result["P"], sim.mesh,
+        polar_axis=getattr(sim, "_fe_polar_axis", 0), fe_mask=mask)
+    result["fe_polarization_readout"] = readout
+    return readout["mean_polarization"]
 
 
 def _electric_field_magnitude(result, npts: int) -> np.ndarray:
-    """Return |E| from a solver result, or zeros for protocol test doubles."""
+    """Return |E|; missing/non-finite fields cannot drive trap kinetics."""
     components = []
     for name in ("Ex", "Ey", "Ez"):
-        value = np.asarray(result.get(name, np.zeros(npts)), dtype=float).ravel()
-        if value.size != npts:
-            raise ValueError(f"result field {name} size {value.size} != {npts}")
+        if name not in result:
+            raise ValueError(f"dynamic trap coupling requires result['{name}']")
+        value = np.asarray(result[name], dtype=float).ravel()
+        if value.size != npts or not np.all(np.isfinite(value)):
+            raise ValueError(f"result field {name} must contain {npts} finite values")
         components.append(value)
-    return np.sqrt(sum(component * component for component in components))
+    return np.hypot(np.hypot(components[0], components[1]), components[2])
+
+
+class ReliabilityStepError(RuntimeError):
+    """A failed protocol segment, with only previously accepted progress."""
+
+    def __init__(self, phase, completed_segments, elapsed_time, reason):
+        self.phase = phase
+        self.completed_segments = completed_segments
+        self.elapsed_time = elapsed_time
+        super().__init__(f"{phase} failed after {completed_segments} accepted "
+                         f"segments ({elapsed_time:g} s): {reason}")
+
+
+def _require_protocol_result(sim, result, physical_step=True):
+    if not isinstance(result, Mapping):
+        raise RuntimeError("electrical result must be a mapping")
+    for name in ("converged", "valid", "target_reached"):
+        # Legacy custom simulators may omit target metadata; convergence and
+        # validity must always be explicit. Truthiness is not acceptance.
+        flag = result.get(name, True if name == "target_reached" else None)
+        if not isinstance(flag, (bool, np.bool_)) or not bool(flag):
+            raise RuntimeError(f"electrical result['{name}'] must be boolean True")
+    if "physical_step_accepted" in result:
+        flag = result["physical_step_accepted"]
+        if (not isinstance(flag, (bool, np.bool_))
+                or bool(flag) != bool(physical_step)):
+            raise RuntimeError("electrical result physical-step acceptance does not "
+                               "match the requested segment")
+    npts = sim.mesh.npts()
+    for name, size in (("phi", npts), ("P", 3 * npts)):
+        value = np.asarray(result.get(name, []))
+        if (value.dtype.kind not in "iuf" or value.size != size
+                or not np.all(np.isfinite(value))):
+            raise RuntimeError(f"result['{name}'] must contain {size} finite real values")
+
+
+def _reliability_step(sim, contact, voltage, dwell, max_iter, tol,
+                      trap_model, temperature, phase, completed, elapsed,
+                      degradation_model=None, stress_field=0.0, proxy_charge=None,
+                      physical_step=True, result_validator=None):
+    """One accepted physical segment plus a frozen-history charge re-solve."""
+    if not hasattr(sim, "reliability_transaction"):
+        raise TypeError("FE protocols require reliability_transaction()")
+    try:
+        with sim.reliability_transaction(trap_model, degradation_model):
+            if dwell is not None and hasattr(sim, "set_ferroelectric_nls_dwell_time"):
+                sim.set_ferroelectric_nls_dwell_time(dwell)
+            if degradation_model is not None:
+                fraction = degradation_model.advance(1.0, stress_field)
+                _apply_cycling_state(sim, degradation_model, fraction)
+            if proxy_charge is not None:
+                sim.set_oxide_traps(proxy_charge)
+            if hasattr(sim, "results") and sim.results is None:
+                sim.set_contact(contact, voltage,
+                                getattr(sim, "_contact_workfunctions", {}).get(contact))
+            else:
+                sim.update_contact(contact, voltage)
+            result = sim.run(max_iter=max_iter, tol=tol, physical_step=physical_step)
+            _require_protocol_result(sim, result, physical_step=physical_step)
+            result, qot = _advance_traps(sim, result, trap_model, dwell, temperature)
+            if qot is not None:
+                result = sim.run(max_iter=max_iter, tol=tol, physical_step=False)
+                _require_protocol_result(sim, result, physical_step=False)
+            if result_validator is not None:
+                result_validator(result)
+            return result, qot
+    except Exception as exc:
+        raise ReliabilityStepError(phase, completed, elapsed, str(exc)) from exc
 
 
 def _advance_traps(sim, result, trap_model, dt: float, temperature: float):
     """Advance an optional TrapKinetics state and feed Q_ot into Poisson."""
     if trap_model is None:
         return result, None
+    _require_protocol_result(sim, result)
     if "phi" not in result or result["phi"] is None:
         raise ValueError("dynamic trap coupling requires result['phi']")
     phi = np.asarray(result["phi"], dtype=float).ravel()
@@ -122,6 +221,10 @@ def _bipolar_voltage(Vmax: float, n_pts: int) -> np.ndarray:
     visits V=0 three times (start, mid, end), which is the standard shape for
     measuring a P-V hysteresis loop.
     """
+    Vmax = _require_real_scalar(Vmax, "Vmax", positive=True)
+    if (isinstance(n_pts, (bool, np.bool_))
+            or not isinstance(n_pts, (int, np.integer)) or n_pts < 2):
+        raise ValueError("n_pts must be an integer >= 2")
     seg = np.linspace(0.0, Vmax, n_pts)
     return np.concatenate([
         seg,                          # 0 -> +Vmax
@@ -129,6 +232,30 @@ def _bipolar_voltage(Vmax: float, n_pts: int) -> np.ndarray:
         -seg[1:],                    # 0 -> -Vmax
         -seg[::-1][1:],              # -Vmax -> 0
     ])
+
+
+def _protocol_solver_parameters(max_iter, tol):
+    if (isinstance(max_iter, (bool, np.bool_))
+            or not isinstance(max_iter, (int, np.integer)) or max_iter < 1):
+        raise ValueError("max_iter must be an integer >= 1")
+    return _require_real_scalar(tol, "tol", positive=True)
+
+
+def _protocol_duration(width, count):
+    try:
+        duration = width * count
+    except OverflowError as exc:
+        raise ValueError("total protocol duration must be finite") from exc
+    return _require_real_scalar(duration, "total protocol duration", positive=True)
+
+
+def _pv_solver_parameters(sim, max_iter, tol, dwell_time, sample_count):
+    tol = _protocol_solver_parameters(max_iter, tol)
+    dwell = getattr(sim, "_fe_nls_dt", 1e-6) if dwell_time is None else dwell_time
+    dwell = _require_real_scalar(dwell, "dwell_time", positive=True)
+    if not np.isfinite(dwell * sample_count):
+        raise ValueError("total sweep duration must be finite")
+    return tol, dwell
 
 
 def run_pv_sweep(
@@ -139,11 +266,12 @@ def run_pv_sweep(
     max_iter: int = 50,
     tol: float = 1e-10,
     track_breakdown: bool = False,
+    dwell_time: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
     """Sweep a contact voltage over a bipolar loop and collect polarization.
 
     The simulator must already be configured (materials, contacts, ferroelectric
-    model) and have had an initial ``run()`` at equilibrium. This function
+    model). An initial equilibrium result is reused when available. This function
     ramps ``contact`` through the bipolar sweep, reusing the previous solution
     as the initial guess (so the polarization carries path-dependent memory ->
     hysteresis), and records the FE-layer-averaged polarization at each point.
@@ -164,6 +292,11 @@ def run_pv_sweep(
         If True, read back ``sim._sim.breakdown_state()`` after each step and
         record the cumulative count of broken-down nodes. Requires
         ``sim.set_breakdown(True)`` to have been called beforehand.
+    dwell_time : float, optional
+        Physical dwell per requested sample. Defaults to configured NLS dwell,
+        or 1 us for a custom simulator without that metadata. Numerical bias
+        continuation does not add dwell. Failure restores the failed sample
+        and raises ReliabilityStepError with accepted sample count/time.
 
     Returns
     -------
@@ -177,23 +310,34 @@ def run_pv_sweep(
         (cumulative broken-down node count per step).
     """
     V_loop = _bipolar_voltage(Vmax, n_pts)
+    tol, dwell = _pv_solver_parameters(sim, max_iter, tol, dwell_time, len(V_loop))
     P_vals: List[float] = []
     bd_counts: List[int] = []
     result: Dict[str, np.ndarray] = {}
     # Identify FE nodes from the material field for averaging.
     fe_mask = _fe_mask(sim)
+    bd_candidate = 0
 
-    for Vg in V_loop:
-        sim.update_contact(contact, Vg)
-        result = sim.run(max_iter=max_iter, tol=tol)
+    def validate_measurement(r):
+        nonlocal bd_candidate
+        _read_axial_polarization(sim, r, fe_mask)
+        if track_breakdown:
+            state = np.asarray(sim._sim.breakdown_state())
+            if state.size != sim.mesh.npts() or not np.all(np.isin(state, [0, 1])):
+                raise RuntimeError("breakdown state must contain one binary value per node")
+            bd_candidate = int(np.count_nonzero(state))
+
+    for i, Vg in enumerate(V_loop):
+        result, _ = _reliability_step(
+            sim, contact, Vg, dwell, max_iter, tol, None, 300.,
+            f"pv_sample_{i+1}", i, i*dwell, result_validator=validate_measurement)
         P_avg = _read_axial_polarization(sim, result, fe_mask)
         P_vals.append(P_avg)
         if track_breakdown:
-            try:
-                bd_state = sim._sim.breakdown_state()
-                bd_counts.append(int(np.sum(np.asarray(bd_state) > 0)))
-            except Exception:
-                bd_counts.append(0)
+            bd_counts.append(bd_candidate)
+    result["protocol_completed_segments"] = len(V_loop)
+    result["protocol_elapsed_time"] = len(V_loop)*dwell
+    result["physical_validated"] = False
     if track_breakdown:
         result["breakdown_count"] = np.array(bd_counts)
     return V_loop, np.array(P_vals), result
@@ -238,10 +382,13 @@ def run_pv_sweep_with_breakdown(
     breakdown_count : np.ndarray
         Cumulative broken-down node count at each bias step.
     """
+    V_loop = _bipolar_voltage(Vmax, n_pts)
+    sigma_bd = _require_real_scalar(sigma_bd, "sigma_bd", nonnegative=True)
+    tol, _ = _pv_solver_parameters(sim, max_iter, tol, None, len(V_loop))
     sim.set_breakdown(enabled=True, sigma_bd=sigma_bd)
     V, P, result = run_pv_sweep(sim, contact, Vmax, n_pts, max_iter, tol,
                                 track_breakdown=True)
-    bd = result.get("breakdown_count", np.zeros(len(V)))
+    bd = result["breakdown_count"]
     return V, P, bd
 
 
@@ -282,9 +429,12 @@ def run_pe_sweep(
     last_result : dict
         Final result dict.
     """
+    Emax = _require_real_scalar(Emax, "Emax", positive=True)
+    fe_thickness = _require_real_scalar(fe_thickness, "fe_thickness", positive=True)
     Vmax = Emax * fe_thickness
     V_loop, P_avg, result = run_pv_sweep(sim, contact, Vmax, n_pts, max_iter, tol)
     E = V_loop / fe_thickness
+    result["field_kind"] = "nominal_contact_voltage_over_fe_thickness"
     return E, P_avg, result
 
 
@@ -298,103 +448,115 @@ def run_pund_sequence(
     tol: float = 1e-10,
     pre_pol_V: Optional[float] = None,
     pre_pol_hold: int = 10,
+    pulse_width: float = 1e-6,
+    rise_time: float = 0.0,
+    fall_time: float = 0.0,
+    delay_time: float = 1e-6,
 ) -> Dict[str, np.ndarray]:
-    """Run a PUND (Positive-Up-Negative-Down) pulse sequence and extract Ps/Pr.
+    """Preset then P/U/N/D, with explicit piecewise-constant physical durations.
 
-    The standard PUND protocol applies five pulses:
+    P/N are opposite-polarity switching pulses; U/D repeat the corresponding
+    polarity. Paired FE state increments give signed model switching measures
+    delta(P)-delta(U) and delta(N)-delta(D). These are not integrated terminal
+    currents and do not subtract actual leakage or dielectric terminal charge.
+    Ps is a plateau-magnitude diagnostic; Pr reads the zero-bias polarization
+    after P and N. No saturation or experimental PUND accuracy is guaranteed.
 
-    1. **N** (negative pre-polarization, to -V): ensures the device starts in a
-       well-defined -P_s state before measurement. This is critical -- without
-       adequate pre-polarization the P pulse also does switching, inflating P_U
-       and giving unphysical results (comments.docx: "P-U appears negative,
-       forward switching did not occur"). The pre-polarization amplitude
-       ``pre_pol_V`` (default = V_pulse) and hold steps ``pre_pol_hold``
-       ensure the device is fully polarized before the measurement pulses.
-    2. **P** (positive, to +V): sets the device to +P_s.
-    3. **U** (positive, to +V): the switching current gives P_s + P_r.
-    4. **D** (negative, to -V): the switching current gives P_s - P_r.
-
-    The extracted quantities:
-      - P_s = (|P_U| + |P_D|) / 2  (saturation polarization)
-      - P_r = (|P_U| - |P_D|) / 2  (remanent polarization)
-
-    Parameters
-    ----------
-    sim : tcad.simulator.Simulator
-        Configured simulator (ferroelectric enabled).
-    contact : str
-        Contact to pulse.
-    V_pulse : float
-        Pulse amplitude [V].
-    fe_thickness : float
-        FE layer thickness [m] (for field reference).
-    n_points : int
-        Total resolution of the pulse train.
-    max_iter, tol : see :func:`run_pv_sweep`.
-    pre_pol_V : float, optional
-        Pre-polarization amplitude [V]. Default = V_pulse. Set higher to ensure
-        full polarization of high-Ec materials like AlScN.
-    pre_pol_hold : int
-        Number of hold steps at the pre-polarization plateau (ensures the
-        device reaches steady-state polarization before measurement).
-
-    Returns
-    -------
-    dict with keys:
-        ``times`` [s], ``voltages`` [V], ``P`` [C/m^2],
-        ``Ps`` [C/m^2], ``Pr`` [C/m^2], ``P_U`` [C/m^2], ``P_D`` [C/m^2].
+    pulse_width is each plateau's duration, rise/fall_time each edge's duration,
+    and delay_time each zero-bias gap's duration. n_points controls edge/gap
+    subdivisions; pre_pol_hold subdivides each plateau without changing its
+    duration. With zero edge time the bias change is instantaneous; numerical
+    continuation is frozen. Zero-duration electrical helpers have repeated
+    timestamps and physical_sample=False, so they consume no extra dwell.
+    Each accepted segment survives subsequent failures; the failed segment is
+    rolled back and ReliabilityStepError reports only accepted physical time.
     """
+    V_pulse = _require_real_scalar(V_pulse, "V_pulse", positive=True)
     if pre_pol_V is None:
         pre_pol_V = V_pulse
-    seg = max(n_points // 10, 5)
-    ramp = lambda a, b: np.linspace(a, b, seg)
-    hold = lambda v, n: np.full(n, v)
-
-    # Phase 0: Negative pre-polarization with hold (ensure full -P_s)
-    # Phase 1: P pulse (+V) -> positive set
-    # Phase 2: U pulse (+V) -> positive read (switching + non-switching)
-    # Phase 3: D pulse (-V) -> negative read
-    v_seq = np.concatenate([
-        ramp(0, -pre_pol_V), hold(-pre_pol_V, pre_pol_hold), ramp(-pre_pol_V, 0),
-        ramp(0, V_pulse), hold(V_pulse, pre_pol_hold), ramp(V_pulse, 0),    # P
-        ramp(0, V_pulse), hold(V_pulse, pre_pol_hold), ramp(V_pulse, 0),    # U
-        ramp(0, -V_pulse), hold(-V_pulse, pre_pol_hold), ramp(-V_pulse, 0), # D
-    ])
-    dt = 1e-6   # nominal time step [s] (quasi-static; real time not critical)
-    times = np.arange(len(v_seq)) * dt
-
-    P_vals: List[float] = []
-    result: Dict[str, np.ndarray] = {}
+    pre_pol_V = _require_real_scalar(pre_pol_V, "pre_pol_V", positive=True)
+    fe_thickness = _require_real_scalar(fe_thickness, "fe_thickness", positive=True)
+    pulse_width = _require_real_scalar(pulse_width, "pulse_width", positive=True)
+    rise_time = _require_real_scalar(rise_time, "rise_time", nonnegative=True)
+    fall_time = _require_real_scalar(fall_time, "fall_time", nonnegative=True)
+    delay_time = _require_real_scalar(delay_time, "delay_time", nonnegative=True)
+    for name, value, minimum in (("n_points",n_points,10),("pre_pol_hold",pre_pol_hold,1)):
+        if (isinstance(value,(bool,np.bool_))
+                or not isinstance(value,(int,np.integer)) or value < minimum):
+            raise ValueError(f"{name} must be an integer >= {minimum}")
+    if (isinstance(max_iter, (bool, np.bool_))
+            or not isinstance(max_iter, (int, np.integer)) or max_iter < 1):
+        raise ValueError("max_iter must be an integer >= 1")
+    tol = _require_real_scalar(tol, "tol", positive=True)
+    seg = max(n_points//10, 1)
+    if not np.isfinite(5*(float(pulse_width)+rise_time+fall_time+delay_time)):
+        raise ValueError("total pulse sequence duration must be finite")
+    for duration, subdivisions in ((pulse_width,pre_pol_hold),(rise_time,seg),
+                                    (fall_time,seg),(delay_time,seg)):
+        if duration > 0.0 and duration/subdivisions == 0.0:
+            raise ValueError("physical segment duration underflows to zero")
     fe_mask = _fe_mask(sim)
+    times, volts, polarizations, durations, physical = [], [], [], [], []
+    elapsed, completed = 0.0, 0
 
-    for Vg in v_seq:
-        sim.update_contact(contact, Vg)
-        result = sim.run(max_iter=max_iter, tol=tol)
-        P_avg = _read_axial_polarization(sim, result, fe_mask)
-        P_vals.append(P_avg)
+    def step(voltage, duration, phase):
+        nonlocal elapsed, completed
+        commit = duration > 0.0
+        result, _ = _reliability_step(
+            sim,contact,voltage,duration if commit else None,max_iter,tol,
+            None,300.,phase,completed,elapsed,physical_step=commit,
+            result_validator=lambda r: _read_axial_polarization(sim,r,fe_mask))
+        if commit:
+            elapsed += duration
+            completed += 1
+        value = _read_axial_polarization(sim,result,fe_mask)
+        times.append(elapsed); volts.append(voltage); polarizations.append(value)
+        durations.append(duration); physical.append(commit)
+        return value
 
-    P_arr = np.array(P_vals)
-    # Extract P at the end of the U and D *hold plateaus*, before each return
-    # ramp to zero.  Every segment is ramp-up + hold + ramp-down, i.e.
-    # ``2*seg + pre_pol_hold`` samples.  The former 3*seg bookkeeping sampled
-    # the end of the zero-bias return ramp for U and clipped D to the final
-    # point, which could report Ps=Pr=0 despite successful switching.
-    n_segment = 2 * seg + pre_pol_hold
-    idx_U = 2 * n_segment + seg + pre_pol_hold - 1
-    idx_D = 3 * n_segment + seg + pre_pol_hold - 1
-    P_U = P_arr[idx_U]
-    P_D = P_arr[idx_D]
-    Ps = 0.5 * (abs(P_U) + abs(P_D))
-    Pr = 0.5 * (abs(P_U) - abs(P_D))
-
+    current = step(0.,0.,"pund_initial")
+    labels = ["preset","P","U","N","D"]
+    amplitudes = [-pre_pol_V,V_pulse,V_pulse,-V_pulse,-V_pulse]
+    plateaus, zeros, increments, phase_ranges = [], [], [], []
+    for label, amplitude in zip(labels,amplitudes):
+        start_p = current
+        start_index = len(times)
+        if rise_time > 0.0:
+            for i in range(1,seg+1):
+                step(amplitude*i/seg,rise_time/seg,f"pund_{label}_rise_{i}")
+        for i in range(pre_pol_hold):
+            current = step(amplitude,pulse_width/pre_pol_hold,f"pund_{label}_hold_{i+1}")
+        plateaus.append(current)
+        increments.append(current-start_p)
+        if fall_time > 0.0:
+            for i in range(1,seg+1):
+                current = step(amplitude*(1-i/seg),fall_time/seg,f"pund_{label}_fall_{i}")
+        else:
+            current = step(0.,0.,f"pund_{label}_return")
+        if delay_time > 0.0:
+            for i in range(seg):
+                current = step(0.,delay_time/seg,f"pund_{label}_delay_{i+1}")
+        zeros.append(current)
+        phase_ranges.append((start_index,len(times)))
+    positive = increments[1]-increments[2]
+    negative = increments[3]-increments[4]
     return {
-        "times": times,
-        "voltages": v_seq,
-        "P": P_arr,
-        "P_U": P_U,
-        "P_D": P_D,
-        "Ps": Ps,
-        "Pr": Pr,
+        "times":np.asarray(times),"voltages":np.asarray(volts),
+        "P":np.asarray(polarizations),"sample_durations":np.asarray(durations),
+        "physical_sample":np.asarray(physical,dtype=bool),
+        "pulse_labels":labels,"phase_ranges":np.asarray(phase_ranges,dtype=int),
+        "pulse_plateau_p":np.asarray(plateaus),"pulse_zero_bias_p":np.asarray(zeros),
+        "pulse_delta_p":np.asarray(increments),
+        "P_P":plateaus[1],"P_U":plateaus[2],"P_N":plateaus[3],"P_D":plateaus[4],
+        "P_switch_positive":positive,"P_switch_negative":negative,
+        "switching_polarization_magnitude":.5*(abs(positive)+abs(negative)),
+        "Ps":.5*(abs(plateaus[1])+abs(plateaus[3])),
+        "Pr":.5*(abs(zeros[1])+abs(zeros[3])),
+        "valid":True,"completed_segments":completed,"elapsed_time":elapsed,
+        "extraction_kind":"fe_state_increment_difference",
+        "polarization_weighting":"FE_control_volume",
+        "Ps_kind":"pulse_plateau_magnitude","Pr_kind":"zero_bias_fe_polarization",
+        "terminal_charge_validated":False,"physical_validated":False,
     }
 
 
@@ -435,59 +597,69 @@ def run_retention(
     -------
     dict with keys ``times`` [s], ``P`` [C/m^2], ``P_initial``, ``P_final``,
     ``retention_loss`` (fraction of initial P lost).
+
+    Each segment uses a scoped reliability transaction. Invalid electrical
+    results raise ReliabilityStepError with accepted progress and restore the
+    failed segment, including a failed FE-volume polarization readout. Trap
+    charge uses one operator-split update and one frozen
+    FE charge re-solve; this is not an iterated coupled FE/trap transient.
+    ``temperature`` drives trap rates only; configure device temperature on
+    Simulator separately.
     """
-    if n_steps < 1:
+    if (isinstance(n_steps, (bool, np.bool_))
+            or not isinstance(n_steps, (int, np.integer)) or n_steps < 1):
         raise ValueError("n_steps must be >= 1")
-    if not np.isfinite(dt) or dt <= 0.0:
-        raise ValueError("retention dt must be finite and > 0")
-    fe_mask = _fe_mask(sim)
-
-    def _read_P(result):
-        return _read_axial_polarization(sim, result, fe_mask)
-
+    n_steps = int(n_steps)
+    dt = _require_real_scalar(dt, "retention dt", positive=True)
     if program_width is None:
         program_width = dt
-    if not np.isfinite(program_width) or program_width <= 0.0:
-        raise ValueError("program_width must be finite and > 0")
+    program_width = _require_real_scalar(program_width, "program_width", positive=True)
+    temperature = _require_real_scalar(temperature, "temperature", positive=True)
+    V_program = _require_real_scalar(V_program, "V_program")
+    tol = _protocol_solver_parameters(max_iter, tol)
+    hold_duration = _protocol_duration(dt, n_steps)
+    elapsed_time = _require_real_scalar(program_width + hold_duration,
+                                        "total retention duration", positive=True)
+    times = (np.arange(n_steps, dtype=float) + 1) * dt
+    fe_mask = _fe_mask(sim)
 
-    # 1. Program
-    sim.update_contact(contact, V_program)
-    result = sim.run(max_iter=max_iter, tol=tol)
-    result, qot = _advance_traps(
-        sim, result, trap_model, program_width, temperature,
-    )
-    if qot is not None:
-        # Re-solve once with the newly captured charge, making the program
-        # state self-consistent before the retention clock starts.
-        result = sim.run(max_iter=max_iter, tol=tol)
-    P_initial = _read_P(result)
+    P_sample = None
 
-    # 2. Monitor at V=0
-    times = (np.arange(n_steps) + 1) * dt
-    P_vals = []
-    qot_vals = []
-    occupancy_vals = []
+    def _measure_P(result):
+        nonlocal P_sample
+        P_sample = _read_axial_polarization(sim, result, fe_mask)
+
+    result, _ = _reliability_step(
+        sim, contact, V_program, program_width, max_iter, tol,
+        trap_model, temperature, "retention_program", 0, 0.0,
+        result_validator=_measure_P)
+    P_initial = P_sample
+    P_vals, qot_vals, occupancy_vals = [], [], []
     for i in range(n_steps):
-        if hasattr(sim, "set_ferroelectric_nls_dwell_time"):
-            sim.set_ferroelectric_nls_dwell_time(dt)
-        sim.update_contact(contact, 0.0)
-        result = sim.run(max_iter=max_iter, tol=tol)
-        result, qot = _advance_traps(sim, result, trap_model, dt, temperature)
+        result, qot = _reliability_step(
+            sim, contact, 0.0, dt, max_iter, tol, trap_model, temperature,
+            f"retention_hold_{i+1}", i + 1, program_width + i * dt,
+            result_validator=_measure_P)
         if qot is not None:
-            result = sim.run(max_iter=max_iter, tol=tol)
             qot_vals.append(float(np.mean(qot)))
             occupancy_vals.append(float(np.mean(trap_model.occupancy)))
-        P_vals.append(_read_P(result))
+        P_vals.append(P_sample)
     P_arr = np.array(P_vals)
     P_final = P_arr[-1]
     retention_loss = abs(P_initial - P_final) / max(abs(P_initial), 1e-30)
 
     output = {
+        "valid": True,
+        "completed_segments": n_steps + 1,
+        "elapsed_time": elapsed_time,
+        "transaction_scope": "fe_breakdown_charge_contacts_guesses_and_slow_models",
+        "physical_validated": False,
         "times": times,
         "P": P_arr,
         "P_initial": P_initial,
         "P_final": P_final,
         "retention_loss": retention_loss,
+        "polarization_weighting": "FE_control_volume",
     }
     if trap_model is not None:
         output["Q_ot"] = np.asarray(qot_vals)
@@ -515,8 +687,14 @@ def run_endurance(
 ) -> Dict[str, np.ndarray]:
     """Simulate endurance: cycle the device and measure Ps/Pr degradation.
 
-    Applies ``n_cycles`` programming/erasing cycles (+/-V_pulse), measuring
-    Ps/Pr every ``measure_every`` cycles via a PUND-like extraction.
+    Applies ``n_cycles`` programming/erasing cycles (+/-V_pulse), sampling
+    pulse-plateau polarization every ``measure_every`` cycles. Sampling adds
+    no pulses. These are not zero-bias remanence or PUND measurements.
+    ``memory_window`` is an uncalibrated polarization-ratio proxy. The first
+    accepted cycle provides its baseline; there are no hidden conditioning
+    pulses. A failed segment raises ReliabilityStepError and rolls back that
+    segment, including its FE-volume polarization readout; previously accepted
+    half-cycles remain committed. Each plateau is read before the next pulse.
 
     Without explicit state objects, the backwards-compatible trap proxy is:
         Q_ot(N) = Q_ot_max * (1 - exp(-N / Nc))
@@ -564,37 +742,40 @@ def run_endurance(
     dict with keys ``cycles``, ``Ps``, ``Pr``, ``memory_window`` [V],
     ``Q_ot`` (accumulated trap charge per cycle).
     """
-    if n_cycles < 1:
+    if (isinstance(n_cycles, (bool, np.bool_))
+            or not isinstance(n_cycles, (int, np.integer)) or n_cycles < 1):
         raise ValueError("n_cycles must be >= 1")
-    if measure_every < 1:
+    if (isinstance(measure_every, (bool, np.bool_))
+            or not isinstance(measure_every, (int, np.integer)) or measure_every < 1):
         raise ValueError("measure_every must be >= 1")
-    if not np.isfinite(fatigue_Nc) or fatigue_Nc <= 0.0:
-        raise ValueError("fatigue_Nc must be finite and > 0")
-    if not np.isfinite(fe_thickness) or fe_thickness <= 0.0:
-        raise ValueError("fe_thickness must be finite and > 0")
-    if not np.isfinite(pulse_width) or pulse_width <= 0.0:
-        raise ValueError("pulse_width must be finite and > 0")
+    n_cycles, measure_every = int(n_cycles), int(measure_every)
+    fatigue_Nc = _require_real_scalar(fatigue_Nc, "fatigue_Nc", positive=True)
+    fe_thickness = _require_real_scalar(fe_thickness, "fe_thickness", positive=True)
+    pulse_width = _require_real_scalar(pulse_width, "pulse_width", positive=True)
+    V_pulse = _require_real_scalar(V_pulse, "V_pulse", positive=True)
+    Q_ot_max = _require_real_scalar(Q_ot_max, "Q_ot_max", nonnegative=True)
+    temperature = _require_real_scalar(temperature, "temperature", positive=True)
+    tol = _protocol_solver_parameters(max_iter, tol)
+    elapsed_time = _protocol_duration(pulse_width, 2 * n_cycles)
+    E_cycle = _require_real_scalar(V_pulse / fe_thickness, "cycling field", positive=True)
+    if not isinstance(legacy_breakdown_scaling, (bool, np.bool_)):
+        raise ValueError("legacy_breakdown_scaling must be boolean")
+    legacy_breakdown_scaling = bool(legacy_breakdown_scaling)
+    if legacy_breakdown_scaling:
+        E_bd = _require_real_scalar(E_bd, "legacy E_bd", positive=True)
+        legacy_field_ratio = _require_real_scalar(E_cycle / E_bd, "legacy E/E_bd")
     fe_mask = _fe_mask(sim)
 
-    # Initial Ps measurement (wake-up baseline)
-    def _read_P(result):
-        return _read_axial_polarization(sim, result, fe_mask)
+    P_sample = None
 
-    # Measure initial Ps
-    sim.update_contact(contact, V_pulse)
-    sim.run(max_iter=max_iter, tol=tol)
-    sim.update_contact(contact, -V_pulse)
-    sim.run(max_iter=max_iter, tol=tol)
-    sim.update_contact(contact, V_pulse)
-    P_pos0 = _read_P(sim.run(max_iter=max_iter, tol=tol))
-    sim.update_contact(contact, -V_pulse)
-    P_neg0 = _read_P(sim.run(max_iter=max_iter, tol=tol))
-    Ps0 = 0.5 * (abs(P_pos0) + abs(P_neg0))
-    # Coercive voltage from initial measurement
-    Vc0 = abs(V_pulse) * 0.5  # approximate initial coercive voltage
+    def _measure_P(result):
+        nonlocal P_sample
+        P_sample = _read_axial_polarization(sim, result, fe_mask)
 
-    # Cycling field
-    E_cycle = abs(V_pulse) / max(fe_thickness, 1e-15)
+    # Read the existing program/erase plateaus. Extra measurement pulses
+    # previously consumed FE dwell without entering trap/damage bookkeeping.
+    Ps0 = None
+    Vc0 = abs(V_pulse) * 0.5  # explicitly uncalibrated window proxy
 
     cycles_list = []
     Ps_list = []
@@ -606,41 +787,28 @@ def run_endurance(
     trap_occupancy_list = []
 
     for cycle in range(1, n_cycles + 1):
-        # Feed fatigue-driven trapped charge back into Poisson before the
-        # electrical cycle.  Previously Q_ot was only reported and the solved
-        # device state was completely unaffected by endurance degradation.
-        Q_ot = Q_ot_max * (1.0 - np.exp(-cycle / fatigue_Nc))
-        if trap_model is None and hasattr(sim, "set_oxide_traps"):
-            sim.set_oxide_traps(Q_ot)
-        active_fraction = 1.0
-        if degradation_model is not None:
-            active_fraction = degradation_model.advance(1.0, E_cycle)
-            _apply_cycling_state(sim, degradation_model, active_fraction)
-        # Program (+V) then erase (-V)
-        sim.update_contact(contact, V_pulse)
-        r_program = sim.run(max_iter=max_iter, tol=tol)
-        _, qot_dynamic = _advance_traps(
-            sim, r_program, trap_model, pulse_width, temperature,
-        )
-        if degradation_model is not None:
-            active_fraction = degradation_model.advance(1.0, -E_cycle)
-            _apply_cycling_state(sim, degradation_model, active_fraction)
-        sim.update_contact(contact, -V_pulse)
-        r_erase = sim.run(max_iter=max_iter, tol=tol)
-        _, qot_dynamic = _advance_traps(
-            sim, r_erase, trap_model, pulse_width, temperature,
-        )
+        Q_ot = Q_ot_max * (-np.expm1(-cycle / fatigue_Nc))
+        proxy_charge = Q_ot if trap_model is None else None
+        r_program, _ = _reliability_step(
+            sim, contact, V_pulse, pulse_width, max_iter, tol,
+            trap_model, temperature, f"endurance_program_{cycle}",
+            2 * (cycle - 1), 2 * (cycle - 1) * pulse_width,
+            degradation_model, E_cycle, proxy_charge,
+            result_validator=_measure_P)
+        P_pos = P_sample
+        r_erase, qot_dynamic = _reliability_step(
+            sim, contact, -V_pulse, pulse_width, max_iter, tol,
+            trap_model, temperature, f"endurance_erase_{cycle}",
+            2 * cycle - 1, (2 * cycle - 1) * pulse_width,
+            degradation_model, -E_cycle, result_validator=_measure_P)
+        P_neg = P_sample
+        active_fraction = (degradation_model.active_fraction
+                           if degradation_model is not None else 1.0)
         if qot_dynamic is not None:
             Q_ot = float(np.mean(qot_dynamic))
-
+        if Ps0 is None:
+            Ps0 = 0.5 * (abs(P_pos) + abs(P_neg))
         if cycle % measure_every == 0 or cycle == n_cycles:
-            # Measure: positive then negative P
-            sim.update_contact(contact, V_pulse)
-            r_pos = sim.run(max_iter=max_iter, tol=tol)
-            P_pos = _read_P(r_pos)
-            sim.update_contact(contact, -V_pulse)
-            r_neg = sim.run(max_iter=max_iter, tol=tol)
-            P_neg = _read_P(r_neg)
             Ps_val = 0.5 * (abs(P_pos) + abs(P_neg))
             Pr_val = 0.5 * (abs(P_pos) - abs(P_neg))
 
@@ -653,8 +821,8 @@ def run_endurance(
             # J_bd. Users reproducing old curves may opt into this proxy.
             breakdown_factor = 1.0
             if legacy_breakdown_scaling:
-                breakdown_factor = max(0.0, 1.0 - (E_cycle / E_bd) *
-                                       (1.0 - np.exp(-cycle / (fatigue_Nc * 0.3))))
+                fatigue_fraction = -np.expm1(-(cycle / fatigue_Nc) / 0.3)
+                breakdown_factor = max(0.0, 1.0 - legacy_field_ratio * fatigue_fraction)
 
             # Effective Ps reduced by fatigue + breakdown
             Ps_eff = Ps_val * max(breakdown_factor, 0.01)
@@ -676,6 +844,17 @@ def run_endurance(
                 trap_occupancy_list.append(float(np.mean(trap_model.occupancy)))
 
     output = {
+        "valid": True,
+        "completed_segments": 2 * n_cycles,
+        "elapsed_time": elapsed_time,
+        "measurement_extra_pulses": 0,
+        "degradation_count_unit": "accepted_half_cycle",
+        "transaction_scope": "fe_breakdown_charge_contacts_guesses_and_slow_models",
+        "memory_window_kind": "uncalibrated_polarization_ratio_proxy",
+        "polarization_metric_kind": "pulse_plateau_magnitudes_and_asymmetry",
+        "polarization_weighting": "FE_control_volume",
+        "legacy_breakdown_scaling": bool(legacy_breakdown_scaling),
+        "physical_validated": False,
         "cycles": np.array(cycles_list),
         "Ps": np.array(Ps_list),
         "Pr": np.array(Pr_list),
@@ -695,6 +874,22 @@ def run_endurance(
     return output
 
 
+def _pulse_width_window(voltage, plateau, reference):
+    """Evaluate 2*V*plateau/reference without overflowing intermediate factors."""
+    voltage_numerator, voltage_denominator = voltage.as_integer_ratio()
+    plateau_numerator, plateau_denominator = plateau.as_integer_ratio()
+    reference_numerator, reference_denominator = reference.as_integer_ratio()
+    try:
+        # Round once, including at the largest finite/subnormal boundary.
+        window = ((2 * voltage_numerator * plateau_numerator * reference_denominator)
+                  / (voltage_denominator * plateau_denominator * reference_numerator))
+    except OverflowError as exc:
+        raise ValueError("pulse-width memory window overflowed") from exc
+    if plateau > 0 and window == 0:
+        raise ValueError("pulse-width memory window underflowed")
+    return _require_real_scalar(window, "pulse-width memory window", nonnegative=True)
+
+
 def run_pulse_width_sweep(
     sim,
     contact: str,
@@ -703,97 +898,121 @@ def run_pulse_width_sweep(
     pulse_widths: List[float] = None,
     max_iter: int = 50,
     tol: float = 1e-10,
+    saturation_polarization: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
-    """Measure switching speed: sweep pulse width and measure memory window.
+    """Isolated +/- pulse pairs from one initial device state for each width.
 
-    For each pulse width, applies a programming pulse of that width and
-    measures the resulting memory window. The minimum pulse width that
-    produces a saturated window indicates the device's fastest switching speed.
-
-    In the quasi-static solver, pulse width maps to NLS dwell time: a shorter
-    pulse gives less time for NLS switching, producing a smaller window.
-
-    Parameters
-    ----------
-    sim : tcad.simulator.Simulator
-        Configured simulator (NLS model recommended for speed-dependent switching).
-    contact : str
-        Contact for pulse application.
-    V_pulse : float
-        Pulse amplitude [V].
-    fe_thickness : float
-        FE layer thickness [m] (for field reference).
-    pulse_widths : List[float]
-        Pulse widths to sweep [s], default logspace from 1e-9 to 1e-4.
-    max_iter, tol : see :func:`run_pv_sweep`.
-
-    Returns
-    -------
-    dict with keys ``pulse_widths`` [s], ``memory_window`` [V], ``Ps`` [C/m^2].
+    Each experiment restores the entry FE/charge/breakdown/contact state even
+    on success, so width ordering cannot change the curve. The diagnostic
+    memory_window=2*|V_pulse|*plateau_magnitude/Ps_reference is an uncalibrated
+    proxy, not an extracted threshold window or proof of saturation/speed.
+    The reference must be explicit or come from the configured FE base Ps;
+    normalizing by the largest sample would make results depend on the batch.
+    Each signed plateau is captured inside its pulse transaction before the
+    next pulse. A failed derived metric rejects the whole isolated experiment.
     """
     if pulse_widths is None:
         pulse_widths = np.logspace(-9, -4, 10).tolist()
-    if len(pulse_widths) == 0:
-        raise ValueError("pulse_widths must contain at least one value")
-    if not np.all(np.isfinite(pulse_widths)) or np.any(np.asarray(pulse_widths) <= 0.0):
-        raise ValueError("pulse_widths must be finite and > 0")
-
+    widths = _real_array(pulse_widths, "pulse_widths").copy()
+    if widths.ndim != 1 or widths.size == 0 or not np.all(np.isfinite(widths)) or np.any(widths <= 0.):
+        raise ValueError("pulse_widths must be a non-empty 1D array of finite positive values")
+    if np.any(widths > np.finfo(float).max/2):
+        raise ValueError("pulse pair duration must be finite")
+    V_pulse = _require_real_scalar(V_pulse, "V_pulse", positive=True)
+    fe_thickness = _require_real_scalar(fe_thickness, "fe_thickness", positive=True)
+    tol = _protocol_solver_parameters(max_iter, tol)
+    if saturation_polarization is None:
+        saturation_polarization = getattr(sim,"_fe_base_ps",None)
+    saturation_polarization = _require_real_scalar(saturation_polarization,
+                                                  "saturation_polarization reference", positive=True)
     fe_mask = _fe_mask(sim)
+    ps_values, windows, program_values, erase_values = [], [], [], []
+    for i, width in enumerate(widths):
+        measurement = {}
 
-    def _read_P(result):
-        return _read_axial_polarization(sim, result, fe_mask)
+        def measure_program(result):
+            measurement["program"] = _read_axial_polarization(sim, result, fe_mask)
 
-    mw_values = []
-    ps_values = []
+        def measure_erase(result):
+            measurement["erase"] = _read_axial_polarization(sim, result, fe_mask)
+            plateau, _ = _weighted_polarization(
+                np.abs([measurement["program"], measurement["erase"]]), np.ones(2), 2.)
+            measurement["Ps"] = plateau
+            measurement["window"] = _pulse_width_window(V_pulse, plateau, saturation_polarization)
 
-    for pw in pulse_widths:
-        # Set NLS dwell time = pulse width (controls switching completeness)
-        if hasattr(sim, "set_ferroelectric_nls_dwell_time"):
-            sim.set_ferroelectric_nls_dwell_time(pw)
-
-        # Program with +V
-        sim.update_contact(contact, V_pulse)
-        P_pos = _read_P(sim.run(max_iter=max_iter, tol=tol))
-
-        # Erase with -V
-        sim.update_contact(contact, -V_pulse)
-        P_neg = _read_P(sim.run(max_iter=max_iter, tol=tol))
-
-        Ps_val = 0.5 * (abs(P_pos) + abs(P_neg))
-        ps_values.append(Ps_val)
-
-    # Scale the saturated 2*Vc window by switching completeness.  The old
-    # expression divided Ps_val by itself and therefore returned exactly
-    # |V_pulse| for every pulse width, hiding all NLS speed dependence.
-    ps_arr = np.asarray(ps_values, dtype=float)
-    ps_sat = max(float(np.max(ps_arr)), 1e-30)
-    mw_values = 2.0 * abs(V_pulse) * ps_arr / ps_sat
-
+        try:
+            with sim.reliability_transaction(commit=False):
+                _reliability_step(
+                    sim,contact,V_pulse,width,max_iter,tol,None,300.,
+                    f"width_{i+1}_program",0,0.,
+                    result_validator=measure_program)
+                _reliability_step(
+                    sim,contact,-V_pulse,width,max_iter,tol,None,300.,
+                    f"width_{i+1}_erase",1,width,
+                    result_validator=measure_erase)
+        except ReliabilityStepError as exc:
+            exc.experiment_index = i
+            exc.completed_experiments = i
+            exc.experiment_rolled_back = True
+            raise
+        ps_values.append(measurement["Ps"])
+        windows.append(measurement["window"])
+        program_values.append(measurement["program"])
+        erase_values.append(measurement["erase"])
+    ps_arr = np.asarray(ps_values)
     return {
-        "pulse_widths": np.array(pulse_widths),
-        "memory_window": np.asarray(mw_values),
-        "Ps": ps_arr,
+        "pulse_widths":widths,"Ps":ps_arr,
+        "memory_window":np.asarray(windows),
+        "program_polarization":np.asarray(program_values),
+        "erase_polarization":np.asarray(erase_values),
+        "saturation_polarization_reference":float(saturation_polarization),
+        "memory_window_kind":"uncalibrated_plateau_ratio_proxy",
+        "polarization_weighting":"FE_control_volume",
+        "experiment_durations":2*widths,"completed_experiments":widths.size,
+        "initial_state_policy":"restore_entry_state_for_each_width",
+        "valid":True,"physical_validated":False,
     }
+
+
+def _mlc_separation_parameter(value, name, positive=False):
+    array = np.asarray(value)
+    if (array.shape != () or array.dtype.kind not in "iuf"
+            or not np.isfinite(array)):
+        raise ValueError(f"{name} must be a finite real scalar")
+    value = float(array)
+    if not np.isfinite(value) or value < 0.0 or (positive and value == 0.0):
+        bound = "positive" if positive else "non-negative"
+        raise ValueError(f"{name} must be finite and {bound}")
+    return value
 
 
 def extract_mlc_memory_window(
     program_voltages,
     read_currents,
     min_state_separation_decades: float = 0.10,
+    noise_floor: float | None = None,
 ) -> Dict[str, np.ndarray]:
-    """Extract a physically reported MLC current window from read currents.
+    """Extract diagnostic MLC current spans and an uncensored level count.
 
     ``comment6.docx`` flagged a misleading "negative memory window" in the
     AlScN/MoS2 MLC exploration.  The sign is useful as a polarity diagnostic,
     but the externally reported MLC window is the *separation* between read
     states and must therefore be non-negative.  This helper reports both:
 
-    - ``memory_window_decades``: absolute log10 current span, always >= 0.
+    - ``memory_window_decades``: full (max-min) log10 current span, always >= 0.
     - ``signed_window_decades``: high-program-current minus low-program-current
       log span.  Negative values indicate an inverted FE/channel polarity or an
       intentional p-type convention that should be documented.
-    - ``n_states``: count of read levels separated by at least
-      ``min_state_separation_decades``.
+    - ``n_states``: count of distinct uncensored read magnitudes separated by
+      at least ``min_state_separation_decades``. Censored values contribute no
+      measured level. A zero separation still merges identical magnitudes.
+
+    The historical spans use the explicit noise floor where necessary;
+    observed_memory_window_decades uses only uncensored samples (None if none).
+    n_states_including_censored records the clipped-sample heuristic separately.
+    polarity_valid is false if either endpoint is censored or all program
+    voltages coincide. These diagnostics do not establish BER or physical MLC
+    reliability; physical_validated remains false.
     """
     V = np.asarray(program_voltages, dtype=float).ravel()
     I = np.asarray(read_currents, dtype=float).ravel()
@@ -805,35 +1024,84 @@ def extract_mlc_memory_window(
         raise ValueError("program_voltages must be finite")
     if not np.all(np.isfinite(I)):
         raise ValueError("read_currents must be finite")
-    if min_state_separation_decades < 0.0:
-        raise ValueError("min_state_separation_decades must be non-negative")
-
-    positive = I[I > 0.0]
-    floor = max(float(np.min(positive)) if positive.size else 1.0e-30, 1.0e-30)
-    I_safe = np.clip(np.abs(I), floor, None)
+    min_state_separation_decades = _mlc_separation_parameter(
+        min_state_separation_decades, "min_state_separation_decades")
+    if noise_floor is not None:
+        noise_floor = _mlc_separation_parameter(noise_floor, "noise_floor", positive=True)
+    raw_abs = np.abs(I)
+    censored = raw_abs <= 0.0
+    if np.any(censored) and noise_floor is None:
+        raise ValueError(
+            "read_currents contains zero; provide noise_floor so censored "
+            "states are not silently replaced by the sample minimum"
+        )
+    floor = noise_floor if noise_floor is not None else 0.0
+    I_safe = np.maximum(raw_abs, floor)
+    censored |= raw_abs < floor
+    if np.any(I_safe <= 0.0):
+        raise ValueError("at least one positive current or a positive noise_floor is required")
     order_v = np.argsort(V)
     V_sorted = V[order_v]
     I_by_v = I_safe[order_v]
-    signed = float(np.log10(I_by_v[-1] / I_by_v[0]))
+    signed = float(np.log10(I_by_v[-1]) - np.log10(I_by_v[0]))
     log_levels = np.sort(np.log10(I_safe))
-    n_states = 1
-    last = float(log_levels[0])
-    for level in log_levels[1:]:
-        if float(level) - last >= min_state_separation_decades:
-            n_states += 1
-            last = float(level)
+    full_span = float(log_levels[-1] - log_levels[0])
+    def separated_count(levels):
+        levels = np.unique(levels)
+        if levels.size == 0:
+            return 0
+        count = 1
+        last = float(levels[0])
+        for level in levels[1:]:
+            if float(level) - last >= min_state_separation_decades:
+                count += 1
+                last = float(level)
+        return count
+
+    observed_log_levels = np.log10(raw_abs[~censored])
+    n_states = separated_count(observed_log_levels)
+    observed_span = (float(np.max(observed_log_levels) - np.min(observed_log_levels))
+                     if observed_log_levels.size else None)
+    endpoints_censored = bool(censored[order_v[0]] or censored[order_v[-1]])
 
     return {
         "program_voltages": V,
+        "raw_read_currents": I.copy(),
         "read_currents": I_safe,
+        "censored_mask": censored,
         "program_voltages_sorted": V_sorted,
         "read_currents_sorted_by_program": I_by_v,
-        "memory_window_decades": abs(signed),
+        "memory_window_decades": full_span,
+        "memory_window_kind": "noise_floor_clipped_log_current_span",
+        "observed_memory_window_decades": observed_span,
         "signed_window_decades": signed,
+        "signed_window_censored": endpoints_censored,
         "polarity": "normal" if signed >= 0.0 else "inverted",
+        "polarity_valid": not endpoints_censored and bool(V_sorted[-1] > V_sorted[0]),
         "n_states": int(n_states),
+        "n_states_including_censored": separated_count(log_levels),
+        "n_censored_samples": int(np.count_nonzero(censored)),
+        "state_count_kind": "uncensored_log_current_separation_heuristic",
+        "physical_validated": False,
         "min_state_separation_decades": float(min_state_separation_decades),
     }
+
+
+def _mlc_dwell_time(sim, width, name):
+    if width is None:
+        return None
+    value = np.asarray(width)
+    if (value.shape != () or value.dtype.kind not in "iuf"
+            or not np.isfinite(value) or value <= 0.0):
+        raise ValueError(f"{name} must be a finite positive real scalar")
+    width = float(value)
+    if not np.isfinite(width):
+        raise ValueError(f"{name} must be representable as finite seconds")
+    if not callable(getattr(sim, "set_ferroelectric_nls_dwell_time", None)):
+        raise TypeError("MLC pulse widths require set_ferroelectric_nls_dwell_time()")
+    if getattr(sim, "_fe_model_int", 2) != 2:
+        raise ValueError("explicit MLC pulse widths currently require the NLS model")
+    return width
 
 
 def _ramp_contact_and_run(
@@ -844,41 +1112,65 @@ def _ramp_contact_and_run(
     max_iter: int,
     tol: float,
     retries: int,
+    dwell_time: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
+    if not hasattr(sim, "reliability_transaction"):
+        raise TypeError("MLC ramps require reliability_transaction()")
     if not np.isfinite(target_voltage):
         raise ValueError("target voltage must be finite")
     if not np.isfinite(max_step) or max_step <= 0.0:
         raise ValueError("max_step must be finite and > 0")
-    if retries < 0:
-        raise ValueError("retries must be >= 0")
+    if (isinstance(retries, (bool, np.bool_))
+            or not isinstance(retries, (int, np.integer)) or retries < 0):
+        raise ValueError("retries must be an integer >= 0")
+    dwell_time = _mlc_dwell_time(sim, dwell_time, "dwell_time")
 
     contacts = getattr(sim, "_contact_voltages", {})
     start_voltage = float(contacts.get(contact, getattr(sim, "voltage", 0.0)))
     delta = float(target_voltage) - start_voltage
     n_steps = max(1, int(np.ceil(abs(delta) / max_step)))
     result: Dict[str, np.ndarray] = {}
-    for voltage in np.linspace(start_voltage, float(target_voltage), n_steps + 1)[1:]:
-        sim.update_contact(contact, float(voltage))
-        attempts = retries + 1
-        for attempt in range(attempts):
-            with warnings.catch_warnings(), _suppress_solver_stdio():
-                # Non-convergence during an intermediate ramp attempt is an
-                # expected recoverable condition for this helper: the point is
-                # immediately retried from the finite state just produced.  Do
-                # not emit a user-facing warning unless all attempts fail and
-                # the RuntimeError below is raised.
-                warnings.filterwarnings(
-                    "ignore",
-                    message=r"Solver did not converge; result marked valid=False.*",
-                    category=RuntimeWarning,
-                )
-                result = sim.run(max_iter=max_iter, tol=tol)
-            if bool(result.get("converged", True)) and bool(result.get("valid", True)):
+
+    def accepted(r, final_step):
+        try:
+            _require_protocol_result(sim, r, physical_step=final_step)
+        except (TypeError, ValueError, RuntimeError):
+            return False
+        return True
+
+    class RejectedAttempt(Exception):
+        pass
+
+    # A ramp is one protocol segment: intermediate contact changes and solver
+    # guesses must all roll back if any point fails.  This prevents a failed
+    # MLC candidate from contaminating the next candidate's FE/history state.
+    with sim.reliability_transaction():
+        for step, voltage in enumerate(np.linspace(start_voltage, float(target_voltage), n_steps + 1)[1:]):
+            attempts = retries + 1
+            for attempt in range(attempts):
+                try:
+                    # Rejecting a result must restore history before a retry,
+                    # even if the underlying solver already changed its state.
+                    with sim.reliability_transaction():
+                        if step == n_steps - 1 and dwell_time is not None:
+                            sim.set_ferroelectric_nls_dwell_time(dwell_time)
+                        sim.update_contact(contact, float(voltage))
+                        with warnings.catch_warnings(), _suppress_solver_stdio():
+                            warnings.filterwarnings(
+                                "ignore",
+                                message=r"Solver did not converge; result marked valid=False.*",
+                                category=RuntimeWarning,
+                            )
+                            result = sim.run(max_iter=max_iter, tol=tol, physical_step=step == n_steps - 1)
+                        if not accepted(result, step == n_steps - 1):
+                            raise RejectedAttempt
+                except RejectedAttempt:
+                    continue
                 break
-        if not bool(result.get("converged", True)) or not bool(result.get("valid", True)):
-            raise RuntimeError(
-                f"{contact} ramp to {float(voltage):.6g} V did not converge"
-            )
+            else:
+                raise RuntimeError(
+                    f"{contact} ramp to {float(voltage):.6g} V was not accepted"
+                )
     return result
 
 
@@ -894,6 +1186,11 @@ def run_mlc_program_read_sweep(
     retries: int = 2,
     current_reader: Optional[Callable[[object, Dict[str, np.ndarray]], float]] = None,
     min_state_separation_decades: float = 0.10,
+    current_noise_floor: Optional[float] = None,
+    *,
+    program_width: Optional[float] = None,
+    reset_width: Optional[float] = None,
+    read_width: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
     """Run a robust FeFET MLC program-read sequence.
 
@@ -908,12 +1205,69 @@ def run_mlc_program_read_sweep(
     If ``current_reader`` is supplied, it is called at each read point and the
     returned currents are post-processed by :func:`extract_mlc_memory_window`.
     Otherwise the helper records read-point axial FE polarization only.
+    Every point requires explicit boolean convergence/validity and finite phi/P.
+    Reported target/physical-step rejection also fails acceptance; numerical
+    helpers need not accept a physical step. Rejected attempts roll back before
+    retrying, and a failed ramp restores its entry state. Earlier completed
+    program/reset/read ramps remain committed. Readout validation is part of
+    the read ramp transaction: a failed current/polarization measurement
+    restores the state after programming. Raw current signs are preserved;
+    state separation uses magnitudes. Legacy custom simulators may
+    omit target/physical-step flags, so acceptance is not physical validation.
+    For NLS, program_width/reset_width/read_width independently set the final
+    accepted dwell in seconds. None inherits the entry NLS dwell (resolved once
+    for all phases). Intermediate ramp points and failed attempts add no dwell.
+    Explicit widths for other built-in FE models are rejected. Legacy custom
+    simulators without NLS dwell metadata retain their behavior and report
+    elapsed_time=None. Segment records report accepted dwell, not a coupled
+    transient waveform, numerical runtime, or full operation latency.
     """
     V_program = np.asarray(program_voltages, dtype=float).ravel()
     if V_program.size == 0:
         raise ValueError("program_voltages must contain at least one value")
     if not np.all(np.isfinite(V_program)):
         raise ValueError("program_voltages must be finite")
+    if not np.isfinite(read_voltage):
+        raise ValueError("read_voltage must be finite")
+    if reset_voltage is not None and not np.isfinite(reset_voltage):
+        raise ValueError("reset_voltage must be finite when supplied")
+    if not np.isfinite(max_ramp_step) or max_ramp_step <= 0.0:
+        raise ValueError("max_ramp_step must be finite and > 0")
+    if (isinstance(max_iter, (bool, np.bool_))
+            or not isinstance(max_iter, (int, np.integer)) or max_iter < 1):
+        raise ValueError("max_iter must be an integer >= 1")
+    if not np.isfinite(tol) or tol <= 0.0:
+        raise ValueError("tol must be finite and > 0")
+    if (isinstance(retries, (bool, np.bool_))
+            or not isinstance(retries, (int, np.integer)) or retries < 0):
+        raise ValueError("retries must be an integer >= 0")
+    min_state_separation_decades = _mlc_separation_parameter(
+        min_state_separation_decades, "min_state_separation_decades")
+    if current_noise_floor is not None:
+        current_noise_floor = _mlc_separation_parameter(
+            current_noise_floor, "current_noise_floor", positive=True)
+    if current_reader is not None:
+        if not callable(current_reader):
+            raise ValueError("current_reader must be callable")
+        if V_program.size < 2:
+            raise ValueError("current metrics require at least two program/read states")
+
+    inherited_width = (getattr(sim, "_fe_nls_dt", None)
+                       if getattr(sim, "_fe_model_int", 2) == 2 else None)
+    widths = {
+        phase: _mlc_dwell_time(sim, inherited_width if width is None else width,
+                              f"{phase}_width")
+        for phase, width in (("program", program_width), ("reset", reset_width),
+                             ("read", read_width))
+    }
+    active_phases = ["program", "read"]
+    if reset_voltage is not None:
+        active_phases.insert(0, "reset")
+    timing_available = all(widths[phase] is not None for phase in active_phases)
+    if timing_available:
+        total_dwell = sum(widths[phase] for phase in active_phases) * V_program.size
+        if not np.isfinite(total_dwell):
+            raise ValueError("total MLC dwell must be finite")
 
     if hasattr(sim, "set_use_newton"):
         sim.set_use_newton(True)
@@ -924,40 +1278,68 @@ def run_mlc_program_read_sweep(
     read_results: List[Dict[str, np.ndarray]] = []
     read_currents: List[float] = []
     read_polarization: List[float] = []
+    segments = []
 
-    for Vp in V_program:
+    def record_segment(phase, index, voltage):
+        segments.append({"phase": phase, "state_index": index,
+                         "voltage_V": float(voltage), "dwell_s": widths[phase]})
+
+    for index, Vp in enumerate(V_program):
         if reset_voltage is not None:
             _ramp_contact_and_run(
                 sim, contact, float(reset_voltage), max_ramp_step,
-                max_iter, tol, retries,
+                max_iter, tol, retries, dwell_time=widths["reset"],
             )
+            record_segment("reset", index, reset_voltage)
         _ramp_contact_and_run(
             sim, contact, float(Vp), max_ramp_step, max_iter, tol, retries,
+            dwell_time=widths["program"],
         )
-        result = _ramp_contact_and_run(
-            sim, contact, float(read_voltage), max_ramp_step,
-            max_iter, tol, retries,
-        )
+        record_segment("program", index, Vp)
+        # Measurement rejection must restore the accepted program state, even
+        # if the read ramp has already changed polarization or breakdown.
+        with sim.reliability_transaction():
+            result = _ramp_contact_and_run(
+                sim, contact, float(read_voltage), max_ramp_step,
+                max_iter, tol, retries, dwell_time=widths["read"],
+            )
+            if current_reader is not None:
+                value = np.asarray(current_reader(sim, result))
+                if (value.shape != () or value.dtype.kind not in "iuf"
+                        or not np.isfinite(value)):
+                    raise RuntimeError("current_reader must return one finite real scalar current")
+                current = float(value)
+                if current == 0.0 and current_noise_floor is None:
+                    raise ValueError("zero read current requires current_noise_floor")
+            polarization = _read_axial_polarization(sim, result, fe_mask)
+        record_segment("read", index, read_voltage)
         read_results.append(result)
         if current_reader is not None:
-            current = float(current_reader(sim, result))
-            if not np.isfinite(current):
-                raise RuntimeError("current_reader returned a non-finite current")
-            read_currents.append(abs(current))
-        if "P" in result:
-            read_polarization.append(_read_axial_polarization(sim, result, fe_mask))
+            read_currents.append(current)
+        read_polarization.append(polarization)
 
     output: Dict[str, np.ndarray] = {
         "program_voltages": V_program,
         "read_voltage": float(read_voltage),
         "read_results": read_results,
         "read_polarization": np.asarray(read_polarization, dtype=float),
+        "polarization_weighting": "FE_control_volume",
+        "valid": True,
+        "physical_validated": False,
+        "completed_segments": len(segments),
+        "completed_read_states": len(read_results),
+        "elapsed_time": total_dwell if timing_available else None,
+        "timing_available": timing_available,
+        "timing_kind": "accepted_nls_dwell" if timing_available else "unavailable",
+        "protocol_segments": segments,
+        "phase_widths_s": widths,
     }
     if current_reader is not None:
         current_arr = np.asarray(read_currents, dtype=float)
         output["read_currents"] = current_arr
         output.update(extract_mlc_memory_window(
             V_program, current_arr, min_state_separation_decades,
+            noise_floor=current_noise_floor,
         ))
     return output
 
@@ -969,49 +1351,87 @@ def run_power_measurement(
     pulse_width: float = 1e-6,
     max_iter: int = 50,
     tol: float = 1e-10,
-) -> Dict[str, float]:
-    """Measure single-operation energy consumption.
+    *,
+    cross_section_m2: Optional[float] = None,
+    current_reader: Optional[Callable] = None,
+) -> Dict:
+    """Estimate signed source work assuming the final current holds throughout.
 
-    Estimates the energy consumed in a single write/erase operation by
-    integrating the transient current-voltage product over the pulse duration.
+    This performs one accepted physical pulse of ``pulse_width`` and uses
+    final-state current, not a time-resolved transient integral. Supply either
+    the full area for the 1-D conduction-current extractor, or a callback
+    ``current_reader(sim, result)`` returning all named terminal currents in A,
+    positive into the device. All applied terminal voltages enter V*I; signs
+    are preserved. No density proxy, implicit area or extraction fallback is
+    allowed. Missing displacement/switching transients and stored energy mean
+    this estimate cannot establish full operation energy or dissipation.
 
-    E = integral(I * V * dt) ~ I_avg * V_pulse * pulse_width
-
-    Parameters
-    ----------
-    sim : tcad.simulator.Simulator
-        Configured simulator.
-    contact : str
-        Contact for pulse application.
-    V_pulse : float
-        Pulse amplitude [V].
-    pulse_width : float
-        Pulse duration [s].
-    max_iter, tol : see :func:`run_pv_sweep`.
-
-    Returns
-    -------
-    dict with keys ``energy`` [J], ``I_avg`` [A], ``power`` [W].
+    Legacy energy/I_avg/power keys now denote signed source-work estimate [J],
+    selected final terminal current [A], and total source power estimate [W].
+    Use integrate_terminal_trace for an actual resolved SI current waveform.
     """
-    # Run transient with the pulse
-    sim.update_contact(contact, V_pulse)
-    result = sim.run(max_iter=max_iter, tol=tol)
-
-    # Extract current from result (try real current, fallback to proxy)
-    try:
-        from tcad.postprocess.current import contact_current_1d
-        I_avg = abs(contact_current_1d(sim, result, contact))
-    except Exception:
-        n = np.asarray(result.get("n", np.zeros(1)))
-        I_avg = float(n.max()) * 1e-15
-
-    energy = I_avg * abs(V_pulse) * pulse_width
-    power = energy / max(pulse_width, 1e-15)
-
-    return {
-        "energy": energy,
-        "I_avg": I_avg,
-        "power": power,
-        "pulse_width": pulse_width,
-        "V_pulse": V_pulse,
-    }
+    from .terminal_trace import integrate_terminal_trace
+    V_pulse = _require_real_scalar(V_pulse, "V_pulse")
+    pulse_width = _require_real_scalar(pulse_width, "pulse_width", positive=True)
+    tol = _protocol_solver_parameters(max_iter, tol)
+    if (cross_section_m2 is None) == (current_reader is None):
+        raise ValueError("supply either cross_section_m2 or current_reader in absolute A")
+    if current_reader is not None and not callable(current_reader):
+        raise ValueError("current_reader must be callable")
+    if cross_section_m2 is not None:
+        cross_section_m2 = _require_real_scalar(cross_section_m2,
+                                                "cross_section_m2", positive=True)
+        if sim.mesh.ny != 1 or sim.mesh.nz != 1:
+            raise ValueError("default power extraction requires a 1-D mesh")
+    captured = {}
+    def validate_and_integrate(result):
+        if current_reader is None:
+            from .current import terminal_currents_1d
+            currents = terminal_currents_1d(sim, result, cross_section_m2=cross_section_m2)
+        else:
+            currents = current_reader(sim, result)
+        voltages = result.get("applied_contact_voltages")
+        if (not isinstance(currents, Mapping) or not isinstance(voltages, Mapping)
+                or len(currents) < 2 or set(currents) != set(voltages)
+                or contact not in currents):
+            raise ValueError("power extraction requires all applied named terminal currents and voltages")
+        for values in (currents, voltages):
+            for value in values.values():
+                array = np.asarray(value)
+                if (array.shape != () or array.dtype.kind not in "iuf"
+                        or not np.all(np.isfinite(array))):
+                    raise ValueError("power extraction requires finite scalar SI currents and voltages")
+                scalar = float(array)
+                if not np.isfinite(scalar):
+                    raise ValueError("power extraction requires finite scalar SI currents and voltages")
+        if float(voltages[contact]) != float(V_pulse):
+            raise ValueError("power measurement did not reach the requested pulse voltage")
+        trace = {
+            "times_s": np.array([0., pulse_width]), "valid": True,
+            "terminal_currents_A": {name: np.full(2, float(value)) for name, value in currents.items()},
+            "terminal_voltages_V": {name: np.full(2, float(value)) for name, value in voltages.items()},
+        }
+        captured.update(integrate_terminal_trace(
+            trace, current_kind="conduction" if current_reader is None else "total"))
+        captured["terminal_currents_A"] = {name: float(value) for name, value in currents.items()}
+        captured["terminal_voltages_V"] = {name: float(value) for name, value in voltages.items()}
+    _reliability_step(sim, contact, V_pulse, pulse_width, max_iter, tol,
+                      None, 300., "power_pulse", 0, 0.,
+                      result_validator=validate_and_integrate)
+    captured.update(
+        energy=captured["supplied_energy_J"],
+        supplied_energy_estimate_J=captured["supplied_energy_J"],
+        I_avg=captured["terminal_currents_A"][contact],
+        power=captured["mean_source_power_W"],
+        pulse_width=float(pulse_width), V_pulse=float(V_pulse),
+        measurement_kind="constant_final_current_pulse_estimate",
+        time_resolved=False, full_operation_energy_available=False,
+        current_source="native_1d_conduction" if current_reader is None else "explicit_current_reader_A",
+        completed_segments=1, elapsed_time=float(pulse_width),
+    )
+    # A user callback supplies absolute currents but does not prove that it
+    # includes displacement. Do not assert total-current completeness for it.
+    if current_reader is not None:
+        captured["current_kind"] = "user_supplied_unspecified_components"
+    captured["integration_kind"] = "constant_final_current_pulse_estimate"
+    return captured

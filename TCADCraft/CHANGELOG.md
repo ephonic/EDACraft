@@ -3,6 +3,20 @@
 All notable changes to TCADCraft are documented in this file. Versions follow
 Semantic Versioning, and dates use ISO 8601.
 
+## [0.3.0rc1] - 2026-11-05
+
+- Added classical graphene/MoS2 sheet DD, dielectric coupling, contacts,
+  transient/trap dynamics and independent terminal accounting.
+- Added sparse full Newton coupling, reusable GMRES preconditioning and
+  transactional steady/BE cache handling with true max-norm acceptance.
+- Included accumulated native numerical, finite-input and recovery fixes.
+- Completed two fine-grid 60 ps MoS2 controls and four local-z one-step
+  probes; retained spatial-convergence failures and other qualification gaps.
+- Updated source/binary packaging, installation, provenance and model limits.
+- Fixed build-helper loading under PEP 517 and source-distribution rebuilds.
+- Fixed wheel extension placement while preserving precision/profile cache
+  isolation across Python and native build commands.
+
 ## [0.2.0] - 2026-08-11
 
 ### Added

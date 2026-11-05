@@ -85,7 +85,7 @@ class TestProtocolSweep:
         for p in out.values():
             assert math.isfinite(p.mean_log_ratio)
 
-    def test_adaptive_saves_energy(self):
+    def test_adaptive_uses_fewer_pulses_than_its_maximum(self):
         """Verify-and-stop uses fewer pulses than the fixed budget allows."""
         from tcad.search.rram_protocol import _simulate_adaptive
         cfg = ProtocolConfig(n_cycles=40)

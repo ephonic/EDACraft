@@ -5,25 +5,28 @@
 #include "sparse_matrix.h"
 #include "linear_solver.h"
 #include "statistics.h"
+#include "dg_parameter_contract.h"
 #include <vector>
 #include <map>
+#include <stdexcept>
 
 namespace tcad {
 
 struct NewtonOptions {
     size_t max_iter = 30;
-    real_t tol = 1e-12Q;
-    real_t abs_tol = 1e-20Q;
-    real_t damping = 1.0Q;
-    real_t min_damping = 0.01Q;
+    real_t tol = TCAD_CONST(1e-12);
+    real_t abs_tol = TCAD_CONST(1e-20);
+    real_t damping = TCAD_CONST(1.0);
+    real_t min_damping = TCAD_CONST(0.01);
     bool use_line_search = true;
     size_t line_search_max = 10;
     SolverType linear_solver = SolverType::BICGSTAB_ILU0;
-    real_t linear_tol = 1e-20Q;
+    real_t linear_tol = TCAD_CONST(1e-20);
     bool verbose = false;
+    bool record_nonlinear_history = false;
     bool enable_quantum = false;
     bool use_log_damping = false;
-    real_t jacobian_reuse_threshold = 0.0Q;  // reuse if residual drops by >this factor (0=disabled)
+    real_t jacobian_reuse_threshold = TCAD_CONST(0.0);  // reuse if residual drops by >this factor (0=disabled)
 
     // Log-space density solve (audit §18 / M6b).  When true the carrier blocks
     // of the Newton state vector carry u=log(n), v=log(p) instead of n, p.
@@ -44,46 +47,66 @@ struct NewtonOptions {
     // solve() converts phi/n/p -> phi/log(n)/log(p) on entry when this flag is
     // set.  See audit §18.
     bool use_log_space = false;
+    // Log-Jacobian correction du = dn/n. Default applies u += alpha*du
+    // (exponential density update); opt-in applies u += log1p(alpha*du)
+    // (additive physical density update), rejecting nonpositive proposals.
+    // Only affects log-space carrier blocks, not Gummel or linear-space updates.
+    bool additive_log_density_update = false;
+
 
     // High-field velocity saturation (mirrors GummelOptions.hfs; the
     // Newton continuity edges must reduce the mobility identically to the
     // Gummel path and the terminal-current post-processing).
     bool hfs_enabled = false;
-    real_t hfs_vsat_n = 1.07e5Q;
-    real_t hfs_vsat_p = 8.37e4Q;
-    real_t hfs_beta_n = 2.0Q;
-    real_t hfs_beta_p = 1.0Q;
+    real_t hfs_vsat_n = TCAD_CONST(1.07e5);
+    real_t hfs_vsat_p = TCAD_CONST(8.37e4);
+    real_t hfs_beta_n = TCAD_CONST(2.0);
+    real_t hfs_beta_p = TCAD_CONST(1.0);
+    real_t hfs_refdens_n = TCAD_CONST(0.0), hfs_refdens_p = TCAD_CONST(0.0);
     int hfs_driving = 0;
+    bool hfs_qf_at_contacts = true;
+    real_t hfs_low_field_cutoff = TCAD_CONST(0.0); // [V/m]
 
     // Band-to-band tunneling
     bool enable_btbt = false;
-    real_t btbt_A = 3.1e21Q;
-    real_t btbt_B = 2.0e9Q;  // V/m (SI; 2e7 V/cm)
-    real_t btbt_D = 2.0Q;
+    real_t btbt_A = TCAD_CONST(3.1e21);
+    real_t btbt_B = TCAD_CONST(2.0e9);  // V/m (SI; 2e7 V/cm)
+    real_t btbt_D = TCAD_CONST(2.0);
     int btbt_field_mode = 0;
-    real_t btbt_field_cap = 0.0Q;
-    real_t btbt_field_alpha = 0.0Q;
-    real_t btbt_field_ref = 1.0e8Q;
-    real_t btbt_continuity_scale = 1.0Q;
+    real_t btbt_field_cap = TCAD_CONST(0.0);
+    real_t btbt_field_alpha = TCAD_CONST(0.0);
+    real_t btbt_field_ref = TCAD_CONST(1.0e8);
+    real_t btbt_continuity_scale = TCAD_CONST(1.0);
+    // Empty selects unit weights, matching Gummel. Finite signed values retain
+    // the existing public source-weight convention.
+    std::vector<real_t> btbt_weight;
+    // Same x-directed, locally linearized WKB barrier as Gummel. Nonzero
+    // feedback is qualified only for classical steady x-1D Boltzmann solves.
+    bool btbt_use_nonlocal = false;
+    real_t btbt_nonlocal_mass = TCAD_CONST(0.25);
+    real_t btbt_tunnel_path_frac = TCAD_CONST(0.5);
+    size_t btbt_wkb_npts = 64;
     // Avalanche impact ionization (Chynoweth).  alpha(E)=A*exp(-B/|E|) [1/m].
     // G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q.  Defaults are silicon (SI units,
     // pre-converted from the 1/cm and V/cm literature values — see
     // ImpactIonizationParams in gummel_solver.h for the provenance).
     bool enable_ii = false;
-    real_t ii_A_n = 7.03e7Q;     // [1/m]
-    real_t ii_B_n = 1.231e8Q;    // [V/m]
-    real_t ii_A_p = 1.58e8Q;     // [1/m]
-    real_t ii_B_p = 2.036e8Q;    // [V/m]
-    real_t ii_E_floor = 1.0e5Q;  // [V/m]
+    real_t ii_A_n = TCAD_CONST(7.03e7);     // [1/m]
+    real_t ii_B_n = TCAD_CONST(1.231e8);    // [V/m]
+    real_t ii_A_p = TCAD_CONST(1.58e8);     // [1/m]
+    real_t ii_B_p = TCAD_CONST(2.036e8);    // [V/m]
+    int ii_driving = 0; // 0 ElectricField, 1 GradQuasiFermi
+    real_t ii_refdens_n = TCAD_CONST(0.0), ii_refdens_p = TCAD_CONST(0.0);
+    real_t ii_E_floor = TCAD_CONST(1.0e5);  // [V/m]
     // Auger recombination (Sentaurus Si defaults, SI units).  This must be
     // present in the fully coupled Newton path as well as Gummel; otherwise a
     // Newton-primary avalanche solve silently drops its dominant high-
     // injection recombination mechanism.
     bool enable_auger = false;
-    real_t auger_Cn = 2.8e-43Q;   // [m^6/s]
-    real_t auger_Cp = 9.9e-44Q;   // [m^6/s]
+    real_t auger_Cn = TCAD_CONST(2.8e-43);   // [m^6/s]
+    real_t auger_Cp = TCAD_CONST(9.9e-44);   // [m^6/s]
     // Temperature and statistics
-    real_t temperature = 300.0Q;
+    real_t temperature = TCAD_CONST(300.0);
     StatisticsType statistics_type = StatisticsType::BOLTZMANN;
     // Transient (backward Euler).  When transient_enabled is true the carrier
     // continuity residual gets an extra term +(c - c_prev)/dt * dx (with the
@@ -94,7 +117,7 @@ struct NewtonOptions {
     // §14 "too weak" claim (which confused BE-vs-diffusion with BE-vs-source).
     // See audit §17 (transient BE redo).
     bool transient_enabled = false;
-    real_t transient_dt = 1.0e-12Q;
+    real_t transient_dt = TCAD_CONST(1.0e-12);
     std::vector<real_t> n_prev, p_prev;  // carrier densities at previous time step
     // Freeze phi at its initial/Dirichlet values during the Newton solve.
     // The Poisson rows become identity (phi never moves), so the coupled
@@ -152,6 +175,14 @@ public:
     // Poisson residual then adds -div(P) exactly as PoissonSolver does.
     void set_ferroelectric_polarization(const std::vector<char>& fe_mask,
                                         const std::vector<real_t>& fe_polarization);
+    // Eliminate the unique BE LK response at each trial potential; include
+    // its exact susceptibility in the Poisson Jacobian. P_old is immutable.
+    // material_field selects the nonlocal Cartesian half-material response.
+    void set_transient_lk(const std::vector<char>& mask,
+        const std::vector<real_t>& previous, real_t alpha, real_t beta,
+        real_t gamma, real_t imprint, real_t depol_eps, int axis,
+        bool material_field = false);
+    const std::vector<real_t>& ferroelectric_polarization() const { return fe_polarization_; }
 
     // Interface/bulk trap state (P6). Mirrors PoissonSolver's trap charge
     // injection so the Newton Poisson residual also carries Q_it + Q_ot
@@ -160,18 +191,27 @@ public:
     void set_trap_charge(const std::vector<char>& trap_mask,
                          real_t D_it, real_t E_t,
                          const std::vector<real_t>& Q_ot);
-    void set_semiconductor_mask(const std::vector<char>& mask) { semi_mask_ = mask; }
+    void set_semiconductor_mask(const std::vector<char>& mask) {
+        // Empty disables DG in Newton. Validate before changing the mask;
+        // rejected requests must preserve history and the lagged-Q state.
+        if (!mask.empty() && mask.size() != g_.npts())
+            throw std::invalid_argument("Newton semiconductor mask size mismatch");
+        semi_mask_ = mask;
+    }
     void set_density_gradient_coefficients(real_t bn, real_t bp) {
+        detail::validate_dg_finite({bn, bp}, "DG coefficients must be finite");
         dg_bn_ = bn; dg_bp_ = bp;
     }
     void set_density_gradient_silicon_multivalley(bool enable,
                                                   real_t ml, real_t mt,
                                                   size_t subbands) {
+        detail::validate_dg_finite({ml, mt}, "DG silicon effective masses must be finite");
         dg_silicon_multivalley_ = enable;
         dg_silicon_ml_ = ml; dg_silicon_mt_ = mt;
         dg_silicon_subbands_ = subbands;
     }
     void set_density_gradient_interface_distance_factor(real_t factor) {
+        detail::validate_dg_finite({factor}, "DG interface distance factor must be finite");
         dg_interface_distance_factor_ = factor;
     }
     void set_density_gradient_step_boundary(
@@ -179,6 +219,9 @@ public:
         real_t electron_barrier_mass, real_t hole_barrier_mass,
         real_t electron_gamma, real_t hole_gamma,
         real_t electron_theta, real_t hole_theta) {
+        detail::validate_dg_finite({electron_barrier_eV, hole_barrier_eV,
+            electron_barrier_mass, hole_barrier_mass, electron_gamma, hole_gamma,
+            electron_theta, hole_theta}, "DG step-boundary parameters must be finite");
         dg_step_boundary_enabled_ = enable;
         dg_step_e_barrier_eV_ = electron_barrier_eV;
         dg_step_h_barrier_eV_ = hole_barrier_eV;
@@ -193,6 +236,19 @@ public:
                             const std::map<size_t, real_t>& EFn,
                             const std::map<size_t, real_t>& EFp,
                             real_t ni) {
+        for (size_t node : nodes)
+            if (node >= g_.npts())
+                throw std::out_of_range("ohmic contact node is outside the grid");
+        for (const auto* shifts : {&EFn, &EFp})
+            for (const auto& entry : *shifts)
+                if (entry.first >= g_.npts())
+                    throw std::out_of_range("ohmic quasi-Fermi node is outside the grid");
+        for (const auto* shifts : {&EFn, &EFp})
+            for (const auto& entry : *shifts)
+                if (!isfinite_q(entry.second))
+                    throw std::invalid_argument("ohmic quasi-Fermi values must be finite");
+        if (!isfinite_q(ni) || ni <= TCAD_CONST(0.0))
+            throw std::invalid_argument("ohmic intrinsic density must be finite and positive");
         ohmic_nodes_ = nodes; ohmic_EFn_ = EFn; ohmic_EFp_ = EFp; ohmic_ni_ = ni;
     }
 
@@ -201,6 +257,7 @@ public:
                std::vector<real_t>& p);
 
     const std::vector<real_t>& residuals() const { return residuals_; }
+    const std::vector<std::vector<real_t>>& nonlinear_samples() const { return nonlinear_samples_; }
 
     // Debug utility (issues0719 follow-up / plan0728 §1.1): finite-difference
     // verification of assemble_jacobian against assemble_residual at the
@@ -236,10 +293,11 @@ private:
     std::vector<real_t> mu_n_, mu_p_;
     std::vector<real_t> Nd_minus_Na_;
     std::vector<real_t> charge_volume_fraction_;
+    bool legacy_carrier_widths_ = false;
     std::vector<real_t> tau_n_, tau_p_;
     std::vector<real_t> G_opt_;
     std::vector<real_t> Nc_, Nv_, Eg_;
-    real_t VT_ = 0.02585Q;
+    real_t VT_ = TCAD_CONST(0.02585);
 
     std::map<size_t, real_t> phi_bc_;
     std::map<size_t, real_t> n_bc_;
@@ -250,32 +308,43 @@ private:
     // includes the -div(P) bound-charge term (audit §21 / FE-coupling fix).
     std::vector<char> fe_mask_;                  // length npts (0/1)
     std::vector<real_t> fe_polarization_;        // [Px,Py,Pz] interleaved, len 3*npts
+    bool lk_coupled_ = false;
+    bool lk_material_field_ = false;
+    int lk_material_axis_ = 0;
+    std::vector<real_t> lk_material_derivative_;
+    std::vector<real_t> lk_previous_, lk_cached_phi_;
+    real_t lk_alpha_ = TCAD_CONST(0.0), lk_beta_ = TCAD_CONST(0.0), lk_gamma_ = TCAD_CONST(0.0);
+    real_t lk_imprint_ = TCAD_CONST(0.0), lk_depol_eps_ = TCAD_CONST(0.0);
+    int lk_axis_ = 0;
+    void refresh_lk_polarization(const real_t* phi);
+    void add_lk_jacobian_row(SparseMatrix& J, size_t i, size_t j, size_t k) const;
 
     // Interface/bulk trap charge (P6). Mirrors PoissonSolver.
     std::vector<char> trap_mask_;
-    real_t trap_D_it_ = 0.0Q;
-    real_t trap_E_t_ = 0.0Q;
+    real_t trap_D_it_ = TCAD_CONST(0.0);
+    real_t trap_E_t_ = TCAD_CONST(0.0);
+    real_t trap_layer_thickness_ = TCAD_CONST(0.0);
     std::vector<real_t> Q_ot_;
 
     // DG semiconductor mask (1=semi, 0=oxide). Empty = no DG.
     std::vector<char> semi_mask_;
-    real_t dg_bn_ = 4.885e-20Q;
-    real_t dg_bp_ = 3.432e-20Q;
+    real_t dg_bn_ = TCAD_CONST(4.885e-20);
+    real_t dg_bp_ = TCAD_CONST(3.432e-20);
     bool dg_silicon_multivalley_ = false;
-    real_t dg_silicon_ml_ = 0.916Q;
-    real_t dg_silicon_mt_ = 0.190Q;
+    real_t dg_silicon_ml_ = TCAD_CONST(0.916);
+    real_t dg_silicon_mt_ = TCAD_CONST(0.190);
     size_t dg_silicon_subbands_ = 4;
-    real_t dg_interface_distance_factor_ = 1.0Q;
+    real_t dg_interface_distance_factor_ = TCAD_CONST(1.0);
     bool dg_step_boundary_enabled_ = false;
-    real_t dg_step_e_barrier_eV_ = 3.17Q;
-    real_t dg_step_h_barrier_eV_ = 4.70Q;
-    real_t dg_step_e_mass_ = 0.42Q;
-    real_t dg_step_h_mass_ = 1.0Q;
+    real_t dg_step_e_barrier_eV_ = TCAD_CONST(3.17);
+    real_t dg_step_h_barrier_eV_ = TCAD_CONST(4.70);
+    real_t dg_step_e_mass_ = TCAD_CONST(0.42);
+    real_t dg_step_h_mass_ = TCAD_CONST(1.0);
     // Eq. 250 uses gamma(0+), i.e. the non-solved barrier side.
-    real_t dg_step_e_gamma_ = 1.0Q;
-    real_t dg_step_h_gamma_ = 1.0Q;
-    real_t dg_step_e_theta_ = 0.5Q;
-    real_t dg_step_h_theta_ = 0.5Q;
+    real_t dg_step_e_gamma_ = TCAD_CONST(1.0);
+    real_t dg_step_h_gamma_ = TCAD_CONST(1.0);
+    real_t dg_step_e_theta_ = TCAD_CONST(0.5);
+    real_t dg_step_h_theta_ = TCAD_CONST(0.5);
     // Picard/Newton DG state.  dQ/dn is intentionally omitted from the
     // three-block Jacobian, so one Newton iteration (including all line-search
     // trials) must use one frozen Q.  It is refreshed from the accepted x at
@@ -289,9 +358,10 @@ private:
     // Ohmic contact data
     std::set<size_t> ohmic_nodes_;
     std::map<size_t, real_t> ohmic_EFn_, ohmic_EFp_;
-    real_t ohmic_ni_ = 1.07e16Q;
+    real_t ohmic_ni_ = TCAD_CONST(1.07e16);
 
     std::vector<real_t> residuals_;
+    std::vector<std::vector<real_t>> nonlinear_samples_;
 
     size_t phi_idx(size_t i) const { return i; }
     size_t n_idx(size_t i) const { return g_.npts() + i; }
@@ -300,6 +370,7 @@ private:
     void assemble_residual(const std::vector<real_t>& x, std::vector<real_t>& F);
     void assemble_jacobian(const std::vector<real_t>& x, SparseMatrix& J);
     void refresh_lagged_quantum_potential(const std::vector<real_t>& x);
+    bool steady_1d_kcl_ok(const std::vector<real_t>& x) const;
 
     static real_t bernoulli(real_t x);
     static real_t d_bernoulli_dx(real_t x);
@@ -318,7 +389,8 @@ private:
     // idx, summed over the up-to-6 SG edges meeting at idx (edge form, same
     // convention as GummelSolver::compute_impact_ionization).
     real_t compute_ii_at(const real_t* phi, const real_t* n,
-                         const real_t* p, size_t idx) const;
+                         const real_t* p, size_t idx,
+                         const real_t* Qn, const real_t* Qp) const;
 
     // Add the exact piecewise-smooth derivatives of the Chynoweth source to
     // one carrier-continuity row.  Both electron and hole equations contain
@@ -328,7 +400,8 @@ private:
     void add_ii_jacobian_row(SparseMatrix& J, size_t row,
                              const real_t* phi, const real_t* n,
                              const real_t* p, size_t idx,
-                             real_t source_scale) const;
+                             real_t source_scale,
+                             const real_t* Qn, const real_t* Qp) const;
 };
 
 } // namespace tcad

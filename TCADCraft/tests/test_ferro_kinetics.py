@@ -394,6 +394,11 @@ class _FakeEnduranceSimulator:
     class _Mesh:
         fields: dict = {}
 
+        @staticmethod
+        def control_volumes():
+            # Synthetic fixture: four cells with explicitly equal volumes.
+            return np.ones(4)
+
         def npts(self):
             return 4
 
@@ -404,11 +409,34 @@ class _FakeEnduranceSimulator:
         self.builtin_field_history = []
         self.qot_history = []
 
+    def reliability_transaction(self, *models):
+        # Test double implements the same rollback contract as Simulator.
+        from contextlib import contextmanager
+        from copy import deepcopy
+        @contextmanager
+        def transaction():
+            state = deepcopy(self.__dict__)
+            slow_states = [(m, deepcopy(m.__dict__)) for m in models if m is not None]
+            try:
+                yield
+            except BaseException:
+                self.__dict__.clear()
+                self.__dict__.update(state)
+                for model, saved in slow_states:
+                    model.__dict__.clear()
+                    model.__dict__.update(saved)
+                raise
+        return transaction()
+
     def update_contact(self, name, voltage):
         self.contact_voltage = float(voltage)
 
-    def run(self, max_iter=50, tol=1e-10):
-        return {}
+    def run(self, max_iter=50, tol=1e-10, physical_step=True):
+        return {"converged": True, "valid": True,
+                "phi": np.full(4, self.contact_voltage),
+                "P": np.full((4, 3), self.contact_voltage * .2),
+                "Ex": np.full(4, self.contact_voltage * 1e8),
+                "Ey": np.zeros(4), "Ez": np.zeros(4)}
 
     def set_ferroelectric_active_fraction(self, fraction):
         self.active_fraction_history.append(float(fraction))

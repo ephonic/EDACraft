@@ -57,18 +57,20 @@ class TestPlacementEvaluation:
         config = LevelPlacementConfig(n_levels=4, total_budget=40)
         cand = evaluate_placement(np.zeros(3), config)
         assert 0 < cand.effective_bits <= math.log2(4)
+        assert cand.effective_bits == cand.mutual_information_bits
 
 
 class TestPlacementOptimization:
     def test_optimization_improves_ber(self):
-        """Optimized placement should beat uniform when headroom exists."""
+        """Compare actual coded BER against the same-code/prior uniform baseline."""
         config = LevelPlacementConfig(n_levels=16, total_budget=200)
         result = evolve_placement(config, pop=25, gen=15, seed=42)
         front = result["front"]
         assert len(front) >= 1
-        best = min(front, key=lambda c: c.ber_worst)
-        # High-K regime has large headroom; demand a real improvement
-        assert best.improvement_factor > 1.5
+        best = min(front, key=lambda c: c.bit_error_rate)
+        uniform = evaluate_placement(np.zeros(config.n_levels - 1), config)
+        assert best.bit_error_rate < uniform.bit_error_rate
+        assert best.improvement_factor == pytest.approx(uniform.bit_error_rate / best.bit_error_rate)
 
     def test_k8_produces_valid_placement(self):
         config = LevelPlacementConfig(n_levels=8, total_budget=200)

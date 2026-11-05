@@ -4,6 +4,7 @@
 #include "sparse_matrix.h"
 #include "poisson_solver.h"
 #include <vector>
+#include <stdexcept>
 
 namespace tcad {
 
@@ -37,8 +38,8 @@ public:
     // partition functions determine a local effective electron coefficient.
     // bn remains an overall Sentaurus-calibratable strength multiplier.
     void set_silicon_multivalley(bool enable,
-                                 real_t longitudinal_mass = 0.916Q,
-                                 real_t transverse_mass = 0.190Q,
+                                 real_t longitudinal_mass = TCAD_CONST(0.916),
+                                 real_t transverse_mass = TCAD_CONST(0.190),
                                  size_t subbands = 4);
 
     // Scale only the mesh distance from an interface semiconductor node to
@@ -73,6 +74,12 @@ public:
     // quasi-Fermi source H = VT*log(carrier/DOS) - Q_reference.
     void set_effective_dos(const std::vector<real_t>& Nc,
                            const std::vector<real_t>& Nv) {
+        for (real_t value : Nc)
+            if (!isfinite_q(value))
+                throw std::invalid_argument("DG effective DOS must be finite");
+        for (real_t value : Nv)
+            if (!isfinite_q(value))
+                throw std::invalid_argument("DG effective DOS must be finite");
         Nc_ = Nc;
         Nv_ = Nv;
     }
@@ -108,7 +115,14 @@ public:
 
     // Semiconductor-region mask (1 = active region where DG applies; 0 =
     // oxide/insulator where DG is suppressed).  Set from mobility (>0 = semi).
-    void set_semiconductor_mask(const std::vector<char>& m) { semi_ = m; compute_confinement(); }
+    void set_semiconductor_mask(const std::vector<char>& m) {
+        // Empty restores all-semiconductor behavior; otherwise require one
+        // mask value per node before changing the mask or confinement cache.
+        if (!m.empty() && m.size() != g_.npts())
+            throw std::invalid_argument("DG semiconductor mask size mismatch");
+        semi_ = m;
+        compute_confinement();
+    }
 
 private:
     Grid3D g_;
@@ -120,23 +134,23 @@ private:
     // Sentaurus; callers can resolve gamma/m_DOS explicitly through the API.
     // A local multi-valley transverse-mass
     // correction is applied from the computed confinement length.
-    real_t bn_ = 4.885e-20Q;
-    real_t bp_ = 3.432e-20Q;
-    real_t VT_ = 0.02585Q; // ~300K
+    real_t bn_ = TCAD_CONST(4.885e-20);
+    real_t bp_ = TCAD_CONST(3.432e-20);
+    real_t VT_ = TCAD_CONST(0.02585); // ~300K
     bool silicon_multivalley_ = false;
-    real_t silicon_ml_ = 0.916Q;  // longitudinal mass / m0
-    real_t silicon_mt_ = 0.190Q;  // transverse mass / m0
+    real_t silicon_ml_ = TCAD_CONST(0.916);  // longitudinal mass / m0
+    real_t silicon_mt_ = TCAD_CONST(0.190);  // transverse mass / m0
     size_t silicon_subbands_ = 4;
-    real_t interface_distance_factor_ = 1.0Q;
+    real_t interface_distance_factor_ = TCAD_CONST(1.0);
     bool step_boundary_enabled_ = false;
-    real_t step_e_barrier_eV_ = 3.17Q;
-    real_t step_h_barrier_eV_ = 4.70Q;
-    real_t step_e_mass_ = 0.42Q;
-    real_t step_h_mass_ = 1.0Q;
-    real_t step_e_gamma_ = 1.0Q;
-    real_t step_h_gamma_ = 1.0Q;
-    real_t step_e_theta_ = 0.5Q;
-    real_t step_h_theta_ = 0.5Q;
+    real_t step_e_barrier_eV_ = TCAD_CONST(3.17);
+    real_t step_h_barrier_eV_ = TCAD_CONST(4.70);
+    real_t step_e_mass_ = TCAD_CONST(0.42);
+    real_t step_h_mass_ = TCAD_CONST(1.0);
+    real_t step_e_gamma_ = TCAD_CONST(1.0);
+    real_t step_h_gamma_ = TCAD_CONST(1.0);
+    real_t step_e_theta_ = TCAD_CONST(0.5);
+    real_t step_h_theta_ = TCAD_CONST(0.5);
     bool potential_form_enabled_ = false;
     std::vector<real_t> Nc_, Nv_;
 

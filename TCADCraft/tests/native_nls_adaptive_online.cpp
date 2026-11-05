@@ -1,0 +1,448 @@
+#include "device_simulator.h"
+#include <cstdlib>
+#include <fstream>
+#include <new>
+#include <sstream>
+#include <tuple>
+namespace fault490 {
+const tcad::DeviceSimulator* watched=nullptr;
+const std::vector<tcad::real_t>* entered=nullptr;
+bool armed=false,fired=false,persistent=false,in_linear=false,calibrating=false,unexpected=false;
+bool block_all=false;size_t blocked_allocations=0;
+int phase=0;size_t failures=0,observed_groups=0,observed_bytes=0;
+size_t estimate_count=0,estimate_target=0,calibration_bytes=0,observed_estimate_index=0;
+bool observed_called=false,observed_converged=false,observed_prefix=false,observed_P_changed=false,observed_linear=false;
+bool observed_accepted=false,observed_estimate=false;size_t observed_trials=0;int observed_role=-1;
+tcad::real_t observed_start=0,observed_end=0;
+void* allocate(size_t bytes){
+ if(block_all){++blocked_allocations;throw std::bad_alloc();}
+ if(armed || calibrating){
+  bool hit=armed && fired && persistent;
+  const auto& groups=watched->transient_attempt_history();
+  if(!hit && !groups.empty()){
+   const auto& g=groups.back();
+   const bool estimate_site=groups.size()==1 && g.trials.size()==3 && g.trials.back().converged && !g.accepted && !g.error_estimate_available;
+   if(estimate_site){++estimate_count;if(calibrating){estimate_target=estimate_count;calibration_bytes=bytes;}}
+   bool prefix=false;for(const auto& prior:groups)prefix=prefix || prior.accepted;
+   if(armed){
+    if(phase==12)hit=groups.size()>1 && g.trials.empty() && groups[groups.size()-2].status=="accuracy_limit";
+    else if(phase==13)hit=g.status=="accuracy_limit" && g.stopping_reason=="retry";
+    else if(phase==11)hit=in_linear && groups.size()==1 && !g.trials.empty() && g.trials.back().solver_called;
+    else if(phase==8)hit=groups.size()>1 && g.trials.empty() && prefix;
+    else if(phase==9)hit=groups.size()==1 && g.accepted;
+    else if(!g.trials.empty()){
+     const auto& t=g.trials.back();const int role=t.role=="coarse"?0:t.role=="fine_first"?1:t.role=="fine_second"?2:-1;
+     if(phase<6)hit=groups.size()==1 && role==phase/2 && (phase%2?t.converged:!t.solver_called);
+     else if(phase==6)hit=estimate_site && estimate_count==estimate_target;
+     else if(phase==7)hit=groups.size()==1 && role==2 && t.converged && bytes==4*sizeof(tcad::SimulationResult);
+     else if(phase==10)hit=groups.size()==1 && role==0 && t.converged && watched->fe_polarization()==*entered;
+    }
+   }
+   if(hit){
+    observed_bytes=bytes;observed_groups=groups.size();observed_prefix=prefix;observed_P_changed=watched->fe_polarization()!=*entered;observed_linear=in_linear;
+    observed_start=g.start_time;observed_end=g.end_time;observed_accepted=g.accepted;observed_estimate=g.error_estimate_available;observed_trials=g.trials.size();observed_estimate_index=estimate_count;
+    observed_role=-1;observed_called=false;observed_converged=false;
+    if(!g.trials.empty()){const auto& t=g.trials.back();observed_role=t.role=="coarse"?0:t.role=="fine_first"?1:t.role=="fine_second"?2:-1;observed_called=t.solver_called;observed_converged=t.converged;}
+   }
+  }
+  if(hit){fired=true;++failures;if(!persistent)armed=false;if(unexpected)throw 497;throw std::bad_alloc();}
+ }
+ if(void* p=std::malloc(bytes?bytes:1))return p;throw std::bad_alloc();
+}
+}
+void* operator new(size_t n){return fault490::allocate(n);}
+void* operator new[](size_t n){return fault490::allocate(n);}
+void operator delete(void* p) noexcept{std::free(p);}
+void operator delete[](void* p) noexcept{std::free(p);}
+void operator delete(void* p,size_t) noexcept{std::free(p);}
+void operator delete[](void* p,size_t) noexcept{std::free(p);}
+extern "C" size_t real_linear490(tcad::LinearSolver*,const tcad::SparseMatrix&,const tcad::Vector&,tcad::Vector&)
+ asm("__real__ZN4tcad12LinearSolver5solveERKNS_12SparseMatrixERKSt6vectorIgSaIgEERS6_");
+extern "C" size_t wrap_linear490(tcad::LinearSolver*,const tcad::SparseMatrix&,const tcad::Vector&,tcad::Vector&)
+ asm("__wrap__ZN4tcad12LinearSolver5solveERKNS_12SparseMatrixERKSt6vectorIgSaIgEERS6_");
+extern "C" size_t wrap_linear490(tcad::LinearSolver* self,const tcad::SparseMatrix& a,const tcad::Vector& b,tcad::Vector& x){
+ struct Guard {bool previous=fault490::in_linear;Guard(){fault490::in_linear=true;}~Guard(){fault490::in_linear=previous;}} guard;
+ return real_linear490(self,a,b,x);
+}
+// Isolated acceptance-loop diagnostic; sealed485 helpers, production unchanged.
+// Reuse the sealed484 public fixture; production depolarization guard stays.
+#define main sealed484_fixture_main
+#include "native_nls_depolarization_roots.cpp"
+#undef main
+namespace continuous490 {
+struct Wave {
+ V times,voltages;
+ real_t at(real_t t)const{
+  for(size_t i=1;i<times.size();++i)if(t<=times[i])return voltages[i-1]+(voltages[i]-voltages[i-1])*(t-times[i-1])/(times[i]-times[i-1]);
+  return voltages.back();
+ }
+ real_t limit(real_t t)const{for(auto knot:times)if(knot>t)return knot;return times.back();}
+};
+struct Observation {V phi;FerroelectricNlsDrive d;};
+class Frozen {
+ const Fixture& f;const SimulationResult& source;PoissonSolver solver;
+public:
+ V P;
+ Frozen(const Fixture& fixture,const SimulationResult& state,int depol):f(fixture),source(state),solver(f.g),P(state.P){
+  solver.set_permittivity(f.eps);solver.set_doping(f.doping);solver.set_ferroelectric(std::vector<char>(f.g.npts(),1),TCAD_CONST(1e8),TCAD_CONST(1e12));solver.set_ferroelectric_model(2);solver.set_ferroelectric_polar_axis(0);solver.set_ferroelectric_builtin_field(-TCAD_CONST(512.0));solver.set_ferroelectric_depol(depol);solver.set_ferroelectric_preisach(PS,TCAD_CONST(1e5),0);solver.set_ferroelectric_nls(TCAD_CONST(0x1p-36),TCAD_CONST(2048.0),TCAD_CONST(0x1p-50));solver.set_fe_play_state({TCAD_CONST(.125),-TCAD_CONST(.25)});
+ }
+ Observation probe(real_t v){
+  solver.set_fe_polarization(P);auto bc=f.bc;for(auto& x:bc)if(x.first%3==2)x.second=v;solver.set_dirichlet(bc);solver.assemble(source.n,source.p);Observation o;o.phi.assign(f.g.npts(),0);need(solver.solve(o.phi),"feedback Gauss failed");
+  auto old=o.phi,rhs=solver.rhs(),matrix=solver.matrix().vals(),play=solver.fe_play_state();o.d=solver.ferroelectric_nls_drive(o.phi);auto again=solver.ferroelectric_nls_drive(o.phi);
+  need(o.d.raw_mean_field==again.raw_mean_field && o.phi==old && solver.rhs()==rhs && solver.matrix().vals()==matrix && solver.fe_polarization()==P && solver.fe_play_state()==play,"feedback probe changed memory");return o;
+ }
+ real_t root_voltage(const Observation& low,const Observation& high)const{return -TCAD_CONST(.0625)+TCAD_CONST(.125)*low.d.raw_mean_field/(low.d.raw_mean_field-high.d.raw_mean_field);}
+ V advance(const Observation& at,real_t dt){solver.set_fe_polarization(P);auto play=solver.fe_play_state();solver.update_ferroelectric_polarization_transient(at.phi,dt);need(solver.fe_play_state()==play,"feedback consumed play");P=solver.fe_polarization();return P;}
+};
+void observed(const Observation& o){std::cout<<"{\"phi\":";values(o.phi);std::cout<<",\"drive\":";drive(o.d);std::cout<<'}';}
+struct Candidate {real_t time;Observation before,after;V P;};
+bool same(const Observation& a,const Observation& b){return a.phi==b.phi && a.d.raw_mean_field==b.d.raw_mean_field && a.d.mean_field==b.d.mean_field && a.d.peak_field==b.d.peak_field && a.d.mean_polarization==b.d.mean_polarization && a.d.volume==b.d.volume && a.d.zero_field_tolerance==b.d.zero_field_tolerance;}
+Candidate trial(const Fixture& f,const SimulationResult& source,int depol,const V& base,const Wave& wave,real_t start,real_t end,int fail=0){
+ need(end>=start,"candidate negative dwell");Frozen disposable(f,source,depol);disposable.P=base;Candidate r;r.time=end;r.before=disposable.probe(wave.at(end));
+ if(fail==1)throw std::runtime_error("synthetic before-update failure");
+ if(end>start)disposable.advance(r.before,end-start);r.P=disposable.P;
+ if(fail==2)throw std::runtime_error("synthetic after-update failure");
+ r.after=disposable.probe(wave.at(end));return r;
+}
+void emit(const Candidate& c,const std::string& label){std::cout<<"{\"label\":\""<<label<<"\",\"time\":";number(c.time);std::cout<<",\"before\":";observed(c.before);std::cout<<",\"P\":";values(c.P);std::cout<<",\"after\":";observed(c.after);std::cout<<'}';}
+struct Sample {real_t time,pre,post,guard;};
+std::string bracket(const std::vector<Sample>& a,real_t width,size_t& at){
+ if(!(width>0))return "invalid_width";
+ if(a.size()<2)return "no_crossing";
+ if(!(a.front().time+width>a.front().time))return "unrepresentable";
+ int changes=0;bool increasing=false;
+ for(size_t i=0;i<a.size();++i){
+  if(!(a[i].pre>0))return "wrong_branch";
+  if(i){if(!(a[i].time>a[i-1].time))return "invalid_clock";
+   if(a[i-1].post>0 && a[i].post<=0){++changes;at=i;}
+   if(a[i].post>a[i-1].post+std::max(a[i].guard,a[i-1].guard))increasing=true;
+  }
+ }
+ if(changes==0)return "no_crossing";if(changes>1)return "multiple_crossings";if(increasing)return "nonmonotone";return "ok";
+}
+bool bounds(real_t start,real_t proposed,real_t frozen_root,real_t middle,real_t width){return middle-width>start && middle+width< frozen_root && middle+width<=proposed;}
+int guard_tests(){
+ size_t at=0;const real_t z=TCAD_CONST(1e-24);std::vector<Sample> good={{0,1,1,z},{1,1,TCAD_CONST(.5),z},{2,1,-1,z}};
+ need(bracket(good,TCAD_CONST(.1),at)=="ok" && at==2,"valid bracket rejected");
+ auto a=good;a.back().post=TCAD_CONST(.2);need(bracket(a,TCAD_CONST(.1),at)=="no_crossing","no-cross guard");
+ a={{0,1,1,z},{1,1,-1,z},{2,1,1,z},{3,1,-1,z}};need(bracket(a,TCAD_CONST(.1),at)=="multiple_crossings","multiple guard");
+ a={{0,1,1,z},{1,1,TCAD_CONST(.5),z},{2,1,TCAD_CONST(.8),z},{3,1,-1,z}};need(bracket(a,TCAD_CONST(.1),at)=="nonmonotone","nonmonotone guard");
+ a=good;a[1].pre=0;need(bracket(a,TCAD_CONST(.1),at)=="wrong_branch","branch guard");
+ a=good;a[1].time=0;need(bracket(a,TCAD_CONST(.1),at)=="invalid_clock","clock guard");
+ need(bracket(good,0,at)=="invalid_width","width guard");
+ a=good;a[0].time=TCAD_CONST(1e40);need(bracket(a,TCAD_CONST(1e-30),at)=="unrepresentable","representability guard");
+ need(!bounds(0,1,1,TCAD_CONST(.01),TCAD_CONST(.1)),"incoming bounds guard");
+ need(!bounds(0,TCAD_CONST(.5),1,TCAD_CONST(.6),TCAD_CONST(.1)),"node bounds guard");return 10;
+}
+struct Step {
+ real_t start=0,limit=0,proposed=0,original_end=0,root=0,low=0,high=0;
+ V P;Observation first,last;Candidate initial,chosen,certificate;std::vector<Candidate> scan,bisected;
+ std::string role,reason="ok";bool corrected=false,committed=false;
+};
+struct Result {std::vector<Step> steps;real_t end;V P;std::string status;int exceptions=0;};
+Result advance_loop(const Fixture& f,const SimulationResult& source,int depol,const Wave& wave,real_t start,const V& base,real_t width,int budget,bool inject){
+ Frozen state(f,source,depol);state.P=base;Result result;real_t time=start;std::string status="iteration_cap";
+ for(int count=0;count<budget && time<wave.times.back();++count){
+  Step step;step.P=state.P;step.start=time;step.limit=wave.limit(time);step.proposed=std::min(step.limit,time+T/4);step.first=state.probe(wave.at(time));step.last=state.probe(wave.at(step.proposed));step.original_end=step.proposed;step.root=step.proposed;step.role="ordinary";
+  if(step.first.d.mean_field==0){
+   if(step.last.d.mean_field==0)step.role="zero_band";
+   else{const real_t out=std::min(step.proposed,time+width);if(out<step.proposed && state.probe(wave.at(out)).d.mean_field==0)step.role="zero_band_exit";else{step.original_end=out;step.role="outgoing_zero";}}
+  }else if((step.first.d.raw_mean_field>0 && step.last.d.raw_mean_field<0)||(step.first.d.raw_mean_field<0 && step.last.d.raw_mean_field>0)||step.last.d.mean_field==0){
+   if(step.last.d.mean_field!=0)step.root=time+(step.proposed-time)*step.first.d.raw_mean_field/(step.first.d.raw_mean_field-step.last.d.raw_mean_field);
+   const real_t incoming=step.root-width;if(incoming>time+width/8){step.original_end=incoming;step.role="incoming";}else{step.original_end=std::min(step.proposed,step.root+width);step.role="outgoing_cross";}
+  }
+  if(!(step.original_end>time && step.original_end<=step.proposed)){status="nonprogress";break;}
+  auto evaluate=[&](real_t t,int fail=0){return trial(f,source,depol,step.P,wave,time,t,fail);};
+  step.initial=evaluate(step.original_end);step.chosen=step.initial;step.certificate=step.initial;
+  const real_t first_sign=step.first.d.mean_field>0?1:step.first.d.mean_field<0?-1:0;
+  if(step.initial.before.d.mean_field*step.initial.after.d.mean_field<0){
+   if(first_sign!=0 && first_sign*step.initial.before.d.mean_field>0 && (step.role=="incoming" || step.role=="ordinary")){
+    std::vector<Sample> samples;for(int i=0;i<=16;++i){auto c=evaluate(time+(step.original_end-time)*i/16);samples.push_back({c.time,first_sign*c.before.d.mean_field,first_sign*c.after.d.mean_field,std::max(c.before.d.zero_field_tolerance,c.after.d.zero_field_tolerance)});step.scan.push_back(std::move(c));}
+    size_t at=0;step.reason=bracket(samples,width,at);
+    if(step.reason=="ok"){
+     step.low=step.scan[at-1].time;step.high=step.scan[at].time;
+     for(int j=0;j<80 && step.high-step.low>width/64;++j){const real_t mid=(step.low+step.high)/2;auto c=evaluate(mid);if(!(first_sign*c.before.d.mean_field>0)){step.reason="wrong_branch";break;}if(first_sign*c.after.d.mean_field>0)step.low=mid;else step.high=mid;step.bisected.push_back(std::move(c));}
+     if(step.reason=="ok" && step.high-step.low>width/64)step.reason="bisection_cap";
+     const real_t middle=(step.low+step.high)/2;
+     if(step.reason=="ok" && !bounds(time,step.proposed,step.root,middle,width))step.reason="clock_bounds";
+     if(step.reason=="ok"){
+      step.chosen=evaluate(middle-width);step.certificate=evaluate(middle+width);
+      if(!(first_sign*step.chosen.before.d.mean_field>0 && first_sign*step.certificate.before.d.mean_field>0 && first_sign*step.chosen.after.d.mean_field>0 && first_sign*step.certificate.after.d.mean_field<0))step.reason="post_update_sides";else step.corrected=true;
+     }
+    }
+    if(step.reason!="ok")status="selector_rejected";
+   }else{step.reason="outgoing_sign_flip";status="outgoing_rejected";}
+  }
+  if(inject && count==0){
+   for(int fail:{1,2}){try{evaluate(step.chosen.time,fail);}catch(const std::runtime_error& e){need(std::string(e.what()).find("synthetic ")==0,"unexpected injected failure");++result.exceptions;}}
+   const auto repeated=evaluate(step.chosen.time);need(repeated.P==step.chosen.P && same(repeated.before,step.chosen.before) && same(repeated.after,step.chosen.after),"retry accumulated dwell");
+  }
+  need(state.P==step.P && same(step.first,state.probe(wave.at(time))),"candidate retry mutated accepted state");
+  if(step.reason!="ok"){result.steps.push_back(std::move(step));break;}
+  need(step.chosen.time>time && step.chosen.time<=step.proposed,"accepted clock bounds");step.committed=true;state.P=step.chosen.P;time=step.chosen.time;result.steps.push_back(std::move(step));
+ }
+ if(time==wave.times.back())status="finished";result.end=time;result.P=state.P;result.status=status;return result;
+}
+bool same_step(const Step& a,const Step& b){return a.start==b.start && a.limit==b.limit && a.proposed==b.proposed && a.original_end==b.original_end && a.root==b.root && a.P==b.P && a.role==b.role && a.corrected==b.corrected && a.committed==b.committed && a.reason==b.reason && a.chosen.time==b.chosen.time && a.chosen.P==b.chosen.P && same(a.chosen.before,b.chosen.before) && same(a.chosen.after,b.chosen.after);}
+void emit_step(const Step& s){
+ std::cout<<"{\"start\":";number(s.start);std::cout<<",\"limit\":";number(s.limit);std::cout<<",\"proposed\":";number(s.proposed);std::cout<<",\"original_end\":";number(s.original_end);std::cout<<",\"local_root\":";number(s.root);std::cout<<",\"P\":";values(s.P);std::cout<<",\"first\":";observed(s.first);std::cout<<",\"last\":";observed(s.last);std::cout<<",\"initial\":";emit(s.initial,"initial");std::cout<<",\"chosen\":";emit(s.chosen,"chosen");std::cout<<",\"certificate\":";emit(s.certificate,"certificate");
+ std::cout<<",\"scan\":[";for(size_t i=0;i<s.scan.size();++i){if(i)std::cout<<',';emit(s.scan[i],"scan_"+std::to_string(i));}std::cout<<"],\"bisection\":[";for(size_t i=0;i<s.bisected.size();++i){if(i)std::cout<<',';emit(s.bisected[i],"bisect_"+std::to_string(i));}
+ std::cout<<"],\"bracket_low\":";number(s.low);std::cout<<",\"bracket_high\":";number(s.high);std::cout<<",\"role\":\""<<s.role<<"\",\"reason\":\""<<s.reason<<"\",\"corrected\":"<<(s.corrected?"true":"false")<<",\"committed\":"<<(s.committed?"true":"false")<<'}';
+}
+void result(const SimulationResult& r){
+    std::cout<<"{\"converged\":"<<r.converged<<",\"iterations\":"<<r.iterations
+        <<",\"lk_coupled\":"<<r.lk_coupled<<",\"lk_material_field\":"<<r.lk_material_field
+        <<",\"nls_error_control\":"<<r.nls_error_control<<",\"lk_error_control\":"<<r.lk_error_control<<",\"lk_substepping\":"<<r.lk_substepping
+        <<",\"initial\":"<<r.initial_state<<",\"displacement_available\":"<<r.displacement_current_available;
+#define FIELD(name) std::cout<<",\"" #name "\":";values(r.name)
+    FIELD(phi);FIELD(n);FIELD(p);FIELD(P);FIELD(Ex);FIELD(Ey);FIELD(Ez);FIELD(Qn);FIELD(Qp);FIELD(temperature);
+    FIELD(Jn_x);FIELD(Jn_y);FIELD(Jn_z);FIELD(Jp_x);FIELD(Jp_y);FIELD(Jp_z);
+    FIELD(lk_drive_field);FIELD(lk_polarization_increment);FIELD(lk_node_volumes);FIELD(lk_parameters);FIELD(lk_coarse_P);FIELD(lk_error_delta_P);FIELD(lk_coarse_phi);FIELD(lk_coarse_n);FIELD(lk_coarse_p);FIELD(lk_delta_phi);FIELD(lk_delta_n);FIELD(lk_delta_p);
+    FIELD(D_x);FIELD(D_y);FIELD(D_z);FIELD(Jdisp_x);FIELD(Jdisp_y);FIELD(Jdisp_z);
+    FIELD(electrode_voltages);FIELD(electrode_charges);FIELD(electrode_total_currents);
+    FIELD(terminal_currents);FIELD(electrode_conduction_currents);FIELD(electrode_displacement_currents);
+    FIELD(Jdielectric_x);FIELD(Jdielectric_y);FIELD(Jdielectric_z);FIELD(Jpolarization_x);FIELD(Jpolarization_y);FIELD(Jpolarization_z);
+    FIELD(electrode_dielectric_currents);FIELD(electrode_polarization_currents);FIELD(electrode_charge_increments);
+#undef FIELD
+    std::cout<<",\"adaptive_status\":\""<<r.lk_error_status<<"\",\"adaptive_estimate\":"<<r.lk_error_estimate_available<<",\"adaptive_rejected\":"<<r.lk_rejected_attempts<<",\"adaptive_ratios\":";values({r.lk_error_ratio,r.lk_electrical_error_ratio,r.lk_error_interval,r.lk_error_end});
+    std::cout<<",\"ledger\":";values({r.mobile_charge,r.poisson_residual});
+    std::cout<<",\"fe_energy\":";values({r.lk_free_energy,r.lk_free_energy_increment,r.lk_dissipation,r.lk_field_work,r.lk_be_correction});
+    std::cout<<",\"clock\":";values({r.time,r.attempted_time,r.accepted_dt});std::cout<<'}';
+}
+void history(const std::vector<SimulationResult>& h){
+    std::cout<<'[';for(size_t i=0;i<h.size();++i){if(i)std::cout<<',';result(h[i]);}std::cout<<']';
+}
+void trace(const std::vector<tcad::TransientAttemptHistory>& groups){
+    std::cout<<'[';
+    for(size_t i=0;i<groups.size();++i){if(i)std::cout<<',';const auto& g=groups[i];
+        std::cout<<"{\"status\":\""<<g.status<<"\",\"reason\":\""<<g.stopping_reason<<"\",\"accepted\":"<<g.accepted
+            <<",\"retry\":"<<g.retry_index<<",\"estimate\":"<<g.error_estimate_available<<",\"clock\":";
+        values({g.start_time,g.end_time,g.step_dt});
+        std::cout<<",\"ratios\":";values({g.polarization_error_ratio,g.electrical_error_ratio,g.exported_polarization_error_ratio,g.exported_electrical_error_ratio});
+        std::cout<<",\"trials\":[";
+        for(size_t j=0;j<g.trials.size();++j){if(j)std::cout<<',';const auto& t=g.trials[j];
+            std::cout<<"{\"role\":\""<<t.role<<"\",\"solver\":\""<<t.solver<<"\",\"called\":"<<t.solver_called
+                <<",\"converged\":"<<t.converged<<",\"retained\":"<<t.retained<<",\"exception\":"<<t.exception<<",\"clock\":";
+            values({t.start_time,t.end_time,t.step_dt});std::cout<<",\"samples\":[";
+            for(size_t k=0;k<t.samples.size();++k){if(k)std::cout<<',';values(t.samples[k]);}std::cout<<"]}";
+        }std::cout<<"]}";
+    }std::cout<<']';
+}
+void configure(DeviceSimulator& s,const Fixture& f,const SimulationResult& state,const Wave& wave,real_t end){
+ s.set_tolerance(TCAD_CONST(1e-16));
+ s.set_initial_guess(state.phi,state.n,state.p);s.set_ferroelectric_ensemble_history(state.P,{});s.set_transient_start_time(state.time);s.set_transient_t_final(end);s.set_transient_dt(end-state.time);
+ V times=wave.times,volts=wave.voltages;if(times.front()>0){times.insert(times.begin(),0);volts.insert(volts.begin(),volts.front());}
+ std::map<size_t,V> offsets;for(const auto& entry:f.bc)if(entry.first%3==2)offsets[entry.first]=volts;s.set_transient_voltage_waveforms(times,offsets);
+}
+bool same_states(const std::vector<SimulationResult>& a,const std::vector<SimulationResult>& b){
+ if(a.size()!=b.size())return false;for(size_t i=0;i<a.size();++i){const auto& x=a[i];const auto& y=b[i];if(x.time!=y.time || x.attempted_time!=y.attempted_time || x.accepted_dt!=y.accepted_dt || x.converged!=y.converged)return false;
+#define CHECK(name) if(x.name!=y.name)return false
+ CHECK(phi);CHECK(n);CHECK(p);CHECK(P);CHECK(Jn_x);CHECK(Jn_y);CHECK(Jn_z);CHECK(Jp_x);CHECK(Jp_y);CHECK(Jp_z);CHECK(D_x);CHECK(D_y);CHECK(D_z);CHECK(Jdisp_x);CHECK(Jdisp_y);CHECK(Jdisp_z);CHECK(Jdielectric_x);CHECK(Jdielectric_y);CHECK(Jdielectric_z);CHECK(Jpolarization_x);CHECK(Jpolarization_y);CHECK(Jpolarization_z);CHECK(electrode_charges);CHECK(electrode_charge_increments);CHECK(electrode_total_currents);CHECK(terminal_currents);
+#undef CHECK
+ }return true;
+}
+struct Coupled {std::vector<SimulationResult> states;std::vector<TransientAttemptHistory> attempts;};
+Coupled solve_candidate(const Fixture& f,const SimulationResult& state,const Wave& wave,bool log,int depol,real_t end,bool transaction=false){
+ auto disposable=f.simulator(log,depol);configure(*disposable,f,state,wave,end);const auto P=disposable->fe_polarization(),play=disposable->ferroelectric_play_history(),params=disposable->ferroelectric_ensemble_parameters();
+ if(transaction)disposable->begin_reliability_transaction();Coupled out;out.states=disposable->solve_transient();out.attempts=disposable->transient_attempt_history();
+ if(transaction){disposable->rollback_reliability_transaction();need(disposable->fe_polarization()==P && disposable->ferroelectric_play_history()==play && disposable->ferroelectric_ensemble_parameters()==params,"material transaction rollback changed memory");const auto again=disposable->solve_transient();need(same_states(out.states,again),"material rollback replay differs");}
+ return out;
+}
+void failure_controls(const Fixture& f,const SimulationResult& state,const Wave& wave,bool log,int depol,real_t end,const Coupled& good){
+ {auto disposable=f.simulator(log,depol);configure(*disposable,f,state,wave,end);disposable->set_gummel_max_iter(0);const auto h=disposable->solve_transient();need(h.size()==2 && h.front().converged && !h.back().converged && h.back().time==state.time && h.back().attempted_time==end && h.back().accepted_dt==0,"ordinary candidate failure clock");need(h.back().phi==h.front().phi && h.back().n==h.front().n && h.back().p==h.front().p && h.back().P==h.front().P && disposable->fe_polarization()==state.P,"ordinary failure left trial state");const auto& trace=disposable->transient_attempt_history();need(trace.size()==1 && !trace[0].accepted && trace[0].status=="solver_failure" && trace[0].trials.size()==1 && !trace[0].trials[0].retained,"ordinary failure retained dwell");}
+ bool caught=false;try{auto disposable=solve_candidate(f,state,wave,log,depol,end);need(same_states(disposable.states,good.states),"throw candidate differs");throw std::runtime_error("synthetic discarded coupled candidate");}catch(const std::runtime_error& e){caught=std::string(e.what())=="synthetic discarded coupled candidate";}need(caught,"discard exception missing");const auto retry=solve_candidate(f,state,wave,log,depol,end);need(same_states(good.states,retry.states),"failure/discard replay changed candidate");
+}
+FerroelectricNlsDrive final_drive(const Fixture& f,const SimulationResult& state,int depol){PoissonSolver observer(f.g);observer.set_ferroelectric(std::vector<char>(f.g.npts(),1),TCAD_CONST(1e8),TCAD_CONST(1e12));observer.set_ferroelectric_model(2);observer.set_ferroelectric_polar_axis(0);observer.set_ferroelectric_builtin_field(-TCAD_CONST(512.0));observer.set_ferroelectric_depol(depol);observer.set_fe_polarization(state.P);return observer.ferroelectric_nls_drive(state.phi);}
+struct Entry {Step selection;Coupled actual;FerroelectricNlsDrive actual_drive;real_t P_defect=0;};
+struct Snapshot {
+ V phi,n,p,P,play,params,charge,Qn,Qp,mobility,previous,capacity,wave_times,configuration;
+ std::vector<char> breakdown;std::map<size_t,real_t> phi_bc,n_bc,p_bc;std::map<size_t,V> offsets;
+ bool guess,fe_init,bd_init,history_updates;
+ explicit Snapshot(const DeviceSimulator& s):phi(s.init_phi_),n(s.init_n_),p(s.init_p_),P(s.fe_polarization()),play(s.ferroelectric_play_history()),params(s.ferroelectric_ensemble_parameters()),charge(s.Q_ot_),Qn(s.dg_transport_Qn_),Qp(s.dg_transport_Qp_),mobility(s.mobility_temperature_),previous(s.lattice_previous_temperature_),capacity(s.lattice_heat_capacity_),wave_times(s.transient_waveform_times_),configuration({s.tol_,s.transient_dt_,s.transient_start_time_,s.transient_t_final_,s.lattice_dt_,s.fe_gamma_,s.fe_alpha_,s.fe_beta_,s.transient_nls_event_half_width_,real_t(s.max_iter_),real_t(s.transient_nls_event_control_),real_t(s.transient_nls_error_control_),real_t(s.transient_electrical_error_control_),real_t(s.transient_lk_error_control_)}),breakdown(s.breakdown_state()),phi_bc(s.phi_bc_),n_bc(s.n_bc_),p_bc(s.p_bc_),offsets(s.transient_voltage_offsets_),guess(s.has_initial_guess_),fe_init(s.fe_polarization_init_),bd_init(s.bd_state_init_),history_updates(s.history_updates_enabled_){}
+ bool operator==(const Snapshot& b)const{
+#define SAME(n) if(n!=b.n)return false
+ SAME(phi);SAME(n);SAME(p);SAME(P);SAME(play);SAME(params);SAME(charge);SAME(Qn);SAME(Qp);SAME(mobility);SAME(previous);SAME(capacity);SAME(wave_times);SAME(configuration);SAME(breakdown);SAME(phi_bc);SAME(n_bc);SAME(p_bc);SAME(offsets);SAME(guess);SAME(fe_init);SAME(bd_init);SAME(history_updates);
+#undef SAME
+ return true;
+ }
+};
+void snapshot(const Snapshot& s){
+ std::cout<<"{\"guess\":"<<s.guess<<",\"fe_init\":"<<s.fe_init<<",\"bd_init\":"<<s.bd_init<<",\"history_updates\":"<<s.history_updates;
+#define FIELD(n) std::cout<<",\"" #n "\":";values(s.n)
+ FIELD(phi);FIELD(n);FIELD(p);FIELD(P);FIELD(play);FIELD(params);FIELD(charge);FIELD(Qn);FIELD(Qp);FIELD(mobility);FIELD(previous);FIELD(capacity);FIELD(wave_times);FIELD(configuration);
+#undef FIELD
+ auto boundary=[](const std::map<size_t,real_t>& m){V flat;for(const auto& x:m){flat.push_back(x.first);flat.push_back(x.second);}values(flat);};
+ std::cout<<",\"phi_bc\":";boundary(s.phi_bc);std::cout<<",\"n_bc\":";boundary(s.n_bc);std::cout<<",\"p_bc\":";boundary(s.p_bc);std::cout<<",\"offsets\":[";bool first=true;for(const auto& x:s.offsets){if(!first)std::cout<<',';first=false;std::cout<<"{\"node\":"<<x.first<<",\"values\":";values(x.second);std::cout<<'}';}std::cout<<"],\"breakdown\":[";for(size_t i=0;i<s.breakdown.size();++i){if(i)std::cout<<',';std::cout<<int(s.breakdown[i]);}std::cout<<"]}";
+}
+template<class F>std::string serialized(F write){std::ostringstream out;struct Redirect{std::streambuf* old;Redirect(std::streambuf* b):old(std::cout.rdbuf(b)){}~Redirect(){std::cout.rdbuf(old);}} redirect(out.rdbuf());write();return out.str();}
+bool identical(const std::vector<SimulationResult>& a,const std::vector<SimulationResult>& b){return serialized([&]{history(a);})==serialized([&]{history(b);});}
+bool identical(const std::vector<TransientAttemptHistory>& a,const std::vector<TransientAttemptHistory>& b){return serialized([&]{trace(a);})==serialized([&]{trace(b);});}
+bool accepted(const std::vector<SimulationResult>& h,real_t end,size_t steps){return h.size()==steps+1 && h.back().time==end && std::all_of(h.begin(),h.end(),[](const auto& r){return r.converged && !r.phi_frozen && !r.transient_majority_frozen && r.transient_charge_ledger_available;});}
+real_t read_number(std::istream& input){std::string s;need(bool(input>>s),"missing numeric input");char* end=nullptr;real_t v=strtoflt128(s.c_str(),&end);need(end && *end==0 && isfinite_q(v),"bad numeric input");return v;}
+void key(int dim,bool log,int depol,int index,int family,int protocol){std::cout<<"\"dimension\":"<<dim<<",\"logarithmic\":"<<log<<",\"depol\":"<<depol<<",\"source_index\":"<<index<<",\"family\":"<<family<<",\"protocol\":"<<protocol;}
+std::unique_ptr<DeviceSimulator> make(const Fixture& f,const SimulationResult& source,const Wave& scheduled,bool log,int depol){auto s=f.simulator(log,depol);configure(*s,f,source,scheduled,scheduled.times.back());s->set_transient_dt(T/4);return s;}
+void failure_case(const Fixture& f,const SimulationResult& source,const Wave& scheduled,bool log,int depol,int dim,int index,int family,int protocol,int phase,bool persistent,const Coupled& baseline){
+ auto s=make(f,source,scheduled,log,depol);const Snapshot before(*s);std::vector<SimulationResult> returned;bool caught=false;
+ fault490::watched=s.get();fault490::entered=&before.P;fault490::phase=phase;fault490::persistent=persistent;fault490::fired=false;fault490::failures=0;fault490::observed_groups=0;fault490::armed=true;
+ try{returned=s->solve_transient();}catch(const std::bad_alloc&){caught=true;}catch(...){fault490::armed=false;throw;}
+ fault490::armed=false;fault490::watched=nullptr;fault490::entered=nullptr;
+ need(fault490::fired && fault490::failures>0,"internal fault not reached");const Snapshot after(*s);const auto diagnostic=s->transient_attempt_history();need(!diagnostic.empty(),"fault trace missing");
+ if(caught){need(returned.empty() && after==before && diagnostic.back().status=="exception","exception did not restore call entry");for(const auto& g:diagnostic){need(!g.accepted,"exception kept accepted group");for(const auto& t:g.trials)need(!t.retained,"exception retained dwell");}}
+ else{
+  need(phase==3 && !persistent && returned.size()>=3 && !returned.back().converged && returned.back().accepted_dt==0,"unexpected normal fault outcome");Snapshot expected=before;expected.P=returned.back().P;expected.fe_init=true;need(after==expected,"normal failure changed persistent configuration");need(diagnostic.back().status=="solver_failure" && !diagnostic.back().accepted,"normal failure trace");const auto& prior=returned[returned.size()-2];const auto& failed=returned.back();need(prior.converged && failed.time==prior.time && failed.phi==prior.phi && failed.n==prior.n && failed.p==prior.p && failed.P==prior.P,"normal failure lost accepted prefix");
+  std::vector<SimulationResult> prefix(returned.begin(),returned.end()-1),control(baseline.states.begin(),baseline.states.begin()+prefix.size());need(identical(prefix,control),"accepted prefix differs from control");for(const auto& t:diagnostic.back().trials)need(!t.retained,"failed normal trial retained dwell");
+  // Normal return intentionally retained the prefix. Explicitly rewind its
+  // public material memory before retrying the whole original call.
+  s->set_ferroelectric_ensemble_history(before.P,before.play);need(Snapshot(*s)==before,"explicit whole-call rewind incomplete");
+ }
+ const auto retry=s->solve_transient();const auto retry_trace=s->transient_attempt_history();need(identical(retry,baseline.states) && identical(retry_trace,baseline.attempts),"fault retry changed full history/trace");Snapshot expected_final=before;expected_final.P=retry.back().P;expected_final.fe_init=true;need(Snapshot(*s)==expected_final,"retry configuration drift");
+ std::cout<<"{\"fault_case\":true,";key(dim,log,depol,index,family,protocol);std::cout<<",\"phase\":"<<phase<<",\"persistent\":"<<persistent<<",\"caught\":"<<caught<<",\"fired\":true,\"failure_count\":"<<fault490::failures<<",\"observed_groups\":"<<fault490::observed_groups<<",\"observed_called\":"<<fault490::observed_called<<",\"observed_converged\":"<<fault490::observed_converged<<",\"observed_prefix\":"<<fault490::observed_prefix<<",\"observed_P_changed\":"<<fault490::observed_P_changed<<",\"observed_linear\":"<<fault490::observed_linear<<",\"observed_clock\":";values({fault490::observed_start,fault490::observed_end});std::cout<<",\"entry\":";snapshot(before);std::cout<<",\"after\":";snapshot(after);std::cout<<",\"returned\":";history(returned);std::cout<<",\"fault_trace\":";trace(diagnostic);std::cout<<",\"retry\":";history(retry);std::cout<<",\"retry_trace\":";trace(retry_trace);std::cout<<",\"same_retry\":true,\"same_retry_trace\":true,\"explicit_normal_rewind\":"<<(!caught)<<"}"<<std::endl;
+}
+void matrix(std::istream& input){
+ int count;need(bool(input>>count) && count==96,"wrong input matrix size");std::map<std::tuple<int,bool,int>,std::vector<SimulationResult>> sources;
+ for(int c=0;c<count;++c){
+  int dim,log_int,depol,index,family,protocol,nwave,nsteps;need(bool(input>>dim>>log_int>>depol>>index>>family>>protocol>>nwave>>nsteps),"truncated input matrix");bool log=log_int;Fixture f(dim);const auto id=std::make_tuple(dim,log,depol);
+  if(!sources.count(id)){auto live=f.simulator(log,depol);auto h=live->solve_transient();need(h.size()==17 && std::all_of(h.begin(),h.end(),[](const auto& r){return r.converged;}),"source failed");sources.emplace(id,std::move(h));}
+  const auto& source=sources.at(id).at(index);Wave original;for(int i=0;i<nwave;++i){original.times.push_back(read_number(input));original.voltages.push_back(read_number(input));}Wave scheduled{{source.time},{original.at(source.time)}};for(int i=0;i<nsteps;++i){const auto t=read_number(input);need(t>scheduled.times.back(),"input clock did not advance");scheduled.times.push_back(t);scheduled.voltages.push_back(original.at(t));}
+  need(scheduled.times.back()==original.times.back(),"input endpoint missing");auto s=make(f,source,scheduled,log,depol);const Snapshot entry(*s);Coupled baseline;baseline.states=s->solve_transient();baseline.attempts=s->transient_attempt_history();need(accepted(baseline.states,scheduled.times.back(),nsteps) && baseline.attempts.size()==size_t(nsteps),"uninterrupted solve hidden/missing interval");Snapshot expected=entry;expected.P=baseline.states.back().P;expected.fe_init=true;need(Snapshot(*s)==expected,"uninterrupted configuration drift");
+  for(size_t i=1;i<baseline.states.size();++i)need(baseline.states[i].time==scheduled.times[i] && baseline.states[i].displacement_current_available && baseline.states[i].total_terminal_current_available,"uninterrupted ledger/clock missing");
+  std::vector<Candidate> predictors;for(size_t i=1;i<baseline.states.size();++i){const auto& old=baseline.states[i-1];predictors.push_back(trial(f,old,depol,old.P,scheduled,old.time,baseline.states[i].time));for(size_t j=0;j<old.P.size();++j)need(abs_q(predictors.back().P[j]-baseline.states[i].P[j])/PS<TCAD_CONST(1e-24),"continuous split phase mismatch");}
+  std::cout<<"{\"continuous_case\":true,";key(dim,log,depol,index,family,protocol);std::cout<<",\"wave_times\":";values(scheduled.times);std::cout<<",\"wave_voltages\":";values(scheduled.voltages);std::cout<<",\"source\":";result(source);std::cout<<",\"full\":";history(baseline.states);std::cout<<",\"predictors\":[";for(size_t i=0;i<predictors.size();++i){if(i)std::cout<<',';emit(predictors[i],"uninterrupted_predictor");}std::cout<<"],\"trace\":";trace(baseline.attempts);std::cout<<",\"entry\":";snapshot(entry);std::cout<<",\"after\":";snapshot(Snapshot(*s));std::cout<<",\"runtime_event_controller\":false,\"nonlinear_tolerance\":";number(TCAD_CONST(1e-16));std::cout<<"}"<<std::endl;
+  if(index==8 && family==1 && protocol==1)for(int phase=0;phase<4;++phase)for(bool persistent:{false,true})failure_case(f,source,scheduled,log,depol,dim,index,family,protocol,phase,persistent,baseline);
+ }
+}
+}
+#include "transient_candidate_transaction.h"
+namespace candidate494 {
+void units(){
+ using Tx=tcad::detail::TransientCandidateTransaction<tcad::SimulationResult>;
+ for(int variant=0;variant<12;++variant){
+  std::array<V,10> values;Tx::State refs;for(size_t i=0;i<10;++i){values[i].assign((i+variant)%5,real_t(i+1));refs[i]=&values[i];}
+  auto entered=values;std::map<size_t,real_t> contacts{{0,0},{2,1}},entered_contacts=contacts;
+  std::vector<SimulationResult> history(1);history[0].time=7;real_t time=7;
+  {Tx tx(refs,contacts,history,&time);for(auto& v:values)v.assign(variant%3,99);contacts.clear();contacts[9]=99;history.emplace_back();history.back().time=8;time=8;
+   fault490::blocked_allocations=0;fault490::block_all=true;tx.restore();tx.restore();}
+  fault490::block_all=false;
+  need(fault490::blocked_allocations==0 && values==entered && contacts==entered_contacts && history.size()==1 && history[0].time==7 && time==7,"rollback allocated or changed accepted state");
+  bool caught=false;fault490::block_all=true;try{Tx tx(refs,contacts,history,&time);}catch(const std::bad_alloc&){caught=true;}fault490::block_all=false;
+  need(caught && values==entered && contacts==entered_contacts && history.size()==1 && time==7,"checkpoint construction mutated state");
+  {Tx tx(refs,contacts,history,&time);values[0]={123};contacts[0]=123;history.emplace_back();time=9;tx.commit();fault490::block_all=true;}
+  fault490::block_all=false;need(values[0]==V{123} && contacts.at(0)==123 && history.size()==2 && time==9,"commit was rolled back");
+ }
+ std::cout<<"{\"transaction_units\":true,\"variants\":12,\"checks\":36,\"rollback_allocation_attempts\":0}"<<std::endl;
+}
+}
+
+
+namespace adaptive497 {
+using namespace continuous490;
+void control(DeviceSimulator& s,bool strict=false,size_t maximum=20,real_t minimum=T/1024){
+ const real_t scale=strict?TCAD_CONST(4096.0):TCAD_CONST(1.0);
+ s.set_transient_nls_error_control(true,TCAD_CONST(.5)/scale,PS/(2*scale),TCAD_CONST(1.0)/scale,TCAD_CONST(.5)/scale,S/scale,minimum,maximum);
+}
+std::unique_ptr<DeviceSimulator> device(const Fixture& f,const SimulationResult& source,const Wave& wave,bool log,int depol,bool strict){auto s=make(f,source,wave,log,depol);control(*s,strict);return s;}
+std::vector<TransientAttemptHistory> physical_trace(const std::vector<TransientAttemptHistory>& input){
+ std::vector<TransientAttemptHistory> out;
+ for(const auto& g:input){
+  if(g.status=="allocation_failure" || g.status=="solver_failure" || g.status=="unexpected_failure"){
+   need(!g.accepted,"resource failure accepted");for(const auto& t:g.trials)need(!t.retained,"failed trial kept dwell");
+  }else out.push_back(g);
+ }
+ return out;
+}
+void fault(const Fixture& f,const SimulationResult& source,const Wave& wave,bool log,int depol,int dim,int index,int family,int protocol,bool strict,int phase,bool persistent,size_t budget,bool unknown,size_t estimate_target,const Coupled& baseline){
+ auto s=device(f,source,wave,log,depol,strict);const Snapshot entry(*s);NlsTransientContinuation state;
+ fault490::watched=s.get();fault490::entered=&entry.P;fault490::phase=phase;fault490::persistent=persistent;fault490::unexpected=unknown;fault490::fired=false;fault490::failures=0;fault490::estimate_count=0;fault490::estimate_target=estimate_target;fault490::armed=true;
+ try{s->advance_transient_nls(state,budget);}catch(...){fault490::armed=false;throw;}
+ fault490::armed=false;fault490::unexpected=false;
+ need(fault490::fired,"adaptive online fault not reached");const size_t faults=fault490::failures;
+ const auto stopped=state.history();const auto stopped_trace=state.trace();const auto status=state.status();
+ const auto proposal=state.suggested_dt();const size_t rejected=state.accuracy_rejections();
+ const size_t allocations=state.allocation_failures(),solvers=state.solver_failures(),retries=state.retries();
+ const bool should_stop=persistent || budget==0 || unknown;
+ need((status!=NlsContinuationStatus::complete)==should_stop && !stopped.empty(),"adaptive online wrong terminal outcome");
+ need(retries==(unknown?0:budget) && allocations+solvers==(unknown?0:budget+size_t(should_stop)),"adaptive online retry budget drift");
+ if(unknown)need(status==NlsContinuationStatus::unexpected_failure && faults==1,"unknown exception retried");
+ else if(should_stop)need(status==NlsContinuationStatus::allocation_failure || status==NlsContinuationStatus::solver_failure,"wrong resource status");
+ need(stopped.size()%2==1 && stopped.size()<=baseline.states.size(),"partial adaptive group retained");
+ need(identical(stopped,std::vector<SimulationResult>(baseline.states.begin(),baseline.states.begin()+stopped.size())),"adaptive prefix changed");
+ Snapshot expected=entry;expected.P=stopped.back().P;expected.fe_init=true;need(Snapshot(*s)==expected,"adaptive stop material/config drift");
+ bool setup_preserved=false,config_rejected=false,owner_rejected=false;
+ if(persistent){
+  fault490::armed=true;bool caught=false;try{s->advance_transient_nls(state,budget);}catch(const std::bad_alloc&){caught=true;}fault490::armed=false;
+  need(caught && identical(state.history(),stopped) && identical(state.trace(),stopped_trace) && state.status()==status && state.suggested_dt()==proposal && state.accuracy_rejections()==rejected && Snapshot(*s)==expected,"resume setup lost capsule");setup_preserved=true;
+  control(*s,!strict);caught=false;try{s->advance_transient_nls(state,budget);}catch(const std::invalid_argument&){caught=true;}control(*s,strict);
+  need(caught && identical(state.history(),stopped) && identical(state.trace(),stopped_trace) && state.suggested_dt()==proposal && state.accuracy_rejections()==rejected,"modified adaptive controls resumed");config_rejected=true;
+  auto other=device(f,source,wave,log,depol,strict);caught=false;try{other->advance_transient_nls(state,budget);}catch(const std::invalid_argument&){caught=true;}need(caught && identical(state.history(),stopped),"foreign simulator resumed");owner_rejected=true;
+ }
+ if(should_stop && strict && (phase==12 || phase==13))need(rejected>0 && proposal<T/4,"accuracy schedule not persisted");
+ if(should_stop)s->advance_transient_nls(state,budget);
+ need(state.status()==NlsContinuationStatus::complete && identical(state.history(),baseline.states),"adaptive continuation changed full history");
+ need(identical(physical_trace(state.trace()),baseline.attempts),"adaptive continuation changed physical trace/schedule");
+ need(state.trace().size()>=stopped_trace.size() && identical(std::vector<TransientAttemptHistory>(state.trace().begin(),state.trace().begin()+stopped_trace.size()),stopped_trace),"diagnostic prefix rewritten");
+ expected.P=state.history().back().P;need(Snapshot(*s)==expected,"adaptive resume state drift");
+ const auto final_trace=state.trace();const auto final_dt=state.suggested_dt();
+ s->advance_transient_nls(state,0);need(state.status()==NlsContinuationStatus::complete && identical(state.history(),baseline.states) && identical(state.trace(),final_trace) && state.suggested_dt()==final_dt,"completed repeated call changed result");
+ std::cout<<"{\"adaptive_online_fault\":true,";key(dim,log,depol,index,family,protocol);
+ std::cout<<",\"strict\":"<<strict<<",\"phase\":"<<phase<<",\"persistent\":"<<persistent<<",\"budget\":"<<budget<<",\"unknown\":"<<unknown<<",\"faults\":"<<faults<<",\"status\":"<<int(status)<<",\"allocations\":"<<allocations<<",\"solvers\":"<<solvers<<",\"retries\":"<<retries<<",\"rejected\":"<<rejected<<",\"proposal\":";number(proposal);
+ std::cout<<",\"setup_preserved\":"<<setup_preserved<<",\"config_rejected\":"<<config_rejected<<",\"owner_rejected\":"<<owner_rejected<<",\"entry\":";snapshot(entry);std::cout<<",\"stopped\":";history(stopped);std::cout<<",\"stopped_trace\":";trace(stopped_trace);std::cout<<",\"final\":";history(state.history());std::cout<<",\"final_trace\":";trace(state.trace());std::cout<<"}"<<std::endl;
+ fault490::watched=nullptr;fault490::entered=nullptr;
+}
+void limits(const Fixture& f,const SimulationResult& source,const Wave& wave,bool log,int depol,int dim){
+ for(int mode=0;mode<3;++mode){
+  Wave schedule=wave;if(mode==2){schedule.times.resize(2);schedule.voltages.resize(2);schedule.times[1]=source.time+T*TCAD_CONST(0x1p-51);}
+  auto old=device(f,source,schedule,log,depol,true);control(*old,true,mode==0?0:20,mode==1?T/4:T/1024);
+  const auto legacy=old->solve_transient();need(!legacy.back().converged,"terminal legacy control succeeded unexpectedly");
+  auto s=device(f,source,schedule,log,depol,true);control(*s,true,mode==0?0:20,mode==1?T/4:T/1024);NlsTransientContinuation state;s->advance_transient_nls(state,1);
+  const auto expected=mode==0?NlsContinuationStatus::max_reject:mode==1?NlsContinuationStatus::minimum_step:NlsContinuationStatus::time_resolution;
+  need(state.status()==expected && state.history().size()+1==legacy.size() && identical(state.history(),std::vector<SimulationResult>(legacy.begin(),legacy.end()-1)),"accuracy limit lost accepted boundary or status");
+  need(state.retries()==0 && state.allocation_failures()==0 && state.solver_failures()==0,"accuracy exhaustion consumed resource retries");
+  const auto before=state.history();const auto proposal=state.suggested_dt();const auto rejected=state.accuracy_rejections();
+  s->advance_transient_nls(state,0);need(state.status()==expected && identical(state.history(),before) && state.suggested_dt()==proposal && state.accuracy_rejections()==rejected,"limit repeat changed accepted state/controller");
+  std::cout<<"{\"adaptive_online_limit\":true,\"dimension\":"<<dim<<",\"logarithmic\":"<<log<<",\"depol\":"<<depol<<",\"mode\":"<<mode<<",\"status\":"<<int(state.status())<<",\"history\":";history(state.history());std::cout<<",\"trace\":";trace(state.trace());std::cout<<"}"<<std::endl;
+ }
+}
+void stamp(const Fixture& f,const SimulationResult& source,const Wave& wave,bool log,int depol){
+ auto s=device(f,source,wave,log,depol,false);NlsTransientContinuation state;s->advance_transient_nls(state);
+ const auto before=state.history();const auto trace_before=state.trace();const auto proposal=state.suggested_dt();
+ for(int mode=0;mode<8;++mode){
+  s->set_transient_nls_error_control(mode!=0,mode==1?TCAD_CONST(.25):TCAD_CONST(.5),mode==2?PS/4:PS/2,mode==3?TCAD_CONST(.5):TCAD_CONST(1.0),mode==4?TCAD_CONST(.25):TCAD_CONST(.5),mode==5?S/2:S,mode==6?T/2048:T/1024,mode==7?19:20);
+  bool caught=false;try{s->advance_transient_nls(state);}catch(const std::invalid_argument&){caught=true;}control(*s);
+  need(caught && identical(state.history(),before) && identical(state.trace(),trace_before) && state.suggested_dt()==proposal && state.status()==NlsContinuationStatus::complete,"controller stamp omitted a field");
+ }
+ std::cout<<"{\"adaptive_online_stamp\":true,\"checks\":8}"<<std::endl;
+}
+void matrix(std::istream& input,int limit){
+ int count;need(bool(input>>count) && count==96,"wrong adaptive online input count");int cases=0;
+ for(int c=0;c<count;++c){
+  int dim,log_int,depol,index,family,protocol,nwave,nsteps;need(bool(input>>dim>>log_int>>depol>>index>>family>>protocol>>nwave>>nsteps),"adaptive online truncated input");bool log=log_int;
+  Wave original;for(int i=0;i<nwave;++i){original.times.push_back(read_number(input));original.voltages.push_back(read_number(input));}V knots;for(int i=0;i<nsteps;++i)knots.push_back(read_number(input));
+  if(index!=8 || family!=1 || protocol!=1)continue;
+  Fixture f(dim);auto live=f.simulator(log,depol);auto sources=live->solve_transient();need(sources.size()==17,"adaptive online source failed");const auto& source=sources.at(index);
+  Wave full_wave{{source.time},{original.at(source.time)}};for(auto t:knots){full_wave.times.push_back(t);full_wave.voltages.push_back(original.at(t));}
+  for(bool strict:{false,true}){
+   Wave wave=full_wave;if(strict){wave.times.resize(2);wave.voltages.resize(2);}
+   auto old=device(f,source,wave,log,depol,strict);const Snapshot entry(*old);
+   fault490::watched=old.get();fault490::entered=&entry.P;fault490::estimate_count=0;fault490::estimate_target=0;fault490::calibrating=true;
+   Coupled baseline;try{baseline.states=old->solve_transient();}catch(...){fault490::calibrating=false;throw;}fault490::calibrating=false;baseline.attempts=old->transient_attempt_history();const size_t target=fault490::estimate_target;
+   need(baseline.states.back().time==wave.times.back() && baseline.states.back().converged,"adaptive online baseline failed");
+   size_t rejected=0,accepted=0;for(const auto& g:baseline.attempts){if(g.accepted)++accepted;else{++rejected;need(g.status=="accuracy_limit" && g.stopping_reason=="retry","unexpected baseline rejection");}}
+   need(!strict || rejected>0,"strict accuracy rejection not reached");need(baseline.states.size()==2*accepted+1,"baseline group size");
+   auto clean=device(f,source,wave,log,depol,strict);NlsTransientContinuation run;clean->advance_transient_nls(run,1);need(run.status()==NlsContinuationStatus::complete && identical(run.history(),baseline.states) && identical(run.trace(),baseline.attempts),"clean adaptive online changed legacy result");
+   std::vector<Candidate> predictors;for(size_t i=1;i<baseline.states.size();++i){const auto& oldstate=baseline.states[i-1];predictors.push_back(trial(f,oldstate,depol,oldstate.P,wave,oldstate.time,baseline.states[i].time));}
+   std::cout<<"{\"adaptive_online_baseline\":true,";key(dim,log,depol,index,family,protocol);std::cout<<",\"strict\":"<<strict<<",\"rejected\":"<<rejected<<",\"estimate_target\":"<<target<<",\"estimate_bytes\":"<<fault490::calibration_bytes<<",\"entry\":";snapshot(entry);std::cout<<",\"after\":";snapshot(Snapshot(*clean));std::cout<<",\"wave_times\":";values(wave.times);std::cout<<",\"wave_voltages\":";values(wave.voltages);std::cout<<",\"source\":";result(source);std::cout<<",\"full\":";history(run.history());std::cout<<",\"trace\":";trace(run.trace());std::cout<<",\"predictors\":[";for(size_t i=0;i<predictors.size();++i){if(i)std::cout<<',';emit(predictors[i],"adaptive_online_half");}std::cout<<"]}"<<std::endl;
+   if(!strict){
+    for(int phase=0;phase<12;++phase){for(bool persistent:{false,true})fault(f,source,wave,log,depol,dim,index,family,protocol,false,phase,persistent,1,false,target,baseline);fault(f,source,wave,log,depol,dim,index,family,protocol,false,phase,false,0,false,target,baseline);}
+    fault(f,source,wave,log,depol,dim,index,family,protocol,false,0,false,1,true,target,baseline);
+   }else{
+    for(int phase:{12,13}){for(bool persistent:{false,true})fault(f,source,wave,log,depol,dim,index,family,protocol,true,phase,persistent,1,false,target,baseline);fault(f,source,wave,log,depol,dim,index,family,protocol,true,phase,false,0,false,target,baseline);}
+    limits(f,source,wave,log,depol,dim);
+   }
+  }
+  if(cases==0)stamp(f,source,full_wave,log,depol);
+  ++cases;if(limit && cases==limit)break;
+ }
+ need(cases==(limit?limit:12),"adaptive online matrix incomplete");
+}
+}
+int main(int argc,char** argv){try{need(argc==2 || argc==3,"expected adaptive online input file");std::ifstream input(argv[1]);need(bool(input),"adaptive online input open failed");adaptive497::matrix(input,argc==3?std::atoi(argv[2]):0);return 0;}catch(const std::exception& e){fault490::armed=false;fault490::calibrating=false;fault490::block_all=false;std::cerr<<e.what()<<'\n';return 2;}}

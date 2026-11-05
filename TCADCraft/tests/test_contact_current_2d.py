@@ -6,7 +6,7 @@ Validates the 2-D terminal-current extractor before the DevSim comparison:
   - Sign: forward-bias current is larger than reverse, correct sign.
   - Consistency with contact_current_1d: the 2-D integrator reduces to the
     1-D extractor scaled by the cross-sectional area on a quasi-1-D device.
-  - z-scaling: doubling nz doubles the integrated current (uniform in z).
+  - z-scaling: doubling resolution preserves current over the fixed physical area.
 
 Uses the same low-doping PN junction as test_contact_current.py (Na=Nd=1e18,
 L=200nm) which converges cleanly and has well-behaved SG fluxes.
@@ -136,15 +136,14 @@ class TestConsistency1d2d:
         I_1d = contact_current_1d(sim, r, "n_contact")  # [A/m^2] single edge
         I_2d = contact_current_2d(sim, r, "n_contact")  # [A] integrated
         mesh = sim.mesh
-        # 2-D sums over nz z-rows (each = same density in quasi-1-D), times
-        # dz * width.  So I_2d = I_1d * nz * dz * (dy * ny).
-        scale = (mesh.nz * mesh.dz) * (mesh.dy * mesh.ny)
-        assert I_2d == pytest.approx(I_1d * scale, rel=1e-6), (
+        # Endpoint nodes carry half dual faces; total face length is H.
+        scale = (mesh.zmax - mesh.zmin) * (mesh.ymax - mesh.ymin)
+        assert I_2d == pytest.approx(I_1d * scale, rel=1e-6, abs=0.), (
             f"2d={I_2d} != 1d*scale={I_1d * scale} (scale={scale})"
         )
 
     def test_z_scaling(self):
-        """Doubling nz doubles the integrated current (uniform in z)."""
+        """Refining nz preserves current on the same physical cross-section."""
         sim_a = _pn_simulator_2d(vbias=0.0, nx=61, nz=2, H=10e-9)
         r_a = _solve_ramped(sim_a, "p_contact", 0.3)
         I_a = contact_current_2d(sim_a, r_a, "n_contact")
@@ -153,6 +152,6 @@ class TestConsistency1d2d:
         r_b = _solve_ramped(sim_b, "p_contact", 0.3)
         I_b = contact_current_2d(sim_b, r_b, "n_contact")
 
-        assert I_b == pytest.approx(2.0 * I_a, rel=1e-6), (
-            f"doubling nz: I_b={I_b} != 2*I_a={2.0 * I_a}"
+        assert I_b == pytest.approx(I_a, rel=1e-6, abs=0.), (
+            f"refining nz: I_b={I_b} != I_a={I_a}"
         )

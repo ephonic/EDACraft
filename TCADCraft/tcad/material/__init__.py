@@ -26,6 +26,7 @@ from .igzo_tail import (
     igzo_tail_calibrations,
     igzo_tail_transport,
 )
+from .sheet import SheetMaterial, SheetStatistics, mos2_sheet, graphene_sheet
 
 __all__ = [
     "silicon", "sio2", "hfo2", "hfzro",
@@ -35,4 +36,5 @@ __all__ = [
     "BranchResponse", "SentaurusResponseModel", "load_sentaurus_response_model",
     "IgzoTailCalibration", "IgzoTailOccupancyTransport",
     "igzo_tail_calibration", "igzo_tail_calibrations", "igzo_tail_transport",
+    "SheetMaterial", "SheetStatistics", "mos2_sheet", "graphene_sheet",
 ]

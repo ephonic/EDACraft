@@ -1,6 +1,6 @@
 """TCAD: 3D Quantum-Corrected Semiconductor Device Simulator with 128-bit Precision"""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0rc1"
 
 from .core import SolverType
 from .geometry import Device, Material, Region, DopingProfile

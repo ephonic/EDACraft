@@ -212,17 +212,29 @@ def alscn(sc_fraction: float = 0.27) -> Material:
     material-driven FE detection (fe_alpha != 0) is essential here.
     """
     import math
-    Ps = 1.4               # C/m^2 (140 uC/cm^2)
-    Ec = 3.5e8             # V/m (3.5 MV/cm)
+    if not math.isfinite(sc_fraction) or not 0.0 <= sc_fraction <= 0.5:
+        raise ValueError("sc_fraction must be finite and lie in [0, 0.5]")
+
+    # Composition is an explicit, bounded surrogate around the x=0.27
+    # reference used by the calibrated examples.  The previous implementation
+    # only changed the material name, so an Sc sweep silently simulated the
+    # same device four times.  These first-order trends are deliberately
+    # exposed as parameters rather than presented as a universal AlScN law;
+    # process-specific PUND data should replace them when available.
+    dx = float(sc_fraction) - 0.27
+    Ps = 1.4 * (1.0 + 0.35 * dx)       # C/m^2
+    Ec = 3.5e8 * (1.0 - 0.80 * dx)     # V/m
+    epsilon_r = 15.0 * (1.0 + 0.25 * dx)
+    Eg = 5.5 - 0.35 * dx
+    chi = 1.5 + 0.10 * dx
     sqrt3 = math.sqrt(3.0)
     fe_beta = Ec * 3.0 * sqrt3 / (2.0 * Ps ** 3)    # ~3.31e8
     fe_alpha = -fe_beta * Ps * Ps                     # ~-6.49e8
-    epsilon_r = 15.0       # Al(1-x)Sc(x)N, x~0.27
     return Material(
         name=f"AlScN_x{sc_fraction:.2f}",
         epsilon_r=epsilon_r,
-        Eg=5.5,
-        chi=1.5,
+        Eg=Eg,
+        chi=chi,
         Nc=1.0e19,
         Nv=1.0e19,
         mu_n=0.0,

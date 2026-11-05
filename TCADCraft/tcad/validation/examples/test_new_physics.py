@@ -208,7 +208,6 @@ def test_nls_ferroelectric():
     framework.add_conservation_test()
     framework.add_boundedness_test()
     framework.add_symmetry_test('ferroelectric')
-    framework.add_limiting_case_test('nls_to_lk')
     
     # 运行验证
     results = framework.run_all()

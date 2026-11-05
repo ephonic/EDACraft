@@ -31,7 +31,7 @@ void ILU0Preconditioner::setup(const SparseMatrix& A) {
             if (k_diag >= row_ptr_[k + 1] || cols_[k_diag] != k) continue;
 
             real_t diag_val = lu_vals_[k_diag];
-            if (abs_q(diag_val) < 1e-12Q) diag_val = 1e-12Q;
+            if (abs_q(diag_val) < TCAD_CONST(1e-12)) diag_val = TCAD_CONST(1e-12);
             real_t multiplier = lu_vals_[k_idx] / diag_val;
             lu_vals_[k_idx] = multiplier;
 
@@ -66,8 +66,8 @@ void ILU0Preconditioner::setup(const SparseMatrix& A) {
 }
 
 Vector ILU0Preconditioner::apply(const Vector& r) const {
-    Vector z(n_, 0.0Q);
-    Vector y(n_, 0.0Q);
+    Vector z(n_, TCAD_CONST(0.0));
+    Vector y(n_, TCAD_CONST(0.0));
 
     // Forward solve L*y = r (L has unit diagonal)
     for (size_t i = 0; i < n_; ++i) {

@@ -1,0 +1,1534 @@
+{
+  "source": "Sentaurus Device W-2024.09, changelist 9150440",
+  "length_m": 4e-08,
+  "cases": [
+    {
+      "name": "base_negative",
+      "Ps": 0.2,
+      "Pr": 0.12,
+      "Ec": 50000000.0,
+      "points": [
+        {
+          "segment": 0,
+          "voltage_V": -0.001,
+          "electric_field_V_per_m": -24999.999046372697,
+          "polarization_C_per_m2": -2.77316516890754e-05
+        },
+        {
+          "segment": 0,
+          "voltage_V": -0.558496602689536,
+          "electric_field_V_per_m": -13962415.067240901,
+          "polarization_C_per_m2": -0.0172759626869092
+        },
+        {
+          "segment": 0,
+          "voltage_V": -1.18849660268954,
+          "electric_field_V_per_m": -29712415.067237597,
+          "polarization_C_per_m2": -0.0407428047600803
+        },
+        {
+          "segment": 0,
+          "voltage_V": -1.81849660268954,
+          "electric_field_V_per_m": -45462415.0672408,
+          "polarization_C_per_m2": -0.0671473193142135
+        },
+        {
+          "segment": 0,
+          "voltage_V": -2.44849660268954,
+          "electric_field_V_per_m": -61212415.0672384,
+          "polarization_C_per_m2": -0.09427465456396311
+        },
+        {
+          "segment": 0,
+          "voltage_V": -3.07849660268954,
+          "electric_field_V_per_m": -76962415.0672383,
+          "polarization_C_per_m2": -0.119661530638434
+        },
+        {
+          "segment": 0,
+          "voltage_V": -3.70849660268954,
+          "electric_field_V_per_m": -92712415.06723839,
+          "polarization_C_per_m2": -0.141427309813035
+        },
+        {
+          "segment": 0,
+          "voltage_V": -4.33849660268954,
+          "electric_field_V_per_m": -108462415.06723802,
+          "polarization_C_per_m2": -0.158730572671515
+        },
+        {
+          "segment": 0,
+          "voltage_V": -4.96849660268954,
+          "electric_field_V_per_m": -124212415.067241,
+          "polarization_C_per_m2": -0.171678453544782
+        },
+        {
+          "segment": 0,
+          "voltage_V": -5.59849660268954,
+          "electric_field_V_per_m": -139962415.067242,
+          "polarization_C_per_m2": -0.180935100067354
+        },
+        {
+          "segment": 0,
+          "voltage_V": -6.22849660268954,
+          "electric_field_V_per_m": -155712415.06724098,
+          "polarization_C_per_m2": -0.18733908896827
+        },
+        {
+          "segment": 0,
+          "voltage_V": -6.85849660268954,
+          "electric_field_V_per_m": -171462415.067242,
+          "polarization_C_per_m2": -0.19166954517708
+        },
+        {
+          "segment": 0,
+          "voltage_V": -7.48849660268954,
+          "electric_field_V_per_m": -187212415.06724098,
+          "polarization_C_per_m2": -0.194552834232029
+        },
+        {
+          "segment": 0,
+          "voltage_V": -8.11849660268954,
+          "electric_field_V_per_m": -202962415.067242,
+          "polarization_C_per_m2": -0.196452823550927
+        },
+        {
+          "segment": 0,
+          "voltage_V": -8.74849660268954,
+          "electric_field_V_per_m": -218712415.06723702,
+          "polarization_C_per_m2": -0.197696333141793
+        },
+        {
+          "segment": 0,
+          "voltage_V": -9.37849660268954,
+          "electric_field_V_per_m": -234462415.06723902,
+          "polarization_C_per_m2": -0.198506555631243
+        },
+        {
+          "segment": 0,
+          "voltage_V": -10.0,
+          "electric_field_V_per_m": -250000000.00000298,
+          "polarization_C_per_m2": -0.19902723735408598
+        }
+      ]
+    },
+    {
+      "name": "holdout_positive",
+      "Ps": 0.25,
+      "Pr": 0.08,
+      "Ec": 70000000.0,
+      "points": [
+        {
+          "segment": 0,
+          "voltage_V": 0.0014,
+          "electric_field_V_per_m": 34999.9999855435,
+          "polarization_C_per_m2": 1.91702199392119e-05
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.781895243765351,
+          "electric_field_V_per_m": 19547381.094138,
+          "polarization_C_per_m2": 0.011000511343696
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.66389524376535,
+          "electric_field_V_per_m": 41597381.0941318,
+          "polarization_C_per_m2": 0.0239854583291338
+        },
+        {
+          "segment": 0,
+          "voltage_V": 2.54589524376535,
+          "electric_field_V_per_m": 63647381.0941319,
+          "polarization_C_per_m2": 0.0373370930853073
+        },
+        {
+          "segment": 0,
+          "voltage_V": 3.42789524376535,
+          "electric_field_V_per_m": 85697381.094132,
+          "polarization_C_per_m2": 0.050772623110909104
+        },
+        {
+          "segment": 0,
+          "voltage_V": 4.30989524376535,
+          "electric_field_V_per_m": 107747381.09413199,
+          "polarization_C_per_m2": 0.0640021098738621
+        },
+        {
+          "segment": 0,
+          "voltage_V": 5.19189524376535,
+          "electric_field_V_per_m": 129797381.09413199,
+          "polarization_C_per_m2": 0.0767530478488648
+        },
+        {
+          "segment": 0,
+          "voltage_V": 6.07389524376535,
+          "electric_field_V_per_m": 151847381.094135,
+          "polarization_C_per_m2": 0.0923607312133321
+        },
+        {
+          "segment": 0,
+          "voltage_V": 6.95589524376536,
+          "electric_field_V_per_m": 173897381.094132,
+          "polarization_C_per_m2": 0.113999438978591
+        },
+        {
+          "segment": 0,
+          "voltage_V": 7.83789524376536,
+          "electric_field_V_per_m": 195947381.094132,
+          "polarization_C_per_m2": 0.13367706654835002
+        },
+        {
+          "segment": 0,
+          "voltage_V": 8.71989524376536,
+          "electric_field_V_per_m": 217997381.094132,
+          "polarization_C_per_m2": 0.15127974604032302
+        },
+        {
+          "segment": 0,
+          "voltage_V": 9.60189524376536,
+          "electric_field_V_per_m": 240047381.09413302,
+          "polarization_C_per_m2": 0.16679633854135598
+        },
+        {
+          "segment": 0,
+          "voltage_V": 10.4838952437654,
+          "electric_field_V_per_m": 262097381.09413302,
+          "polarization_C_per_m2": 0.180297703028369
+        },
+        {
+          "segment": 0,
+          "voltage_V": 11.3658952437654,
+          "electric_field_V_per_m": 284147381.094132,
+          "polarization_C_per_m2": 0.191913542363989
+        },
+        {
+          "segment": 0,
+          "voltage_V": 12.2478952437654,
+          "electric_field_V_per_m": 306197381.094132,
+          "polarization_C_per_m2": 0.20181039972675302
+        },
+        {
+          "segment": 0,
+          "voltage_V": 13.1298952437654,
+          "electric_field_V_per_m": 328247381.094132,
+          "polarization_C_per_m2": 0.210172986561766
+        },
+        {
+          "segment": 0,
+          "voltage_V": 14.0,
+          "electric_field_V_per_m": 349999999.999998,
+          "polarization_C_per_m2": 0.21710326269337202
+        }
+      ]
+    },
+    {
+      "name": "holdout_negative",
+      "Ps": 0.25,
+      "Pr": 0.08,
+      "Ec": 70000000.0,
+      "points": [
+        {
+          "segment": 0,
+          "voltage_V": -0.0014,
+          "electric_field_V_per_m": -34999.9999811835,
+          "polarization_C_per_m2": -2.81914999069942e-05
+        },
+        {
+          "segment": 0,
+          "voltage_V": -0.781895243765351,
+          "electric_field_V_per_m": -19547381.0941325,
+          "polarization_C_per_m2": -0.016177222564256598
+        },
+        {
+          "segment": 0,
+          "voltage_V": -1.66389524376535,
+          "electric_field_V_per_m": -41597381.0941341,
+          "polarization_C_per_m2": -0.0352727328369627
+        },
+        {
+          "segment": 0,
+          "voltage_V": -2.54589524376535,
+          "electric_field_V_per_m": -63647381.09413429,
+          "polarization_C_per_m2": -0.054907489831335504
+        },
+        {
+          "segment": 0,
+          "voltage_V": -3.42789524376535,
+          "electric_field_V_per_m": -85697381.0941343,
+          "polarization_C_per_m2": -0.0746656222219263
+        },
+        {
+          "segment": 0,
+          "voltage_V": -4.30989524376535,
+          "electric_field_V_per_m": -107747381.094136,
+          "polarization_C_per_m2": -0.09412074981450509
+        },
+        {
+          "segment": 0,
+          "voltage_V": -5.19189524376535,
+          "electric_field_V_per_m": -129797381.09413399,
+          "polarization_C_per_m2": -0.11287212918950801
+        },
+        {
+          "segment": 0,
+          "voltage_V": -6.07389524376535,
+          "electric_field_V_per_m": -151847381.094133,
+          "polarization_C_per_m2": -0.13057631152525
+        },
+        {
+          "segment": 0,
+          "voltage_V": -6.95589524376536,
+          "electric_field_V_per_m": -173897381.094134,
+          "polarization_C_per_m2": -0.146969271953479
+        },
+        {
+          "segment": 0,
+          "voltage_V": -7.83789524376536,
+          "electric_field_V_per_m": -195947381.094134,
+          "polarization_C_per_m2": -0.161876565566933
+        },
+        {
+          "segment": 0,
+          "voltage_V": -8.71989524376536,
+          "electric_field_V_per_m": -217997381.09413502,
+          "polarization_C_per_m2": -0.175211928818427
+        },
+        {
+          "segment": 0,
+          "voltage_V": -9.60189524376536,
+          "electric_field_V_per_m": -240047381.094134,
+          "polarization_C_per_m2": -0.18696692313739102
+        },
+        {
+          "segment": 0,
+          "voltage_V": -10.4838952437654,
+          "electric_field_V_per_m": -262097381.094134,
+          "polarization_C_per_m2": -0.197195229566946
+        },
+        {
+          "segment": 0,
+          "voltage_V": -11.3658952437654,
+          "electric_field_V_per_m": -284147381.094134,
+          "polarization_C_per_m2": -0.20599510785150701
+        },
+        {
+          "segment": 0,
+          "voltage_V": -12.2478952437654,
+          "electric_field_V_per_m": -306197381.094136,
+          "polarization_C_per_m2": -0.213492727065722
+        },
+        {
+          "segment": 0,
+          "voltage_V": -13.1298952437654,
+          "electric_field_V_per_m": -328247381.094136,
+          "polarization_C_per_m2": -0.21982802012254998
+        },
+        {
+          "segment": 0,
+          "voltage_V": -14.0,
+          "electric_field_V_per_m": -350000000.00000095,
+          "polarization_C_per_m2": -0.225078229313161
+        }
+      ]
+    },
+    {
+      "name": "high_pr_positive",
+      "Ps": 0.2,
+      "Pr": 0.16,
+      "Ec": 50000000.0,
+      "points": [
+        {
+          "segment": 0,
+          "voltage_V": 0.001,
+          "electric_field_V_per_m": 24999.9984098724,
+          "polarization_C_per_m2": 4.39638039987113e-06
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.558496602689536,
+          "electric_field_V_per_m": 13962415.0672374,
+          "polarization_C_per_m2": 0.0031234978304095604
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.18849660268954,
+          "electric_field_V_per_m": 29712415.0672363,
+          "polarization_C_per_m2": 0.008479763737674619
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.81849660268954,
+          "electric_field_V_per_m": 45462415.067246,
+          "polarization_C_per_m2": 0.015569513599367
+        },
+        {
+          "segment": 0,
+          "voltage_V": 2.44849660268954,
+          "electric_field_V_per_m": 61212415.0672375,
+          "polarization_C_per_m2": 0.0482991593615743
+        },
+        {
+          "segment": 0,
+          "voltage_V": 3.07849660268954,
+          "electric_field_V_per_m": 76962415.06723839,
+          "polarization_C_per_m2": 0.10632746314477201
+        },
+        {
+          "segment": 0,
+          "voltage_V": 3.70849660268954,
+          "electric_field_V_per_m": 92712415.0672394,
+          "polarization_C_per_m2": 0.146905329581357
+        },
+        {
+          "segment": 0,
+          "voltage_V": 4.33849660268954,
+          "electric_field_V_per_m": 108462415.06723998,
+          "polarization_C_per_m2": 0.171538524026492
+        },
+        {
+          "segment": 0,
+          "voltage_V": 4.96849660268954,
+          "electric_field_V_per_m": 124212415.06723998,
+          "polarization_C_per_m2": 0.185229777875529
+        },
+        {
+          "segment": 0,
+          "voltage_V": 5.59849660268954,
+          "electric_field_V_per_m": 139962415.06724098,
+          "polarization_C_per_m2": 0.19246843005168
+        },
+        {
+          "segment": 0,
+          "voltage_V": 6.22849660268954,
+          "electric_field_V_per_m": 155712415.06724,
+          "polarization_C_per_m2": 0.19619457714441899
+        },
+        {
+          "segment": 0,
+          "voltage_V": 6.85849660268954,
+          "electric_field_V_per_m": 171462415.06724098,
+          "polarization_C_per_m2": 0.198086250094863
+        },
+        {
+          "segment": 0,
+          "voltage_V": 7.48849660268954,
+          "electric_field_V_per_m": 187212415.067242,
+          "polarization_C_per_m2": 0.19903985265391
+        },
+        {
+          "segment": 0,
+          "voltage_V": 8.11849660268954,
+          "electric_field_V_per_m": 202962415.067242,
+          "polarization_C_per_m2": 0.199518858842735
+        },
+        {
+          "segment": 0,
+          "voltage_V": 8.74849660268954,
+          "electric_field_V_per_m": 218712415.067243,
+          "polarization_C_per_m2": 0.19975903879539
+        },
+        {
+          "segment": 0,
+          "voltage_V": 9.37849660268954,
+          "electric_field_V_per_m": 234462415.067243,
+          "polarization_C_per_m2": 0.19987935997145
+        },
+        {
+          "segment": 0,
+          "voltage_V": 10.0,
+          "electric_field_V_per_m": 250000000.000002,
+          "polarization_C_per_m2": 0.199939042974703
+        }
+      ]
+    },
+    {
+      "name": "nested_minor",
+      "Ps": 0.2,
+      "Pr": 0.12,
+      "Ec": 50000000.0,
+      "points": [
+        {
+          "segment": 0,
+          "voltage_V": 0.002,
+          "electric_field_V_per_m": 49999.9999999758,
+          "polarization_C_per_m2": 2.21899347585934e-05
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.0158277777777778,
+          "electric_field_V_per_m": 395694.444444253,
+          "polarization_C_per_m2": 0.000176113547647049
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.0624965277777778,
+          "electric_field_V_per_m": 1562413.1944436901,
+          "polarization_C_per_m2": 0.000702123525894239
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.175655902777778,
+          "electric_field_V_per_m": 4391397.56944442,
+          "polarization_C_per_m2": 0.00201935239344529
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.295655902777778,
+          "electric_field_V_per_m": 7391397.56944446,
+          "polarization_C_per_m2": 0.00348075181367628
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.415655902777778,
+          "electric_field_V_per_m": 10391397.5694444,
+          "polarization_C_per_m2": 0.00500803794826529
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.535655902777778,
+          "electric_field_V_per_m": 13391397.5694444,
+          "polarization_C_per_m2": 0.00660013154533758
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.655655902777778,
+          "electric_field_V_per_m": 16391397.5694443,
+          "polarization_C_per_m2": 0.00825539351352346
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.775655902777778,
+          "electric_field_V_per_m": 19391397.569444302,
+          "polarization_C_per_m2": 0.00997159891713104
+        },
+        {
+          "segment": 0,
+          "voltage_V": 0.895655902777778,
+          "electric_field_V_per_m": 22391397.5694442,
+          "polarization_C_per_m2": 0.011745920043251699
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.01565590277778,
+          "electric_field_V_per_m": 25391397.5694442,
+          "polarization_C_per_m2": 0.013574920014258699
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.13565590277778,
+          "electric_field_V_per_m": 28391397.5694441,
+          "polarization_C_per_m2": 0.015454558198547401
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.25565590277778,
+          "electric_field_V_per_m": 31391397.5694441,
+          "polarization_C_per_m2": 0.0173802083611602
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.37565590277778,
+          "electric_field_V_per_m": 34391397.5694441,
+          "polarization_C_per_m2": 0.0193466901006886
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.49565590277778,
+          "electric_field_V_per_m": 37391397.569444,
+          "polarization_C_per_m2": 0.0213483136534657
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.61565590277778,
+          "electric_field_V_per_m": 40391397.569443904,
+          "polarization_C_per_m2": 0.0233789376317045
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.73565590277778,
+          "electric_field_V_per_m": 43391397.5694438,
+          "polarization_C_per_m2": 0.0254320387262978
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.85565590277778,
+          "electric_field_V_per_m": 46391397.569443695,
+          "polarization_C_per_m2": 0.027500791879392698
+        },
+        {
+          "segment": 0,
+          "voltage_V": 1.97565590277778,
+          "electric_field_V_per_m": 49391397.5694435,
+          "polarization_C_per_m2": 0.02957815895048
+        },
+        {
+          "segment": 0,
+          "voltage_V": 2.0,
+          "electric_field_V_per_m": 49999999.999999,
+          "polarization_C_per_m2": 0.0299999999999993
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.9985,
+          "electric_field_V_per_m": 49962499.999999,
+          "polarization_C_per_m2": 0.0299877623786319
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.9878125,
+          "electric_field_V_per_m": 49695312.499999,
+          "polarization_C_per_m2": 0.029900243733922697
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.9517421875,
+          "electric_field_V_per_m": 48793554.687500596,
+          "polarization_C_per_m2": 0.029600616773143698
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.86611328125,
+          "electric_field_V_per_m": 46652832.03125,
+          "polarization_C_per_m2": 0.0288624392596734
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.77611328125,
+          "electric_field_V_per_m": 44402832.031252004,
+          "polarization_C_per_m2": 0.0280443044698009
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.68611328125,
+          "electric_field_V_per_m": 42152832.0312509,
+          "polarization_C_per_m2": 0.0271808696156584
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.59611328125,
+          "electric_field_V_per_m": 39902832.0312487,
+          "polarization_C_per_m2": 0.0262700884597026
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.50611328125,
+          "electric_field_V_per_m": 37652832.0312507,
+          "polarization_C_per_m2": 0.025309878583645598
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.41611328125,
+          "electric_field_V_per_m": 35402832.0312533,
+          "polarization_C_per_m2": 0.024298128225622398
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.32611328125,
+          "electric_field_V_per_m": 33152832.0312506,
+          "polarization_C_per_m2": 0.023232704195225003
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.23611328125,
+          "electric_field_V_per_m": 30902832.0312479,
+          "polarization_C_per_m2": 0.0221114609352986
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.14611328125,
+          "electric_field_V_per_m": 28652832.0312506,
+          "polarization_C_per_m2": 0.0209322507937045
+        },
+        {
+          "segment": 1,
+          "voltage_V": 1.05611328125,
+          "electric_field_V_per_m": 26402832.031253498,
+          "polarization_C_per_m2": 0.019692935560292897
+        },
+        {
+          "segment": 1,
+          "voltage_V": 0.96611328125,
+          "electric_field_V_per_m": 24152832.0312506,
+          "polarization_C_per_m2": 0.0183913993137621
+        },
+        {
+          "segment": 1,
+          "voltage_V": 0.876113281249999,
+          "electric_field_V_per_m": 21902832.0312475,
+          "polarization_C_per_m2": 0.0170255626096387
+        },
+        {
+          "segment": 1,
+          "voltage_V": 0.786113281249999,
+          "electric_field_V_per_m": 19652832.0312504,
+          "polarization_C_per_m2": 0.0155933980240872
+        },
+        {
+          "segment": 1,
+          "voltage_V": 0.696113281249999,
+          "electric_field_V_per_m": 17402832.0312537,
+          "polarization_C_per_m2": 0.0140929470484649
+        },
+        {
+          "segment": 1,
+          "voltage_V": 0.606113281249999,
+          "electric_field_V_per_m": 15152832.031250399,
+          "polarization_C_per_m2": 0.012522338306303199
+        },
+        {
+          "segment": 1,
+          "voltage_V": 0.516113281249999,
+          "electric_field_V_per_m": 12902832.0312504,
+          "polarization_C_per_m2": 0.0108798070376541
+        },
+        {
+          "segment": 1,
+          "voltage_V": 0.5,
+          "electric_field_V_per_m": 12500000.0000004,
+          "polarization_C_per_m2": 0.0105780152252541
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.501,
+          "electric_field_V_per_m": 12525000.0000004,
+          "polarization_C_per_m2": 0.010588896202268699
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.508125,
+          "electric_field_V_per_m": 12703125.0000004,
+          "polarization_C_per_m2": 0.010666527335862598
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.532171875,
+          "electric_field_V_per_m": 13304296.875000399,
+          "polarization_C_per_m2": 0.010929877857524601
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.5892578125,
+          "electric_field_V_per_m": 14731445.312500501,
+          "polarization_C_per_m2": 0.0115633092091959
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.6492578125,
+          "electric_field_V_per_m": 16231445.3125003,
+          "polarization_C_per_m2": 0.012241428976291
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.7092578125,
+          "electric_field_V_per_m": 17731445.3125005,
+          "polarization_C_per_m2": 0.0129319753724066
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.7692578125,
+          "electric_field_V_per_m": 19231445.3125008,
+          "polarization_C_per_m2": 0.013634679717875199
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.8292578125,
+          "electric_field_V_per_m": 20731445.3125005,
+          "polarization_C_per_m2": 0.0143492424055924
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.8892578125,
+          "electric_field_V_per_m": 22231445.3125002,
+          "polarization_C_per_m2": 0.015075332790528001
+        },
+        {
+          "segment": 2,
+          "voltage_V": 0.9492578125,
+          "electric_field_V_per_m": 23731445.3125005,
+          "polarization_C_per_m2": 0.0158125892291441
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.0092578125,
+          "electric_field_V_per_m": 25231445.3125008,
+          "polarization_C_per_m2": 0.0165606192754872
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.0692578125,
+          "electric_field_V_per_m": 26731445.3125005,
+          "polarization_C_per_m2": 0.017319000039602
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.1292578125,
+          "electric_field_V_per_m": 28231445.312500197,
+          "polarization_C_per_m2": 0.0180872787126574
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.1892578125,
+          "electric_field_V_per_m": 29731445.3125005,
+          "polarization_C_per_m2": 0.0188649732617981
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.2492578125,
+          "electric_field_V_per_m": 31231445.3125007,
+          "polarization_C_per_m2": 0.0196515732962561
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.3092578125,
+          "electric_field_V_per_m": 32731445.3125005,
+          "polarization_C_per_m2": 0.0204465411046784
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.3692578125,
+          "electric_field_V_per_m": 34231445.3125002,
+          "polarization_C_per_m2": 0.0212493128619744
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.4292578125,
+          "electric_field_V_per_m": 35731445.3125005,
+          "polarization_C_per_m2": 0.022059300002283497
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.4892578125,
+          "electric_field_V_per_m": 37231445.3125007,
+          "polarization_C_per_m2": 0.0228758907529438
+        },
+        {
+          "segment": 2,
+          "voltage_V": 1.5,
+          "electric_field_V_per_m": 37500000.0000005,
+          "polarization_C_per_m2": 0.0230227390196704
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.4993,
+          "electric_field_V_per_m": 37482500.0000005,
+          "polarization_C_per_m2": 0.0230162091098004
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.4943125,
+          "electric_field_V_per_m": 37357812.500000596,
+          "polarization_C_per_m2": 0.0229696066298014
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.4774796875,
+          "electric_field_V_per_m": 36936992.1875005,
+          "polarization_C_per_m2": 0.0228113244799425
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.43751953125,
+          "electric_field_V_per_m": 35937988.2812509,
+          "polarization_C_per_m2": 0.022429342271673997
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.39551953125,
+          "electric_field_V_per_m": 34887988.2812513,
+          "polarization_C_per_m2": 0.022018271569440803
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.35351953125,
+          "electric_field_V_per_m": 33837988.2812517,
+          "polarization_C_per_m2": 0.0215971910258532
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.31151953125,
+          "electric_field_V_per_m": 32787988.281252004,
+          "polarization_C_per_m2": 0.0211659155379312
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.26951953125,
+          "electric_field_V_per_m": 31737988.2812524,
+          "polarization_C_per_m2": 0.020724259780627502
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.22751953125,
+          "electric_field_V_per_m": 30687988.2812528,
+          "polarization_C_per_m2": 0.0202720384096679
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.18551953125,
+          "electric_field_V_per_m": 29637988.281253103,
+          "polarization_C_per_m2": 0.019809066275571198
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.14351953125,
+          "electric_field_V_per_m": 28587988.281253498,
+          "polarization_C_per_m2": 0.019335158649037603
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.10151953125,
+          "electric_field_V_per_m": 27537988.2812539,
+          "polarization_C_per_m2": 0.0188501314578733
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.05951953125,
+          "electric_field_V_per_m": 26487988.281254303,
+          "polarization_C_per_m2": 0.0183538015355922
+        },
+        {
+          "segment": 3,
+          "voltage_V": 1.01751953125,
+          "electric_field_V_per_m": 25437988.2812547,
+          "polarization_C_per_m2": 0.0178459868818069
+        },
+        {
+          "segment": 3,
+          "voltage_V": 0.97551953125,
+          "electric_field_V_per_m": 24387988.2812498,
+          "polarization_C_per_m2": 0.0173265069344872
+        },
+        {
+          "segment": 3,
+          "voltage_V": 0.93351953125,
+          "electric_field_V_per_m": 23337988.2812477,
+          "polarization_C_per_m2": 0.0167951828541426
+        },
+        {
+          "segment": 3,
+          "voltage_V": 0.89151953125,
+          "electric_field_V_per_m": 22287988.281250298,
+          "polarization_C_per_m2": 0.0162518378199163
+        },
+        {
+          "segment": 3,
+          "voltage_V": 0.84951953125,
+          "electric_field_V_per_m": 21237988.2812508,
+          "polarization_C_per_m2": 0.0156962973375764
+        },
+        {
+          "segment": 3,
+          "voltage_V": 0.80751953125,
+          "electric_field_V_per_m": 20187988.2812513,
+          "polarization_C_per_m2": 0.015128389559331
+        },
+        {
+          "segment": 3,
+          "voltage_V": 0.8,
+          "electric_field_V_per_m": 20000000.0000014,
+          "polarization_C_per_m2": 0.015025395056435902
+        },
+        {
+          "segment": 4,
+          "voltage_V": 0.8007,
+          "electric_field_V_per_m": 20017500.0000014,
+          "polarization_C_per_m2": 0.0150327860092798
+        },
+        {
+          "segment": 4,
+          "voltage_V": 0.8056875,
+          "electric_field_V_per_m": 20142187.5000013,
+          "polarization_C_per_m2": 0.015085487344979899
+        },
+        {
+          "segment": 4,
+          "voltage_V": 0.8225203125,
+          "electric_field_V_per_m": 20563007.8125008,
+          "polarization_C_per_m2": 0.0152638807077009
+        },
+        {
+          "segment": 4,
+          "voltage_V": 0.86248046875,
+          "electric_field_V_per_m": 21562011.718748502,
+          "polarization_C_per_m2": 0.0156905959481998
+        },
+        {
+          "segment": 4,
+          "voltage_V": 0.90448046875,
+          "electric_field_V_per_m": 22612011.7187496,
+          "polarization_C_per_m2": 0.0161438939990378
+        },
+        {
+          "segment": 4,
+          "voltage_V": 0.94648046875,
+          "electric_field_V_per_m": 23662011.7187502,
+          "polarization_C_per_m2": 0.0166019998522781
+        },
+        {
+          "segment": 4,
+          "voltage_V": 0.98848046875,
+          "electric_field_V_per_m": 24712011.7187495,
+          "polarization_C_per_m2": 0.0170647932324037
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.03048046875,
+          "electric_field_V_per_m": 25762011.718748998,
+          "polarization_C_per_m2": 0.0175321473781491
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.07248046875,
+          "electric_field_V_per_m": 26812011.718749598,
+          "polarization_C_per_m2": 0.0180039291157531
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.11448046875,
+          "electric_field_V_per_m": 27862011.7187503,
+          "polarization_C_per_m2": 0.0184799989498369
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.15648046875,
+          "electric_field_V_per_m": 28912011.7187497,
+          "polarization_C_per_m2": 0.0189602111720748
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.19848046875,
+          "electric_field_V_per_m": 29962011.718748998,
+          "polarization_C_per_m2": 0.0194444139877471
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.24048046875,
+          "electric_field_V_per_m": 31012011.7187497,
+          "polarization_C_per_m2": 0.019932449660185002
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.28248046875,
+          "electric_field_V_per_m": 32062011.718750402,
+          "polarization_C_per_m2": 0.0204241546730312
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.32448046875,
+          "electric_field_V_per_m": 33112011.7187497,
+          "polarization_C_per_m2": 0.0209193599101564
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.36648046875,
+          "electric_field_V_per_m": 34162011.718749,
+          "polarization_C_per_m2": 0.021417890852985
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.40848046875,
+          "electric_field_V_per_m": 35212011.7187498,
+          "polarization_C_per_m2": 0.0219195677948906
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.45048046875,
+          "electric_field_V_per_m": 36262011.7187505,
+          "polarization_C_per_m2": 0.0224242060722384
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.49248046875,
+          "electric_field_V_per_m": 37312011.7187498,
+          "polarization_C_per_m2": 0.0229316163115609
+        },
+        {
+          "segment": 4,
+          "voltage_V": 1.5,
+          "electric_field_V_per_m": 37500000.0000002,
+          "polarization_C_per_m2": 0.0230227390196702
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.5005,
+          "electric_field_V_per_m": 37512500.0000002,
+          "polarization_C_per_m2": 0.023029578739850603
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.5040625,
+          "electric_field_V_per_m": 37601562.5000001,
+          "polarization_C_per_m2": 0.0230783234850817
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.5160859375,
+          "electric_field_V_per_m": 37902148.4374998,
+          "polarization_C_per_m2": 0.0232429874908246
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.54462890625,
+          "electric_field_V_per_m": 38615722.6562496,
+          "polarization_C_per_m2": 0.0236347947730128
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.57462890625,
+          "electric_field_V_per_m": 39365722.6562493,
+          "polarization_C_per_m2": 0.024047911093092303
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.60462890625,
+          "electric_field_V_per_m": 40115722.6562489,
+          "polarization_C_per_m2": 0.024462286622311
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.63462890625,
+          "electric_field_V_per_m": 40865722.656248495,
+          "polarization_C_per_m2": 0.024877837142699
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.66462890625,
+          "electric_field_V_per_m": 41615722.656247996,
+          "polarization_C_per_m2": 0.0252944774486223
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.69462890625,
+          "electric_field_V_per_m": 42365722.656247504,
+          "polarization_C_per_m2": 0.0257121214146196
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.72462890625,
+          "electric_field_V_per_m": 43115722.65625,
+          "polarization_C_per_m2": 0.0261306820648749
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.75462890625,
+          "electric_field_V_per_m": 43865722.6562499,
+          "polarization_C_per_m2": 0.026550071644205
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.78462890625,
+          "electric_field_V_per_m": 44615722.65625,
+          "polarization_C_per_m2": 0.0269702016904562
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.81462890625,
+          "electric_field_V_per_m": 45365722.6562502,
+          "polarization_C_per_m2": 0.0273909831081657
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.84462890625,
+          "electric_field_V_per_m": 46115722.656250305,
+          "polarization_C_per_m2": 0.027812326243374
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.87462890625,
+          "electric_field_V_per_m": 46865722.6562505,
+          "polarization_C_per_m2": 0.028234140959451
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.90462890625,
+          "electric_field_V_per_m": 47615722.656250596,
+          "polarization_C_per_m2": 0.028656336713800898
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.93462890625,
+          "electric_field_V_per_m": 48365722.6562508,
+          "polarization_C_per_m2": 0.029078822635309
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.96462890625,
+          "electric_field_V_per_m": 49115722.6562509,
+          "polarization_C_per_m2": 0.029501507602388802
+        },
+        {
+          "segment": 5,
+          "voltage_V": 1.99462890625,
+          "electric_field_V_per_m": 49865722.6562511,
+          "polarization_C_per_m2": 0.0299243003214891
+        },
+        {
+          "segment": 5,
+          "voltage_V": 2.0,
+          "electric_field_V_per_m": 50000000.000001,
+          "polarization_C_per_m2": 0.030000000000000398
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.002,
+          "electric_field_V_per_m": 50050000.0000011,
+          "polarization_C_per_m2": 0.0300346573534778
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.01625,
+          "electric_field_V_per_m": 50406249.9999996,
+          "polarization_C_per_m2": 0.0302815880650277
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.06434375,
+          "electric_field_V_per_m": 51608593.7499964,
+          "polarization_C_per_m2": 0.031114807436984804
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.178515625,
+          "electric_field_V_per_m": 54462890.6250049,
+          "polarization_C_per_m2": 0.0330894991174999
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.298515625,
+          "electric_field_V_per_m": 57462890.624999695,
+          "polarization_C_per_m2": 0.0351545043241919
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.418515625,
+          "electric_field_V_per_m": 60462890.6249977,
+          "polarization_C_per_m2": 0.0372018882477559
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.538515625,
+          "electric_field_V_per_m": 63462890.624999695,
+          "polarization_C_per_m2": 0.0392249030566891
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.658515625,
+          "electric_field_V_per_m": 66462890.624999695,
+          "polarization_C_per_m2": 0.0448685058314795
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.778515625,
+          "electric_field_V_per_m": 69462890.6249997,
+          "polarization_C_per_m2": 0.0526901562766864
+        },
+        {
+          "segment": 6,
+          "voltage_V": 2.898515625,
+          "electric_field_V_per_m": 72462890.6249998,
+          "polarization_C_per_m2": 0.0603423633800627
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.018515625,
+          "electric_field_V_per_m": 75462890.6249998,
+          "polarization_C_per_m2": 0.0678050208265901
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.138515625,
+          "electric_field_V_per_m": 78462890.62499939,
+          "polarization_C_per_m2": 0.0750602802434497
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.258515625,
+          "electric_field_V_per_m": 81462890.6249997,
+          "polarization_C_per_m2": 0.0820926616952073
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.378515625,
+          "electric_field_V_per_m": 84462890.6249995,
+          "polarization_C_per_m2": 0.0888891114775713
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.498515625,
+          "electric_field_V_per_m": 87462890.62499939,
+          "polarization_C_per_m2": 0.0954390098770764
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.618515625,
+          "electric_field_V_per_m": 90462890.6249996,
+          "polarization_C_per_m2": 0.10173413305363901
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.738515625,
+          "electric_field_V_per_m": 93462890.6249998,
+          "polarization_C_per_m2": 0.107768574346023
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.858515625,
+          "electric_field_V_per_m": 96462890.625,
+          "polarization_C_per_m2": 0.11353863107857
+        },
+        {
+          "segment": 6,
+          "voltage_V": 3.978515625,
+          "electric_field_V_per_m": 99462890.6249993,
+          "polarization_C_per_m2": 0.119042663369337
+        },
+        {
+          "segment": 6,
+          "voltage_V": 4.0,
+          "electric_field_V_per_m": 99999999.9999996,
+          "polarization_C_per_m2": 0.11999999999999901
+        },
+        {
+          "segment": 7,
+          "voltage_V": 3.993,
+          "electric_field_V_per_m": 99824999.9999995,
+          "polarization_C_per_m2": 0.119976056829533
+        },
+        {
+          "segment": 7,
+          "voltage_V": 3.943125,
+          "electric_field_V_per_m": 98578124.9999983,
+          "polarization_C_per_m2": 0.119802164795256
+        },
+        {
+          "segment": 7,
+          "voltage_V": 3.774796875,
+          "electric_field_V_per_m": 94369921.8749997,
+          "polarization_C_per_m2": 0.119170442537647
+        },
+        {
+          "segment": 7,
+          "voltage_V": 3.3751953125,
+          "electric_field_V_per_m": 84379882.8124999,
+          "polarization_C_per_m2": 0.117353747947528
+        },
+        {
+          "segment": 7,
+          "voltage_V": 2.9551953125,
+          "electric_field_V_per_m": 73879882.8125001,
+          "polarization_C_per_m2": 0.11485056076671
+        },
+        {
+          "segment": 7,
+          "voltage_V": 2.5351953125,
+          "electric_field_V_per_m": 63379882.812499605,
+          "polarization_C_per_m2": 0.11156259261908599
+        },
+        {
+          "segment": 7,
+          "voltage_V": 2.1151953125,
+          "electric_field_V_per_m": 52879882.812499896,
+          "polarization_C_per_m2": 0.107269451992229
+        },
+        {
+          "segment": 7,
+          "voltage_V": 1.6951953125,
+          "electric_field_V_per_m": 42379882.8125002,
+          "polarization_C_per_m2": 0.101707232473417
+        },
+        {
+          "segment": 7,
+          "voltage_V": 1.2751953125,
+          "electric_field_V_per_m": 31879882.8125005,
+          "polarization_C_per_m2": 0.0945728874424339
+        },
+        {
+          "segment": 7,
+          "voltage_V": 0.855195312499999,
+          "electric_field_V_per_m": 21379882.812499702,
+          "polarization_C_per_m2": 0.0855391664482857
+        },
+        {
+          "segment": 7,
+          "voltage_V": 0.435195312499999,
+          "electric_field_V_per_m": 10879882.8124997,
+          "polarization_C_per_m2": 0.0742851189015517
+        },
+        {
+          "segment": 7,
+          "voltage_V": 0.0151953124999986,
+          "electric_field_V_per_m": 379882.812499444,
+          "polarization_C_per_m2": 0.0605459644042233
+        },
+        {
+          "segment": 7,
+          "voltage_V": -0.404804687500001,
+          "electric_field_V_per_m": -10120117.1874999,
+          "polarization_C_per_m2": 0.044181453353156604
+        },
+        {
+          "segment": 7,
+          "voltage_V": -0.824804687500002,
+          "electric_field_V_per_m": -20620117.1875002,
+          "polarization_C_per_m2": 0.0252527291814066
+        },
+        {
+          "segment": 7,
+          "voltage_V": -1.2448046875,
+          "electric_field_V_per_m": -31120117.1874999,
+          "polarization_C_per_m2": 0.00408596788909716
+        },
+        {
+          "segment": 7,
+          "voltage_V": -1.6648046875,
+          "electric_field_V_per_m": -41620117.187499695,
+          "polarization_C_per_m2": -0.0187068650600265
+        },
+        {
+          "segment": 7,
+          "voltage_V": -2.0848046875,
+          "electric_field_V_per_m": -52120117.1874995,
+          "polarization_C_per_m2": -0.0422746733019973
+        },
+        {
+          "segment": 7,
+          "voltage_V": -2.5048046875,
+          "electric_field_V_per_m": -62620117.1874993,
+          "polarization_C_per_m2": -0.065643142900674
+        },
+        {
+          "segment": 7,
+          "voltage_V": -2.9248046875,
+          "electric_field_V_per_m": -73120117.1875007,
+          "polarization_C_per_m2": -0.08787022205149811
+        },
+        {
+          "segment": 7,
+          "voltage_V": -3.0,
+          "electric_field_V_per_m": -75000000.0000002,
+          "polarization_C_per_m2": -0.0916666666666668
+        },
+        {
+          "segment": 8,
+          "voltage_V": -2.994,
+          "electric_field_V_per_m": -74850000.0000003,
+          "polarization_C_per_m2": -0.0916329938021029
+        },
+        {
+          "segment": 8,
+          "voltage_V": -2.95125,
+          "electric_field_V_per_m": -73781250.00000061,
+          "polarization_C_per_m2": -0.0913892317780129
+        },
+        {
+          "segment": 8,
+          "voltage_V": -2.80696875,
+          "electric_field_V_per_m": -70174218.7500004,
+          "polarization_C_per_m2": -0.0905147903124765
+        },
+        {
+          "segment": 8,
+          "voltage_V": -2.464453125,
+          "electric_field_V_per_m": -61611328.124999896,
+          "polarization_C_per_m2": -0.0880832220437555
+        },
+        {
+          "segment": 8,
+          "voltage_V": -2.104453125,
+          "electric_field_V_per_m": -52611328.1249994,
+          "polarization_C_per_m2": -0.0848912626114795
+        },
+        {
+          "segment": 8,
+          "voltage_V": -1.744453125,
+          "electric_field_V_per_m": -43611328.1249991,
+          "polarization_C_per_m2": -0.0809063746643239
+        },
+        {
+          "segment": 8,
+          "voltage_V": -1.384453125,
+          "electric_field_V_per_m": -34611328.1250002,
+          "polarization_C_per_m2": -0.0759676704924799
+        },
+        {
+          "segment": 8,
+          "voltage_V": -1.024453125,
+          "electric_field_V_per_m": -25611328.125,
+          "polarization_C_per_m2": -0.06990177887204829
+        },
+        {
+          "segment": 8,
+          "voltage_V": -0.664453125,
+          "electric_field_V_per_m": -16611328.124999799,
+          "polarization_C_per_m2": -0.06253339338494619
+        },
+        {
+          "segment": 8,
+          "voltage_V": -0.304453124999999,
+          "electric_field_V_per_m": -7611328.12499962,
+          "polarization_C_per_m2": -0.0537021580128776
+        },
+        {
+          "segment": 8,
+          "voltage_V": 0.055546875000001,
+          "electric_field_V_per_m": 1388671.87500055,
+          "polarization_C_per_m2": -0.043286322577809996
+        },
+        {
+          "segment": 8,
+          "voltage_V": 0.415546875000001,
+          "electric_field_V_per_m": 10388671.874999499,
+          "polarization_C_per_m2": -0.0312317931003142
+        },
+        {
+          "segment": 8,
+          "voltage_V": 0.775546875000002,
+          "electric_field_V_per_m": 19388671.874998998,
+          "polarization_C_per_m2": -0.0175824648493613
+        },
+        {
+          "segment": 8,
+          "voltage_V": 1.135546875,
+          "electric_field_V_per_m": 28388671.874998398,
+          "polarization_C_per_m2": -0.00250472080452709
+        },
+        {
+          "segment": 8,
+          "voltage_V": 1.495546875,
+          "electric_field_V_per_m": 37388671.874999404,
+          "polarization_C_per_m2": 0.0137028225441942
+        },
+        {
+          "segment": 8,
+          "voltage_V": 1.855546875,
+          "electric_field_V_per_m": 46388671.874999404,
+          "polarization_C_per_m2": 0.0306219950634786
+        },
+        {
+          "segment": 8,
+          "voltage_V": 2.215546875,
+          "electric_field_V_per_m": 55388671.874999695,
+          "polarization_C_per_m2": 0.0477525780035273
+        },
+        {
+          "segment": 8,
+          "voltage_V": 2.575546875,
+          "electric_field_V_per_m": 64388671.8749995,
+          "polarization_C_per_m2": 0.064568976874523
+        },
+        {
+          "segment": 8,
+          "voltage_V": 2.935546875,
+          "electric_field_V_per_m": 73388671.8750008,
+          "polarization_C_per_m2": 0.0805831434995241
+        },
+        {
+          "segment": 8,
+          "voltage_V": 3.0,
+          "electric_field_V_per_m": 74999999.9999995,
+          "polarization_C_per_m2": 0.0833333333333326
+        }
+      ]
+    }
+  ]
+}

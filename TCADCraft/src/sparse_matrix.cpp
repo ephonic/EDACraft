@@ -13,6 +13,13 @@ void SparseMatrix::add_entry(size_t i, size_t j, real_t val) {
 
 void SparseMatrix::finalize() {
     if (finalized_) return;
+    // A legal matrix with no inserted entries has no temporary row maps.
+    // Finalize its zero CSR representation without indexing that empty vector.
+    if (temp_entries_.empty()) {
+        row_ptr_.assign(n_ + 1, 0);
+        finalized_ = true;
+        return;
+    }
     row_ptr_.assign(n_ + 1, 0);
     size_t nnz = 0;
     for (size_t i = 0; i < n_; ++i) {
@@ -36,7 +43,7 @@ void SparseMatrix::finalize() {
 void SparseMatrix::matvec(const real_t* x, real_t* y) const {
     assert(finalized_);
     for (size_t i = 0; i < n_; ++i) {
-        real_t sum = 0.0Q;
+        real_t sum = TCAD_CONST(0.0);
         for (size_t idx = row_ptr_[i]; idx < row_ptr_[i + 1]; ++idx) {
             sum += vals_[idx] * x[cols_[idx]];
         }
@@ -46,7 +53,7 @@ void SparseMatrix::matvec(const real_t* x, real_t* y) const {
 
 std::vector<real_t> SparseMatrix::apply(const std::vector<real_t>& x) const {
     assert(x.size() == n_);
-    std::vector<real_t> y(n_, 0.0Q);
+    std::vector<real_t> y(n_, TCAD_CONST(0.0));
     matvec(x.data(), y.data());
     return y;
 }
@@ -70,7 +77,7 @@ Vector operator*(real_t s, const Vector& v) {
 }
 
 real_t dot(const Vector& a, const Vector& b) {
-    real_t s = 0.0Q;
+    real_t s = TCAD_CONST(0.0);
     for (size_t i = 0; i < a.size(); ++i) s += a[i] * b[i];
     return s;
 }

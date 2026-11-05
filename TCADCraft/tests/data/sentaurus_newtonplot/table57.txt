@@ -1,0 +1,51 @@
+Iteration   |Rhs|      factor     |step|     error   #inner  #iterative  time
+------------------------------------------------------------------------------
+    0      3.42e-06                                                      0.02
+
+k_error_per_object:
+max-norm	: imax	: l2-norm	: inst	: pde	: imax-coords (um)
+7.372e-12	: 69	: 3.938e-12	: 	: Electron	: ( 1.367e-01 -0.000e+00 )
+3.424e-06	: 376	: 3.349e-07	: 	: Hole	: ( 7.383e-01 2.000e-03 )
+1.050e-15	: 378	: 3.513e-16	: 	: Poisson	: ( 7.422e-01 2.000e-03 )
+writing newton_i0_s57.tdr (TDR format) ... done.
+C-norm_equation  max_error	vertex		coordinate [um]		value 
+ poisson:	5.730387e-10	250	(4.921875e-01, 2.000000e-03)	-1.589189e-02 
+ electron:	4.409508e-08	99	(1.953125e-01, -0.000000e+00)	4.203323e+10 
+ hole:		3.740464e-05	377	(7.382813e-01, -0.000000e+00)	3.694679e+10 
+    1      9.58e-10   1.00e+00   2.49e-06   2.49e+08    0         1      0.05
+
+k_error_per_object:
+max-norm	: imax	: l2-norm	: inst	: pde	: imax-coords (um)
+8.641e-19	: 186	: 5.221e-19	: 	: Electron	: ( 3.672e-01 2.000e-03 )
+9.576e-10	: 378	: 9.527e-11	: 	: Hole	: ( 7.422e-01 2.000e-03 )
+8.966e-33	: 138	: 1.810e-33	: 	: Poisson	: ( 2.734e-01 2.000e-03 )
+writing newton_i1_s57.tdr (TDR format) ... done.
+C-norm_equation  max_error	vertex		coordinate [um]		value 
+ poisson:	1.199292e-12	232	(4.570312e-01, 2.000000e-03)	-1.494766e-02 
+ electron:	1.351027e-11	155	(3.046875e-01, -0.000000e+00)	3.858779e+10 
+ hole:		1.258574e-08	373	(7.304688e-01, -0.000000e+00)	3.730041e+10 
+    2      8.41e-17   1.00e+00   3.58e-09   3.58e+05    0         1      0.08
+
+k_error_per_object:
+max-norm	: imax	: l2-norm	: inst	: pde	: imax-coords (um)
+4.976e-24	: 194	: 2.937e-24	: 	: Electron	: ( 3.828e-01 2.000e-03 )
+8.413e-17	: 378	: 8.256e-18	: 	: Hole	: ( 7.422e-01 2.000e-03 )
+5.797e-33	: 374	: 1.607e-33	: 	: Poisson	: ( 7.344e-01 2.000e-03 )
+writing newton_i2_s57.tdr (TDR format) ... done.
+C-norm_equation  max_error	vertex		coordinate [um]		value 
+ poisson:	7.580244e-20	232	(4.570312e-01, 2.000000e-03)	-1.494766e-02 
+ electron:	7.476796e-19	150	(2.968750e-01, 2.000000e-03)	3.878087e+10 
+ hole:		7.958581e-16	372	(7.304688e-01, 2.000000e-03)	3.730041e+10 
+    3      6.29e-31   1.00e+00   2.27e-16   2.27e-02    0         1      0.12
+
+k_error_per_object:
+max-norm	: imax	: l2-norm	: inst	: pde	: imax-coords (um)
+2.749e-32	: 136	: 6.423e-33	: 	: Electron	: ( 2.695e-01 2.000e-03 )
+6.292e-31	: 378	: 6.016e-32	: 	: Hole	: ( 7.422e-01 2.000e-03 )
+3.909e-33	: 135	: 1.022e-33	: 	: Poisson	: ( 2.656e-01 -0.000e+00 )
+writing newton_i3_s57.tdr (TDR format) ... done.
+Finished, because...
+Error smaller than 1 ( 2.2653E-02 ).
+
+Sentaurus Device simulation finished (Date: Fri Oct 30 00:40:22 2026  (EDT)).
+********************************* Good Bye ! *********************************

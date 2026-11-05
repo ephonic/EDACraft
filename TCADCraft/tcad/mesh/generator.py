@@ -7,6 +7,7 @@ import math
 from tcad.geometry.device_builder import Device
 from .structured_grid import StructuredGrid
 from .base import Mesh
+from tcad.configuration import remember_device_fields
 
 
 def structured_mesh_from_device(
@@ -47,6 +48,12 @@ def structured_mesh_from_device(
     grid._material_shapes = [
         (region.shape, rid) for rid, region in enumerate(device.regions)
     ]
+    # Keep constants even for thin regions with no grid node. Their series
+    # dielectric contribution cannot be recovered from sampled node fields.
+    grid._material_permittivity = {
+        rid: region.material.epsilon_r * 8.854187817e-12
+        for rid, region in enumerate(device.regions)
+    }
     # Attach device fields
     fields = grid.create_device_fields(device)
     for name, data in fields.items():
@@ -55,6 +62,7 @@ def structured_mesh_from_device(
     contacts = grid.contact_masks(device)
     for name, mask in contacts.items():
         grid.add_field(f"contact_{name}", mask.astype(float))
+    remember_device_fields(grid)
     return grid
 
 

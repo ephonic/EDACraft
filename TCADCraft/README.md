@@ -1,362 +1,167 @@
 # TCADCraft
 
-TCADCraft is the TCAD simulation package in EDACraft. It combines a Python API,
-Cython bindings, and a C++ solver core for 3D semiconductor device simulation
-with quantum correction and calibration-oriented device models.
+TCADCraft is EDACraft's semiconductor device simulation package. It combines
+a Python API, Cython bindings and a C++ numerical core with classical
+drift–diffusion, density-gradient quantum corrections and scoped multiphysics
+models.
 
-## What It Covers
+**Release candidate: 0.3.0rc1 (2026-11-05).** This release adds a dedicated
+classical sheet model for graphene and MoS₂, sparse coupling to a 3D dielectric,
+transient carrier/trap dynamics and stronger solver acceptance/recovery checks.
+It is a research release with explicit model limits. Complete Sentaurus
+equivalence and complete 2D logic/memory-device qualification are not claimed.
 
-- Structured Cartesian meshing for the main solver path
-- Optional Gmsh-based unstructured meshing
-- Planar MOSFET, FinFET, GAA, BSPDN GAA, TFET, tunnel diode, Dirac-source FET
-- IGZO TFT and WSe2 Schottky FET templates
-- Density-gradient quantum correction
-- BTBT, impact ionization, thermal coupling, traps, ferroelectric, leakage
-- Mesh, field, and sweep post-processing
+See [release notes](RELEASE_NOTES.md), [validation and open gaps](docs/releases/0.3.0rc1/VALIDATION.md)
+and [numerical provenance](docs/releases/0.3.0rc1/validation_summary.json).
 
-## Install And Build
+## Capabilities and limits
+
+| Area | Available implementation | Qualification boundary |
+| --- | --- | --- |
+| Bulk devices | Structured Cartesian and optional unstructured workflows; MOSFET, FinFET, GAA and other device templates | Templates are starting points; quantitative predictions require validated models and parameters |
+| Classical transport | Poisson, electron/hole continuity, steady/transient APIs and multiple linear solvers | Physics combinations and recovery paths have scoped validation |
+| Quantum corrections | Density-gradient corrections in supported bulk workflows | Not a general Schrödinger–Poisson or NEGF solver |
+| 2D materials | Graphene Dirac and MoS₂ parabolic-band Fermi–Dirac sheet statistics; charge and quantum capacitance | Representative parameters, homogeneous bands, isothermal constant mobility |
+| Sheet electrostatics | Local gate or Cartesian 3D dielectric coupling; finite mesh-aligned side electrodes | General geometry, material calibration and full spatial convergence remain open |
+| Sheet contacts | Ideal/resistive edges, parabolic thermionic injection and graphene Dirac mode supply | Separate model assumptions; not arbitrary vertical/tunnelling interfaces |
+| Sheet dynamics | Backward Euler storage, single-level traps, conduction/displacement currents and transactional rollback | Short pulse controls do not establish full memory operation or endurance |
+| Other physics | Contact, thermal, trap, ferroelectric, leakage, tunnelling and impact-ionization modules | A module's presence does not validate every coupled configuration |
+
+Sheet number density is in **m⁻²**, charge density in **C/m²**, sheet current
+in **A/m**, and integrated terminal current in **A**. A bulk material template
+with an effective thickness is not interchangeable with the dedicated sheet
+solver.
+
+## Install a release binary
+
+A tested **Linux x86_64 / CPython 3.13** native wheel and a source archive are
+available under [binaries/](binaries/README.md). The wheel uses SI constants and
+GCC float128; it is host-built and is not manylinux-certified. Follow the
+compatibility notes and checksum instructions before installation.
 
 ```bash
-python setup.py build_ext --inplace
+python -m pip install binaries/linux-x86_64/tcad-0.3.0rc1-cp313-cp313-linux_x86_64.whl
 ```
 
-For systems without PETSc or LAPACK:
+Clean-source build, separate wheel installation, the graphene/MoS2 examples
+and installed-package targeted tests passed: **1055 passed, 0 skipped; zero failures/errors**. See the
+[release verification report](docs/releases/0.3.0rc1/RELEASE_VERIFICATION.json).
+
+## Install from source
+
+Linux is the validated native build platform for this candidate. Use Python
+3.10 or newer, a C++17 GCC toolchain with `libquadmath`, and the dependencies
+in `pyproject.toml`. The default core uses GCC `__float128` with 113 mantissa
+bits. Python/SciPy sheet solvers use float64 and do not inherit the native
+core's arithmetic precision.
 
 ```bash
-TCAD_USE_PETSC=0 TCAD_USE_LAPACK=0 python setup.py build_ext --inplace
+git clone https://github.com/ephonic/EDACraft.git
+cd EDACraft/TCADCraft
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+TCAD_USE_PETSC=0 TCAD_USE_LAPACK=0 python -m pip install '.[dev]'
 ```
 
-Editable install with optional extras:
+For development, use `python -m pip install -e '.[dev]'` with the same build
+environment. Optional extras are `viz` (PyVista/VTK) and `gmsh`.
+Native Windows builds are unsupported by the current setup script; use Linux
+or WSL2. macOS needs an appropriate toolchain and is not covered by the Linux
+binary verification.
 
-```bash
-pip install -e ".[dev,viz,gmsh]"
-```
-
-Native Windows builds are not the primary target. Use WSL2 or Linux/macOS.
-
-## Basic Workflow
-
-1. Pick a device template or build a custom `Device`.
-2. Generate a mesh with `generate_mesh()` or `structured_mesh_from_device()`.
-3. Create `Simulator(mesh)`.
-4. Load material fields with `set_material_from_mesh()`.
-5. Set contacts and physics options.
-6. Run `run()`, `run_transient()`, `simulate_device()`, or `simulate_sweep()`.
-7. Inspect `results`, export fields, and post-process metrics.
-
-Minimal example:
+The default constants profile is `si`. `TCAD_CONSTANTS_PROFILE=legacy-charge`
+selects a separate build for bounded classical comparison, not a full
+commercial-software physics preset. A loaded binary cannot change profile.
+Inspect the installed extension with:
 
 ```python
-from tcad import Device, simulate_device
+import tcad
+from tcad.core import native_precision, native_constants
 
-dev = Device.mosfet(Lg=50e-9, tox=1.5e-9, tsi=10e-9, W=100e-9, Vg=0.7, Vd=0.5)
-sim, results = simulate_device(
-    dev,
-    resolution=(5e-9, 5e-9, 5e-9),
-    quantum=False,
-    ramp_steps=3,
-    max_iter=80,
-    tol=1e-8,
-)
+print(tcad.__version__)
+print(native_precision())
+print(native_constants())
 ```
 
-## Device Recipes
-
-### Bulk MOSFET
-
-Use `Device.mosfet(...)` for a planar body MOSFET. This is the easiest entry
-point for transfer curves and basic electrostatics.
-
-Typical workflow:
+## Graphene / MoS₂ sheet example
 
 ```python
 import numpy as np
-from tcad import Device, simulate_sweep
-from tcad.postprocess.metrics import extract_transfer_characteristics_current
-from tcad.viz.plotter import plot_transfer
+from tcad.material import graphene_sheet
+from tcad.solver.sheet_dielectric import DielectricSheetDriftDiffusion
+from tcad.solver.sheet_transient import SheetTransient
 
-dev = Device.mosfet(
-    Lg=50e-9, tox=1.5e-9, tsi=20e-9, W=100e-9, Lsd=50e-9,
-    Vd=0.5, Vs=0.0,
+device = DielectricSheetDriftDiffusion(
+    np.linspace(0, 200e-9, 33),
+    np.linspace(0, 100e-9, 3),
+    np.linspace(-10e-9, 10e-9, 17),
+    graphene_sheet(),
+    sheet_index=8,
+    permittivity_F_m=5 * 8.8541878128e-12,
+    contact_z_bounds_m=(-2.5e-9, 2.5e-9),
+    electrostatic_backend='coupled',
+    linear_solver='reused_gmres',
+    mobility_n_m2_Vs=0.02,
+    mobility_p_m2_Vs=0.01,
+    transport_scheme='diffusion_enhanced',
+    contact_resistance_ohm_m=0.003,
 )
-sim, sweep = simulate_sweep(
-    dev,
-    {"gate": np.linspace(0.0, 0.8, 17)},
-    resolution=(2e-9, 5e-9, 1e-9),
-    quantum=True,
-    ramp_steps=3,
-    max_iter=80,
-    tol=1e-8,
+run = SheetTransient(
+    device, initial_drive={'top_gate_voltage_V': 0.005}, tolerance=1e-12,
 )
-metrics = extract_transfer_characteristics_current(sim, sweep)
-plot_transfer(metrics["Vg"], metrics["Id"], Vth=metrics["Vth"])
+result = run.step(
+    dt_s=2e-12, top_gate_voltage_V=0.025, drain_voltage_V=0.004,
+    tolerance=1e-12,
+)
+assert result['accepted']
 ```
 
-When you want a single bias point instead of a sweep, call `simulate_device()`
-with the same template and a fixed `Vg` / `Vd`.
+For MoS₂ use `mos2_sheet(reference_eV=-0.9)` and a suitable contact model;
+for example, replace the resistance with `thermionic_barrier_n_eV=0.12`.
+These are demonstration inputs, not sample-calibrated parameters.
 
-### FinFET
+The default `schur` electrostatic backend retains limits of 1024 sheet and
+100000 total nodes. Explicitly select `coupled` for a sparse full Newton
+system; practical scale depends on factorization resources. Direct sparse
+solves remain the default. Optional `reused_gmres` requires the true original
+row-scaled max-norm bound `min(1e-14, 0.01*tolerance)`. Rejected transient
+steps retain accepted state, time, drive and cache. Serialized solver restart
+and concurrent calls on one driver are not supported.
 
-Use `Device.finfet(...)` for a double-gate fin device. The mesh should be
-finer across the fin thickness than along the channel.
+See the [sheet API](docs/sheet_sparse_coupling.md). Runnable examples under
+`examples/` include `sheet_dielectric_contacts.py`, `sheet_transient_dd.py` and
+`sheet_trap_balance.py`.
 
-```python
-from tcad import Device, Simulator
-from tcad.mesh.generator import structured_mesh_from_device
-from tcad.viz.plotter import plot_mesh_slice
+## Validation status
 
-device = Device.finfet(
-    Lg=30e-9, tox=1.5e-9, tsi=10e-9, Hfin=30e-9,
-    Lsd=30e-9, tgate=10e-9, Vg=0.7, Vd=0.1,
-)
-mesh = structured_mesh_from_device(device, resolution=(5e-9, 2.5e-9, 5e-9))
-sim = Simulator(mesh, temperature=300.0)
-sim.set_material_from_mesh()
-for name, (_, voltage) in device.contacts.items():
-    sim.set_contact(name, voltage)
-results = sim.run(max_iter=120, tol=1e-8)
-for name, data in sim.to_mesh_fields().items():
-    sim.mesh.add_field(name, sim.mesh.from_3d(data))
-plot_mesh_slice(sim.mesh, field="phi", axis="z", coord=15e-9)
+The sealed MoS₂ fine-mesh comparison completed **two 60 ps trajectories** on
+a 129×17×129 mesh: **768 dynamic steps, 8 complete fields and 6,769,086
+independent physics checks**. SI and legacy-charge physical records agree
+exactly. Separate local-z probes passed 1,336,524 field checks, but cover only
+initialization and one BE step at each of two refinements per profile.
+
+**Spatial convergence remains unqualified.** Fine-grid temporal and joint
+spacetime bounds, real sample/contact calibration, complete logic/memory
+workflows and dedicated quantum transport remain open. The historical 282
+final-source affected regressions are inherited evidence, not a fresh
+full-suite result. Release build/install checks are recorded separately.
+
+## Development and release checks
+
+```bash
+python scripts/release_check.py
+python -m pytest tests/test_sheet_statistics.py tests/test_sheet_reused_gmres.py -q
+python -m build
 ```
 
-For thin fins, keep `quantum=True` and consider `set_newton_options(...)` when
-the drain bias is high.
+The metadata check without calibration arguments does not certify real
+experimental calibration or whole-device convergence. Tests include optional,
+slow and external-reference workflows; targeted passes are not full-suite
+claims. Source distributions include C++/Cython sources, examples, tests and
+compact documentation. Large raw validation archives, commercial executables
+and host-specific development environments are not bundled.
 
-### GAA And Nanosheet
+## License
 
-Use `Device.gaa(...)` for a silicon nanosheet and `Device.gaa_highk(...)` when
-you want a high-k gate stack. For silicon nanosheets, enable the multivalley
-density-gradient closure.
-
-```python
-from tcad import Device, Simulator
-from tcad.mesh.generator import structured_mesh_from_device
-
-device = Device.gaa(
-    Lg=20e-9, tox=1.5e-9, t_sheet=5e-9, W_sheet=30e-9,
-    Lsd=30e-9, Vg=0.7, Vd=0.05,
-)
-mesh = structured_mesh_from_device(device, resolution=(5e-9, 2.5e-9, 2.5e-9))
-sim = Simulator(mesh, temperature=300.0)
-sim.set_material_from_mesh()
-sim.set_quantum(True)
-sim.set_density_gradient_silicon_multivalley(True)
-sim.enable_cut_cell(True)
-for name, (_, voltage) in device.contacts.items():
-    sim.set_contact(name, voltage)
-results = sim.run(max_iter=120, tol=1e-8)
-```
-
-This is the right starting point for nanosheet transfer curves, DG comparison,
-and quantum confinement studies.
-
-### GaN
-
-TCADCraft currently provides GaN as a material library entry via
-`tcad.material.library.gallium_nitride()`. There is no one-line `Device.gan()`
-helper yet, so GaN devices are built as custom `Device` objects.
-
-The most direct workflow is a vertical Schottky diode or Schottky-contact
-stack:
-
-```python
-from tcad import Device, Simulator
-from tcad.geometry import Region
-from tcad.geometry.shapes import Box
-from tcad.material.library import gallium_nitride
-from tcad.mesh.generator import structured_mesh_from_device
-
-gan = gallium_nitride()
-device = Device("gan_schottky")
-device.add_region(Region("gan", Box(0, 100e-9, 0, 10e-9, 0, 10e-9), gan))
-device.add_contact("anode", Box(0, 100e-9, 0, 10e-9, 9e-9, 10e-9), voltage=0.0,
-                   workfunction=4.8)
-device.add_contact("cathode", Box(0, 100e-9, 0, 10e-9, -1e-9, 0.0), voltage=0.0)
-
-mesh = structured_mesh_from_device(device, nx=9, ny=3, nz=5)
-sim = Simulator(mesh, temperature=300.0)
-sim.set_material_from_mesh()
-sim.set_contact("anode", 0.3, workfunction=4.8)
-sim.set_contact("cathode", 0.0)
-sim.set_schottky_tunneling(
-    "anode",
-    effective_mass_ratio=0.20,
-    area_m2=1.0e-13,
-    tunneling_barrier_lowering_eV=0.0928,
-    series_resistance_ohm=1360.0,
-)
-results = sim.run(max_iter=80, tol=1e-8)
-```
-
-For GaN pn structures, use `gallium_nitride()` in custom `Region`s and apply
-the same `Simulator` / `simulate_device()` flow.
-
-### TFET And Tunnel Diode
-
-Use `Device.tfet(...)` or `Device.tunnel_diode(...)` and keep voltage steps
-small.
-
-Recommended controls:
-
-- `set_btbt(enabled=True, use_nonlocal=True)` for source-channel tunneling
-- `set_btbt_weight(...)` if you want to gate the BTBT source region
-- `simulate_sweep(...)` with small voltage increments
-
-For tunnel diode NDR analysis, use `extract_ndr_metrics(...)`.
-
-### FeFET / NC-FET
-
-Use `Device.gaa_fefet(...)` or a custom ferroelectric stack.
-
-Recommended controls:
-
-- `set_ferroelectric(enabled=True, model="landau_khalatnikov" | "preisach" | "nls")`
-- `set_ferroelectric_builtin_field(...)`
-- `set_ferroelectric_depol(...)`
-- `set_leakage(...)`
-- `set_interface_traps(...)` and `set_oxide_traps(...)` if needed
-
-For P-V / P-E / PUND studies, use `tcad.postprocess.fe_loops`.
-
-### Schottky And WSe2
-
-Use `Device.wse2_schottky_fet(...)` or `set_contact(..., workfunction=...)`
-for Schottky boundary conditions.
-
-Recommended controls:
-
-- `set_schottky_tunneling(...)`
-- `set_wse2_schottky_contact(...)`
-- `set_contact(..., workfunction=...)` before enabling tunneling
-
-### IGZO And Disordered Transport
-
-Use `Device.igzo_tft(...)` and the mesh metadata fields for tail states.
-
-Recommended controls:
-
-- `set_disordered_transport(True)`
-- `set_mobility_model("constant" | "arora" | ...)`
-- `set_statistics("boltzmann" | "fermi_dirac")`
-
-### Adaptive And Transient Workflows
-
-- `run_adaptive(...)` for solve-refine-resolve loops
-- `set_transient(dt, t_final, fe_gamma=0.0)` plus `run_transient(...)`
-- `set_thermal_coupling(True, ...)` for self-heating studies
-
-## How To View Results
-
-`run()` returns a dictionary. Common keys include:
-
-- `phi`, `n`, `p`
-- `Ex`, `Ey`, `Ez`
-- `Qn`, `Qp`
-- `temperature` when thermal coupling is enabled
-- `G_btbt`, `G_ii`, `Jleak_x`, `Jleak_y`, `Jleak_z` when those models are active
-- `converged`, `iterations`, `valid`
-- `continuation_steps`, `continuation_steps_completed`, `continuation_retries`
-
-Mesh-backed views:
-
-```python
-fields = sim.to_mesh_fields()
-sim.save("result.vtk")
-```
-
-Plotting helpers:
-
-- `tcad.viz.plotter.plot_mesh_slice(mesh, field="phi", axis="y")`
-- `tcad.viz.plotter.plot_1d_cutline(...)`
-- `tcad.viz.plotter.plot_3d_field(...)`
-- `tcad.viz.plotter.plot_transfer(...)`
-- `tcad.viz.plotter.plot_pv_loop(...)`
-- `tcad.viz.plotter.plot_pe_loop(...)`
-- `tcad.viz.plotter.plot_pund(...)`
-
-`plot_3d_field()` uses PyVista if installed, otherwise it falls back to a 2D
-slice plot.
-
-## Performance And Runtime
-
-Current benchmark artifacts focus on accuracy and convergence. They do not yet
-store a complete wall-clock runtime table.
-
-For local TCADCraft timing, the scripts under `bench/tcadcraft/` are the right
-entry point. Several of them print per-solve timings directly, for example:
-
-- `bench/tcadcraft/test_speed_quad.py`
-- `bench/tcadcraft/test_dense_sizes.py`
-- `bench/tcadcraft/nmos_*.py`
-
-If you need a strict runtime comparison, run the same deck size and bias
-schedule on the same host, then capture wall-clock with `/usr/bin/time -p` or
-an equivalent timer.
-
-Practical reading, based on the current benchmark scope:
-
-- TCADCraft is built for fast scripted iteration and local calibration.
-- The repo currently proves functional parity on several device families, but
-  not a formal runtime ratio.
-
-## Main Post-Processing APIs
-
-Use current-based extractors for quantitative work:
-
-- `tcad.postprocess.metrics.extract_transfer_characteristics_current(...)`
-- `tcad.postprocess.tfet.extract_tfet_metrics(...)`
-- `tcad.postprocess.ndr.extract_ndr_metrics(...)`
-- `tcad.postprocess.hysteresis.extract_hysteresis(...)`
-- `tcad.postprocess.hysteresis.extract_ss(...)`
-
-The legacy `extract_transfer_characteristics(...)` function is a density proxy
-and should only be used when you explicitly want that degraded metric.
-
-## Main Public API
-
-`tcad` exports:
-
-- `Device`, `Material`, `Region`, `DopingProfile`
-- `StructuredGrid`, `generate_mesh`
-- `Simulator`, `simulate_device`, `simulate_sweep`
-- `SolverType`, `UnstructuredSimulator`
-
-Key `Simulator` methods:
-
-- `set_material_from_mesh()`
-- `set_contact(name, voltage, workfunction=None)`
-- `set_quantum()`
-- `set_btbt()`
-- `set_impact_ionization()`
-- `set_thermal_coupling()`
-- `set_ferroelectric()`
-- `set_leakage()`
-- `set_interface_traps()`
-- `set_oxide_traps()`
-- `set_statistics()`
-- `set_mobility_model()`
-- `run()`
-- `run_transient()`
-- `run_adaptive()`
-- `to_mesh_fields()`
-- `save()`
-
-## Layout
-
-- `tcad/` Python package and public API
-- `src/` C++ solver core
-- `examples/` runnable device setups
-- `tests/` regression and validation tests
-- `scripts/` release and pre-commit checks
-
-## Notes
-
-- The package version is `0.2.0`.
-- `simulate_device()` is the easiest entry point for single-device runs.
-- `simulate_sweep()` is the normal entry point for transfer curves.
-- Useful examples: `examples/mosfet_simulation.py`,
-  `examples/finfet_simulation.py`, `examples/finfet_gaa_simulation.py`,
-  `examples/pn_junction.py`, `examples/graphene_source_tfet.py`.
-- See `examples/` for device-specific scripts and `tests/` for regression
-  coverage.
+MIT; see [LICENSE](LICENSE).

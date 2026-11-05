@@ -1,0 +1,136 @@
+{
+  "scope": "Static charge-free linear isotropic concave polygon inclusion; five potential samples and boundary flux. Line coefficients only; no cut-face transport, FE, full spatial or material validation.",
+  "commercial": [
+    {
+      "cells": 128,
+      "sampled_phi_V": [
+        0.0315298762703496,
+        0.0615297290618434,
+        0.0869979402618677,
+        0.0989530709298214,
+        0.149242038759355
+      ],
+      "induced_phi_V": [
+        0.0015298762703496033,
+        -0.0004702709381566028,
+        -0.0030020597381323066,
+        -0.001046929070178601,
+        -0.0007579612406450331
+      ],
+      "charges_C": [
+        -6.98900388799247e-18,
+        6.98900388799245e-18
+      ],
+      "capacitance_F": 3.49450194399623e-17,
+      "capacitance_gain": 0.011978653617732649,
+      "gauss_relative_error": 2.8658835711966674e-15,
+      "charge_surface_relative_error": 1.0819479459023285e-06
+    },
+    {
+      "cells": 256,
+      "sampled_phi_V": [
+        0.0315228973406572,
+        0.0615320034196873,
+        0.0870122039301103,
+        0.0989589066140039,
+        0.149246175537268
+      ],
+      "induced_phi_V": [
+        0.0015228973406571991,
+        -0.000467996580312699,
+        -0.002987796069889706,
+        -0.001041093385996103,
+        -0.0007538244627320334
+      ],
+      "charges_C": [
+        -6.98854853116469e-18,
+        6.98854853116468e-18
+      ],
+      "capacitance_F": 3.4942742655823423e-17,
+      "capacitance_gain": 0.011912719845642572,
+      "gauss_relative_error": 1.3228016793235431e-15,
+      "charge_surface_relative_error": 5.403932554770563e-07
+    }
+  ],
+  "points_um": [
+    [
+      0.15,
+      0.5
+    ],
+    [
+      0.31,
+      0.5
+    ],
+    [
+      0.45,
+      0.5
+    ],
+    [
+      0.5,
+      0.25
+    ],
+    [
+      0.75,
+      0.5
+    ]
+  ],
+  "relative_contrast_budget": 0.03,
+  "expected_native_acceptance": {
+    "16": false,
+    "32": false,
+    "64": false,
+    "128": true
+  },
+  "tool": "Sentaurus Device W-2024.09",
+  "geometry_um": {
+    "length": 1,
+    "height": 1,
+    "depth": 1,
+    "polygon_vertices": [
+      [
+        0.25,
+        0.4375
+      ],
+      [
+        0.375,
+        0.4375
+      ],
+      [
+        0.375,
+        0.5625
+      ],
+      [
+        0.34375,
+        0.5625
+      ],
+      [
+        0.34375,
+        0.46875
+      ],
+      [
+        0.28125,
+        0.46875
+      ],
+      [
+        0.28125,
+        0.5625
+      ],
+      [
+        0.25,
+        0.5625
+      ]
+    ]
+  },
+  "relative_permittivity": {
+    "base": 3.9,
+    "prism": 15
+  },
+  "reference_helper": "docs/validation/primitive_cut_edges_20261017/native.py",
+  "reference_helper_sha256": "7cecf7aa132c17c9b8a8079e31cfa5b652a3a270c619a417bf4d583d334db976",
+  "raw_sha256": {
+    "docs/validation/primitive_cut_edges_20261017/commercial_m128/raw.json": "cafb9f793b7a9830c2aecfbb7b707ac8aed448b5b73402ff7200193d667122f6",
+    "docs/validation/primitive_cut_edges_20261017/commercial_m256/raw.json": "c9166f398af0b06cc9cb26ef70edc0adf682e558e9adbafb0e1651a2f26c0e46",
+    "docs/validation/primitive_cut_edges_20261017/commercial_m64/raw.json": "7f8698b31cdbf9eb76486618b91a523a0ee51e5de35b7e7b4fc1ed6c710ce545"
+  },
+  "physical_validated": false
+}

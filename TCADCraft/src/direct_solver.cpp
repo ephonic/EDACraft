@@ -10,7 +10,7 @@ Vector DenseDirectSolver::solve(const SparseMatrix& A, const Vector& b) {
     if (b.size() != n) throw std::invalid_argument("Dimension mismatch");
 
     // Convert CSR to dense column-major (for cache efficiency)
-    std::vector<real_t> M(n * n, 0.0Q);
+    std::vector<real_t> M(n * n, TCAD_CONST(0.0));
     const auto& vals = A.vals();
     const auto& cols = A.col_indices();
     const auto& rp = A.row_offsets();
@@ -27,7 +27,7 @@ Vector DenseDirectSolver::solve(const SparseMatrix& A, const Vector& b) {
     std::vector<size_t> pivot(n);
     lu_factorize(M, n, pivot);
 
-    Vector x(n, 0.0Q);
+    Vector x(n, TCAD_CONST(0.0));
     lu_solve(M, n, pivot, b, x);
     return x;
 }

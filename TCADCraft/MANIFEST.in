@@ -4,9 +4,16 @@ include CHANGELOG.md
 include RELEASE_NOTES.md
 include pyproject.toml
 include setup.py
+include tcad_build_config.py
+include pytest.ini
+include conftest.py
 recursive-include src *.cpp *.h
 recursive-include tcad *.py *.pyx *.json
 recursive-include scripts *.py
+recursive-include tests *.py *.cpp *.json *.txt *.dat *.tsv *.npz
+recursive-include examples *.py
+recursive-include benchmarks *.py
+recursive-include docs *.md *.json
 prune build
 prune dist
 global-exclude __pycache__ *.py[cod] *.so *.pyd

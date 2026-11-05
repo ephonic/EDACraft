@@ -2,12 +2,14 @@
 
 #include <cmath>
 #include <cstddef>
+#include <limits>
+#include <string>
 
 // Platform-specific 128-bit support
 // Note: __SIZEOF_FLOAT128__ is not defined on all targets that support
 // __float128 (e.g. Apple Silicon / aarch64 with gcc).  Detect via
-// __GNUC__ and the availability of the type itself, gated on the
-// -fext-numeric-literals flag (set in setup.py) which enables the q-suffix.
+// __GNUC__ and the availability of the type itself. TCAD_CONST selects
+// the literal suffix together with the scalar type.
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(__SIZEOF_FLOAT128__)
     // Probe: __float128 may still be available even without the macro.
     #define TCAD_HAS_FLOAT128_TYPE 1
@@ -33,12 +35,54 @@ namespace tcad {
     #define TCAD_CONST(x) (x##L)
 #endif
 
+inline bool uses_float128() {
+#ifdef TCAD_USE_FLOAT128
+    return true;
+#else
+    return false;
+#endif
+}
+inline int real_mantissa_bits() {
+#ifdef TCAD_USE_FLOAT128
+    return FLT128_MANT_DIG;
+#else
+    return std::numeric_limits<real_t>::digits;
+#endif
+}
+inline int real_max_decimal_exponent() {
+#ifdef TCAD_USE_FLOAT128
+    return FLT128_MAX_10_EXP;
+#else
+    return std::numeric_limits<real_t>::max_exponent10;
+#endif
+}
+inline real_t epsilon_q() {
+#ifdef TCAD_USE_FLOAT128
+    return FLT128_EPSILON;
+#else
+    return std::numeric_limits<real_t>::epsilon();
+#endif
+}
+
 // Constants
 constexpr real_t PI = TCAD_CONST(3.141592653589793238462643383279502884);
 constexpr real_t EPSILON = TCAD_CONST(1e-20);  // Small value for numerical stability
 constexpr real_t KB = TCAD_CONST(1.380649e-23); // Boltzmann constant [J/K]
-constexpr real_t QE = TCAD_CONST(1.602176634e-19); // Elementary charge [C]
+// Only the shared charge changes. KB, EPS0 and independent model literals
+// retain their definitions; this is not a complete commercial constants set.
+#ifdef TCAD_CONSTANTS_LEGACY_CHARGE
+constexpr real_t QE = TCAD_CONST(1.602192e-19); // Legacy reference charge [C]
+static inline const char* constants_profile_name() { return "legacy-charge"; }
+#else
+constexpr real_t QE = TCAD_CONST(1.602176634e-19); // SI elementary charge [C]
+static inline const char* constants_profile_name() { return "si"; }
+#endif
 constexpr real_t EPS0 = TCAD_CONST(8.854187817e-12); // Vacuum permittivity [F/m]
+
+// Out-of-line metadata identifies the compiled core, independently of Python
+// environment variables and the binding translation unit's header view.
+const char* compiled_constants_profile_name();
+std::string compiled_elementary_charge_decimal();
 
 // Math wrappers
 #ifdef TCAD_USE_FLOAT128
@@ -51,6 +95,7 @@ constexpr real_t EPS0 = TCAD_CONST(8.854187817e-12); // Vacuum permittivity [F/m
     inline real_t cosh_q(real_t x) { return coshq(x); }
     inline real_t tanh_q(real_t x) { return tanhq(x); }
     inline real_t abs_q(real_t x) { return fabsq(x); }
+    inline bool isfinite_q(real_t x) { return !isnanq(x) && !isinfq(x); }
 #else
     inline real_t sqrt_q(real_t x) { return sqrtl(x); }
     inline real_t exp_q(real_t x) { return expl(x); }
@@ -61,6 +106,7 @@ constexpr real_t EPS0 = TCAD_CONST(8.854187817e-12); // Vacuum permittivity [F/m
     inline real_t cosh_q(real_t x) { return coshl(x); }
     inline real_t tanh_q(real_t x) { return tanhl(x); }
     inline real_t abs_q(real_t x) { return fabsl(x); }
+    inline bool isfinite_q(real_t x) { return std::isfinite(x); }
 #endif
 
 // Convert to/from double for I/O

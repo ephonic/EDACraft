@@ -61,6 +61,49 @@ class FilamentConfig:
             -self.rupture_activation_eV / (8.617e-5 * self.temperature_K))
 
 
+def set_filament_rates(chain: BirthDeathChain, cfg: FilamentConfig,
+                       field_V_per_m: float) -> None:
+    """Declared field-driven rate proxy; no thermal RESET equation."""
+    if not math.isfinite(field_V_per_m):
+        raise ValueError("field must be finite")
+    # Update the chain rates based on field polarity
+    chain._lam[:] = 0.0
+    chain._mu[:] = 0.0
+    if field_V_per_m > 0:
+        # SET: field-driven growth + thermal rupture
+        lam = cfg.growth_rate(field_V_per_m)
+        for n in range(cfg.n_max + 1):
+            if n < cfg.n_max:
+                chain._lam[n] = lam
+            if n > 0:
+                chain._mu[n] = cfg.rupture_rate(n)
+    elif field_V_per_m < 0:
+        # RESET: field-enhanced rupture (negative bias disperses vacancies)
+        # Growth stops; rupture is enhanced by the reverse field
+        rupture_boost = cfg.growth_rate(abs(field_V_per_m))
+        for n in range(cfg.n_max + 1):
+            if n < cfg.n_max:
+                chain._lam[n] = 0.0  # no growth during reset
+            if n > 0:
+                chain._mu[n] = cfg.rupture_rate(n) + rupture_boost
+    else:
+        # Zero field: thermal equilibrium only
+        for n in range(cfg.n_max + 1):
+            if n < cfg.n_max:
+                chain._lam[n] = cfg.growth_rate(0.0)
+            if n > 0:
+                chain._mu[n] = cfg.rupture_rate(n)
+
+
+def filament_resistance(n: int, cfg: FilamentConfig) -> float:
+    """Log-interpolated resistance of one sampled filament, in ohms."""
+    if n >= cfg.n_conducting:
+        return cfg.r_on_ohm
+    fraction = n / cfg.n_conducting
+    return math.exp(math.log(cfg.r_off_ohm) + fraction
+                    * (math.log(cfg.r_on_ohm) - math.log(cfg.r_off_ohm)))
+
+
 @dataclass
 class FilamentState:
     """State of a single filament."""
@@ -69,40 +112,8 @@ class FilamentState:
     field_V_per_m: float = 0.0
 
     def step(self, dt: float) -> np.ndarray:
-        """Advance filament state by dt.
-
-        Field polarity matters: positive field drives vacancy migration
-        (filament growth); negative field drives rupture ( Joule heating
-        and vacancy dispersal). Zero field = thermal equilibrium only.
-        """
-        cfg = self.config
-        # Update the chain rates based on field polarity
-        self.chain._lam[:] = 0.0
-        self.chain._mu[:] = 0.0
-        if self.field_V_per_m > 0:
-            # SET: field-driven growth + thermal rupture
-            lam = cfg.growth_rate(self.field_V_per_m)
-            for n in range(cfg.n_max + 1):
-                if n < cfg.n_max:
-                    self.chain._lam[n] = lam
-                if n > 0:
-                    self.chain._mu[n] = cfg.rupture_rate(n)
-        elif self.field_V_per_m < 0:
-            # RESET: field-enhanced rupture (negative bias disperses vacancies)
-            # Growth stops; rupture is enhanced by the reverse field
-            rupture_boost = cfg.growth_rate(abs(self.field_V_per_m))
-            for n in range(cfg.n_max + 1):
-                if n < cfg.n_max:
-                    self.chain._lam[n] = 0.0  # no growth during reset
-                if n > 0:
-                    self.chain._mu[n] = cfg.rupture_rate(n) + rupture_boost
-        else:
-            # Zero field: thermal equilibrium only
-            for n in range(cfg.n_max + 1):
-                if n < cfg.n_max:
-                    self.chain._lam[n] = cfg.growth_rate(0.0)
-                if n > 0:
-                    self.chain._mu[n] = cfg.rupture_rate(n)
+        """Advance the distribution over the complete requested interval."""
+        set_filament_rates(self.chain, self.config, self.field_V_per_m)
         return self.chain.advance(dt)
 
     @property
@@ -133,36 +144,38 @@ def simulate_forming(
     field_V_per_m: float,
     t_max: float = 1e-6,
     n_steps: int = 20,
-) -> Dict[str, float]:
-    """Simulate the forming process (bounded computation).
+) -> Dict:
+    """Evolve to t_max, including after the conducting threshold is crossed.
 
-    Uses small dt steps to keep the uniformization series manageable
-    (rate*dt should be << 1000 for the Poisson-weighted Neumann series).
+    n_steps sets output integration subdivision. The probability engine
+    handles high rate-time products without shortening the physical hold.
     """
-    # Cap effective dt to keep uniformization tractable
-    cfg = config
-    est_rate = cfg.growth_rate(field_V_per_m)
-    safe_dt = min(t_max / n_steps, 100.0 / max(est_rate, 1.0))
-    actual_steps = max(int(math.ceil(t_max / safe_dt)), 1)
-
-    chain = BirthDeathChain(
-        n_max=cfg.n_max,
-        capture_rate=lambda n: 0.0,
-        emission_rate=lambda n: 0.0,
-    )
+    if not math.isfinite(t_max) or t_max < 0:
+        raise ValueError("t_max must be finite and >= 0")
+    if not isinstance(n_steps, int) or isinstance(n_steps, bool) or n_steps < 1:
+        raise ValueError("n_steps must be a positive integer")
+    chain = BirthDeathChain(n_max=config.n_max,
+                           capture_rate=lambda n: 0.0,
+                           emission_rate=lambda n: 0.0)
     chain.initialize(count=0)
-    state = FilamentState(chain=chain, config=cfg, field_V_per_m=field_V_per_m)
-
-    for _ in range(min(actual_steps, 200)):  # hard cap for speed
-        state.step(safe_dt)
-        if state.is_conducting:
-            break
-
+    state = FilamentState(chain=chain, config=config, field_V_per_m=field_V_per_m)
+    set_filament_rates(chain, config, field_V_per_m)
+    elapsed = 0.0
+    for target in np.linspace(0.0, t_max, n_steps + 1)[1:]:
+        duration = float(target) - elapsed
+        if duration > 0:
+            state.step(duration)
+        elapsed = float(target)
     return {
         'formed': float(state.is_conducting),
         'expected_resistance': state.expected_resistance,
-        'p_conducting': float(np.sum(chain.state[cfg.n_conducting:])),
-        'mean_size': float(np.dot(np.arange(cfg.n_max + 1), chain.state)),
+        'p_conducting': float(np.sum(chain.state[config.n_conducting:])),
+        'mean_size': chain.mean(),
+        'probabilities': chain.state.copy(),
+        'time_s': elapsed,
+        'requested_time_s': t_max,
+        'completed': True,
+        'stop_reason': 'completed',
     }
 
 
@@ -173,49 +186,50 @@ def simulate_cycling(
     pulse_width: float = 1e-6,
     n_cycles: int = 20,
     seed: int = 0,
-) -> Dict[str, np.ndarray]:
-    """Simulate multiple SET/RESET cycles; measure cycle-to-cycle variability.
+) -> Dict:
+    """Seeded SSA cycles carrying RESET residue into the following SET.
 
-    Uses short pulse widths to keep the uniformization tractable.
+    Every SET and RESET covers pulse_width; no substep cap is applied.
+    This is a field-driven filament proxy without calibrated wear or heat.
     """
-    # Cap effective rates for tractability, but use enough sub-steps
-    est_rate = config.growth_rate(set_field)
-    safe_dt = min(pulse_width, 50.0 / max(est_rate, 1.0))
-    n_sub = max(int(math.ceil(pulse_width / safe_dt)), 1)
-    n_sub = min(n_sub, 50)  # cap sub-steps for speed
-
-    resistances = []
+    if not math.isfinite(pulse_width) or pulse_width <= 0:
+        raise ValueError("pulse_width must be finite and > 0")
+    if not isinstance(n_cycles, int) or isinstance(n_cycles, bool) or n_cycles < 1:
+        raise ValueError("n_cycles must be a positive integer")
+    chain = BirthDeathChain(n_max=config.n_max,
+                           capture_rate=lambda n: 0.0,
+                           emission_rate=lambda n: 0.0)
+    sampler = GillespieSampler(chain=chain, seed=seed)
+    n = 0
+    resistances, starts, set_counts, reset_counts = [], [], [], []
     for _ in range(n_cycles):
-        chain = BirthDeathChain(
-            n_max=config.n_max,
-            capture_rate=lambda n: 0.0,
-            emission_rate=lambda n: 0.0,
-        )
-        chain.initialize(count=0)
-        state = FilamentState(chain=chain, config=config)
-
-        # SET: apply positive field (filament grows, multiple sub-steps)
-        state.field_V_per_m = set_field
-        for _ in range(n_sub):
-            state.step(safe_dt)
-        r_on = state.expected_resistance
-
-        # RESET: apply negative field (filament ruptures)
-        state.field_V_per_m = reset_field
-        for _ in range(n_sub):
-            state.step(safe_dt)
-        r_off = state.expected_resistance
-        resistances.append((r_on, r_off))
-
-    r_arr = np.array(resistances)
-    ratios = r_arr[:, 1] / np.maximum(r_arr[:, 0], 1.0)  # R_off/R_on (>1)
-    log_ratios = np.log10(np.maximum(ratios, 1e-30))
+        starts.append(n)
+        set_filament_rates(chain, config, set_field)
+        n, _ = sampler.run_trajectory(pulse_width, n)
+        set_counts.append(n)
+        r_on = filament_resistance(n, config)
+        set_filament_rates(chain, config, reset_field)
+        n, _ = sampler.run_trajectory(pulse_width, n)
+        reset_counts.append(n)
+        resistances.append((r_on, filament_resistance(n, config)))
+    r_arr = np.asarray(resistances)
+    ratios = r_arr[:, 1] / r_arr[:, 0]
+    log_ratios = np.log10(ratios)
     return {
         'r_on_ohm': r_arr[:, 0],
         'r_off_ohm': r_arr[:, 1],
         'ratios': ratios,
-        'cycle_variability': float(np.std(log_ratios))
-        if np.all(np.isfinite(log_ratios)) else 0.0,
-        'mean_ratio': float(np.mean(ratios))
-        if np.all(np.isfinite(ratios)) else 1.0,
+        'log_ratios': log_ratios,
+        'cycle_variability': float(np.std(log_ratios)),
+        'mean_ratio': float(np.mean(ratios)),
+        'initial_counts': np.asarray(starts),
+        'set_counts': np.asarray(set_counts),
+        'reset_counts': np.asarray(reset_counts),
+        'cycle_end_times_s': 2 * pulse_width * np.arange(1, n_cycles + 1),
+        'time_s': 2 * pulse_width * n_cycles,
+        'requested_time_s': 2 * pulse_width * n_cycles,
+        'completed': True,
+        'stop_reason': 'completed',
+        'seed': seed,
+        'damage_model': 'unavailable',
     }

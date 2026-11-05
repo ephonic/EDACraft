@@ -1,0 +1,33 @@
+{
+  "status": "passed_shared_build_root_and_four_disjoint_precision_profile_caches",
+  "controls": [
+    {
+      "long_double": false,
+      "profile": "si",
+      "build_base": "build/quad-si",
+      "library": "build/quad-si/lib.linux-x86_64-cpython-313",
+      "objects": "build/quad-si/temp.linux-x86_64-cpython-313"
+    },
+    {
+      "long_double": false,
+      "profile": "legacy-charge",
+      "build_base": "build/quad-legacy-charge",
+      "library": "build/quad-legacy-charge/lib.linux-x86_64-cpython-313",
+      "objects": "build/quad-legacy-charge/temp.linux-x86_64-cpython-313"
+    },
+    {
+      "long_double": true,
+      "profile": "si",
+      "build_base": "build/long-double-si",
+      "library": "build/long-double-si/lib.linux-x86_64-cpython-313",
+      "objects": "build/long-double-si/temp.linux-x86_64-cpython-313"
+    },
+    {
+      "long_double": true,
+      "profile": "legacy-charge",
+      "build_base": "build/long-double-legacy-charge",
+      "library": "build/long-double-legacy-charge/lib.linux-x86_64-cpython-313",
+      "objects": "build/long-double-legacy-charge/temp.linux-x86_64-cpython-313"
+    }
+  ]
+}

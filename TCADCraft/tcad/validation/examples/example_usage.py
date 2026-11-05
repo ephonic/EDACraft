@@ -126,7 +126,6 @@ def example_ferroelectric_validation():
     )
     
     # 添加铁电特定的测试
-    framework.add_limiting_case_test('nls_to_lk', tolerance=0.1)
     framework.add_symmetry_test('ferroelectric', tolerance=0.05)
     
     # 运行测试

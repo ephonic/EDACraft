@@ -987,6 +987,8 @@ class Device:
         Vg: float = 0.0,
         Vd: float = 0.05,
         Vs: float = 0.0,
+        sc_fraction: float = 0.27,
+        temperature_K: float = 300.0,
     ) -> Device:
         """AlScN + MoS₂ FeFET (1-D MFIS capacitor/transistor stack).
 
@@ -1012,12 +1014,30 @@ class Device:
             Source/drain extension length [m].
         Vg, Vd, Vs : float
             Bias voltages [V].
+        sc_fraction : float
+            Sc mole fraction passed to :func:`alscn`, bounded to [0, 0.5].
+        temperature_K : float
+            Reference temperature recorded in the protocol metadata [K].
+            The builder does not silently run a thermal solve.
         """
         from tcad.material.library import alscn, mos2_channel, sio2
 
+        lengths = {"Lg": Lg, "t_fe": t_fe, "t_ox": t_ox,
+                   "t_ch": t_ch, "Lsd": Lsd}
+        if any(not np.isscalar(value) or not np.isfinite(value) or value <= 0
+               for value in lengths.values()):
+            raise ValueError("AlScN/MoS2 geometry lengths must be finite and > 0")
+        if not np.isscalar(sc_fraction) or not np.isfinite(sc_fraction) or not 0.0 <= sc_fraction <= 0.5:
+            raise ValueError("sc_fraction must be finite and lie in [0, 0.5]")
+        if not np.isscalar(temperature_K) or not np.isfinite(temperature_K) or temperature_K <= 0:
+            raise ValueError("temperature_K must be finite and > 0")
+        if any(not np.isscalar(value) or not np.isfinite(value)
+               for value in (Vg, Vd, Vs)):
+            raise ValueError("AlScN/MoS2 bias voltages must be finite scalars")
+
         dev = Device("alscn_mos2_fefet")
         x_total = 2 * Lsd + Lg
-        fe = alscn()
+        fe = alscn(sc_fraction=float(sc_fraction))
         ch = mos2_channel()
         ox = sio2()
         metal = Material(name="TiN", epsilon_r=100.0, Eg=0.0, mu_n=0.0, mu_p=0.0)
@@ -1057,6 +1077,30 @@ class Device:
         dev.add_contact("drain", Box(Lsd + Lg, x_total, 0, 1e-9, -5e-9, 0), voltage=Vd)
         dev.add_contact("gate", Box(0, x_total, 0, 1e-9,
                                      t_ch + t_ox + t_fe, t_ch + t_ox + t_fe + 5e-9), voltage=Vg)
+        dev.metadata["sentaurus_calibration"] = {
+            "benchmark": "alscn_mos2_fefet_protocol_v1",
+            "material": "AlScN/MoS2",
+            "sc_fraction": float(sc_fraction),
+            "temperature_K": float(temperature_K),
+            "gate_voltage_V": float(Vg),
+            "drain_voltage_V": float(Vd),
+            "source_voltage_V": float(Vs),
+            "geometry_m": {"Lg": float(Lg), "Lsd": float(Lsd),
+                            "t_fe": float(t_fe), "t_ox": float(t_ox),
+                            "t_ch": float(t_ch)},
+            "stack": ["gate_metal", "AlScN", "SiO2", "MoS2"],
+            "protocol": {
+                "gate_sweep_V": [0.0, 8.0],
+                "program_levels": 15,
+                "program_levels_kind": "requested_candidates",
+                "validated_levels": None,
+                "read_voltage_V": 0.0,
+                "erase_voltage_V": None,
+                "erase_status": "requires_calibration",
+                "status": "geometry_and_material_metadata_only",
+                "physical_validated": False,
+            },
+        }
         return dev
 
     @staticmethod

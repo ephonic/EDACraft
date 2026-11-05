@@ -1,0 +1,106 @@
+{
+  "scope": "Static charge-free linear isotropic disk inclusion; five potential samples and boundary flux. Line coefficients only; no cut-face transport, FE, full spatial or material validation.",
+  "commercial": [
+    {
+      "cells": 64,
+      "sampled_phi_V": [
+        0.0324450877963807,
+        0.0612342604608815,
+        0.0853746024831211,
+        0.0984874135312225,
+        0.148851201461066
+      ],
+      "induced_phi_V": [
+        0.002445087796380703,
+        -0.0007657395391185012,
+        -0.004625397516878904,
+        -0.0015125864687774992,
+        -0.001148798538934015
+      ],
+      "charges_C": [
+        -7.03187522558847e-18,
+        7.03187522558845e-18
+      ],
+      "capacitance_F": 3.5159376127942297e-17,
+      "capacitance_gain": 0.018186244741516422,
+      "gauss_relative_error": 2.8484110964797515e-15,
+      "charge_surface_relative_error": 3.632449419033179e-08
+    },
+    {
+      "cells": 128,
+      "sampled_phi_V": [
+        0.0324240992129949,
+        0.0612371019912481,
+        0.0854061472189645,
+        0.098493851777785,
+        0.148856467323949
+      ],
+      "induced_phi_V": [
+        0.0024240992129948985,
+        -0.0007628980087519,
+        -0.0045938527810355095,
+        -0.001506148222215009,
+        -0.0011435326760510234
+      ],
+      "charges_C": [
+        -7.03133656364283e-18,
+        7.03133656364285e-18
+      ],
+      "capacitance_F": 3.51566828182142e-17,
+      "capacitance_gain": 0.018108248735330124,
+      "gauss_relative_error": 2.848629309709806e-15,
+      "charge_surface_relative_error": 4.527986763314118e-09
+    }
+  ],
+  "points_um": [
+    [
+      0.15,
+      0.5
+    ],
+    [
+      0.31,
+      0.5
+    ],
+    [
+      0.45,
+      0.5
+    ],
+    [
+      0.5,
+      0.25
+    ],
+    [
+      0.75,
+      0.5
+    ]
+  ],
+  "relative_contrast_budget": 0.03,
+  "expected_native_acceptance": {
+    "16": false,
+    "32": true,
+    "64": true,
+    "128": true
+  },
+  "tool": "Sentaurus Device W-2024.09",
+  "geometry_um": {
+    "length": 1,
+    "height": 1,
+    "depth": 1,
+    "disk_center": [
+      0.31,
+      0.5
+    ],
+    "disk_radius": 0.07
+  },
+  "relative_permittivity": {
+    "base": 3.9,
+    "disk": 15
+  },
+  "reference_helper": "docs/validation/curved_cut_edges_20261017/native.py",
+  "reference_helper_sha256": "bfaf524bdd9bb7cbf17aef73a832250d76e382e619aa8ca5d7547e00d8781cf0",
+  "raw_sha256": {
+    "docs/validation/curved_cut_edges_20261017/commercial_m128/raw.json": "ee5d871d08407ab395bb39fb10f00747777fedf5e3a4968e875a67f40506ef21",
+    "docs/validation/curved_cut_edges_20261017/commercial_m64/raw.json": "e1f8e3620c8badc8cf345e8e1f86a351fe5f003e4f63cf52e7f5cb35a6dac969"
+  },
+  "physical_validated": false
+}

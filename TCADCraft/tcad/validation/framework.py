@@ -14,6 +14,7 @@ from .boundedness import BoundednessTest, MonotoneConvergenceTest, PhysicalBound
 from .cross_validation import CrossValidationTest, ModelComparisonTest
 from .sensitivity import SensitivityTest, ParameterImportanceTest
 from .report import ValidationReport, create_validation_report
+from .reference import ReferenceComparisonTest
 
 
 class ValidationFramework:
@@ -43,98 +44,121 @@ class ValidationFramework:
     
     def add_grid_convergence_test(self, mesh_sizes: List[int] = None,
                                  expected_order: float = 2.0,
-                                 tolerance: float = 0.3):
+                                 tolerance: float = 0.3, *, reference=None, spacing=None, runner=None, field="phi"):
         """添加网格收敛性测试"""
-        self.tests.append(GridConvergenceTest(mesh_sizes, expected_order, tolerance))
+        self.tests.append(GridConvergenceTest(mesh_sizes, expected_order, tolerance,
+            reference=reference, spacing=spacing, runner=runner, field=field))
     
     def add_time_convergence_test(self, dt_values: List[float] = None,
                                  t_final: float = 1e-6,
-                                 tolerance: float = 0.1):
+                                 tolerance: float = 0.1, *, runner=None, field="phi"):
         """添加时间步长收敛性测试"""
-        self.tests.append(TimeConvergenceTest(dt_values, t_final, tolerance))
+        self.tests.append(TimeConvergenceTest(dt_values, t_final, tolerance, runner=runner, field=field))
     
     def add_parameter_convergence_test(self, param_name: str,
                                       param_values: List[float],
-                                      tolerance: float = 0.05):
+                                      tolerance: float = 0.05, *, runner=None, field="phi"):
         """添加参数收敛性测试"""
-        self.tests.append(ParameterConvergenceTest(param_name, param_values, tolerance))
+        self.tests.append(ParameterConvergenceTest(param_name, param_values, tolerance, runner=runner, field=field))
     
     def add_conservation_test(self, check_charge: bool = True,
                              check_energy: bool = True,
                              check_entropy: bool = False,
-                             tolerance: float = 1e-6):
+                             tolerance: float = 1e-6, *, current_atol_A: float = 1e-15,
+                             current_extractor: Callable = None):
         """添加守恒律测试"""
         self.tests.append(ConservationTest(check_charge, check_energy, 
-                                          check_entropy, tolerance))
+                                          check_entropy, tolerance,
+                                          current_atol_A=current_atol_A,
+                                          current_extractor=current_extractor))
     
     def add_transient_conservation_test(self, dt: float = 1e-9,
                                        t_final: float = 1e-7,
-                                       tolerance: float = 1e-3):
+                                       tolerance: float = 1e-3, *, charge_atol_C: float = 1e-24,
+                                       integration: str = "trapezoid"):
         """添加瞬态守恒律测试"""
-        self.tests.append(TransientConservationTest(dt, t_final, tolerance))
+        self.tests.append(TransientConservationTest(dt, t_final, tolerance,
+            charge_atol_C=charge_atol_C, integration=integration))
     
     def add_symmetry_test(self, symmetry_type: str = 'voltage_reversal',
-                         tolerance: float = 1e-3):
+                         tolerance: float = 1e-3, *, relations=None, protocol=None,
+                         axis=None, permutation=None, runner=None, runners=None, atol=None):
         """添加对称性测试"""
-        self.tests.append(SymmetryTest(symmetry_type, tolerance))
+        self.tests.append(SymmetryTest(symmetry_type, tolerance,relations=relations,protocol=protocol,
+            axis=axis,permutation=permutation,runner=runner,runners=runners,atol=atol))
     
     def add_limiting_case_test(self, limit_type: str,
                               tolerance: float = 0.05,
-                              limit_params: Optional[Dict[str, Any]] = None):
+                              limit_params: Optional[Dict[str, Any]] = None, *, runners=None,
+                              fields=None, atol=None, reference_source=None):
         """添加极限情况测试"""
-        self.tests.append(LimitingCaseTest(limit_type, tolerance, limit_params))
+        self.tests.append(LimitingCaseTest(limit_type, tolerance, limit_params,
+            runners=runners, fields=fields, atol=atol, reference_source=reference_source))
     
     def add_boundedness_test(self, check_positive_carriers: bool = True,
                             check_potential_bounds: bool = True,
                             check_monotone_convergence: bool = True,
                             check_ferroelectric_bounds: bool = True,
-                            tolerance: float = 1e-10):
+                            tolerance: float = 1e-10, *, potential_bounds_V=None,
+                            polarization_limit_C_m2=None, polarization_component_axis=None,
+                            atol=None, residual_atol=0., runner=None):
         """添加有界性测试"""
         self.tests.append(BoundednessTest(check_positive_carriers,
                                          check_potential_bounds,
                                          check_monotone_convergence,
                                          check_ferroelectric_bounds,
-                                         tolerance))
+                                         tolerance, potential_bounds_V=potential_bounds_V,
+                                         polarization_limit_C_m2=polarization_limit_C_m2,
+                                         polarization_component_axis=polarization_component_axis,
+                                         atol=atol,residual_atol=residual_atol,runner=runner))
     
-    def add_monotone_convergence_test(self, tolerance: float = 1e-6):
+    def add_monotone_convergence_test(self, tolerance: float = 1e-6, *, residual_atol=0., runner=None):
         """添加单调收敛测试"""
-        self.tests.append(MonotoneConvergenceTest(tolerance))
+        self.tests.append(MonotoneConvergenceTest(tolerance,residual_atol=residual_atol,runner=runner))
     
     def add_physical_bounds_test(self, max_carrier_density: float = 1e26,
                                 min_carrier_density: float = 1e0,
-                                max_electric_field: float = 1e9):
+                                max_electric_field: float = 1e9, *, runner=None):
         """添加物理边界测试"""
         self.tests.append(PhysicalBoundsTest(max_carrier_density,
                                             min_carrier_density,
-                                            max_electric_field))
+                                            max_electric_field,runner=runner))
     
     def add_cross_validation_test(self, validation_type: str = 'linear_solvers',
-                                 tolerance: float = 0.01):
+                                 tolerance: float = 0.01, *, runners=None):
         """添加交叉验证测试"""
-        self.tests.append(CrossValidationTest(validation_type, tolerance))
+        self.tests.append(CrossValidationTest(validation_type, tolerance, runners=runners))
     
     def add_model_comparison_test(self, model1: str, model2: str,
-                                 tolerance: float = 0.05):
+                                 tolerance: float = 0.05, *, runners=None):
         """添加模型对比测试"""
-        self.tests.append(ModelComparisonTest(model1, model2, tolerance))
+        self.tests.append(ModelComparisonTest(model1, model2, tolerance, runners=runners))
+
+    def add_reference_comparison_test(self, subject_runner, reference_runner, **kwargs):
+        """Compare explicitly extracted measurements against a declared reference."""
+        self.tests.append(ReferenceComparisonTest(subject_runner, reference_runner, **kwargs))
     
     def add_sensitivity_test(self, param_name: str,
                             param_range: tuple,
                             num_points: int = 10,
                             check_smoothness: bool = True,
                             check_no_jumps: bool = True,
-                            tolerance: float = 0.1):
+                            tolerance: float = 0.1, *, field=None, response_scale=None,
+                            baseline=None, protocol=None, runner=None, min_response=0.):
         """添加敏感性测试"""
         self.tests.append(SensitivityTest(param_name, param_range, num_points,
                                          check_smoothness, check_no_jumps,
-                                         tolerance))
+                                         tolerance, field=field,response_scale=response_scale,
+                                         baseline=baseline,protocol=protocol,runner=runner,min_response=min_response))
     
     def add_parameter_importance_test(self, param_names: List[str],
                                      param_ranges: dict,
-                                     num_samples: int = 20):
+                                     num_samples: int = 20, *, field=None, response_scale=None,
+                                     baseline=None, protocol=None, runner=None, min_response=0.):
         """添加参数重要性测试"""
         self.tests.append(ParameterImportanceTest(param_names, param_ranges,
-                                                 num_samples))
+                                                 num_samples,field=field,response_scale=response_scale,
+                                                 baseline=baseline,protocol=protocol,runner=runner,min_response=min_response))
     
     def run_all(self) -> List[ValidationResult]:
         """运行所有测试"""

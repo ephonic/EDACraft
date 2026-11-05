@@ -1533,6 +1533,7 @@ def _run_transient_minority_relax(nx=51, dt=1e-9, t_final=1e-7,
     Lx = 1e-4  # 100 um — long enough that tau_diff >> tau_SRH
     dx = Lx / (nx - 1)
     sim = _make_sim(nx, 1, 1, dx, dx, dx)
+    sim.set_newton_freeze_phi(True)  # The RC reference assumes fixed potential.
     _apply_uniform_si(sim, nx)
 
     # Uniform n-type doping — n0 ≈ Nd, p0 = ni²/Nd.
@@ -1571,7 +1572,7 @@ def _run_transient_minority_relax(nx=51, dt=1e-9, t_final=1e-7,
     history = sim.solve_transient()
 
     n_steps = len(history)
-    times = np.arange(n_steps) * dt
+    times = np.asarray([state["time_s"] for state in history])
     # Middle node (away from BC perturbation).
     p_mid = np.array([h["p"][nx // 2] for h in history])
     return times, p_mid, n0, p_eq
@@ -1623,8 +1624,11 @@ class TestTransientSolver:
        so SRH is the faster relaxation channel at the middle node and the
        multi-step RC-decay is observable.
 
-    The transient solver is now trustworthy for SRH dynamics.  Steady-state
-    results (PVR, SS) were never affected.
+    These tests validate minority SRH relaxation under the classical fixed-
+    potential approximation. Both carrier equations are now active; treating
+    n as constant in the analytic reference is a small-signal approximation,
+    not a constraint imposed by doping. This does not validate self-consistent
+    electric-field dynamics or other device observables.
     """
 
     def test_transient_relaxation_is_not_single_step(self):

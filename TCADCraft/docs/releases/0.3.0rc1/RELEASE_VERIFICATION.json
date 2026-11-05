@@ -1,0 +1,57 @@
+{
+  "version": "0.3.0rc1",
+  "status": "passed_clean_sdist_wheel_install_and_targeted_checks",
+  "utc": "2026-11-05T14:51:37.472541+00:00",
+  "wheel_built_from_sdist": true,
+  "installation_verified_outside_source_tree": true,
+  "readme_graphene_example_passed": true,
+  "mos2_variant_passed": true,
+  "test_scope": [
+    "tests/test_sheet_contacts.py",
+    "tests/test_sheet_coupled.py",
+    "tests/test_sheet_dielectric.py",
+    "tests/test_sheet_dielectric_contacts.py",
+    "tests/test_sheet_dirac_contact.py",
+    "tests/test_sheet_drift_diffusion.py",
+    "tests/test_sheet_flux.py",
+    "tests/test_sheet_reused_gmres.py",
+    "tests/test_sheet_schur_blocks.py",
+    "tests/test_sheet_statistics.py",
+    "tests/test_sheet_thermionic.py",
+    "tests/test_sheet_transient.py",
+    "tests/test_sheet_trap_balance.py",
+    "tests/test_sheet_trap_equilibrium.py",
+    "tests/test_sheet_traps.py",
+    "tests/test_constants_profile.py",
+    "tests/test_precision_backend.py"
+  ],
+  "junit": {
+    "tests": 1055,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "full_suite_rerun": false,
+  "build_flags": {
+    "TCAD_USE_PETSC": "0",
+    "TCAD_USE_LAPACK": "0",
+    "TCAD_CONSTANTS_PROFILE": "si",
+    "TCAD_NATIVE_OPT": "0"
+  },
+  "artifacts": {
+    "tcad-0.3.0rc1.tar.gz": {
+      "bytes": 5188167,
+      "sha256": "d2de7167d006131f0d5b792a8f4639203fbdfc2d983fb6554e37b972ce58a1e2"
+    },
+    "tcad-0.3.0rc1-cp313-cp313-linux_x86_64.whl": {
+      "bytes": 2584535,
+      "sha256": "7af7b14800921ccdeb3a2b8d86deacc8c9d80f474cba96c81b09a2a6bf88590d"
+    }
+  },
+  "input_tar_sha256": "b6519557738602629a67104c8bf73750adb98895f37b61929d1a5eda96ff3e74",
+  "binary_sha256": "318988172b59c2ea14f627ecc9aa422ae86c2f4984784002a20475cb9a5d13b4",
+  "legacy_charge_binary_built": false,
+  "commercial_runs": 0,
+  "experimental_acceptance": false,
+  "physical_device_qualification": false
+}

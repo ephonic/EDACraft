@@ -168,6 +168,11 @@ class _FakeFESimulator:
         fields = {"fe_alpha": np.ones(4), "Dit": np.ones(4)}
 
         @staticmethod
+        def control_volumes():
+            # Synthetic fixture: four cells with explicitly equal volumes.
+            return np.ones(4)
+
+        @staticmethod
         def npts():
             return 4
 
@@ -178,6 +183,30 @@ class _FakeFESimulator:
         self.dwell = 1e-9
         self.qot_history = []
         self.active_fraction = 1.0
+
+    def reliability_transaction(self, *models, commit=True):
+        # Test double implements the same rollback contract as Simulator.
+        from contextlib import contextmanager
+        from copy import deepcopy
+        @contextmanager
+        def transaction():
+            state = deepcopy(self.__dict__)
+            slow_states = [(m, deepcopy(m.__dict__)) for m in models if m is not None]
+            def restore():
+                self.__dict__.clear()
+                self.__dict__.update(state)
+                for model, saved in slow_states:
+                    model.__dict__.clear()
+                    model.__dict__.update(saved)
+            try:
+                yield
+            except BaseException:
+                restore()
+                raise
+            else:
+                if not commit:
+                    restore()
+        return transaction()
 
     def update_contact(self, _name, voltage):
         self.voltage = float(voltage)
@@ -222,6 +251,7 @@ class TestRetentionEnduranceDrivers:
         result = run_pulse_width_sweep(
             sim, "gate", V_pulse=1.0, fe_thickness=10e-9,
             pulse_widths=[1e-9, 1e-7, 1e-5],
+            saturation_polarization=1.0,
         )
         assert np.all(np.diff(result["Ps"]) > 0.0)
         assert np.all(np.diff(result["memory_window"]) > 0.0), (
@@ -305,6 +335,87 @@ class TestRetentionEnduranceDrivers:
         assert np.max(np.abs(np.diff(sim.trace))) <= 0.5 + 1e-12
         assert out["memory_window_decades"] == pytest.approx(2.0)
         assert out["polarity"] == "normal"
+
+    @pytest.mark.parametrize("kwargs", [
+        {"read_voltage": np.nan}, {"max_ramp_step": 0.0},
+        {"max_iter": 0}, {"tol": np.nan}, {"retries": True},
+        {"min_state_separation_decades": np.nan},
+        {"current_noise_floor": 0.0},
+    ])
+    def test_mlc_rejects_invalid_protocol_bounds_before_running(self, kwargs):
+        from tcad.postprocess.fe_loops import run_mlc_program_read_sweep
+        with pytest.raises(ValueError):
+            run_mlc_program_read_sweep(
+                _FakeFESimulator(), "gate", program_voltages=[0.0, 1.0],
+                **kwargs)
+
+    def test_mlc_rejects_nonfinite_reset_voltage(self):
+        from tcad.postprocess.fe_loops import run_mlc_program_read_sweep
+        with pytest.raises(ValueError, match="reset_voltage"):
+            run_mlc_program_read_sweep(
+                _FakeFESimulator(), "gate", program_voltages=[0.0, 1.0],
+                reset_voltage=np.inf)
+
+    def test_mlc_failed_ramp_rolls_back_contact_and_solver_state(self):
+        from tcad.postprocess.fe_loops import run_mlc_program_read_sweep
+
+        class FailingMLCSim(_FakeFESimulator):
+            def run(self, **_kwargs):
+                self.qot_history.append(123.0)
+                self.voltage = 99.0
+                return {"converged": False, "valid": False}
+
+        sim = FailingMLCSim()
+        with pytest.raises(RuntimeError, match="not accepted"):
+            run_mlc_program_read_sweep(
+                sim, "gate", program_voltages=[1.0], max_ramp_step=0.5,
+                retries=0)
+        assert sim.voltage == pytest.approx(0.0)
+        assert sim.qot_history == []
+
+    def test_mlc_rejects_target_loss_even_when_solver_reports_converged(self):
+        from tcad.postprocess.fe_loops import run_mlc_program_read_sweep
+
+        class TargetLostMLCSim(_FakeFESimulator):
+            def run(self, **_kwargs):
+                return {
+                    "converged": True, "valid": True,
+                    "target_reached": False,
+                }
+
+        sim = TargetLostMLCSim()
+        with pytest.raises(RuntimeError, match="not accepted"):
+            run_mlc_program_read_sweep(
+                sim, "gate", program_voltages=[1.0], retries=0)
+        assert sim.voltage == pytest.approx(0.0)
+
+    @pytest.mark.parametrize("bad_result", [
+        None, {}, {"valid": True}, {"converged": True},
+        {"converged": True, "valid": True, "physical_step_accepted": False},
+        {"converged": True, "valid": np.nan},
+        {"converged": "False", "valid": True},
+        {"converged": True, "valid": True, "phi": np.full(4, np.nan)},
+        {"converged": True, "valid": True, "P": np.full((4, 3), np.inf)},
+    ])
+    def test_mlc_rejects_malformed_or_unaccepted_results(self, bad_result):
+        from tcad.postprocess.fe_loops import run_mlc_program_read_sweep
+
+        class MalformedMLCSim(_FakeFESimulator):
+            def run(self, **kwargs):
+                if bad_result is None:
+                    return None
+                result = super().run(**kwargs)
+                # Missing acceptance flags must remain missing.
+                result.pop("converged")
+                result.pop("valid")
+                result.update(bad_result)
+                return result
+
+        sim = MalformedMLCSim()
+        with pytest.raises(RuntimeError, match="not accepted"):
+            run_mlc_program_read_sweep(
+                sim, "gate", program_voltages=[1.0], retries=0)
+        assert sim.voltage == pytest.approx(0.0)
 
     def test_endurance_applies_wakeup_fatigue_state(self):
         from tcad.physics.reliability import CyclingDegradation
@@ -469,3 +580,45 @@ class TestFeFETTemplate:
         assert "E_bd" in mesh.fields, "Mesh should have E_bd field"
         fe_nodes = np.sum(np.abs(mesh.fields["fe_alpha"].ravel()) > 0)
         assert fe_nodes > 0, "Mesh should have ferroelectric nodes"
+
+    @pytest.mark.parametrize("t_fe", [10e-9, 15e-9, 20e-9, 30e-9, 40e-9])
+    def test_alscn_protocol_metadata_tracks_requested_thickness(self, t_fe):
+        from tcad.geometry.device_builder import Device
+        dev = Device.alscn_mos2_fefet(t_fe=t_fe, sc_fraction=0.30,
+                                      Vg=8.0, temperature_K=350.0)
+        meta = dev.metadata["sentaurus_calibration"]
+        assert meta["geometry_m"]["t_fe"] == pytest.approx(t_fe)
+        assert meta["sc_fraction"] == pytest.approx(0.30)
+        assert meta["temperature_K"] == pytest.approx(350.0)
+        assert meta["protocol"]["program_levels"] == 15
+        assert meta["protocol"]["physical_validated"] is False
+        fe = next(region for region in dev.regions if region.name == "fe")
+        assert fe.shape.zmax - fe.shape.zmin == pytest.approx(t_fe)
+
+    @pytest.mark.parametrize("kwargs", [
+        {"t_fe": 0.0}, {"t_ox": -1e-9}, {"Lg": np.nan},
+        {"sc_fraction": 0.6}, {"temperature_K": 0.0}, {"Vg": np.inf},
+    ])
+    def test_alscn_protocol_rejects_invalid_geometry_material_or_bias(self, kwargs):
+        from tcad.geometry.device_builder import Device
+        with pytest.raises(ValueError):
+            Device.alscn_mos2_fefet(**kwargs)
+
+
+class TestEnduranceInputDomain:
+    @pytest.mark.parametrize("kwargs", [
+        {"V_pulse": 0.0}, {"V_pulse": -1.0}, {"V_pulse": np.nan},
+        {"Q_ot_max": -1.0}, {"Q_ot_max": np.nan},
+    ])
+    def test_endurance_rejects_signed_or_nonfinite_protocol_bounds(self, kwargs):
+        from tcad.postprocess.fe_loops import run_endurance
+        params = {
+            "V_pulse": 1.0,
+            "fe_thickness": 10e-9,
+            "n_cycles": 1,
+            "measure_every": 1,
+            "pulse_width": 1e-3,
+        }
+        params.update(kwargs)
+        with pytest.raises(ValueError):
+            run_endurance(_FakeFESimulator(), "gate", **params)

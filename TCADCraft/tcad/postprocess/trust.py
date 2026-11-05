@@ -27,7 +27,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from .current import sg_current_density_1d
+from .current import _line_total_current
 
 
 # Default KCL residual threshold: rel spread of J = Jn + Jp along the 1-D line.
@@ -117,26 +117,11 @@ def kcl_residual_1d(
     mesh = simulator.mesh
     nx, ny, nz = mesh.nx, mesh.ny, mesh.nz
     line = np.array([i + nx * (0 + ny * 0) for i in range(nx)], dtype=np.int64)
-    phi = np.asarray(result["phi"], dtype=float)[line]
-    n = np.asarray(result["n"], dtype=float)[line]
-    p = np.asarray(result["p"], dtype=float)[line]
-    mu_n = np.asarray(
-        mesh.fields.get("mu_n", np.full(mesh.npts(), 1400e-4)), dtype=float
-    )[line]
-    mu_p = np.asarray(
-        mesh.fields.get("mu_p", np.full(mesh.npts(), 450e-4)), dtype=float
-    )[line]
-    if "Jn_x" in result and "Jp_x" in result:
-        # Prefer the solver's __float128 edge fluxes (Audit §20): the
-        # double-precision SG recompute below suffers catastrophic
-        # cancellation at equilibrium (terms ~1e19 cancelling to ~1e-19),
-        # producing cancellation noise ABOVE the 1e-6 on-current floor and
-        # misclassifying a clean equilibrium as non-negligible current.
-        Jn = np.asarray(result["Jn_x"], dtype=float)[line[:-1]]
-        Jp = np.asarray(result["Jp_x"], dtype=float)[line[:-1]]
-    else:
-        Jn, Jp = sg_current_density_1d(phi, n, p, mesh.dx, mu_n, mu_p, simulator.VT)
-    J = Jn + Jp
+    # StructuredGrid exposes physical coordinates. Legacy raw-solver facades
+    # carry only a scalar spacing, which explicitly denotes a uniform line.
+    lengths = (np.diff(mesh.axis_coordinates()[0])
+               if hasattr(mesh, 'axis_coordinates') else mesh.dx)
+    J = _line_total_current(simulator, result, line, 'x', lengths)
     J_max_abs = float(np.max(np.abs(J))) if J.size else 0.0
     floor = (1e-4 * on_current_scale) if on_current_scale else KCL_ZERO_CURRENT_FLOOR
     if J_max_abs < floor:

@@ -1,0 +1,46 @@
+{
+  "version": "0.3.0rc1",
+  "status": "scoped_release_candidate_not_full_device_qualification",
+  "frozen_input_source_count": 1078,
+  "frozen_input_identity_sha256": "5dc3364006f1d3e177577ba038c5c1f67faef660b4dc67c36876b4d87c46f2e8",
+  "stage524_manifest_sha256": "2695452c7a77b3fabbd93dc528cfd4db44f65b25f0b24117653b84050da261c9",
+  "local_z_manifest_sha256": "465df9b967204877a0dca0bb6873fa184bdbe19d9fa3eae07f301daf3eb66ad8",
+  "full_pulse": {
+    "actual_new_full_trajectories": 2,
+    "actual_new_dynamic_steps": 768,
+    "new_full_field_states": 8,
+    "new_physics_checks": 6769086,
+    "cross_profile_physical_records_exact": true,
+    "mesh": [
+      129,
+      17,
+      129
+    ],
+    "total_nodes": 282897,
+    "sheet_nodes": 2193,
+    "fine_full_pulse_completed": true,
+    "original_space_failures_preserved": true,
+    "spatial_convergence": false,
+    "temporal_convergence_at_fine_mesh": false,
+    "joint_spacetime_qualification": false,
+    "sentaurus_equivalence": false,
+    "all_owned_workers_exited": true,
+    "tests_rerun": 0,
+    "inherited_final_source_tests": 282
+  },
+  "local_z": {
+    "actual_new_dynamic_steps": 4,
+    "actual_new_field_states": 8,
+    "completed_full_pulses": 0,
+    "independent_field_physics_checks": 1336524,
+    "cross_profile_physical_records_exact": true,
+    "all_owned_workers_exited": true,
+    "original_space_failures_preserved": true,
+    "full_pulse_spatial_qualification": false,
+    "tests_rerun": 0,
+    "inherited_final_source_tests": 282
+  },
+  "qualification": false,
+  "archive_scope": "Compact provenance summary only; full raw simulation archives are not bundled.",
+  "packaging_validation": "Recorded separately for the release candidate; historical checks are not new test runs."
+}

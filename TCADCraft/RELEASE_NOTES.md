@@ -1,87 +1,51 @@
-# TCADCraft 0.2.0 Release Notes
+# TCADCraft 0.3.0rc1
 
-Release date: 2026-08-16
+Release candidate prepared on 2026-11-05. This scoped research release does
+not certify every physics combination, 2D device or commercial alignment target.
 
-TCADCraft 0.2.0 is a source-code release focused on numerical robustness,
-device-physics coverage, mixed-material workflows, and reproducible calibration
-artifacts. No tarball or wheel artifact is included.
+## Changes
 
-## Highlights
+- Graphene Dirac and MoS₂ parabolic-band sheet statistics, Fermi–Dirac surface
+  densities, charge derivatives and quantum capacitance.
+- Sheet phi/Fn/Fp drift–diffusion, optional diffusion-enhanced modified SG,
+  ideal/resistive/thermionic/Dirac edge contacts and single-level trap dynamics.
+- Cartesian dielectric Poisson coupling, finite side electrodes, backward
+  Euler transients and terminal conduction/displacement current accounting.
+- Sparse coupled Newton and optional reused GMRES, with steady/BE cache keys,
+  true max-norm acceptance, residual correction and transactional publication.
+- Accumulated native nonlinear solver, finite-input, contact, recovery and
+  physics-accounting fixes from the frozen development source.
+- Updated installation, source provenance and explicit model limits.
 
-- Stabilized coupled Newton/Gummel solve paths with stricter finite-state,
-  residual, Jacobian, line-search, and write-back checks.
-- Improved density-gradient quantum correction workflows across thin-body
-  MOS and non-planar device examples.
-- Added and hardened Schottky/contact, tunneling, electrothermal, trap,
-  ferroelectric, TFET, GaN, IGZO, WSe2, FinFET, and GAA calibration workflows.
-- Added sparse WSe2 residual replay export artifacts for compact deck-local
-  replay with bounded anchor count.
-- Improved mesh/control-volume handling around material interfaces,
-  nonuniform grids, cut cells, and non-planar geometries.
-- Added release metadata checks for package/runtime version consistency and
-  calibration dashboard integrity.
+## Validation and known gaps
 
-## Validation status
+Two fine-grid MoS₂ 60 ps trajectories completed independent full-field/trace
+checks. Local-z initialization/one-step probes also passed. See
+[validation details](docs/releases/0.3.0rc1/VALIDATION.md) for counts, provenance
+and release-specific build/install verification.
 
-The release gate is expected to pass with:
+Full spatial convergence is unqualified; fine-grid temporal and joint
+spacetime bounds are not established. Sheet models are isothermal,
+homogeneous-band and constant-mobility, with representative parameters.
+Complete 2D logic circuits, full memory write/erase/read/retention/disturb/
+endurance, dedicated Schrödinger–Poisson and NEGF transport remain open.
+Density-gradient and quantum capacitance do not replace those solvers.
 
-- TCADCraft package/runtime version: `0.2.0`
-- Calibration dashboard check: passed
-- Device-family support matrix: passed
-- Gap-closure report: closed
-- Release metadata check: passed
+Historical targeted regressions are inherited evidence, not fresh full-suite
+tests. This release claims no new commercial solver or experimental acceptance.
+The old 0.2.0 fixed gap-list wording did not certify whole-product equivalence.
 
-Fast release check:
+## Build and artifact scope
 
-```bash
-python scripts/release_check.py \
-  --calibration-root ../.. \
-  --mixed-material-dashboard ../../bench/results/calibration/tcadcraft_mixed_material_calibration_dashboard.json
-```
-
-## Notable behavior changes
-
-- Newton-primary mode no longer inherits skipped or stale Gummel warm-start
-  states.
-- Gummel acceptance now requires successful continuity polishing and finite
-  carrier state.
-- Newton solve paths reject non-finite potential, carrier, residual, Jacobian,
-  step, and write-back values earlier.
-- Default source builds avoid mandatory system LAPACK/BLAS linkage; system
-  LAPACK can still be enabled explicitly where appropriate.
-- Quantum-correction paths use stricter residual and interface checks for
-  thin-body and non-planar device families.
-- WSe2 replay artifacts now include a fixed-budget sparse residual replay
-  export in addition to dense diagnostic metrics.
-
-## Included source areas
-
-- `tcad/` — Python API, material library, geometry builders, physics models,
-  post-processing, and simulator orchestration.
-- `src/` — C++ numerical kernels and bindings.
-- `tests/` — regression and validation tests.
-- `scripts/` — release and metadata checks.
-- `examples/` — reference device setup examples.
-
-## Known limitations
-
-- Quantitative calibration remains valid only within the released device
-  families, parameter windows, and replay artifacts included with this version.
-- Some advanced material/device workflows require external material parameter
-  files before they should be treated as predictive outside the included
-  calibration windows.
-- Sparse WSe2 replay is deck-local and is not a replacement for a fully
-  transferable no-residual compact model.
-- Native Windows/MSVC source builds are not the primary target; Windows users
-  should prefer WSL2.
-
-## Build notes
+- Package/runtime version: `0.3.0rc1`; Python >=3.10.
+- C++17 GCC with libquadmath; default SI constants and `__float128` core
+  (113 mantissa bits). Python/SciPy sheet solvers use float64.
+- Native Windows is unsupported; use Linux or WSL2.
+- Linux wheels are specific to the Python ABI/runtime in their compatibility
+  report; no universal or manylinux compatibility is implied.
+- Large raw validation archives and external calibration dashboards are not
+  bundled; compact input identity and numerical summaries are included.
 
 ```bash
-TCAD_USE_PETSC=0 TCAD_USE_LAPACK=0 python setup.py build_ext --inplace
-python -m pytest -q
+TCAD_USE_PETSC=0 TCAD_USE_LAPACK=0 python -m pip install '.[dev]'
 ```
-
-Linux and macOS source builds with GCC/Clang are the primary supported build
-targets. LAPACK acceleration can be enabled explicitly with
-`TCAD_USE_LAPACK=1` after platform validation.

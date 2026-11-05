@@ -70,7 +70,10 @@ WRAP_FOUR_SIDE = "four_side"     # top+bottom+left+right (gaa family)
 class MaterialSpec:
     """Pure-value material description; converts to ``device_builder.Material``.
 
-    Covers all 14 fields of ``Material`` so dataclass ``__eq__`` is exact.
+    Covers every field of ``Material``.  Keeping this value object in sync is
+    important: silently dropping ferroelectric, trap, reliability, or
+    disordered-transport parameters changes the simulated physics while the
+    grammar still appears to round-trip successfully.
     """
     name: str = "Silicon"
     epsilon_r: float = 11.7
@@ -86,6 +89,25 @@ class MaterialSpec:
     b_p: float = 3.86e-6
     fe_alpha: float = 0.0
     fe_beta: float = 0.0
+    fe_ps: float = 0.0
+    fe_ec: float = 0.0
+    fe_E_bi: float = 0.0
+    E_bd: float = 0.0
+    Dit: float = 0.0
+    Q_ot: float = 0.0
+    Q_ot_max: float = 0.0
+    fatigue_Nc: float = 1.0e6
+    tail_DOS: float = 0.0
+    urbach_energy: float = 0.0
+    percolation_energy: float = 0.0
+    pbti_Nt: float = 0.0
+    pbti_Et: float = 0.0
+    pbti_capture_tau: float = 1.0
+    pbti_emission_tau: float = 1.0e4
+    ii_A_n: float = 0.0
+    ii_B_n: float = 0.0
+    ii_A_p: float = 0.0
+    ii_B_p: float = 0.0
 
     def to_material(self) -> Material:
         return Material(
@@ -93,6 +115,16 @@ class MaterialSpec:
             Nc=self.Nc, Nv=self.Nv, mu_n=self.mu_n, mu_p=self.mu_p,
             tau_n=self.tau_n, tau_p=self.tau_p, b_n=self.b_n, b_p=self.b_p,
             fe_alpha=self.fe_alpha, fe_beta=self.fe_beta,
+            fe_ps=self.fe_ps, fe_ec=self.fe_ec, fe_E_bi=self.fe_E_bi,
+            E_bd=self.E_bd, Dit=self.Dit, Q_ot=self.Q_ot,
+            Q_ot_max=self.Q_ot_max, fatigue_Nc=self.fatigue_Nc,
+            tail_DOS=self.tail_DOS, urbach_energy=self.urbach_energy,
+            percolation_energy=self.percolation_energy,
+            pbti_Nt=self.pbti_Nt, pbti_Et=self.pbti_Et,
+            pbti_capture_tau=self.pbti_capture_tau,
+            pbti_emission_tau=self.pbti_emission_tau,
+            ii_A_n=self.ii_A_n, ii_B_n=self.ii_B_n,
+            ii_A_p=self.ii_A_p, ii_B_p=self.ii_B_p,
         )
 
 
@@ -255,7 +287,11 @@ def _material_tuple(m: Material) -> tuple:
     return (
         m.name, m.epsilon_r, m.Eg, m.chi, m.Nc, m.Nv,
         m.mu_n, m.mu_p, m.tau_n, m.tau_p, m.b_n, m.b_p,
-        m.fe_alpha, m.fe_beta,
+        m.fe_alpha, m.fe_beta, m.fe_ps, m.fe_ec, m.fe_E_bi,
+        m.E_bd, m.Dit, m.Q_ot, m.Q_ot_max, m.fatigue_Nc,
+        m.tail_DOS, m.urbach_energy, m.percolation_energy,
+        m.pbti_Nt, m.pbti_Et, m.pbti_capture_tau, m.pbti_emission_tau,
+        m.ii_A_n, m.ii_B_n, m.ii_A_p, m.ii_B_p,
     )
 
 

@@ -14,15 +14,14 @@ Design variable: refresh cadence C_r (cycles between refresh flips).
 
 Objective: maximize the time-integrated usable memory window over a
 device lifetime T cycles:
-    U(C_r) = sum over blocks of MW(cycles) * block_length
+    U(C_r) = integral_0^T max(MW(cycles), 0) d(cycles)
 
 Trade-off:
 - Large C_r  -> imprint saturates, window collapses mid-block
 - Small C_r  -> refresh stress dominates, fatigue collapses early
 
-Discovery target: an interior optimum C_r* and its scaling law with
-imprint rate and fatigue lifetime (signature: C_r* ~ sqrt of the
-imprint x fatigue lifetime product).
+An interior optimum is a hypothesis to test for each configured proxy.
+Ideal recovery and cycle-domain rates require independent calibration.
 """
 
 from __future__ import annotations
@@ -53,10 +52,33 @@ class ScheduleConfig:
     fatigue_loss: float = 0.8
     imprint_rate: float = 1e-3         # per cycle at reference field
     imprint_field_max: float = 0.5     # max imprint bias [norm. units]
+    # Fraction remaining after refresh. Zero is an ideal recovery proxy,
+    # not a measured recovery law; one disables imposed recovery.
+    refresh_imprint_retention: float = 0.0
     # Sweep
     cadence_lo_cycles: float = 10.0
     cadence_hi_cycles: float = 1.0e5
     n_cadence: int = 60
+
+    def __post_init__(self) -> None:
+        for name in ("lifetime_cycles", "write_field", "refresh_field",
+                     "cadence_lo_cycles", "cadence_hi_cycles"):
+            if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be finite and > 0")
+        if self.cadence_hi_cycles < self.cadence_lo_cycles:
+            raise ValueError("cadence range must be increasing")
+        if (not isinstance(self.n_cadence, int) or isinstance(self.n_cadence, bool)
+                or self.n_cadence < 1):
+            raise ValueError("n_cadence must be a positive integer")
+        if (not math.isfinite(self.refresh_events_per_block)
+                or self.refresh_events_per_block < 0):
+            raise ValueError("refresh_events_per_block must be finite and >= 0")
+        if (not math.isfinite(self.refresh_imprint_retention)
+                or not 0 <= self.refresh_imprint_retention <= 1):
+            raise ValueError("refresh_imprint_retention must lie in [0, 1]")
+        if not math.isfinite(self.wakeup_gain) or self.wakeup_gain < 0:
+            raise ValueError("wakeup_gain must be finite and >= 0")
+        self.kernel()  # Validate all kinetic parameters at configuration time.
 
     def kernel(self) -> FieldHistoryCyclingState:
         return FieldHistoryCyclingState(
@@ -79,6 +101,10 @@ class ScheduleResult:
     final_fatigue: float
     max_imprint: float
     mean_window: float
+    covered_cycles: float = 0.0
+    refresh_count: int = 0
+    final_imprint: float = 0.0
+    refresh_imprint_retention: float = 0.0
 
     def as_dict(self) -> Dict:
         return {
@@ -87,7 +113,34 @@ class ScheduleResult:
             "final_fatigue": self.final_fatigue,
             "max_imprint": self.max_imprint,
             "mean_window": self.mean_window,
+            "covered_cycles": self.covered_cycles,
+            "refresh_count": self.refresh_count,
+            "final_imprint": self.final_imprint,
+            "refresh_imprint_retention": self.refresh_imprint_retention,
+            "recovery_model": "fractional_proxy_unvalidated",
+            "time_unit": "service_cycles",
         }
+
+
+def _dwell_integral(amplitude: float, imprint: float, maximum: float,
+                    rate: float, duration: float) -> tuple[float, float]:
+    """Exact integral of max(A-B(t), 0), B'=rate*(maximum-B).
+
+    Wake-up and fatigue stay fixed during this no-switching dwell. This
+    integrates the declared cycle-domain proxy, not a device energy.
+    """
+    end = imprint + (maximum - imprint) * (-math.expm1(-rate * duration))
+    if rate == 0.0:
+        return max(amplitude - imprint, 0.0) * duration, end
+    if amplitude <= imprint:
+        return 0.0, end
+    active_duration = duration
+    if amplitude < maximum:
+        crossing = math.log1p((amplitude - imprint) / (maximum - amplitude)) / rate
+        active_duration = min(duration, crossing)
+    integral = ((amplitude - maximum) * active_duration
+                + (maximum - imprint) * (-math.expm1(-rate * active_duration)) / rate)
+    return max(integral, 0.0), end
 
 
 def evaluate_schedule(cadence: float,
@@ -95,49 +148,50 @@ def evaluate_schedule(cadence: float,
                       ) -> ScheduleResult:
     """Simulate one refresh cadence over the service lifetime.
 
-    Protocol per block of C_r cycles:
-      - C_r - 1 write cycles at write_field alternating polarity each cycle
-        (so imprint does NOT accumulate from repeated same-polarity writes;
-        in real arrays, adjacent blocks store opposite data, and the worst
-        case is a long same-value dwell -- modeled as write_field hold)
-      - 1 refresh flip at refresh_field (opposite polarity) that erases
-        imprint and pays accelerated fatigue
+    Dwell in service-cycle units, then refresh only if service remains.
+    Refresh stress advances the cycling kernel; recovery retains the
+    configured fraction of imprint. The default ideal recovery requires
+    independent calibration before making physical scheduling claims.
     """
     config = config or ScheduleConfig()
     state = config.kernel()
 
-    cadence = max(cadence, 1.0)
+    if not math.isfinite(cadence) or cadence <= 0:
+        raise ValueError("cadence must be finite and > 0")
     n_blocks = int(math.ceil(config.lifetime_cycles / cadence))
-    integral = 0.0
+    integrals = []
     max_imprint = 0.0
+    elapsed = 0.0
+    refresh_count = 0
 
     for _block in range(n_blocks):
-        # Same-polarity dwell for the block duration (worst-case storage):
-        # imprint advances under the held field; no switching occurs, so
-        # wake-up/fatigue do not advance during the dwell.
-        dwell_gain = 1.0 - math.exp(-config.imprint_rate * cadence)
-        state.imprint_state = (
-            config.imprint_field_max
-            + (state.imprint_state - config.imprint_field_max)
-            * (1.0 - dwell_gain)
-        )
-        max_imprint = max(max_imprint, abs(state.imprint_state))
-
-        # Usable window in this block: pristine window with wake-up boost,
-        # degraded by fatigue loss and the current imprint bias.
-        window = (
+        target = min((_block + 1) * cadence, config.lifetime_cycles)
+        if config.lifetime_cycles - target <= 16 * math.ulp(config.lifetime_cycles):
+            target = config.lifetime_cycles
+        duration = target - elapsed
+        if duration <= 0.0:
+            break
+        amplitude = (
             (1.0 + config.wakeup_gain * state.wakeup_state)
             * (1.0 - config.fatigue_loss * state.fatigue_state)
-            - abs(state.imprint_state)
         )
-        integral += max(window, 0.0) * cadence
+        contribution, state.imprint_state = _dwell_integral(
+            amplitude, state.imprint_state, config.imprint_field_max,
+            config.imprint_rate, duration)
+        integrals.append(contribution)
+        max_imprint = max(max_imprint, abs(state.imprint_state))
+        elapsed = target
+        if elapsed == config.lifetime_cycles:
+            break
+        if config.refresh_events_per_block > 0.0:
+            retained = state.imprint_state * config.refresh_imprint_retention
+            state.advance(cycles=config.refresh_events_per_block,
+                          electric_field=config.refresh_field)
+            # Recovery is a declared proxy, separate from cycling damage.
+            state.imprint_state = retained
+            refresh_count += 1
 
-        # Refresh: flip + restore at the higher field erases imprint and
-        # pays accelerated fatigue (2 stressed events per refresh).
-        state.imprint_state = 0.0
-        state.advance(cycles=config.refresh_events_per_block,
-                      electric_field=config.refresh_field)
-
+    integral = math.fsum(integrals)
     mean_window = integral / config.lifetime_cycles
     return ScheduleResult(
         cadence=cadence,
@@ -145,6 +199,10 @@ def evaluate_schedule(cadence: float,
         final_fatigue=state.fatigue_state,
         max_imprint=max_imprint,
         mean_window=mean_window,
+        covered_cycles=elapsed,
+        refresh_count=refresh_count,
+        final_imprint=state.imprint_state,
+        refresh_imprint_retention=config.refresh_imprint_retention,
     )
 
 
@@ -165,17 +223,14 @@ def find_optimal_cadence(config: Optional[ScheduleConfig] = None
     return max(results, key=lambda r: r.mean_window)
 
 
-def scaling_signature(config: Optional[ScheduleConfig] = None) -> Dict[str, float]:
+def scaling_signature(config: Optional[ScheduleConfig] = None) -> Dict:
     """Measure how C_r* scales with imprint rate and fatigue lifetime.
 
-    Balance analysis (small-rC, linearized imprint): the mean-window loss is
-        L(C) ~ K/C + 0.25*r*C,  K ~ fatigue cost per refresh * T
-    giving C* = sqrt(K / (0.25 r)) ~ sqrt(T * r / N_fatigue_eff / r)
-    = sqrt(T / N_fatigue_eff) -- INDEPENDENT of r to first order, with
-    imprint-rate entering only through higher-order terms. Signature
-    checks below probe the leading responses:
-      - imprint_rate /4  -> C* x ~2 (from the 0.25*r*C linear term)
-      - fatigue x4 (N_fatigue_eff x4) -> C* x ~1/2 (refresh gets cheaper)
+    With ideal recovery, no wake-up, small damage and small imprint:
+      loss ~ fatigue_loss*T/(2*N_eff*C) + B_max*rate*C/2
+      C* ~ sqrt(fatigue_loss*T/(N_eff*B_max*rate)).
+    Report the assumptions separately from observed discrete sweep optima;
+    this asymptotic balance is not a universal or experimentally verified law.
     """
     config = config or ScheduleConfig()
     out = {}
@@ -184,10 +239,22 @@ def scaling_signature(config: Optional[ScheduleConfig] = None) -> Dict[str, floa
 
     fatigue_accel = (config.refresh_field / config.write_field) \
         ** config.fatigue_field_exponent
-    n_fatigue_eff = config.fatigue_cycles / fatigue_accel \
-        * config.refresh_events_per_block
+    stress = fatigue_accel * config.refresh_events_per_block
+    n_fatigue_eff = config.fatigue_cycles / stress if stress > 0 else None
     out["n_fatigue_eff"] = n_fatigue_eff
-    out["sqrt_t_over_nf"] = math.sqrt(config.lifetime_cycles / n_fatigue_eff)
+    prediction = None
+    if (n_fatigue_eff is not None and config.fatigue_loss > 0
+            and config.imprint_field_max > 0 and config.imprint_rate > 0):
+        prediction = math.sqrt(config.fatigue_loss * config.lifetime_cycles
+                               / (n_fatigue_eff * config.imprint_field_max * config.imprint_rate))
+    out["asymptotic_cadence"] = prediction
+    out["asymptotic_regime_satisfied"] = bool(
+        prediction is not None and config.wakeup_gain == 0
+        and config.refresh_imprint_retention == 0
+        and config.imprint_rate * prediction < 0.1
+        and config.lifetime_cycles / (n_fatigue_eff * prediction) < 0.1
+        and prediction / config.lifetime_cycles < 0.01)
+    out["prediction_scope"] = "ideal_recovery_no_wakeup_small_damage_small_imprint"
 
     cfg2 = ScheduleConfig(**{**config.__dict__, "imprint_rate":
                              config.imprint_rate / 4.0})
@@ -230,7 +297,8 @@ def discover_refresh_schedule():
           f"(mean window {best.mean_window:.4f})")
     sig = scaling_signature(config)
     print(f"\nScaling signature:")
-    print(f"  sqrt(T / N_fatigue_eff) = {sig['sqrt_t_over_nf']:.0f} cycles")
+    print(f"  asymptotic estimate = {sig['asymptotic_cadence']} cycles; "
+          f"regime satisfied = {sig['asymptotic_regime_satisfied']}")
     print(f"  imprint_rate/4 -> C_r* x{sig['observed_imprint_shift']:.2f} "
           f"(predicted x{sig['predicted_imprint_shift']:.2f})")
     print(f"  fatigue x4     -> C_r* x{sig['observed_fatigue_shift']:.2f} "

@@ -47,7 +47,7 @@ public:
     }
 
     real_t eps(size_t i) const override {
-        return (i < eps_.size()) ? eps_[i] : 11.7Q * 8.854187817e-12Q;
+        return (i < eps_.size()) ? eps_[i] : TCAD_CONST(11.7) * TCAD_CONST(8.854187817e-12);
     }
 
     // Direct access for solvers

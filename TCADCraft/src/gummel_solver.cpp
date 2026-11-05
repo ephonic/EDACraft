@@ -1,25 +1,112 @@
+#include "hfs_reference.h"
 #include "gummel_solver.h"
+#include "structured_field.h"
+#include "linearized_wkb.h"
+#include "ii_driving.h"
 #include "linear_solver.h"
 #include "statistics.h"
+#include "continuity_chain.h"
+#include "transport_contract.h"
+#include "hfs_edge_mobility.h"
 #include <iostream>
 #include <cmath>
 
 namespace tcad {
 
 namespace {
+void validate_gummel_state_size(size_t count, const std::vector<real_t>& phi,
+        const std::vector<real_t>& n, const std::vector<real_t>& p, const char* message) {
+    if (phi.size() != count || n.size() != count || p.size() != count)
+        throw std::invalid_argument(message);
+}
+
+void validate_gummel_dos_size(size_t count, const std::vector<real_t>& Nc,
+        const std::vector<real_t>& Nv) {
+    if (Nc.size() < count || Nv.size() < count)
+        throw std::invalid_argument("Gummel effective DOS must cover all nodes");
+}
+
+void validate_gummel_material_size(size_t count, const std::vector<real_t>& mu_n,
+        const std::vector<real_t>& mu_p, const std::vector<real_t>& Nc,
+        const std::vector<real_t>& Nv, const std::vector<real_t>& Eg,
+        const std::map<size_t, real_t>& n_bc, const std::map<size_t, real_t>& p_bc) {
+    if (mu_n.size() < count || mu_p.size() < count)
+        throw std::invalid_argument("Gummel mobility must cover all nodes");
+    // Carrier reservoirs and frozen zero-mobility nodes skip SRH/material reads.
+    // Preserve that no-DOS/no-bandgap path, and finite oversized material input.
+    for (size_t i = 0; i < count; ++i) {
+        if ((mu_n[i] >= EPSILON && !n_bc.count(i)) ||
+            (mu_p[i] >= EPSILON && !p_bc.count(i))) {
+            validate_gummel_dos_size(count, Nc, Nv);
+            if (Eg.size() < count)
+                throw std::invalid_argument("Gummel bandgap must cover all nodes");
+            break;
+        }
+    }
+}
+
+// Validate the complete request before changing any stored material array.
+// Finite shapes/signs retain their historical entry/fallback semantics.
+void validate_material_finite(const std::vector<real_t>& values, const char* message) {
+    for (real_t value : values)
+        if (!isfinite_q(value)) throw std::invalid_argument(message);
+}
+
+void validate_carrier_bc(const std::map<size_t, real_t>& bc, size_t count) {
+    for (const auto& entry : bc)
+        if (entry.first >= count)
+            throw std::invalid_argument("carrier boundary index out of range");
+    for (const auto& entry : bc)
+        if (!isfinite_q(entry.second))
+            throw std::invalid_argument("carrier boundary values must be finite");
+}
+
+// The sum of absolute SG matrix entries can dwarf a transient storage or
+// reaction imbalance, even for a spatially uniform zero-flux population.
+// Audit net transport and the actual BE/source terms; iteration derivatives
+// are excluded from the operator assembled for this audit.
+real_t scaled_transient_residual(const SparseMatrix& matrix, const Vector& rhs,
+                                const Vector& solution, const Vector& storage,
+                                const Vector& physical_scale,
+                                const std::vector<char>& active) {
+    const Vector applied=matrix.apply(solution);
+    real_t worst=TCAD_CONST(0.0);
+    for(size_t i=0;i<rhs.size();++i) {
+        real_t scale;
+        if(active[i]) {
+            scale=abs_q(applied[i]-storage[i])+physical_scale[i];
+        } else {
+            // Carrier contact and insulating identity rows retain their
+            // ordinary dimensionless boundary-equation normalization.
+            scale=abs_q(rhs[i]);
+            for(size_t e=matrix.row_offsets()[i];e<matrix.row_offsets()[i+1];++e)
+                scale+=abs_q(matrix.vals()[e]*solution[matrix.col_indices()[e]]);
+        }
+        const real_t residual=abs_q(applied[i]-rhs[i]);
+        if(!isfinite_q(scale) || !isfinite_q(residual))return TCAD_CONST(1e100);
+        const real_t relative=scale>0?residual/scale:(residual==0?TCAD_CONST(0.0):TCAD_CONST(1.0));
+        worst=std::max(worst,relative);
+    }
+    return worst;
+}
+
 real_t scaled_linear_residual(const SparseMatrix& matrix,
-                              const Vector& rhs, const Vector& solution) {
+                              const Vector& rhs, const Vector& solution,
+                              bool dimensional_floor = true) {
     const Vector applied = matrix.apply(solution);
     const auto& rows = matrix.row_offsets();
     const auto& values = matrix.vals();
-    real_t worst = 0.0Q;
+    real_t worst = TCAD_CONST(0.0);
     for (size_t i = 0; i < rhs.size(); ++i) {
         real_t scale = abs_q(rhs[i]);
         for (size_t entry = rows[i]; entry < rows[i + 1]; ++entry)
             scale += abs_q(values[entry] * solution[matrix.col_indices()[entry]]);
         const real_t residual = abs_q(applied[i] - rhs[i]);
-        const real_t relative = residual / std::max(scale, 1.0Q);
-        if (!std::isfinite((double)relative)) return 1.0e100Q;
+        if (!isfinite_q(scale) || !isfinite_q(residual)) return TCAD_CONST(1.0e100);
+        const real_t divisor = dimensional_floor ? std::max(scale, TCAD_CONST(1.0)) : scale;
+        const real_t relative = divisor > TCAD_CONST(0.0) ? residual / divisor :
+            (residual == TCAD_CONST(0.0) ? TCAD_CONST(0.0) : TCAD_CONST(1.0));
+        if (!std::isfinite((double)relative)) return TCAD_CONST(1.0e100);
         worst = std::max(worst, relative);
     }
     return worst;
@@ -33,14 +120,14 @@ void report_linear_residual_peak(const SparseMatrix& matrix,
     const auto& rows = matrix.row_offsets();
     const auto& values = matrix.vals();
     size_t worst_row = 0;
-    real_t worst = -1.0Q;
-    real_t worst_scale = 1.0Q;
+    real_t worst = -TCAD_CONST(1.0);
+    real_t worst_scale = TCAD_CONST(1.0);
     for (size_t i = 0; i < rhs.size(); ++i) {
         real_t scale = abs_q(rhs[i]);
         for (size_t entry = rows[i]; entry < rows[i + 1]; ++entry)
             scale += abs_q(
                 values[entry] * solution[matrix.col_indices()[entry]]);
-        scale = std::max(scale, 1.0Q);
+        scale = std::max(scale, TCAD_CONST(1.0));
         const real_t relative = abs_q(applied[i] - rhs[i]) / scale;
         if (relative > worst) {
             worst = relative;
@@ -86,11 +173,11 @@ bool accept_positive_floor_continuity_state(
     const SparseMatrix& matrix, const Vector& rhs, Vector& solution,
     real_t residual_gate) {
     if (!finite_vector(solution)) return false;
-    constexpr real_t floor_clip_gate = 1.0e-3Q;
+    constexpr real_t floor_clip_gate = TCAD_CONST(1.0e-3);
     bool clipped = false;
     Vector candidate = solution;
     for (real_t& value : candidate) {
-        if (value < 0.0Q) {
+        if (value < TCAD_CONST(0.0)) {
             if (abs_q(value) > floor_clip_gate)
                 return false;
             value = EPSILON;
@@ -108,7 +195,7 @@ bool accept_positive_floor_continuity_state(
         for (size_t entry = rows[row]; entry < rows[row + 1]; ++entry)
             scale += abs_q(values[entry] * candidate[cols[entry]]);
         const real_t absolute = abs_q(applied[row] - rhs[row]);
-        const real_t relative = absolute / std::max(scale, 1.0Q);
+        const real_t relative = absolute / std::max(scale, TCAD_CONST(1.0));
         if (!std::isfinite((double)relative)) return false;
         if (relative <= residual_gate) continue;
         // Depleted minority-carrier rows can be below one carrier per cubic
@@ -116,7 +203,7 @@ bool accept_positive_floor_continuity_state(
         // clipped to the density floor is physically indistinguishable from
         // zero, so allow only that sub-resolution absolute residual.  Rows
         // with any resolved physical scale still obey the original gate.
-        if (!(scale <= 1.0Q && absolute <= floor_clip_gate))
+        if (!(scale <= TCAD_CONST(1.0) && absolute <= floor_clip_gate))
             return false;
     }
     solution = std::move(candidate);
@@ -131,9 +218,9 @@ void equilibrated_copy(const SparseMatrix& matrix, const Vector& rhs,
     auto& scaled_values = scaled_matrix.vals_mut();
     const auto& rows = matrix.row_offsets();
     const auto& values = matrix.vals();
-    row_scale.assign(matrix.rows(), 1.0Q);
+    row_scale.assign(matrix.rows(), TCAD_CONST(1.0));
     for (size_t row = 0; row < matrix.rows(); ++row) {
-        real_t scale = 0.0Q;
+        real_t scale = TCAD_CONST(0.0);
         for (size_t entry = rows[row]; entry < rows[row + 1]; ++entry)
             scale = std::max(scale, abs_q(values[entry]));
         if (!(scale > EPSILON) || !std::isfinite((double)scale))
@@ -146,13 +233,13 @@ void equilibrated_copy(const SparseMatrix& matrix, const Vector& rhs,
     }
     // Row scaling alone leaves carrier columns with very different norms.
     // Apply the same second equilibration phase used by coupled Newton.
-    column_scale.assign(matrix.rows(), 0.0Q);
+    column_scale.assign(matrix.rows(), TCAD_CONST(0.0));
     const auto& columns = scaled_matrix.col_indices();
     for (size_t entry = 0; entry < scaled_values.size(); ++entry)
         column_scale[columns[entry]] = std::max(
             column_scale[columns[entry]], abs_q(scaled_values[entry]));
     for (real_t& scale : column_scale)
-        scale = scale > EPSILON ? 1.0Q / scale : 1.0Q;
+        scale = scale > EPSILON ? TCAD_CONST(1.0) / scale : TCAD_CONST(1.0);
     for (size_t entry = 0; entry < scaled_values.size(); ++entry)
         scaled_values[entry] *= column_scale[columns[entry]];
 }
@@ -161,7 +248,7 @@ bool solve_continuity_linear_system(
     const SparseMatrix& matrix, const Vector& rhs, const Vector& initial,
     LinearSolver& primary, const SolverOptions& options,
     const char* species, bool& use_banded_direct, Vector& solution) {
-    const real_t residual_gate = std::max(100.0Q * options.tol, 1.0e-8Q);
+    const real_t residual_gate = std::max(TCAD_CONST(100.0) * options.tol, TCAD_CONST(1.0e-8));
     const bool narrow_banded =
         options.type != SolverType::DENSE_DIRECT &&
         has_narrow_banded_structure(matrix);
@@ -174,7 +261,27 @@ bool solve_continuity_linear_system(
     if (use_banded_direct && !narrow_banded)
         use_banded_direct = false;
 
-    bool primary_completed = !use_banded_direct;
+    // A previously successful band can become singular as coefficients change.
+    // Probe transactionally and resume the selected backend on refusal; never
+    // route an automatic large-system retry through the dense allocator.
+    bool banded_attempted = false;
+    if (use_banded_direct) {
+        banded_attempted = true;
+        Vector candidate = initial;
+        if (primary.try_banded_direct(matrix, rhs, candidate) &&
+            finite_vector(candidate) &&
+            scaled_linear_residual(matrix, rhs, candidate) <= residual_gate) {
+            solution = std::move(candidate);
+            if (getenv("TCAD_LIN_DEBUG"))
+                std::cerr << "[Gummel cached bounded band accepted]\n";
+            return true;
+        }
+        use_banded_direct = false;
+        if (getenv("TCAD_LIN_DEBUG"))
+            std::cerr << "[Gummel bounded band unavailable; resuming primary]\n";
+    }
+
+    bool primary_completed = true;
     solution = initial;
     if (primary_completed) {
         try {
@@ -212,7 +319,7 @@ bool solve_continuity_linear_system(
                     for (size_t i = 0; i < rhs.size(); ++i)
                         correction_rhs[i] =
                             (rhs[i] - applied[i]) / row_scale[i];
-                    Vector correction(rhs.size(), 0.0Q);
+                    Vector correction(rhs.size(), TCAD_CONST(0.0));
                     primary.solve(
                         scaled_matrix, correction_rhs, correction);
                     for (size_t i = 0; i < solution.size(); ++i)
@@ -227,7 +334,7 @@ bool solve_continuity_linear_system(
     }
     real_t residual = primary_completed && finite_vector(solution)
         ? scaled_linear_residual(matrix, rhs, solution)
-        : 1.0e100Q;
+        : TCAD_CONST(1.0e100);
     if (residual <= residual_gate) return true;
     const real_t primary_residual = residual;
 
@@ -243,21 +350,21 @@ bool solve_continuity_linear_system(
         auto& physical_values = physical_matrix.vals_mut();
         const auto& physical_rows = matrix.row_offsets();
         const auto& physical_columns = matrix.col_indices();
-        Vector carrier_scale(matrix.rows(), 1.0Q);
+        Vector carrier_scale(matrix.rows(), TCAD_CONST(1.0));
         for (size_t i = 0; i < carrier_scale.size(); ++i)
-            carrier_scale[i] = std::max(abs_q(initial[i]), 1.0Q);
+            carrier_scale[i] = std::max(abs_q(initial[i]), TCAD_CONST(1.0));
         for (size_t entry = 0; entry < physical_values.size(); ++entry)
             physical_values[entry] *= carrier_scale[physical_columns[entry]];
 
         Vector physical_rhs = rhs;
-        Vector physical_row_scale(matrix.rows(), 1.0Q);
+        Vector physical_row_scale(matrix.rows(), TCAD_CONST(1.0));
         for (size_t row = 0; row < matrix.rows(); ++row) {
             real_t scale = abs_q(physical_rhs[row]);
             for (size_t entry = physical_rows[row];
                  entry < physical_rows[row + 1]; ++entry)
                 scale = std::max(scale, abs_q(physical_values[entry]));
             if (!(scale > EPSILON) || !std::isfinite((double)scale))
-                scale = 1.0Q;
+                scale = TCAD_CONST(1.0);
             physical_row_scale[row] = scale;
             for (size_t entry = physical_rows[row];
                  entry < physical_rows[row + 1]; ++entry)
@@ -282,7 +389,7 @@ bool solve_continuity_linear_system(
                 for (size_t i = 0; i < rhs.size(); ++i)
                     correction_rhs[i] =
                         (rhs[i] - applied[i]) / physical_row_scale[i];
-                Vector correction(rhs.size(), 0.0Q);
+                Vector correction(rhs.size(), TCAD_CONST(0.0));
                 primary.solve(
                     physical_matrix, correction_rhs, correction);
                 for (size_t i = 0; i < solution.size(); ++i)
@@ -290,7 +397,7 @@ bool solve_continuity_linear_system(
             }
             residual = finite_vector(solution)
                 ? scaled_linear_residual(matrix, rhs, solution)
-                : 1.0e100Q;
+                : TCAD_CONST(1.0e100);
             if (residual <= residual_gate) {
                 std::cerr << species
                           << " continuity recovered with carrier-state "
@@ -316,17 +423,17 @@ bool solve_continuity_linear_system(
     if (options.type != SolverType::DENSE_DIRECT) {
         SparseMatrix row_matrix = matrix;
         Vector row_rhs = rhs;
-        Vector row_scale(matrix.rows(), 1.0Q);
+        Vector row_scale(matrix.rows(), TCAD_CONST(1.0));
         auto& row_values = row_matrix.vals_mut();
         const auto& row_offsets = matrix.row_offsets();
         const auto& original_values = matrix.vals();
         for (size_t row = 0; row < matrix.rows(); ++row) {
-            real_t scale = 0.0Q;
+            real_t scale = TCAD_CONST(0.0);
             for (size_t entry = row_offsets[row];
                  entry < row_offsets[row + 1]; ++entry)
                 scale = std::max(scale, abs_q(original_values[entry]));
             if (!(scale > EPSILON) || !std::isfinite((double)scale)) {
-                scale = 1.0Q;
+                scale = TCAD_CONST(1.0);
             }
             row_scale[row] = scale;
             for (size_t entry = row_offsets[row];
@@ -347,14 +454,14 @@ bool solve_continuity_linear_system(
                 for (size_t i = 0; i < rhs.size(); ++i)
                     correction_rhs[i] =
                         (rhs[i] - applied[i]) / row_scale[i];
-                Vector correction(rhs.size(), 0.0Q);
+                Vector correction(rhs.size(), TCAD_CONST(0.0));
                 primary.solve(row_matrix, correction_rhs, correction);
                 for (size_t i = 0; i < solution.size(); ++i)
                     solution[i] += correction[i];
             }
             residual = finite_vector(solution)
                 ? scaled_linear_residual(matrix, rhs, solution)
-                : 1.0e100Q;
+                : TCAD_CONST(1.0e100);
             if (residual <= residual_gate) {
                 std::cerr << species
                           << " continuity recovered with row-only "
@@ -375,7 +482,25 @@ bool solve_continuity_linear_system(
     // residual gate, but retry structured narrow-band systems with the
     // internal float128 banded direct path instead of rejecting an otherwise
     // solvable nonlinear iterate.  Wide 3-D matrices never take this path.
-    if (narrow_banded || manageable_dense_retry) {
+    if (narrow_banded && !banded_attempted) {
+        Vector candidate = initial;
+        if (primary.try_banded_direct(matrix, rhs, candidate) &&
+            finite_vector(candidate) &&
+            scaled_linear_residual(matrix, rhs, candidate) <= residual_gate) {
+            solution = std::move(candidate);
+            use_banded_direct = true;
+            std::cerr << species
+                      << " continuity switched to bounded float128 banded direct "
+                      << "after equilibrated primary residual "
+                      << (double)primary_residual << " exceeded gate "
+                      << (double)residual_gate << std::endl;
+            return true;
+        }
+        use_banded_direct = false;
+        if (getenv("TCAD_LIN_DEBUG"))
+            std::cerr << "[Gummel bounded band unavailable; no large dense retry]\n";
+    }
+    if (manageable_dense_retry) {
         SolverOptions fallback_options = options;
         fallback_options.type = SolverType::DENSE_DIRECT;
         LinearSolver fallback(fallback_options);
@@ -383,25 +508,16 @@ bool solve_continuity_linear_system(
         try {
             fallback.solve(matrix, rhs, solution);
         } catch (const std::exception& error) {
-            std::cerr << species << " continuity banded-direct retry failed: "
+            std::cerr << species << " continuity small dense retry failed: "
                       << error.what() << std::endl;
             return false;
         }
         residual = finite_vector(solution)
             ? scaled_linear_residual(matrix, rhs, solution)
-            : 1.0e100Q;
+            : TCAD_CONST(1.0e100);
         if (residual <= residual_gate) {
-            if (narrow_banded && !use_banded_direct)
-                std::cerr << species
-                          << " continuity switched to float128 banded direct "
-                          << "after equilibrated primary residual "
-                          << (double)primary_residual << " exceeded gate "
-                          << (double)residual_gate
-                          << std::endl;
-            // Only a genuinely narrow system can reuse the fast banded
-            // direct path on later nonlinear iterations.  A wide 3-D retry
-            // remains an exceptional one-shot fallback.
-            use_banded_direct = narrow_banded;
+            // A dense recovery does not prove that the bounded band works.
+            use_banded_direct = false;
             return true;
         }
     }
@@ -419,12 +535,29 @@ bool solve_continuity_linear_system(
 
 GummelSolver::GummelSolver(const Grid3D& grid, const GummelOptions& opt)
     : g_(grid), opt_(opt), poisson_(grid), dg_(grid) {
+    validate_ii_driving(opt_.ii.driving);
+    validate_ii_reference_density(opt_.ii.refdens_n,opt_.ii.refdens_p);
+    if(opt_.ii.enabled && opt_.ii.driving==1) validate_ii_gqf_geometry(g_,opt_.statistics_type!=StatisticsType::BOLTZMANN || opt_.enable_quantum || opt_.ferro.enabled);
+    if (opt_.ii.enabled) {
+        validate_ii_coefficients(opt_.ii.A_n, opt_.ii.B_n, opt_.ii.A_p, opt_.ii.B_p);
+        validate_ii_floor(opt_.ii.E_floor);
+    }
+    if (opt_.auger.enabled) validate_auger_coefficients(opt_.auger.Cn, opt_.auger.Cp);
+    validate_hfs_reference_density(opt_.hfs.refdens_n,opt_.hfs.refdens_p);
+    if (active_hfs_reference(opt_.hfs.enabled,opt_.hfs.driving,opt_.hfs.refdens_n,opt_.hfs.refdens_p)) validate_hfs_reference_geometry(g_,opt_.statistics_type!=StatisticsType::BOLTZMANN || opt_.enable_quantum || opt_.ferro.enabled);
+    if (opt_.hfs.enabled) {
+        validate_hfs_parameters(opt_.hfs.vsat_n, opt_.hfs.vsat_p,
+                                opt_.hfs.beta_n, opt_.hfs.beta_p, opt_.hfs.driving);
+        validate_hfs_low_field_cutoff(opt_.hfs.low_field_cutoff);
+    }
     const size_t N = g_.npts();
-    mu_n_.assign(N, 0.14Q);   // Default Si m^2/(V*s)
-    mu_p_.assign(N, 0.045Q);
-    tau_n_.assign(N, 1e-7Q);
-    tau_p_.assign(N, 1e-7Q);
-    Nd_minus_Na_.assign(N, 0.0Q);
+    if (opt_.btbt.enabled && opt_.btbt.use_nonlocal)
+        validate_linearized_wkb_work(N, opt_.btbt.wkb_npts);
+    mu_n_.assign(N, TCAD_CONST(0.14));   // Default Si m^2/(V*s)
+    mu_p_.assign(N, TCAD_CONST(0.045));
+    tau_n_.assign(N, TCAD_CONST(1e-7));
+    tau_p_.assign(N, TCAD_CONST(1e-7));
+    Nd_minus_Na_.assign(N, TCAD_CONST(0.0));
     // Configure Poisson solver
     SolverOptions poisson_opt = LinearSolver::default_poisson_options();
     poisson_opt.type = opt_.poisson_solver;
@@ -461,43 +594,82 @@ GummelSolver::GummelSolver(const Grid3D& grid, const GummelOptions& opt)
 }
 
 void GummelSolver::set_mobility(const std::vector<real_t>& mu_n, const std::vector<real_t>& mu_p) {
+    validate_material_finite(mu_n, "mobility must be finite");
+    validate_material_finite(mu_p, "mobility must be finite");
     mu_n_ = mu_n; mu_p_ = mu_p;
 }
 
+real_t GummelSolver::active_carrier_width(size_t idx, size_t j, size_t k, int axis,
+        const std::vector<real_t>& mobility) const {
+    const bool clip = !opt_.transient_enabled && legacy_carrier_widths_;
+    if (axis == 1) {
+        real_t w=g_.dy_cell(j);
+        if (clip && j && mobility[idx-g_.nx]<EPSILON) w-=g_.dy_edge(j-1)/TCAD_CONST(2.0);
+        if (clip && j+1<g_.ny && mobility[idx+g_.nx]<EPSILON) w-=g_.dy_edge(j)/TCAD_CONST(2.0);
+        return w>EPSILON ? w:g_.dy_cell(j);
+    }
+    real_t w=g_.dz_cell(k);const size_t stride=g_.nx*g_.ny;
+    if (clip && k && mobility[idx-stride]<EPSILON) w-=g_.dz_edge(k-1)/TCAD_CONST(2.0);
+    if (clip && k+1<g_.nz && mobility[idx+stride]<EPSILON) w-=g_.dz_edge(k)/TCAD_CONST(2.0);
+    return w>EPSILON ? w:g_.dz_cell(k);
+}
+
 void GummelSolver::set_recombination(const std::vector<real_t>& tau_n, const std::vector<real_t>& tau_p) {
+    validate_material_finite(tau_n, "recombination lifetime must be finite");
+    validate_material_finite(tau_p, "recombination lifetime must be finite");
     tau_n_ = tau_n; tau_p_ = tau_p;
 }
 
 void GummelSolver::set_optical_generation(const std::vector<real_t>& G_opt) {
+    validate_material_finite(G_opt, "optical generation must be finite");
     G_opt_ = G_opt;
 }
 
 void GummelSolver::set_btbt_weight(const std::vector<real_t>& weight) {
+    validate_material_finite(weight, "BTBT weight must be finite");
     btbt_weight_ = weight;
 }
 
 void GummelSolver::set_doping(const std::vector<real_t>& Nd_minus_Na) {
-    Nd_minus_Na_ = Nd_minus_Na;
-    poisson_.set_doping(Nd_minus_Na);
+    if (Nd_minus_Na.size() != g_.npts()) throw std::invalid_argument("Doping size mismatch");
+    auto validated_doping = Nd_minus_Na;
+    poisson_.set_doping(validated_doping);
+    Nd_minus_Na_.swap(validated_doping);
 }
 
 void GummelSolver::set_effective_dos(const std::vector<real_t>& Nc, const std::vector<real_t>& Nv) {
+    validate_material_finite(Nc, "effective DOS must be finite");
+    validate_material_finite(Nv, "effective DOS must be finite");
     Nc_ = Nc;
     Nv_ = Nv;
     dg_.set_effective_dos(Nc, Nv);
 }
 
 void GummelSolver::set_bandgap(const std::vector<real_t>& Eg) {
+    validate_material_finite(Eg, "bandgap must be finite");
     Eg_ = Eg;
 }
 
-void GummelSolver::set_electron_bc(const std::map<size_t, real_t>& bc) { n_bc_.insert(bc.begin(), bc.end()); }
-void GummelSolver::set_hole_bc(const std::map<size_t, real_t>& bc) { p_bc_.insert(bc.begin(), bc.end()); }
+void GummelSolver::set_electron_bc(const std::map<size_t, real_t>& bc) {
+    validate_carrier_bc(bc, g_.npts());
+    n_bc_.insert(bc.begin(), bc.end());
+}
+void GummelSolver::set_hole_bc(const std::map<size_t, real_t>& bc) {
+    validate_carrier_bc(bc, g_.npts());
+    p_bc_.insert(bc.begin(), bc.end());
+}
 
 void GummelSolver::compute_btbt(const std::vector<real_t>& phi,
                                 std::vector<real_t>& G_btbt) const {
     const size_t N = g_.npts();
-    G_btbt.assign(N, 0.0Q);
+    if (opt_.btbt.enabled) {
+        if (phi.size() < N)
+            throw std::invalid_argument("BTBT potential must cover all nodes");
+        if (mu_n_.size() < N)
+            throw std::invalid_argument("BTBT electron mobility must cover all nodes");
+        validate_material_finite(phi, "BTBT potential must be finite");
+    }
+    G_btbt.assign(N, TCAD_CONST(0.0));
     if (!opt_.btbt.enabled) return;
 
     // Non-local (path-integral WKB) model
@@ -508,7 +680,7 @@ void GummelSolver::compute_btbt(const std::vector<real_t>& phi,
 
     // Local Kane's model (original)
     // Scale A_kane from cm^-3 to m^-3: multiply by 1e6
-    real_t A = opt_.btbt.A_kane * 1.0e6Q;
+    real_t A = opt_.btbt.A_kane * TCAD_CONST(1.0e6);
     real_t B = opt_.btbt.B_kane;
     real_t D = opt_.btbt.D;
 
@@ -519,31 +691,12 @@ void GummelSolver::compute_btbt(const std::vector<real_t>& phi,
                 // Skip insulator/metal regions
                 if (mu_n_[idx] < EPSILON) continue;
 
-                // Compute |E| from potential gradients (central differences)
-                real_t Ex = 0.0Q, Ey = 0.0Q, Ez = 0.0Q;
-                if (i > 0 && i + 1 < g_.nx) {
-                    Ex = -(phi[g_.index(i+1, j, k)] - phi[g_.index(i-1, j, k)]) / (2.0Q * g_.dx);
-                } else if (i + 1 < g_.nx) {
-                    Ex = -(phi[g_.index(i+1, j, k)] - phi[idx]) / g_.dx;
-                } else if (i > 0) {
-                    Ex = -(phi[idx] - phi[g_.index(i-1, j, k)]) / g_.dx;
-                }
-                if (j > 0 && j + 1 < g_.ny) {
-                    Ey = -(phi[g_.index(i, j+1, k)] - phi[g_.index(i, j-1, k)]) / (2.0Q * g_.dy);
-                } else if (j + 1 < g_.ny) {
-                    Ey = -(phi[g_.index(i, j+1, k)] - phi[idx]) / g_.dy;
-                } else if (j > 0) {
-                    Ey = -(phi[idx] - phi[g_.index(i, j-1, k)]) / g_.dy;
-                }
-                if (k > 0 && k + 1 < g_.nz) {
-                    Ez = -(phi[g_.index(i, j, k+1)] - phi[g_.index(i, j, k-1)]) / (2.0Q * g_.dz);
-                } else if (k + 1 < g_.nz) {
-                    Ez = -(phi[g_.index(i, j, k+1)] - phi[idx]) / g_.dz;
-                } else if (k > 0) {
-                    Ez = -(phi[idx] - phi[g_.index(i, j, k-1)]) / g_.dz;
-                }
+                // Node field: actual coordinates on graded axes, legacy arithmetic otherwise.
+                const real_t Ex = structured_node_field(phi, idx, i, 1, g_.nx, g_.xx, g_.dx);
+                const real_t Ey = structured_node_field(phi, idx, j, g_.nx, g_.ny, g_.yx, g_.dy);
+                const real_t Ez = structured_node_field(phi, idx, k, g_.nx*g_.ny, g_.nz, g_.zx, g_.dz);
 
-                real_t E_mag = 0.0Q;
+                real_t E_mag = TCAD_CONST(0.0);
                 if (opt_.btbt.field_mode == 1) {
                     E_mag = abs_q(Ex);
                 } else if (opt_.btbt.field_mode == 2) {
@@ -553,11 +706,11 @@ void GummelSolver::compute_btbt(const std::vector<real_t>& phi,
                 } else {
                     E_mag = sqrt_q(Ex*Ex + Ey*Ey + Ez*Ez);
                 }
-                if (opt_.btbt.field_cap > 0.0Q && E_mag > opt_.btbt.field_cap) {
+                if (opt_.btbt.field_cap > TCAD_CONST(0.0) && E_mag > opt_.btbt.field_cap) {
                     E_mag = opt_.btbt.field_cap;
                 }
-                if (E_mag < 1.0e4Q) continue;  // negligible field threshold
-                if (opt_.btbt.field_alpha != 0.0Q && opt_.btbt.field_ref > 0.0Q) {
+                if (E_mag < TCAD_CONST(1.0e4)) continue;  // negligible field threshold
+                if (opt_.btbt.field_alpha != TCAD_CONST(0.0) && opt_.btbt.field_ref > TCAD_CONST(0.0)) {
                     E_mag *= pow_q(E_mag / opt_.btbt.field_ref, opt_.btbt.field_alpha);
                 }
 
@@ -579,7 +732,9 @@ void GummelSolver::compute_btbt(const std::vector<real_t>& phi,
 void GummelSolver::compute_impact_ionization(const std::vector<real_t>& phi,
                                              const std::vector<real_t>& n,
                                              const std::vector<real_t>& p,
-                                             std::vector<real_t>& G_ii) const {
+                                             std::vector<real_t>& G_ii,
+                                             const std::vector<real_t>* transport_Qn,
+                                             const std::vector<real_t>* transport_Qp) const {
     // Avalanche impact ionization (Chynoweth).  alpha(E) = A*exp(-B/|E|) [1/m].
     // Per-pair generation rate G_ii = (alpha_n*|Jn| + alpha_p*|Jp|)/q [m^-3 s^-1].
     //
@@ -590,21 +745,51 @@ void GummelSolver::compute_impact_ionization(const std::vector<real_t>& phi,
     // (identical to DeviceSimulator::compute_edge_currents, audit §20).
     // The ionization integral contribution of that edge is
     //   alpha_n(|E_edge|) * |Jn_edge| / q   [+ alpha_p*|Jp_edge|/q],
-    // and it is deposited half to each endpoint with a 1/d weighting so the
+    // and it is deposited half to each endpoint so the
     // returned per-node G_ii has units [m^-3 s^-1] matching SRH/BTBT.  |E_edge|
     // is the edge-aligned field component (the gradient along the edge), which
     // is what accelerates carriers across that edge — using the full |grad phi|
     // here would double-count across the three axes.
     const size_t N = g_.npts();
-    G_ii.assign(N, 0.0Q);
-    if (!opt_.ii.enabled) return;
+    if (!opt_.ii.enabled) {
+        G_ii.assign(N, TCAD_CONST(0.0));
+        return;
+    }
+    if (phi.size() < N || n.size() < N || p.size() < N)
+        throw std::invalid_argument("impact ionization requires full states");
+    if (mu_n_.size() < N || mu_p_.size() < N)
+        throw std::invalid_argument("impact ionization mobility must cover all nodes");
+    validate_material_finite(phi, "impact ionization states must be finite");
+    validate_material_finite(n, "impact ionization states must be finite");
+    validate_material_finite(p, "impact ionization states must be finite");
+    // Material requirements depend on the edges actually evaluated below.
+    // Publish only a complete result, so a later HFS DOS error is atomic.
+    std::vector<real_t> generation(N, TCAD_CONST(0.0));
 
     const real_t VT = opt_.VT;
     const real_t E_floor = opt_.ii.E_floor;
+    // Continuity uses one lagged DG state for both carrier fluxes. An
+    // arbitrary returned-state evaluation can explicitly supply its flux Q.
+    std::vector<real_t> Qn, Qp;
+    if (opt_.enable_quantum) {
+        if (transport_Qn && transport_Qp && transport_Qn->size() == N && transport_Qp->size() == N) {
+            validate_material_finite(*transport_Qn, "impact ionization transport Q must be finite");
+            validate_material_finite(*transport_Qp, "impact ionization transport Q must be finite");
+            Qn = *transport_Qn; Qp = *transport_Qp;
+        } else if (Qn_prev_.size() == N && Qp_prev_.size() == N) {
+            Qn = Qn_prev_; Qp = Qp_prev_;
+        } else {
+            dg_.quantum_potential(n, p, Qn, Qp);
+            for (const auto& bc : n_bc_) Qn[bc.first] = TCAD_CONST(0.0);
+            for (const auto& bc : p_bc_) Qp[bc.first] = TCAD_CONST(0.0);
+        }
+    }
+    auto pn = [&](size_t i) { return phi[i] + (Qn.empty() ? TCAD_CONST(0.0) : Qn[i]); };
+    auto pp = [&](size_t i) { return phi[i] - (Qp.empty() ? TCAD_CONST(0.0) : Qp[i]); };
 
     // Helper: ionization coefficient alpha for a given |E| and (A,B) pair.
     auto alpha_of = [&](real_t E_mag, real_t A, real_t B) -> real_t {
-        if (E_mag < E_floor) return 0.0Q;     // negligible below ~1e5 V/m
+        if (E_mag < E_floor) return TCAD_CONST(0.0);     // negligible below ~1e5 V/m
         return A * exp_q(-B / E_mag);
     };
 
@@ -630,33 +815,49 @@ void GummelSolver::compute_impact_ionization(const std::vector<real_t>& phi,
                     if (mu_n_[nbr] < EPSILON && mu_p_[nbr] < EPSILON) continue;
 
                     real_t dphi = phi[nbr] - phi[idx];
-                    real_t delta = dphi / VT;
-                    real_t Bm = bernoulli(-delta);
-                    real_t Bp = bernoulli(delta);
+                    real_t delta_n = (pn(nbr) - pn(idx)) / VT;
+                    real_t delta_p = (pp(nbr) - pp(idx)) / VT;
+                    real_t Bnm = bernoulli(-delta_n), Bnp = bernoulli(delta_n);
+                    real_t Bpm = bernoulli(-delta_p), Bpp = bernoulli(delta_p);
                     // Edge-aligned electric field magnitude [V/m] along this edge.
                     real_t E_edge = abs_q(dphi / d);
 
-                    real_t alpha_n = alpha_of(E_edge, opt_.ii.A_n, opt_.ii.B_n);
-                    real_t alpha_p = alpha_of(E_edge, opt_.ii.A_p, opt_.ii.B_p);
-                    if (alpha_n == 0.0Q && alpha_p == 0.0Q) continue;
+                    const real_t Fn = opt_.ii.driving==1 ? ii_quasi_fermi_force(dphi,n[idx],n[nbr],VT,d,false,opt_.ii.refdens_n).value : E_edge;
+                    real_t alpha_n = alpha_of(Fn, opt_.ii.A_n, opt_.ii.B_n);
+                    const real_t Fp = opt_.ii.driving==1 ? ii_quasi_fermi_force(dphi,p[idx],p[nbr],VT,d,true,opt_.ii.refdens_p).value : E_edge;
+                    real_t alpha_p = alpha_of(Fp, opt_.ii.A_p, opt_.ii.B_p);
+                    if (alpha_n == TCAD_CONST(0.0) && alpha_p == TCAD_CONST(0.0)) continue;
 
                     // SG current densities along this edge [A/m^2].
-                    real_t mu_ne = 2.0Q * mu_n_[idx] * mu_n_[nbr] /
-                        (mu_n_[idx] + mu_n_[nbr] + 1e-30Q);
-                    real_t mu_pe = 2.0Q * mu_p_[idx] * mu_p_[nbr] /
-                        (mu_p_[idx] + mu_p_[nbr] + 1e-30Q);
+                    real_t mu_ne = TCAD_CONST(2.0) * mu_n_[idx] * mu_n_[nbr] /
+                        (mu_n_[idx] + mu_n_[nbr] + TCAD_CONST(1e-30));
+                    real_t mu_pe = TCAD_CONST(2.0) * mu_p_[idx] * mu_p_[nbr] /
+                        (mu_p_[idx] + mu_p_[nbr] + TCAD_CONST(1e-30));
+                    // Use the same DG-shifted, saturated SG currents as continuity.
+                    // The ionization coefficient retains its configured driving field.
+                    if (opt_.hfs.enabled) {
+                        validate_gummel_dos_size(N, Nc_, Nv_);
+                        mu_ne = classical_hfs_edge_mobility(mu_ne, pn(idx), pn(nbr),
+                            n[idx], n[nbr], Nc_[idx], Nc_[nbr], VT, d,
+                            opt_.hfs.vsat_n, opt_.hfs.beta_n, hfs_edge_driving(opt_.hfs.driving, opt_.hfs.quasi_fermi_at_contacts, n_bc_.count(idx) || n_bc_.count(nbr)),
+                            opt_.hfs.low_field_cutoff, false, opt_.hfs.refdens_n).mobility;
+                        mu_pe = classical_hfs_edge_mobility(mu_pe, pp(idx), pp(nbr),
+                            p[idx], p[nbr], Nv_[idx], Nv_[nbr], VT, d,
+                            opt_.hfs.vsat_p, opt_.hfs.beta_p, hfs_edge_driving(opt_.hfs.driving, opt_.hfs.quasi_fermi_at_contacts, p_bc_.count(idx) || p_bc_.count(nbr)),
+                            opt_.hfs.low_field_cutoff, true, opt_.hfs.refdens_p).mobility;
+                    }
                     real_t Dn = mu_ne * VT / d;
                     real_t Dp = mu_pe * VT / d;
-                    real_t Jn = QE * Dn * (n[idx] * Bm - n[nbr] * Bp);
-                    real_t Jp = QE * Dp * (p[idx] * Bp - p[nbr] * Bm);
+                    real_t Jn = QE * Dn * (n[idx] * Bnm - n[nbr] * Bnp);
+                    real_t Jp = QE * Dp * (p[idx] * Bpp - p[nbr] * Bpm);
 
                     // alpha*|J|/q [m^-3 s^-1], split half to each endpoint.
                     // (The 1/d already implicit in D = mu*VT/d is the per-edge
                     //  volume weighting; depositing half to each node matches the
                     //  box-integration of the continuity source term.)
-                    real_t g_node = (alpha_n * abs_q(Jn) + alpha_p * abs_q(Jp)) / QE * 0.5Q;
-                    G_ii[idx] += g_node;
-                    G_ii[nbr] += g_node;
+                    real_t g_node = (alpha_n * abs_q(Jn) + alpha_p * abs_q(Jp)) / QE * TCAD_CONST(0.5);
+                    generation[idx] += g_node;
+                    generation[nbr] += g_node;
                 }
             }
         }
@@ -665,178 +866,39 @@ void GummelSolver::compute_impact_ionization(const std::vector<real_t>& phi,
     process_axis(0);
     process_axis(1);
     process_axis(2);
+    G_ii.swap(generation);
 }
 
 void GummelSolver::compute_nonlocal_btbt(const std::vector<real_t>& phi,
                                          std::vector<real_t>& G_btbt) const {
-    const size_t N = g_.npts();
-    G_btbt.assign(N, 0.0Q);
-
-    // Physical constants for WKB tunneling (SI units)
-    const double hbar = 1.054571817e-34;  // reduced Planck constant [J*s]
-    const double m0 = 9.1093837015e-31;   // electron rest mass [kg]
-    const double qe = 1.602176634e-19;    // elementary charge [C]
-    // Effective tunneling mass from the calibrated parameter (M2 audit,
-    // 2026-09-18); was hardcoded 0.25*m0 with no API exposure.
-    const double mt_eff = (double)opt_.btbt.nonlocal_mass * m0;
-    // Kane-consistent prefactor: same A_kane (cm^-3 -> m^-3) and exponent D
-    // as the local model, so calibrated local parameters transfer directly
-    // through the uniform-field mapping (see BTBTParams::nonlocal_mass).
-    // Was a hardcoded field-independent 1e27 m^-3 s^-1 placeholder, which
-    // under-generated by ~14 orders at TFET junction fields.
-    const double A_si = (double)opt_.btbt.A_kane * 1.0e6;
-    const double pre_wkb = A_si;
-
-    size_t n_wkb = opt_.btbt.wkb_npts;
-    if (n_wkb >= 4 && (n_wkb % 2) != 0) ++n_wkb;
-    const double path_fraction = (double)opt_.btbt.tunnel_path_frac;
-
-    for (size_t k = 0; k < g_.nz; ++k) {
-        for (size_t j = 0; j < g_.ny; ++j) {
-            for (size_t i = 0; i < g_.nx; ++i) {
-                size_t idx = g_.index(i, j, k);
-
-                // Skip insulator/metal regions
-                if (mu_n_[idx] < EPSILON) continue;
-
-                // Tunneling primarily along x (source-channel direction for TFETs).
-                //
-                // Phase 3.3 fix (audit §12.3): the path length is no longer
-                // fixed to a single grid spacing dx.  The old code set
-                // path_L = dx, which truncated the WKB integral at one cell
-                // whenever the band-crossing distance d_min = Eg/(qE) exceeded
-                // dx (i.e. in the off-state / low-field regime).  That
-                // under-estimated the true barrier and over-estimated T by
-                // many orders of magnitude, making BTBT-Ioff unreliable.
-                //
-                // The correct path extends until the linearised barrier
-                // actually exhausts (2*d_min, where barrier(x)=Eg-qEx drops
-                // from Eg to 0 and back to 0 on the far side of the well).
-                // We cap at the available grid (distance to the nearer x
-                // boundary) so the linear band-edge model — which only sees
-                // the local field — is not extrapolated past the device.
-                const double dx_m = (double)g_.dx;
-
-                // Local electric field along x
-                double Ex_val = 0.0;
-                if (i > 0 && i + 1 < g_.nx) {
-                    Ex_val = -((double)phi[g_.index(i+1, j, k)] - (double)phi[g_.index(i-1, j, k)])
-                           / (2.0 * dx_m);
-                } else if (i + 1 < g_.nx) {
-                    Ex_val = -((double)phi[g_.index(i+1, j, k)] - (double)phi[idx]) / dx_m;
-                } else if (i > 0) {
-                    Ex_val = -((double)phi[idx] - (double)phi[g_.index(i-1, j, k)]) / dx_m;
-                }
-
-                // Local bandgap from per-node material property
-                const double Eg_eV = (idx < Eg_.size()) ? (double)Eg_[idx] : 1.12;
-
-                // WKB integral: integrate sqrt(2*mt*(Ec(x) - Ev(x))) / hbar along path
-                // Model band profile: linear drop across tunneling window, offset by local Ec-Ev
-                // The tunneling window where Ec < Ev is when q*E*x > Eg
-                const double Eg_J = Eg_eV * qe;
-                const double E_field = fabs(Ex_val);
-
-                // Band-crossing distance: where the linearised barrier would
-                // reach zero.  For negligible field there is no crossing:
-                // the physical generation exp(-B/E) is identically zero, and
-                // the former 1 µm sentinel path combined with the
-                // availability cap produced spurious generation through a
-                // "thin Eg slab" at boundary nodes (M2 audit, 2026-09-18).
-                // Gate on the same 1 V/m floor and emit exactly zero.
-                if (E_field <= 1.0) {
-                    G_btbt[idx] = 0.0Q;
-                    continue;
-                }
-                const double d_min = Eg_J / (qe * E_field);
-
-                // Path length is the full band-crossing window (2*d_min), so
-                // the WKB integral covers the *actual* barrier rather than a
-                // single-cell slice.  Capped at the distance to the nearer x
-                // boundary so we do not extrapolate the local linear field
-                // beyond the simulated device.
-                const double avail_lo = (double)i * dx_m;            // to x=0 face
-                const double avail_hi = (double)(g_.nx - 1 - i) * dx_m; // to x=Lx face
-                const double avail = std::min(avail_lo, avail_hi);
-                double path_L = std::min(2.0 * d_min, avail);
-                if (path_fraction > 0.0) {
-                    const double domain_L = (double)(g_.nx - 1) * dx_m;
-                    path_L = std::min(path_L, path_fraction * domain_L);
-                }
-
-                // effective_L == path_L now (no second truncation); kept for
-                // clarity of the integration loop below.
-                const double effective_L = path_L;
-
-                if (effective_L < 1e-12) {
-                    // Path is zero (boundary node with no interior room): no
-                    // tunnelling can be represented at this node.
-                    G_btbt[idx] = 0.0Q;
-                    continue;
-                }
-
-                // Simpson's rule integration
-                double wkb_integral = 0.0;
-                if (n_wkb >= 4) {
-                    const double h = effective_L / (double)(n_wkb);
-                    for (size_t s = 0; s <= n_wkb; ++s) {
-                        const double x = (double)s * h;
-                        // Linear band drop: barrier height at position x
-                        const double barrier = std::max(Eg_J - qe * E_field * x, 0.0);
-                        if (barrier <= 0.0) {
-                            // Classically allowed: no contribution
-                            continue;
-                        }
-                        const double integrand = sqrt(2.0 * mt_eff * barrier) / hbar;
-                        if (std::isinf(integrand)) {
-                            wkb_integral = 1e10; // cap to avoid overflow
-                            break;
-                        }
-                        double weight = (s == 0 || s == n_wkb) ? 1.0 :
-                                        (s % 2 == 1 ? 4.0 : 2.0);
-                        wkb_integral += weight * integrand;
-                    }
-                    wkb_integral *= h / 3.0;
-                } else {
-                    // Fallback: single-step estimate
-                    wkb_integral = sqrt(2.0 * mt_eff * Eg_J) / hbar * effective_L;
-                }
-
-                // Tunneling probability: T = exp(-2 * WKB integral)
-                const double exponent = -2.0 * wkb_integral;
-                if (exponent < -700.0) {
-                    // T ~ exp(-700) ~ 10^-304: effectively zero
-                    G_btbt[idx] = 0.0Q;
-                    continue;
-                }
-                const double T_prob = std::exp(exponent);
-
-                // BTBT generation rate with the Kane-consistent E^D prefactor.
-                double G_val = pre_wkb * std::pow(E_field, (double)opt_.btbt.D) * T_prob;
-                if (btbt_weight_.size() == N) {
-                    G_val *= (double)btbt_weight_[idx];
-                }
-                if (G_val > 1e50) {
-                    G_btbt[idx] = (real_t)1e50;
-                } else {
-                    G_btbt[idx] = (real_t)G_val;
-                }
-            }
-        }
+    const size_t N=g_.npts();
+    G_btbt.assign(N,TCAD_CONST(0.0));
+    const LinearizedWKBParameters params{opt_.btbt.A_kane,opt_.btbt.D,
+        opt_.btbt.nonlocal_mass,opt_.btbt.tunnel_path_frac,opt_.btbt.wkb_npts};
+    for(size_t idx=0;idx<N;++idx) {
+        if(mu_n_[idx]<EPSILON)continue;
+        const real_t gap=idx<Eg_.size()?Eg_[idx]:(real_t)1.12;
+        const real_t weight=btbt_weight_.size()==N?btbt_weight_[idx]:TCAD_CONST(1.0);
+        G_btbt[idx]=evaluate_linearized_wkb(g_,phi,idx,gap,params,weight).generation;
     }
 }
 
 real_t GummelSolver::bernoulli(real_t x) {
-    if (abs_q(x) < 1e-12Q) return 1.0Q;
-    if (x > 100.0Q) return 0.0Q;
-    if (x < -100.0Q) return -x;
+    if (abs_q(x) < TCAD_CONST(1e-12)) return TCAD_CONST(1.0);
+    if (x > TCAD_CONST(100.0)) return TCAD_CONST(0.0);
+    if (x < -TCAD_CONST(100.0)) return -x;
     return x / expm1_q(x);
 }
 
 bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
                                            std::vector<real_t>& n,
                                            const std::vector<real_t>& p,
-                                           const std::vector<real_t>* transport_phi) {
+                                           const std::vector<real_t>* transport_phi,
+                                           real_t* audit_residual) {
+    validate_gummel_state_size(g_.npts(), phi, n, p, "Gummel solve requires full states");
+    validate_gummel_material_size(g_.npts(), mu_n_, mu_p_, Nc_, Nv_, Eg_, n_bc_, p_bc_);
+    if (transport_phi && transport_phi->size() < g_.npts())
+        throw std::invalid_argument("Gummel transport potential must cover all nodes");
     // Compute BTBT generation and add to optical generation
     std::vector<real_t> G_btbt;
     if (opt_.btbt.enabled) {
@@ -850,7 +912,13 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
 
     const size_t N = g_.npts();
     SparseMatrix A(N);
-    Vector rhs(N, 0.0Q);
+    Vector rhs(N, TCAD_CONST(0.0));
+    const bool physical_audit = audit_residual && opt_.transient_enabled;
+    Vector audit_storage(N,0), audit_scale(N,0);
+    std::vector<char> audit_active(N,0);
+    const bool chain = !opt_.transient_enabled &&
+        ((g_.nx>1)+(g_.ny>1)+(g_.nz>1)==1);
+    Vector face_from(chain?N:0,0),face_to(chain?N:0,0),row_weight(chain?N:0,1),reaction_sink(chain?N:0,0);
     std::vector<char> is_bc(N, 0);
     for (const auto& [idx, val] : n_bc_) { is_bc[idx] = 1; }
 
@@ -860,48 +928,23 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
             for (size_t i = 0; i < g_.nx; ++i) {
                 size_t idx = g_.index(i, j, k);
                 if (is_bc[idx]) {
-                    A.add_entry(idx, idx, 1.0Q);
+                    A.add_entry(idx, idx, TCAD_CONST(1.0));
                     rhs[idx] = n_bc_.at(idx);
                     continue;
                 }
                 // Insulator / metal: zero mobility -> freeze carrier density
                 if (mu_n_[idx] < EPSILON) {
                     // Use a large diagonal to prevent pivot swapping in dense direct
-                    A.add_entry(idx, idx, 1.0e20Q);
-                    rhs[idx] = 1.0e20Q * EPSILON;
+                    A.add_entry(idx, idx, TCAD_CONST(1.0e20));
+                    rhs[idx] = TCAD_CONST(1.0e20) * EPSILON;
                     continue;
                 }
 
-                real_t center = 0.0Q;
+                real_t center = TCAD_CONST(0.0);
 
-                // Face-area weighting (2026-08 fix): FV/FD continuity row.
-                // At a semiconductor/insulator interface the shared material
-                // node lies on the physical interface.  Its carrier control
-                // volume therefore ends at that node; it must not include the
-                // half-cell on the zero-mobility side.  Using Grid::dy/dz_cell
-                // unconditionally made the continuity equation conserve a
-                // fictitious slice of oxide while terminal-current integration
-                // used the real semiconductor thickness.  The two observables
-                // then differed by several percent even for a converged state.
-                auto active_width = [&](int axis) -> real_t {
-                    if (axis == 1) {
-                        real_t width = g_.dy_cell(j);
-                        if (j > 0 && mu_n_[idx - g_.nx] < EPSILON)
-                            width -= 0.5Q * g_.dy_edge(j - 1);
-                        if (j + 1 < g_.ny && mu_n_[idx + g_.nx] < EPSILON)
-                            width -= 0.5Q * g_.dy_edge(j);
-                        return width > EPSILON ? width : g_.dy_cell(j);
-                    }
-                    real_t width = g_.dz_cell(k);
-                    const size_t z_stride = g_.nx * g_.ny;
-                    if (k > 0 && mu_n_[idx - z_stride] < EPSILON)
-                        width -= 0.5Q * g_.dz_edge(k - 1);
-                    if (k + 1 < g_.nz && mu_n_[idx + z_stride] < EPSILON)
-                        width -= 0.5Q * g_.dz_edge(k);
-                    return width > EPSILON ? width : g_.dz_cell(k);
-                };
-                const real_t w_y = g_.dx_cell(i) / active_width(1);
-                const real_t w_z = g_.dx_cell(i) / active_width(2);
+                // Full node volumes share conservative faces across a step.
+                const real_t w_y = g_.dx_cell(i) / active_carrier_width(idx,j,k,1,mu_n_);
+                const real_t w_z = g_.dx_cell(i) / active_carrier_width(idx,j,k,2,mu_n_);
                 const real_t dz_p = g_.dz_edge(k);       // z+ edge length
                 const real_t dz_m = (k > 0) ? g_.dz_edge(k-1) : g_.dz;  // z- edge
                 auto add_link = [&](size_t nbr, real_t dx, real_t mu, real_t w) {
@@ -917,7 +960,7 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
                     // mobility varies (junctions!), breaking current
                     // conservation (div J != 0) and corrupting terminal
                     // currents (NPN BJT Ic error ~4x).
-                    real_t mu_e = 2.0Q * mu * mu_n_[nbr] / (mu + mu_n_[nbr] + 1e-30Q);
+                    real_t mu_e = TCAD_CONST(2.0) * mu * mu_n_[nbr] / (mu + mu_n_[nbr] + TCAD_CONST(1e-30));
                     // High-field velocity saturation (Sentaurus
                     // HighFieldSaturation): Caugy-Thomas reduction of the
                     // edge mobility with the LAGGED edge driving force,
@@ -928,62 +971,79 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
                     // built from the transport potential for phi.
                     if (opt_.hfs.enabled) {
                         real_t force;
-                        if (opt_.hfs.driving == 1) {
+                        if (hfs_edge_driving(opt_.hfs.driving, opt_.hfs.quasi_fermi_at_contacts, n_bc_.count(idx) || n_bc_.count(nbr)) == 1) {
                             force = abs_q(dphi) / dx;
                         } else {
                             real_t efn_i = phi_sg[idx]
-                                - opt_.VT * log_q(std::max(n[idx], 1.0Q) / std::max(Nc_[idx], 1.0Q));
+                                - opt_.VT * log_q(hfs_reference_carrier(n[idx], opt_.hfs.refdens_n) / std::max(Nc_[idx], TCAD_CONST(1.0)));
                             real_t efn_j = phi_sg[nbr]
-                                - opt_.VT * log_q(std::max(n[nbr], 1.0Q) / std::max(Nc_[nbr], 1.0Q));
+                                - opt_.VT * log_q(hfs_reference_carrier(n[nbr], opt_.hfs.refdens_n) / std::max(Nc_[nbr], TCAD_CONST(1.0)));
                             force = abs_q(efn_j - efn_i) / dx;
                         }
+                        force = hfs_active_driving_force(force, opt_.hfs.low_field_cutoff);
                         real_t ratio = mu_e * force / opt_.hfs.vsat_n;
-                        if (ratio > 1.0e-12Q) {
+                        if (ratio > TCAD_CONST(1.0e-12)) {
                             real_t b = opt_.hfs.beta_n;
-                            mu_e /= pow_q(1.0Q + pow_q(ratio, b), 1.0Q / b);
+                            mu_e /= pow_q(TCAD_CONST(1.0) + pow_q(ratio, b), TCAD_CONST(1.0) / b);
                         }
                     }
                     real_t D = w * mu_e * opt_.VT / dx;
                     // Original SG discretization (kept for self-consistency)
                     real_t a_ii = D * B_minus;   // contribution to diagonal (positive)
                     real_t a_ij = -D * B_plus;   // off-diagonal (negative)
+                    if(chain) {
+                        row_weight[idx]=w;
+                        if(nbr==idx+1) {face_from[idx]=a_ii/w;face_to[idx]=-a_ij/w;}
+                        if(nbr+1==idx && is_bc[nbr]) {face_from[nbr]=-a_ij/w;face_to[nbr]=a_ii/w;}
+                    }
                     A.add_entry(idx, nbr, a_ij);
                     return a_ii;
                 };
 
                 const real_t dx_p = g_.dx_edge(i);
                 const real_t dx_m = (i > 0) ? g_.dx_edge(i-1) : g_.dx;
-                if (i + 1 < g_.nx) center += add_link(idx + 1, dx_p, mu_n_[idx], 1.0Q);
-                if (i > 0)        center += add_link(idx - 1, dx_m, mu_n_[idx], 1.0Q);
+                if (i + 1 < g_.nx) center += add_link(idx + 1, dx_p, mu_n_[idx], TCAD_CONST(1.0));
+                if (i > 0)        center += add_link(idx - 1, dx_m, mu_n_[idx], TCAD_CONST(1.0));
                 if (j + 1 < g_.ny) center += add_link(idx + g_.nx, g_.dy_edge(j), mu_n_[idx], w_y);
                 if (j > 0)        center += add_link(idx - g_.nx, g_.dy_edge(j-1), mu_n_[idx], w_y);
                 if (k + 1 < g_.nz) center += add_link(idx + g_.nx * g_.ny, dz_p, mu_n_[idx], w_z);
                 if (k > 0)        center += add_link(idx - g_.nx * g_.ny, dz_m, mu_n_[idx], w_z);
 
                 // Recombination (SRH simplified): R = (n*p - ni^2) / (tau_p*(n+ni) + tau_n*(p+ni))
-                // Explicit treatment in Gummel iteration
+                // Linearize the SRH sink in this carrier block. A lagged
+                // explicit sink can oscillate when lifetime < diffusion time.
                 real_t ni = intrinsic_density(Eg_[idx], opt_.temperature, Nc_[idx], Nv_[idx], opt_.statistics_type);
-                real_t R = 0.0Q;
+                real_t R = TCAD_CONST(0.0), dR = TCAD_CONST(0.0);
                 if (idx < tau_n_.size() && idx < tau_p_.size() &&
                     tau_n_[idx] > EPSILON && tau_p_[idx] > EPSILON) {
                     real_t np = n[idx] * p[idx];
                     real_t denom = tau_p_[idx] * (n[idx] + ni) + tau_n_[idx] * (p[idx] + ni);
-                    if (denom > EPSILON)
+                    if (denom > EPSILON) {
                         R = (np - ni * ni) / denom;
+                        dR = (p[idx]*(tau_p_[idx]*ni+tau_n_[idx]*(p[idx]+ni))+
+                            tau_p_[idx]*ni*ni)/(denom*denom);
+                    }
                 }
                 // Auger recombination: R_A = (Cn*n + Cp*p) * (n*p - ni²)
                 if (opt_.auger.enabled) {
                     real_t np_ni2 = n[idx] * p[idx] - ni * ni;
-                    R += (opt_.auger.Cn * n[idx] + opt_.auger.Cp * p[idx]) * np_ni2;
+                    const real_t prefactor = opt_.auger.Cn * n[idx] + opt_.auger.Cp * p[idx];
+                    R += prefactor * np_ni2;
+                    // Differentiate the forward recombination sink only. Lag
+                    // reverse generation to keep a positive block diagonal even
+                    // below equilibrium; retain the full nonlinear net rate.
+                    dR += opt_.auger.Cn * n[idx] * p[idx] + prefactor * p[idx];
                 }
-                real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
+                real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : TCAD_CONST(0.0);
                 if (opt_.btbt.enabled && idx < G_btbt.size()) {
                     G += opt_.btbt.continuity_scale * G_btbt[idx];
                 }
                 if (opt_.ii.enabled && idx < G_ii.size()) G += G_ii[idx];
+                if (physical_audit) dR = TCAD_CONST(0.0);
                 real_t source_scale = g_.dx_cell(i);
-                A.add_entry(idx, idx, center);
-                rhs[idx] = (G - R) * source_scale;
+                A.add_entry(idx, idx, center + dR * source_scale);
+                if (chain) reaction_sink[idx] = dR * source_scale;
+                rhs[idx] = (G - R + dR*n[idx]) * source_scale;
                 // Transient term: backward Euler.  The cell-integrated BE
                 // continuity eqn is (n - n_prev)/dt*dx = center*n + flux + (G-R)*dx.
                 // Moving the n_new terms left and knowns right gives
@@ -995,31 +1055,50 @@ bool GummelSolver::solve_electron_density(const std::vector<real_t>& phi,
                 if (opt_.transient_enabled && idx < opt_.n_prev.size()) {
                     A.add_entry(idx, idx, source_scale / opt_.transient_dt);
                     rhs[idx] += opt_.n_prev[idx] / opt_.transient_dt * source_scale;
+                    if (physical_audit) {
+                        audit_active[idx] = 1;
+                        audit_storage[idx] = n[idx] / opt_.transient_dt * source_scale;
+                        audit_scale[idx] = abs_q(audit_storage[idx]) + source_scale *
+                            (abs_q(opt_.n_prev[idx]) / opt_.transient_dt + abs_q(G) + abs_q(R));
+                    }
                 }
             }
         }
     }
     A.finalize();
+    if (audit_residual) {
+        *audit_residual = physical_audit ?
+            scaled_transient_residual(A, rhs, n, audit_storage, audit_scale, audit_active) :
+            scaled_linear_residual(A, rhs, n, false);
+        return true;
+    }
     SolverOptions cont_opt = LinearSolver::default_continuity_options();
     cont_opt.type = opt_.continuity_solver;
     if (!cont_e_solver_) cont_e_solver_ = std::make_unique<LinearSolver>(cont_opt);
     const Vector initial(n.begin(), n.end());
     Vector x;
-    if (!solve_continuity_linear_system(
+    const bool chain_ok=chain && solve_single_reservoir_chain(A,rhs,mu_n_,n_bc_,
+        face_from,face_to,row_weight,reaction_sink,std::max(TCAD_CONST(100.0)*cont_opt.tol,TCAD_CONST(1e-8)),x);
+    if (!chain_ok && !solve_continuity_linear_system(
             A, rhs, initial, *cont_e_solver_, cont_opt, "Electron",
             cont_e_use_banded_direct_, x))
         return false;
     // Commit only a fully finite linear solution.  A failed iterative solve
     // must not poison the previous nonlinear iterate with a partial NaN tail.
     for (size_t i = 0; i < N; ++i)
-        n[i] = (x[i] < 0.0Q) ? EPSILON : x[i];
+        n[i] = (x[i] < TCAD_CONST(0.0)) ? EPSILON : x[i];
     return true;
 }
 
 bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
                                        const std::vector<real_t>& n,
                                        std::vector<real_t>& p,
-                                       const std::vector<real_t>* transport_phi) {
+                                       const std::vector<real_t>* transport_phi,
+                                       real_t* audit_residual) {
+    validate_gummel_state_size(g_.npts(), phi, n, p, "Gummel solve requires full states");
+    validate_gummel_material_size(g_.npts(), mu_n_, mu_p_, Nc_, Nv_, Eg_, n_bc_, p_bc_);
+    if (transport_phi && transport_phi->size() < g_.npts())
+        throw std::invalid_argument("Gummel transport potential must cover all nodes");
     // Compute BTBT generation and add to optical generation
     std::vector<real_t> G_btbt;
     if (opt_.btbt.enabled) {
@@ -1034,7 +1113,13 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
     // Symmetric to electron solve with sign flips for holes
     const size_t N = g_.npts();
     SparseMatrix A(N);
-    Vector rhs(N, 0.0Q);
+    Vector rhs(N, TCAD_CONST(0.0));
+    const bool physical_audit = audit_residual && opt_.transient_enabled;
+    Vector audit_storage(N,0), audit_scale(N,0);
+    std::vector<char> audit_active(N,0);
+    const bool chain = !opt_.transient_enabled &&
+        ((g_.nx>1)+(g_.ny>1)+(g_.nz>1)==1);
+    Vector face_from(chain?N:0,0),face_to(chain?N:0,0),row_weight(chain?N:0,1),reaction_sink(chain?N:0,0);
     std::vector<char> is_bc(N, 0);
     for (const auto& [idx, val] : p_bc_) { is_bc[idx] = 1; }
 
@@ -1043,40 +1128,22 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
             for (size_t i = 0; i < g_.nx; ++i) {
                 size_t idx = g_.index(i, j, k);
                 if (is_bc[idx]) {
-                    A.add_entry(idx, idx, 1.0Q);
+                    A.add_entry(idx, idx, TCAD_CONST(1.0));
                     rhs[idx] = p_bc_.at(idx);
                     continue;
                 }
                 // Insulator / metal: zero mobility -> freeze carrier density
                 if (mu_p_[idx] < EPSILON) {
                     // Use a large diagonal to prevent pivot swapping in dense direct
-                    A.add_entry(idx, idx, 1.0e20Q);
-                    rhs[idx] = 1.0e20Q * EPSILON;
+                    A.add_entry(idx, idx, TCAD_CONST(1.0e20));
+                    rhs[idx] = TCAD_CONST(1.0e20) * EPSILON;
                     continue;
                 }
-                real_t center = 0.0Q;
-                const real_t w_x = 1.0Q;
-                // Match the electron equation's material-clipped transverse
-                // control volume, using the hole mobility mask for this row.
-                auto active_width = [&](int axis) -> real_t {
-                    if (axis == 1) {
-                        real_t width = g_.dy_cell(j);
-                        if (j > 0 && mu_p_[idx - g_.nx] < EPSILON)
-                            width -= 0.5Q * g_.dy_edge(j - 1);
-                        if (j + 1 < g_.ny && mu_p_[idx + g_.nx] < EPSILON)
-                            width -= 0.5Q * g_.dy_edge(j);
-                        return width > EPSILON ? width : g_.dy_cell(j);
-                    }
-                    real_t width = g_.dz_cell(k);
-                    const size_t z_stride = g_.nx * g_.ny;
-                    if (k > 0 && mu_p_[idx - z_stride] < EPSILON)
-                        width -= 0.5Q * g_.dz_edge(k - 1);
-                    if (k + 1 < g_.nz && mu_p_[idx + z_stride] < EPSILON)
-                        width -= 0.5Q * g_.dz_edge(k);
-                    return width > EPSILON ? width : g_.dz_cell(k);
-                };
-                const real_t w_y = g_.dx_cell(i) / active_width(1);
-                const real_t w_z = g_.dx_cell(i) / active_width(2);
+                real_t center = TCAD_CONST(0.0);
+                const real_t w_x = TCAD_CONST(1.0);
+                // Full node volumes share conservative faces across a step.
+                const real_t w_y = g_.dx_cell(i) / active_carrier_width(idx,j,k,1,mu_p_);
+                const real_t w_z = g_.dx_cell(i) / active_carrier_width(idx,j,k,2,mu_p_);
                 const real_t dz_p = g_.dz_edge(k);
                 const real_t dz_m = (k > 0) ? g_.dz_edge(k-1) : g_.dz;
                 auto add_link = [&](size_t nbr, real_t dx, real_t mu, real_t w) {
@@ -1088,24 +1155,25 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
                     real_t B_minus = bernoulli(-dphi / opt_.VT);
                     // Edge mobility: HARMONIC mean (current conservation fix,
                     // see electron block comment).
-                    real_t mu_e = 2.0Q * mu * mu_p_[nbr] / (mu + mu_p_[nbr] + 1e-30Q);
+                    real_t mu_e = TCAD_CONST(2.0) * mu * mu_p_[nbr] / (mu + mu_p_[nbr] + TCAD_CONST(1e-30));
                     // High-field saturation, hole edge (see electron block
                     // comment): Efp = phi + VT*ln(p/Nv), lagged drive force.
                     if (opt_.hfs.enabled) {
                         real_t force;
-                        if (opt_.hfs.driving == 1) {
+                        if (hfs_edge_driving(opt_.hfs.driving, opt_.hfs.quasi_fermi_at_contacts, p_bc_.count(idx) || p_bc_.count(nbr)) == 1) {
                             force = abs_q(dphi) / dx;
                         } else {
                             real_t efp_i = phi_sg[idx]
-                                + opt_.VT * log_q(std::max(p[idx], 1.0Q) / std::max(Nv_[idx], 1.0Q));
+                                + opt_.VT * log_q(hfs_reference_carrier(p[idx], opt_.hfs.refdens_p) / std::max(Nv_[idx], TCAD_CONST(1.0)));
                             real_t efp_j = phi_sg[nbr]
-                                + opt_.VT * log_q(std::max(p[nbr], 1.0Q) / std::max(Nv_[nbr], 1.0Q));
+                                + opt_.VT * log_q(hfs_reference_carrier(p[nbr], opt_.hfs.refdens_p) / std::max(Nv_[nbr], TCAD_CONST(1.0)));
                             force = abs_q(efp_j - efp_i) / dx;
                         }
+                        force = hfs_active_driving_force(force, opt_.hfs.low_field_cutoff);
                         real_t ratio = mu_e * force / opt_.hfs.vsat_p;
-                        if (ratio > 1.0e-12Q) {
+                        if (ratio > TCAD_CONST(1.0e-12)) {
                             real_t b = opt_.hfs.beta_p;
-                            mu_e /= pow_q(1.0Q + pow_q(ratio, b), 1.0Q / b);
+                            mu_e /= pow_q(TCAD_CONST(1.0) + pow_q(ratio, b), TCAD_CONST(1.0) / b);
                         }
                     }
                     // Face-area weighting (see electron block comment).
@@ -1115,6 +1183,11 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
                     // => diagonal coeff = D*B_plus, off-diagonal = -D*B_minus
                     real_t a_ii = D * B_plus;    // contribution to diagonal (positive)
                     real_t a_ij = -D * B_minus;  // off-diagonal (negative)
+                    if(chain) {
+                        row_weight[idx]=w;
+                        if(nbr==idx+1) {face_from[idx]=a_ii/w;face_to[idx]=-a_ij/w;}
+                        if(nbr+1==idx && is_bc[nbr]) {face_from[nbr]=-a_ij/w;face_to[nbr]=a_ii/w;}
+                    }
                     A.add_entry(idx, nbr, a_ij);
                     return a_ii;
                 };
@@ -1127,48 +1200,72 @@ bool GummelSolver::solve_hole_density(const std::vector<real_t>& phi,
                 if (k + 1 < g_.nz) center += add_link(idx + g_.nx * g_.ny, dz_p, mu_p_[idx], w_z);
                 if (k > 0)        center += add_link(idx - g_.nx * g_.ny, dz_m, mu_p_[idx], w_z);
                 real_t ni = intrinsic_density(Eg_[idx], opt_.temperature, Nc_[idx], Nv_[idx], opt_.statistics_type);
-                real_t R = 0.0Q;
+                real_t R = TCAD_CONST(0.0), dR = TCAD_CONST(0.0);
                 if (idx < tau_n_.size() && idx < tau_p_.size() &&
                     tau_n_[idx] > EPSILON && tau_p_[idx] > EPSILON) {
                     real_t np = n[idx] * p[idx];
                     real_t denom = tau_p_[idx] * (n[idx] + ni) + tau_n_[idx] * (p[idx] + ni);
-                    if (denom > EPSILON)
+                    if (denom > EPSILON) {
                         R = (np - ni * ni) / denom;
+                        dR = (n[idx]*(tau_n_[idx]*ni+tau_p_[idx]*(n[idx]+ni))+
+                            tau_n_[idx]*ni*ni)/(denom*denom);
+                    }
                 }
                 // Auger recombination: R_A = (Cn*n + Cp*p) * (n*p - ni²)
                 if (opt_.auger.enabled) {
                     real_t np_ni2 = n[idx] * p[idx] - ni * ni;
-                    R += (opt_.auger.Cn * n[idx] + opt_.auger.Cp * p[idx]) * np_ni2;
+                    const real_t prefactor = opt_.auger.Cn * n[idx] + opt_.auger.Cp * p[idx];
+                    R += prefactor * np_ni2;
+                    // Differentiate the forward recombination sink only. Lag
+                    // reverse generation to keep a positive block diagonal even
+                    // below equilibrium; retain the full nonlinear net rate.
+                    dR += opt_.auger.Cp * n[idx] * p[idx] + prefactor * n[idx];
                 }
-                real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : 0.0Q;
+                real_t G = (idx < G_opt_.size()) ? G_opt_[idx] : TCAD_CONST(0.0);
                 if (opt_.btbt.enabled && idx < G_btbt.size()) {
                     G += opt_.btbt.continuity_scale * G_btbt[idx];
                 }
                 if (opt_.ii.enabled && idx < G_ii.size()) G += G_ii[idx];
+                if (physical_audit) dR = TCAD_CONST(0.0);
                 real_t source_scale = g_.dx_cell(i);
-                A.add_entry(idx, idx, center);
-                rhs[idx] = (G - R) * source_scale;
+                A.add_entry(idx, idx, center + dR * source_scale);
+                if (chain) reaction_sink[idx] = dR * source_scale;
+                rhs[idx] = (G - R + dR*p[idx]) * source_scale;
                 // Transient term: backward Euler (see electron block above).
                 if (opt_.transient_enabled && idx < opt_.p_prev.size()) {
                     A.add_entry(idx, idx, source_scale / opt_.transient_dt);
                     rhs[idx] += opt_.p_prev[idx] / opt_.transient_dt * source_scale;
+                    if (physical_audit) {
+                        audit_active[idx] = 1;
+                        audit_storage[idx] = p[idx] / opt_.transient_dt * source_scale;
+                        audit_scale[idx] = abs_q(audit_storage[idx]) + source_scale *
+                            (abs_q(opt_.p_prev[idx]) / opt_.transient_dt + abs_q(G) + abs_q(R));
+                    }
                 }
             }
         }
     }
     A.finalize();
+    if (audit_residual) {
+        *audit_residual = physical_audit ?
+            scaled_transient_residual(A, rhs, p, audit_storage, audit_scale, audit_active) :
+            scaled_linear_residual(A, rhs, p, false);
+        return true;
+    }
 
     SolverOptions cont_opt = LinearSolver::default_continuity_options();
     cont_opt.type = opt_.continuity_solver;
     if (!cont_h_solver_) cont_h_solver_ = std::make_unique<LinearSolver>(cont_opt);
     const Vector initial(p.begin(), p.end());
     Vector x;
-    if (!solve_continuity_linear_system(
+    const bool chain_ok=chain && solve_single_reservoir_chain(A,rhs,mu_p_,p_bc_,
+        face_from,face_to,row_weight,reaction_sink,std::max(TCAD_CONST(100.0)*cont_opt.tol,TCAD_CONST(1e-8)),x);
+    if (!chain_ok && !solve_continuity_linear_system(
             A, rhs, initial, *cont_h_solver_, cont_opt, "Hole",
             cont_h_use_banded_direct_, x))
         return false;
     for (size_t i = 0; i < N; ++i)
-        p[i] = (x[i] < 0.0Q) ? EPSILON : x[i];
+        p[i] = (x[i] < TCAD_CONST(0.0)) ? EPSILON : x[i];
     return true;
 }
 
@@ -1176,6 +1273,8 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
                                     std::vector<real_t>& n,
                                     std::vector<real_t>& p,
                                     real_t quantum_mix_scale) {
+    validate_gummel_state_size(g_.npts(), phi, n, p, "Gummel solve requires full states");
+    validate_gummel_material_size(g_.npts(), mu_n_, mu_p_, Nc_, Nv_, Eg_, n_bc_, p_bc_);
     // Keep an immutable entry state for failure rollback.  Carrier damping
     // inside a multi-step fixed-phi quantum polish must instead use the
     // immediately preceding inner iterate.  Reusing the entry state on every
@@ -1196,9 +1295,9 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
     // state that was contracting at x0.25 jump back onto the same DG cycle
     // every time the final continuity polish ran.
     const real_t nominal_quantum_mix_ceiling =
-        potential_pde ? 0.50Q : 0.05Q;
+        potential_pde ? TCAD_CONST(0.50) : TCAD_CONST(0.05);
     const real_t quantum_mix_ceiling = std::max(
-        1.0e-5Q, nominal_quantum_mix_ceiling * quantum_mix_scale);
+        TCAD_CONST(1.0e-5), nominal_quantum_mix_ceiling * quantum_mix_scale);
     // A fixed absolute Aitken floor silently defeated the outer x0.0625 and
     // x0.03125 stabilizer levels: once the scalar candidate reached 0.005,
     // further reductions of the ceiling could not reduce the actual update.
@@ -1208,13 +1307,13 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
     // without destabilizing ordinary continuation points.  Keep a small
     // positive guard against a zero update.
     const real_t aitken_floor_fraction =
-        quantum_mix_scale < 0.125Q ? 0.01Q : 0.10Q;
+        quantum_mix_scale < TCAD_CONST(0.125) ? TCAD_CONST(0.01) : TCAD_CONST(0.10);
     const real_t minimum_quantum_mix = std::max(
-        1.0e-8Q,
-        std::min(0.005Q,
+        TCAD_CONST(1.0e-8),
+        std::min(TCAD_CONST(0.005),
                  aitken_floor_fraction * quantum_mix_ceiling));
     real_t quantum_mix = quantum_mix_ceiling;
-    real_t best_quantum_residual = 1.0e100Q;
+    real_t best_quantum_residual = TCAD_CONST(1.0e100);
     std::vector<real_t> best_n, best_p, best_Qn, best_Qp;
     // In a converged unipolar MOS state one carrier block can already be
     // orders of magnitude quieter than the other.  Re-solving that settled
@@ -1226,15 +1325,15 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
     // both continuity equations for the audited transport potential.
     const bool lag_electron_in_polish =
         opt_.enable_quantum && opt_.inner_iterations > 1 &&
-        electron_update_final_ >= 0.0Q && hole_update_final_ > 0.0Q &&
-        10.0Q * electron_update_final_ < hole_update_final_;
+        electron_update_final_ >= TCAD_CONST(0.0) && hole_update_final_ > TCAD_CONST(0.0) &&
+        TCAD_CONST(10.0) * electron_update_final_ < hole_update_final_;
     const bool lag_hole_in_polish =
         opt_.enable_quantum && opt_.inner_iterations > 1 &&
-        hole_update_final_ >= 0.0Q && electron_update_final_ > 0.0Q &&
-        10.0Q * hole_update_final_ < electron_update_final_;
+        hole_update_final_ >= TCAD_CONST(0.0) && electron_update_final_ > TCAD_CONST(0.0) &&
+        TCAD_CONST(10.0) * hole_update_final_ < electron_update_final_;
     auto update_quantum_residual = [&]() -> real_t {
         if (!opt_.enable_quantum || Qn_prev_.size() != n.size()) {
-            quantum_residual_final_ = 0.0Q;
+            quantum_residual_final_ = TCAD_CONST(0.0);
             return quantum_residual_final_;
         }
         std::vector<real_t> Qn_state, Qp_state;
@@ -1244,14 +1343,14 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
         } else {
             dg_.quantum_potential(n, p, Qn_state, Qp_state);
         }
-        for (const auto& bc : n_bc_) Qn_state[bc.first] = 0.0Q;
-        for (const auto& bc : p_bc_) Qp_state[bc.first] = 0.0Q;
-        real_t difference = 0.0Q;
-        real_t scale = opt_.VT > 0.0Q ? opt_.VT : 1.0Q;
+        for (const auto& bc : n_bc_) Qn_state[bc.first] = TCAD_CONST(0.0);
+        for (const auto& bc : p_bc_) Qp_state[bc.first] = TCAD_CONST(0.0);
+        real_t difference = TCAD_CONST(0.0);
+        real_t scale = opt_.VT > TCAD_CONST(0.0) ? opt_.VT : TCAD_CONST(1.0);
         for (size_t i = 0; i < n.size(); ++i) {
             const real_t local_carriers = n[i] + p[i] + EPSILON;
-            const real_t wn = sqrt_q(std::max(0.0Q, n[i] / local_carriers));
-            const real_t wp = sqrt_q(std::max(0.0Q, p[i] / local_carriers));
+            const real_t wn = sqrt_q(std::max(TCAD_CONST(0.0), n[i] / local_carriers));
+            const real_t wp = sqrt_q(std::max(TCAD_CONST(0.0), p[i] / local_carriers));
             difference = std::max(
                 difference, wn * abs_q(Qn_state[i] - Qn_prev_[i]));
             difference = std::max(
@@ -1285,8 +1384,8 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
             // Ohmic contacts are classical reservoirs.  Remove their DG
             // correction before fixed-point acceleration so permanently
             // constrained boundary entries cannot pollute the Aitken norm.
-            for (const auto& bc : n_bc_) Qn_new[bc.first] = 0.0Q;
-            for (const auto& bc : p_bc_) Qp_new[bc.first] = 0.0Q;
+            for (const auto& bc : n_bc_) Qn_new[bc.first] = TCAD_CONST(0.0);
+            for (const auto& bc : p_bc_) Qp_new[bc.first] = TCAD_CONST(0.0);
             if (Qn_prev_.size() != n.size()) {
                 Qn_prev_ = Qn_new;
                 Qp_prev_ = Qp_new;
@@ -1310,13 +1409,13 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
                 // factor.  The ordinary one-step outer Gummel update is not
                 // affected.
                 if (opt_.inner_iterations > 1) {
-                    std::vector<real_t> residual(2 * n.size(), 0.0Q);
+                    std::vector<real_t> residual(2 * n.size(), TCAD_CONST(0.0));
                     for (size_t i = 0; i < n.size(); ++i) {
                         const real_t local_carriers = n[i] + p[i] + EPSILON;
                         const real_t wn = sqrt_q(
-                            std::max(0.0Q, n[i] / local_carriers));
+                            std::max(TCAD_CONST(0.0), n[i] / local_carriers));
                         const real_t wp = sqrt_q(
-                            std::max(0.0Q, p[i] / local_carriers));
+                            std::max(TCAD_CONST(0.0), p[i] / local_carriers));
                         if (!lag_electron_in_polish) {
                             residual[i] =
                                 wn * (Qn_new[i] - Qn_prev_[i]);
@@ -1328,8 +1427,8 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
                     }
                     if (previous_quantum_fixed_point_residual.size() ==
                         residual.size()) {
-                        real_t numerator = 0.0Q, denominator = 0.0Q;
-                        real_t current_norm2 = 0.0Q, previous_norm2 = 0.0Q;
+                        real_t numerator = TCAD_CONST(0.0), denominator = TCAD_CONST(0.0);
+                        real_t current_norm2 = TCAD_CONST(0.0), previous_norm2 = TCAD_CONST(0.0);
                         for (size_t i = 0; i < residual.size(); ++i) {
                             const real_t delta = residual[i] -
                                 previous_quantum_fixed_point_residual[i];
@@ -1341,16 +1440,16 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
                                 previous_quantum_fixed_point_residual[i] *
                                 previous_quantum_fixed_point_residual[i];
                         }
-                        if (denominator > 1.0e-40Q) {
+                        if (denominator > TCAD_CONST(1.0e-40)) {
                             real_t candidate =
                                 -quantum_mix * numerator / denominator;
-                            if (current_norm2 > 1.44Q * previous_norm2) {
+                            if (current_norm2 > TCAD_CONST(1.44) * previous_norm2) {
                                 // Reject aggressive extrapolation as soon as
                                 // the fixed-point residual grows by >20%.
                                 candidate = std::min(
                                     candidate,
                                     std::max(minimum_quantum_mix,
-                                             0.5Q * quantum_mix));
+                                             TCAD_CONST(0.5) * quantum_mix));
                             }
                             if (std::isfinite((double)candidate)) {
                                 quantum_mix = std::max(
@@ -1367,21 +1466,21 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
                     if (!lag_electron_in_polish ||
                         full_carrier_checkpoint) {
                         Qn_prev_[i] =
-                            (1.0Q - quantum_mix) * Qn_prev_[i] +
+                            (TCAD_CONST(1.0) - quantum_mix) * Qn_prev_[i] +
                             quantum_mix * Qn_new[i];
                     }
                     if (!lag_hole_in_polish ||
                         full_carrier_checkpoint) {
                         Qp_prev_[i] =
-                            (1.0Q - quantum_mix) * Qp_prev_[i] +
+                            (TCAD_CONST(1.0) - quantum_mix) * Qp_prev_[i] +
                             quantum_mix * Qp_new[i];
                     }
                 }
             }
             // Ohmic contacts are classical reservoirs with prescribed quasi-
             // Fermi levels; do not add a confinement offset at the boundary.
-            for (const auto& bc : n_bc_) Qn_prev_[bc.first] = 0.0Q;
-            for (const auto& bc : p_bc_) Qp_prev_[bc.first] = 0.0Q;
+            for (const auto& bc : n_bc_) Qn_prev_[bc.first] = TCAD_CONST(0.0);
+            for (const auto& bc : p_bc_) Qp_prev_[bc.first] = TCAD_CONST(0.0);
             phi_eff_n.resize(phi.size());
             phi_eff_p.resize(phi.size());
             for (size_t i = 0; i < phi.size(); ++i) {
@@ -1412,22 +1511,22 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
                 n_previous[i] > EPSILON && p_previous[i] > EPSILON) {
                 real_t ratio_n = n[i] / n_previous[i];
                 real_t ratio_p = p[i] / p_previous[i];
-                if (ratio_n > opt_.log_damping_threshold || ratio_n < 1.0Q / opt_.log_damping_threshold) {
+                if (ratio_n > opt_.log_damping_threshold || ratio_n < TCAD_CONST(1.0) / opt_.log_damping_threshold) {
                     n[i] = n_previous[i] * exp_q(opt_.cont_damping * log_q(ratio_n));
                 } else {
-                    n[i] = opt_.cont_damping * n[i] + (1.0Q - opt_.cont_damping) * n_previous[i];
+                    n[i] = opt_.cont_damping * n[i] + (TCAD_CONST(1.0) - opt_.cont_damping) * n_previous[i];
                 }
-                if (ratio_p > opt_.log_damping_threshold || ratio_p < 1.0Q / opt_.log_damping_threshold) {
+                if (ratio_p > opt_.log_damping_threshold || ratio_p < TCAD_CONST(1.0) / opt_.log_damping_threshold) {
                     p[i] = p_previous[i] * exp_q(opt_.cont_damping * log_q(ratio_p));
                 } else {
-                    p[i] = opt_.cont_damping * p[i] + (1.0Q - opt_.cont_damping) * p_previous[i];
+                    p[i] = opt_.cont_damping * p[i] + (TCAD_CONST(1.0) - opt_.cont_damping) * p_previous[i];
                 }
             } else {
-                n[i] = opt_.cont_damping * n[i] + (1.0Q - opt_.cont_damping) * n_previous[i];
-                p[i] = opt_.cont_damping * p[i] + (1.0Q - opt_.cont_damping) * p_previous[i];
+                n[i] = opt_.cont_damping * n[i] + (TCAD_CONST(1.0) - opt_.cont_damping) * n_previous[i];
+                p[i] = opt_.cont_damping * p[i] + (TCAD_CONST(1.0) - opt_.cont_damping) * p_previous[i];
             }
-            if (n[i] < 0.0Q) n[i] = EPSILON;
-            if (p[i] < 0.0Q) p[i] = EPSILON;
+            if (n[i] < TCAD_CONST(0.0)) n[i] = EPSILON;
+            if (p[i] < TCAD_CONST(0.0)) p[i] = EPSILON;
         }
         // Final fixed-phi DG polishes use a generous iteration cap, but stop
         // as soon as the lagged transport Q is consistent with the returned
@@ -1437,7 +1536,7 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
         if (opt_.enable_quantum && opt_.inner_iterations > 1 && inner >= 7 &&
             full_carrier_checkpoint) {
             const real_t quantum_tol = std::min(
-                std::max(100.0Q * opt_.continuity_tol, 1.0e-8Q), 1.0e-4Q);
+                std::max(TCAD_CONST(100.0) * opt_.continuity_tol, TCAD_CONST(1.0e-8)), TCAD_CONST(1.0e-4));
             const real_t residual = update_quantum_residual();
             if (residual < best_quantum_residual) {
                 best_quantum_residual = residual;
@@ -1464,12 +1563,23 @@ bool GummelSolver::solve_continuity(const std::vector<real_t>& phi,
 bool GummelSolver::solve(std::vector<real_t>& phi,
                          std::vector<real_t>& n,
                          std::vector<real_t>& p) {
+    validate_gummel_state_size(g_.npts(), phi, n, p, "Gummel solve requires full states");
+    validate_gummel_material_size(g_.npts(), mu_n_, mu_p_, Nc_, Nv_, Eg_, n_bc_, p_bc_);
+    if (opt_.statistics_type == StatisticsType::FERMI_DIRAC)
+        validate_gummel_dos_size(g_.npts(), Nc_, Nv_);
+    if(opt_.ii.enabled && opt_.ii.driving==1) {
+        validate_ii_gqf_material(g_.npts(),Nc_,Nv_,Eg_,mu_n_,mu_p_);
+    }
+    if (active_hfs_reference(opt_.hfs.enabled,opt_.hfs.driving,opt_.hfs.refdens_n,opt_.hfs.refdens_p)) {
+        validate_hfs_reference_material(g_.npts(),Nc_,Nv_,Eg_,mu_n_,mu_p_);
+    }
     poisson_res_.clear();
     cont_res_.clear();
-    poisson_residual_final_ = -1.0Q;
-    quantum_residual_final_ = opt_.enable_quantum ? -1.0Q : 0.0Q;
-    electron_update_final_ = -1.0Q;
-    hole_update_final_ = -1.0Q;
+    nonlinear_samples_.clear();
+    poisson_residual_final_ = -TCAD_CONST(1.0);
+    quantum_residual_final_ = opt_.enable_quantum ? -TCAD_CONST(1.0) : TCAD_CONST(0.0);
+    electron_update_final_ = -TCAD_CONST(1.0);
+    hole_update_final_ = -TCAD_CONST(1.0);
     phi_was_frozen_ = false;
     const size_t N = Nd_minus_Na_.size();
     // A potential-form bias continuation must start from the transport
@@ -1487,8 +1597,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     auto quantum_state_acceptable = [&]() -> bool {
         if (!opt_.enable_quantum) return true;
         const real_t quantum_tol = std::min(
-            std::max(100.0Q * opt_.continuity_tol, 1.0e-8Q), 1.0e-4Q);
-        return quantum_residual_final_ >= 0.0Q &&
+            std::max(TCAD_CONST(100.0) * opt_.continuity_tol, TCAD_CONST(1.0e-8)), TCAD_CONST(1.0e-4));
+        return quantum_residual_final_ >= TCAD_CONST(0.0) &&
                quantum_residual_final_ <= quantum_tol;
     };
     const bool has_mobile_carriers = [&]() {
@@ -1529,7 +1639,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     // is frozen the naive rel_dphi is exactly 0 (phi == phi_old), which used
     // to fake convergence; the convergence test below uses this honest value
     // instead.
-    real_t rel_dphi_last_unfrozen = 1.0Q;
+    real_t rel_dphi_last_unfrozen = TCAD_CONST(1.0);
     // P0-3 fix: limit-cycle retries. When the freeze condition fires, first
     // pin phi to the cycle mean (average of the last two iterates) and halve
     // the damping — a genuine attempt to break the cycle — up to
@@ -1541,18 +1651,18 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     // which stabilises any real-spectrum fixed-point map; a permanent freeze
     // (judged by the TRUE Poisson residual) remains the last resort.
     size_t freeze_retries_left = 8;
-    real_t damping_scale = 1.0Q;
+    real_t damping_scale = TCAD_CONST(1.0);
     // Continuity-update damping scale, halved together with the phi damping
     // on limit-cycle retries: the observed cycles on PN junctions and the
     // MoS2 FeFET are dominated by the n/p map (rel_dN ~ 0.3-4 while
     // rel_dPhi ~ 0.05), so damping phi alone cannot break them.
-    real_t cont_damping_scale = 1.0Q;
+    real_t cont_damping_scale = TCAD_CONST(1.0);
     // Quantum-specific fixed-point damping.  A finite barrier starts at
     // qmix=0.05, but refined material-side meshes can still form a small DG
     // cycle.  Reduce only Q mixing on repeated detections before escalating to
     // Newton; a cooldown gives each new spectral radius time to reveal itself.
-    constexpr real_t minimum_quantum_damping_scale = 0.0078125Q;
-    real_t quantum_damping_scale = 1.0Q;
+    constexpr real_t minimum_quantum_damping_scale = TCAD_CONST(0.0078125);
+    real_t quantum_damping_scale = TCAD_CONST(1.0);
     size_t quantum_damping_cooldown = 0;
     // Quantum unipolar sweeps often leave the minority-carrier block settled
     // while the majority carrier and Q map continue to contract.  After three
@@ -1568,7 +1678,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     // to finish instead of being handed to Newton one checkpoint before the
     // gate.  The grace window expires unless another strong improvement is
     // observed, so a true plateau still takes the normal rescue path.
-    real_t best_quantum_audit_residual = 1.0e100Q;
+    real_t best_quantum_audit_residual = TCAD_CONST(1.0e100);
     size_t quantum_audit_improvement_iter = 0;
     bool quantum_audit_strongly_contracting = false;
     // A fixed-point stall can be visible only in the independent Q audit:
@@ -1594,7 +1704,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     // update residual; if it also cycles, we fall back to damping retries.
     bool anderson_active = false;
     bool anderson_failed = false;
-    std::vector<real_t> f_prev(N, 0.0Q);
+    std::vector<real_t> f_prev(N, TCAD_CONST(0.0));
     bool has_f_prev = false;
     for (size_t iter = 0; iter < opt_.max_iter; ++iter) {
         if (quantum_damping_cooldown > 0)
@@ -1606,13 +1716,13 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         const std::vector<real_t> Qp_old = Qp_prev_;
         const bool carrier_checkpoint = (iter % 8 == 0);
         const bool lag_electron = opt_.enable_quantum &&
-            electron_quiet_solves >= 3 && electron_update_final_ >= 0.0Q &&
-            hole_update_final_ > 0.0Q &&
-            10.0Q * electron_update_final_ < hole_update_final_;
+            electron_quiet_solves >= 3 && electron_update_final_ >= TCAD_CONST(0.0) &&
+            hole_update_final_ > TCAD_CONST(0.0) &&
+            TCAD_CONST(10.0) * electron_update_final_ < hole_update_final_;
         const bool lag_hole = opt_.enable_quantum &&
-            hole_quiet_solves >= 3 && hole_update_final_ >= 0.0Q &&
-            electron_update_final_ > 0.0Q &&
-            10.0Q * hole_update_final_ < electron_update_final_;
+            hole_quiet_solves >= 3 && hole_update_final_ >= TCAD_CONST(0.0) &&
+            electron_update_final_ > TCAD_CONST(0.0) &&
+            TCAD_CONST(10.0) * hole_update_final_ < electron_update_final_;
 
         // --- Step 1: Solve Poisson with frozen n, p (skip if phi already frozen) ---
         // Only the quasi-static LK model (model 0) is refreshed EVERY
@@ -1631,7 +1741,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         // consecutive bias steps). Stepping the memory state once per bias
         // point is also the correct quasi-static semantics: the loop develops
         // across the sweep, not inside one solve.
-        if (opt_.ferro.enabled &&
+        if (opt_.ferro.enabled && opt_.ferro.update_state &&
             opt_.ferro.model == FerroelectricModel::LANDAU_KHALATNIKOV &&
             !opt_.transient_enabled) {
             poisson_.update_ferroelectric_polarization(phi);
@@ -1645,11 +1755,11 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             // At high doping (n ~ Nc) γ < 1 (degenerate, lower effective n).
             if (opt_.statistics_type == StatisticsType::FERMI_DIRAC) {
                 for (size_t i = 0; i < N; ++i) {
-                    if (n_solve[i] > 1.0Q && Nc_[i] > 1.0Q) {
+                    if (n_solve[i] > TCAD_CONST(1.0) && Nc_[i] > TCAD_CONST(1.0)) {
                         real_t eta = log_q(n_solve[i] / Nc_[i]);
                         n_solve[i] = Nc_[i] * fermi_dirac_half(eta);
                     }
-                    if (p_solve[i] > 1.0Q && Nv_[i] > 1.0Q) {
+                    if (p_solve[i] > TCAD_CONST(1.0) && Nv_[i] > TCAD_CONST(1.0)) {
                         real_t eta = log_q(p_solve[i] / Nv_[i]);
                         p_solve[i] = Nv_[i] * fermi_dirac_half(eta);
                     }
@@ -1672,7 +1782,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             // memory state gets permanently graded (observed P graded
             // 1e-3..1 C/m^2 and >100-iteration non-convergence on an AlScN
             // slab that is exactly linear with fixed P).
-            if (opt_.ferro.enabled && iter == 0 &&
+            if (opt_.ferro.enabled && opt_.ferro.update_state && iter == 0 &&
                 (opt_.ferro.model != FerroelectricModel::LANDAU_KHALATNIKOV ||
                  opt_.transient_enabled)) {
                 if (opt_.transient_enabled) {
@@ -1694,7 +1804,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                     }
                 }
                 if (increasing) {
-                    current_damping *= 0.7Q;
+                    current_damping *= TCAD_CONST(0.7);
                     if (current_damping < opt_.min_damping) current_damping = opt_.min_damping;
                     std::cout << "  [Adaptive] phi damping reduced to " << (double)current_damping << std::endl;
                 }
@@ -1706,26 +1816,26 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                 if (anderson_active && !anderson_failed) {
                     // Anderson(1): x_{k+1} = G(x_k) - beta*(f_k - f_{k-1}),
                     // beta = <f_k - f_{k-1}, f_k> / ||f_k - f_{k-1}||^2.
-                    real_t beta = 0.0Q;
+                    real_t beta = TCAD_CONST(0.0);
                     if (has_f_prev) {
-                        real_t num = 0.0Q, den = 0.0Q;
+                        real_t num = TCAD_CONST(0.0), den = TCAD_CONST(0.0);
                         for (size_t i = 0; i < N; ++i) {
                             real_t d = f_k[i] - f_prev[i];
                             num += d * f_k[i];
                             den += d * d;
                         }
-                        if (den > 1e-300Q) beta = num / den;
+                        if (den > TCAD_CONST(1e-300)) beta = num / den;
                     }
                     // Safeguard: clamp the extrapolation factor and cap the
                     // final update (as in the damped path).
-                    if (beta > 3.0Q) beta = 3.0Q;
-                    if (beta < -3.0Q) beta = -3.0Q;
+                    if (beta > TCAD_CONST(3.0)) beta = TCAD_CONST(3.0);
+                    if (beta < -TCAD_CONST(3.0)) beta = -TCAD_CONST(3.0);
                     for (size_t i = 0; i < N; ++i) {
                         real_t upd = f_k[i] - beta * (f_k[i] - f_prev[i]);
                         real_t cap = opt_.phi_log_damp_threshold * opt_.VT;
                         if (has_mobile_carriers && abs_q(upd) > cap) {
-                            real_t sign = (upd > 0.0Q) ? 1.0Q : -1.0Q;
-                            upd = sign * cap * log_q(1.0Q + abs_q(upd) / cap);
+                            real_t sign = (upd > TCAD_CONST(0.0)) ? TCAD_CONST(1.0) : -TCAD_CONST(1.0);
+                            upd = sign * cap * log_q(TCAD_CONST(1.0) + abs_q(upd) / cap);
                         }
                         phi[i] = phi_old[i] + upd;
                     }
@@ -1735,8 +1845,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                         // Step 2: soft log cap for extreme swings (prevents Inf/NaN)
                         real_t cap = opt_.phi_log_damp_threshold * opt_.VT;
                         if (has_mobile_carriers && abs_q(upd) > cap) {
-                            real_t sign = (upd > 0.0Q) ? 1.0Q : -1.0Q;
-                            upd = sign * cap * log_q(1.0Q + abs_q(upd) / cap);
+                            real_t sign = (upd > TCAD_CONST(0.0)) ? TCAD_CONST(1.0) : -TCAD_CONST(1.0);
+                            upd = sign * cap * log_q(TCAD_CONST(1.0) + abs_q(upd) / cap);
                         }
                         phi[i] = phi_old[i] + upd;
                     }
@@ -1747,12 +1857,12 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             // P0-3 fix: honest update norm of THIS unfrozen iteration,
             // recorded BEFORE any freeze reset below.
             {
-                real_t dphi_u = 0.0Q, scale_u = 1.0Q;
+                real_t dphi_u = TCAD_CONST(0.0), scale_u = TCAD_CONST(1.0);
                 for (size_t i = 0; i < N; ++i) {
                     dphi_u = std::max(dphi_u, abs_q(phi[i] - phi_old[i]));
                     scale_u = std::max(scale_u, abs_q(phi[i]));
                 }
-                rel_dphi_last_unfrozen = dphi_u / (scale_u + 1.0Q);
+                rel_dphi_last_unfrozen = dphi_u / (scale_u + TCAD_CONST(1.0));
             }
             // Detect stable limit-cycle oscillation:
             // Requirements:
@@ -1772,7 +1882,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             // The memory models (Preisach/NLS/transient) hold P fixed after
             // iter 0, so their limit cycles are purely numerical and remain
             // eligible for freeze/retry.
-            const bool lk_active = opt_.ferro.enabled &&
+            const bool lk_active = opt_.ferro.enabled && opt_.ferro.update_state &&
                 opt_.ferro.model == FerroelectricModel::LANDAU_KHALATNIKOV &&
                 !opt_.transient_enabled;
             if (!lk_active && iter >= 20 && poisson_res_.size() >= 6 &&
@@ -1780,13 +1890,13 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                 real_t max_r = poisson_res_[poisson_res_.size()-1];
                 real_t min_r = max_r;
                 size_t rises = 0, phi_reversals = 0;
-                real_t prev_delta = 0.0Q;
+                real_t prev_delta = TCAD_CONST(0.0);
                 for (size_t k = 0; k < 5; ++k) {
                     real_t r1 = poisson_res_[poisson_res_.size()-1-k];
                     real_t r2 = poisson_res_[poisson_res_.size()-2-k];
                     if (r1 > r2) ++rises;
                     real_t delta = r1 - r2;
-                    if (prev_delta * delta < 0.0Q) ++phi_reversals;
+                    if (prev_delta * delta < TCAD_CONST(0.0)) ++phi_reversals;
                     prev_delta = delta;
                     max_r = std::max(max_r, r1);
                     max_r = std::max(max_r, r2);
@@ -1805,15 +1915,15 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                     // convergence (r, r/2, r/4, ...) as a cycle because every
                     // consecutive pair differed by >2x.
                     size_t reversals = 0, large_jumps = 0;
-                    real_t prev_delta = 0.0Q;
+                    real_t prev_delta = TCAD_CONST(0.0);
                     const size_t first = cont_res_.size() - 6;
                     for (size_t t = first + 1; t < cont_res_.size(); ++t) {
                         real_t a = cont_res_[t];
                         real_t b = cont_res_[t - 1];
                         real_t delta = a - b;
-                        if (prev_delta * delta < 0.0Q) ++reversals;
-                        if (a > 0.0Q && b > 0.0Q &&
-                            (a / b > 2.0Q || b / a > 2.0Q)) ++large_jumps;
+                        if (prev_delta * delta < TCAD_CONST(0.0)) ++reversals;
+                        if (a > TCAD_CONST(0.0) && b > TCAD_CONST(0.0) &&
+                            (a / b > TCAD_CONST(2.0) || b / a > TCAD_CONST(2.0))) ++large_jumps;
                         prev_delta = delta;
                     }
                     carrier_cycle = (reversals >= 3 && large_jumps >= 3);
@@ -1841,23 +1951,26 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                     }
                     const real_t carrier_first = cont_res_[first];
                     const real_t carrier_last = cont_res_.back();
-                    quantum_stall = carrier_min > 20.0Q * opt_.continuity_tol &&
-                        carrier_max < 1.25Q * carrier_min &&
-                        carrier_last > 0.80Q * carrier_first;
+                    quantum_stall = carrier_min > TCAD_CONST(20.0) * opt_.continuity_tol &&
+                        carrier_max < TCAD_CONST(1.25) * carrier_min &&
+                        carrier_last > TCAD_CONST(0.80) * carrier_first;
                 }
                 // Only freeze when oscillation amplitude is small (< 0.1),
                 // and there are at least 2 rises in the last 5 pairs (true oscillation).
-                if (carrier_cycle || quantum_stall ||
-                    (opt_.enable_phi_freezing && min_r > 0 && max_r < 1e-1Q && rises >= 2 &&
+                // Disabling freezing also forbids cycle-mean acceptance.
+                // A hybrid Newton handoff can still use cycle detection.
+                if ((opt_.enable_phi_freezing || opt_.exit_on_limit_cycle) &&
+                    (carrier_cycle || quantum_stall ||
+                    (opt_.enable_phi_freezing && min_r > 0 && max_r < TCAD_CONST(1e-1) && rises >= 2 &&
                     phi_reversals >= 3 &&
-                    (max_r - min_r) / min_r < 0.3Q)) {
+                    (max_r - min_r) / min_r < TCAD_CONST(0.3)))) {
                     // Warm-up mode (Gummel->Newton cascade): hand the
                     // cycle-mean state to the Newton polish at the FIRST
                     // detected cycle (see GummelOptions).
                     if (opt_.exit_on_limit_cycle) {
                         const bool quantum_audit_grace =
                             opt_.enable_quantum &&
-                            quantum_damping_scale <= 0.125Q &&
+                            quantum_damping_scale <= TCAD_CONST(0.125) &&
                             quantum_audit_strongly_contracting &&
                             iter <= quantum_audit_improvement_iter + 16;
                         if (quantum_audit_grace) {
@@ -1871,7 +1984,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                             continue;
                         }
                         for (size_t i = 0; i < N; ++i)
-                            phi[i] = 0.5Q * (phi[i] + phi_old[i]);
+                            phi[i] = TCAD_CONST(0.5) * (phi[i] + phi_old[i]);
                         const bool audited_current_quantum_level =
                             quantum_audit_history_scale ==
                                 quantum_damping_scale &&
@@ -1879,9 +1992,9 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                         if (opt_.enable_quantum &&
                             quantum_damping_scale >
                                 minimum_quantum_damping_scale &&
-                            (quantum_damping_scale > 0.125Q ||
+                            (quantum_damping_scale > TCAD_CONST(0.125) ||
                              audited_current_quantum_level)) {
-                            quantum_damping_scale *= 0.5Q;
+                            quantum_damping_scale *= TCAD_CONST(0.5);
                             quantum_damping_cooldown = 20;
                             std::cout << "  [Stabilize] quantum "
                                       << (quantum_stall ? "fixed-point stall" :
@@ -1893,8 +2006,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                             continue;
                         }
                         const real_t quantum_tol = std::min(
-                            std::max(100.0Q * opt_.continuity_tol, 1.0e-8Q),
-                            1.0e-4Q);
+                            std::max(TCAD_CONST(100.0) * opt_.continuity_tol, TCAD_CONST(1.0e-8)),
+                            TCAD_CONST(1.0e-4));
                         const bool terminal_quantum_restart =
                             opt_.enable_quantum &&
                             quantum_damping_scale <=
@@ -1904,10 +2017,10 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                             std::isfinite(
                                 (double)best_quantum_audit_residual) &&
                             best_quantum_audit_residual <
-                                100.0Q * quantum_tol;
+                                TCAD_CONST(100.0) * quantum_tol;
                         if (terminal_quantum_restart) {
                             quantum_terminal_restart_used = true;
-                            quantum_damping_scale = 1.0Q;
+                            quantum_damping_scale = TCAD_CONST(1.0);
                             quantum_damping_cooldown = 20;
                             quantum_audit_history.clear();
                             quantum_audit_history_scale =
@@ -1935,7 +2048,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                         // damping, then keep iterating — a genuine attempt to
                         // break the limit cycle before freezing permanently.
                         for (size_t i = 0; i < N; ++i)
-                            phi[i] = 0.5Q * (phi[i] + phi_old[i]);
+                            phi[i] = TCAD_CONST(0.5) * (phi[i] + phi_old[i]);
                         // First detection: engage Anderson(1) acceleration
                         // instead of blind damping — a spiral-source cycle
                         // cannot be damped away but can be extrapolated.
@@ -1970,9 +2083,9 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                             const std::vector<real_t> Qn_try_start = Qn_prev_;
                             const std::vector<real_t> Qp_try_start = Qp_prev_;
                             bool polish_ok = true;
-                            if (opt_.cont_damping < 1.0Q || opt_.use_log_damping) {
+                            if (opt_.enable_quantum || opt_.cont_damping < TCAD_CONST(1.0) || opt_.use_log_damping) {
                                 GummelOptions saved = opt_;
-                                opt_.cont_damping = 1.0Q;
+                                opt_.cont_damping = TCAD_CONST(1.0);
                                 opt_.use_log_damping = false;
                                 opt_.inner_iterations = opt_.enable_quantum
                                     ? (use_potential_form_pde() ? 64 : 256)
@@ -1984,11 +2097,12 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                             }
                             real_t cyc_res = polish_ok
                                 ? compute_poisson_residual(phi, n_try, p_try)
-                                : 1.0e100Q;
+                                : TCAD_CONST(1.0e100);
                             if (polish_ok &&
                                 std::isfinite((double)cyc_res) &&
                                 cyc_res < opt_.frozen_residual_gate &&
-                                quantum_state_acceptable()) {
+                                quantum_state_acceptable() &&
+                                compute_continuity_residual(phi, n_try, p_try) < opt_.frozen_residual_gate) {
                                 n = n_try;
                                 p = p_try;
                                 phi_was_frozen_ = true;
@@ -2014,8 +2128,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                             }
                         }
                         --freeze_retries_left;
-                        damping_scale *= 0.5Q;
-                        cont_damping_scale *= 0.5Q;
+                        damping_scale *= TCAD_CONST(0.5);
+                        cont_damping_scale *= TCAD_CONST(0.5);
                         std::cout << "  [Stabilize] limit cycle at iter " << iter
                                   << " (rel_dPhi=" << (double)max_r
                                   << "): retry with damping x" << (double)damping_scale
@@ -2033,7 +2147,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                         phi_was_frozen_ = true;
                         frozen_exit = true;
                         for (size_t i = 0; i < N; ++i)
-                            phi[i] = 0.5Q * (phi[i] + phi_old[i]);
+                            phi[i] = TCAD_CONST(0.5) * (phi[i] + phi_old[i]);
                         std::cout << "  [Stabilize] phi frozen at iter " << iter
                                   << " (rel_dPhi=" << (double)max_r
                                   << "); judging by true residual" << std::endl;
@@ -2066,25 +2180,25 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                 // DG branch, reducing the factor after cycle detection is too
                 // late. Bulk all-semiconductor DG remains stable at 0.10.
                 const real_t qmix = use_potential_form_pde()
-                    ? 0.20Q
-                    : (has_transport_barrier ? 0.05Q : 0.10Q);
+                    ? TCAD_CONST(0.20)
+                    : (has_transport_barrier ? TCAD_CONST(0.05) : TCAD_CONST(0.10));
                 const real_t qmix_effective =
                     qmix * quantum_damping_scale;
                 for (size_t q = 0; q < N; ++q) {
                     if (!lag_electron || carrier_checkpoint) {
                         Qn_prev_[q] =
-                            (1.0Q - qmix_effective) * Qn_prev_[q] +
+                            (TCAD_CONST(1.0) - qmix_effective) * Qn_prev_[q] +
                             qmix_effective * Qn_new[q];
                     }
                     if (!lag_hole || carrier_checkpoint) {
                         Qp_prev_[q] =
-                            (1.0Q - qmix_effective) * Qp_prev_[q] +
+                            (TCAD_CONST(1.0) - qmix_effective) * Qp_prev_[q] +
                             qmix_effective * Qp_new[q];
                     }
                 }
             }
-            for (const auto& bc : n_bc_) Qn_prev_[bc.first] = 0.0Q;
-            for (const auto& bc : p_bc_) Qp_prev_[bc.first] = 0.0Q;
+            for (const auto& bc : n_bc_) Qn_prev_[bc.first] = TCAD_CONST(0.0);
+            for (const auto& bc : p_bc_) Qp_prev_[bc.first] = TCAD_CONST(0.0);
             phi_eff_n.resize(N);
             phi_eff_p.resize(N);
             for (size_t q = 0; q < N; ++q) {
@@ -2125,22 +2239,22 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                 // cannot move a node by orders of magnitude.
                 real_t dl_n = cont_damp * log_q(n[i] / n_old[i]);
                 real_t dl_p = cont_damp * log_q(p[i] / p_old[i]);
-                const real_t LOG_CAP = 2.0Q;   // max ~7.4x change per iteration
+                const real_t LOG_CAP = TCAD_CONST(2.0);   // max ~7.4x change per iteration
                 if (dl_n > LOG_CAP) dl_n = LOG_CAP; else if (dl_n < -LOG_CAP) dl_n = -LOG_CAP;
                 if (dl_p > LOG_CAP) dl_p = LOG_CAP; else if (dl_p < -LOG_CAP) dl_p = -LOG_CAP;
                 n[i] = n_old[i] * exp_q(dl_n);
                 p[i] = p_old[i] * exp_q(dl_p);
             } else {
-                n[i] = cont_damp * n[i] + (1.0Q - cont_damp) * n_old[i];
-                p[i] = cont_damp * p[i] + (1.0Q - cont_damp) * p_old[i];
+                n[i] = cont_damp * n[i] + (TCAD_CONST(1.0) - cont_damp) * n_old[i];
+                p[i] = cont_damp * p[i] + (TCAD_CONST(1.0) - cont_damp) * p_old[i];
             }
-            if (n[i] < 0.0Q) n[i] = EPSILON;
-            if (p[i] < 0.0Q) p[i] = EPSILON;
+            if (n[i] < TCAD_CONST(0.0)) n[i] = EPSILON;
+            if (p[i] < TCAD_CONST(0.0)) p[i] = EPSILON;
         }
 
         // --- Step 3: Convergence check ---
-        real_t dphi = 0.0Q, dn = 0.0Q, dp = 0.0Q;
-        real_t phi_scale = 1.0Q, n_scale = 1.0Q, p_scale = 1.0Q;
+        real_t dphi = TCAD_CONST(0.0), dn = TCAD_CONST(0.0), dp = TCAD_CONST(0.0);
+        real_t phi_scale = TCAD_CONST(1.0), n_scale = TCAD_CONST(1.0), p_scale = TCAD_CONST(1.0);
         bool has_nan = false;
         for (size_t i = 0; i < N; ++i) {
             if (std::isnan((double)phi[i]) || std::isnan((double)n[i]) || std::isnan((double)p[i]) ||
@@ -2163,25 +2277,25 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             return false;
         }
 
-        real_t rel_dphi = dphi / (phi_scale + 1.0Q);
+        real_t rel_dphi = dphi / (phi_scale + TCAD_CONST(1.0));
         // Scale both species by the total mobile-charge scale.  Independent
         // species normalization lets an exponentially small minority carrier
         // dominate the coupled convergence/cycle detector despite having no
         // measurable effect on Poisson.  The final undamped continuity polish
         // still solves both carrier equations exactly before acceptance.
         const real_t carrier_scale = std::max(n_scale, p_scale);
-        real_t rel_dn   = dn / (carrier_scale + 1.0Q);
-        real_t rel_dp   = dp / (carrier_scale + 1.0Q);
+        real_t rel_dn   = dn / (carrier_scale + TCAD_CONST(1.0));
+        real_t rel_dp   = dp / (carrier_scale + TCAD_CONST(1.0));
         real_t rel_cont = std::max(rel_dn, rel_dp);
         electron_update_final_ = rel_dn;
         hole_update_final_ = rel_dp;
-        const real_t quiet_gate = 0.5Q * opt_.continuity_tol;
+        const real_t quiet_gate = TCAD_CONST(0.5) * opt_.continuity_tol;
         const bool electron_relatively_quiet =
-            rel_dp > 100.0Q * opt_.continuity_tol &&
-            100.0Q * rel_dn < rel_dp;
+            rel_dp > TCAD_CONST(100.0) * opt_.continuity_tol &&
+            TCAD_CONST(100.0) * rel_dn < rel_dp;
         const bool hole_relatively_quiet =
-            rel_dn > 100.0Q * opt_.continuity_tol &&
-            100.0Q * rel_dp < rel_dn;
+            rel_dn > TCAD_CONST(100.0) * opt_.continuity_tol &&
+            TCAD_CONST(100.0) * rel_dp < rel_dn;
         if (solved_electron) {
             electron_quiet_solves =
                 (rel_dn < quiet_gate || electron_relatively_quiet)
@@ -2195,6 +2309,12 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
 
         poisson_res_.push_back(rel_dphi);
         cont_res_.push_back(rel_cont);
+        if (opt_.record_nonlinear_history) {
+            // Isolate reassembly from the live fixed-point operator/caches.
+            nonlinear_samples_.push_back({rel_dphi, rel_dn, rel_dp,
+                compute_poisson_residual(phi, n, p, true, false),
+                compute_poisson_residual(phi, n, p, true, true)});
+        }
 
         std::cout << "Gummel iter " << iter
                   << "  rel_dPhi=" << (double)rel_dphi
@@ -2219,7 +2339,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         bool quantum_near_update_audit = false;
         if (opt_.enable_quantum && iter >= 20 &&
             rel_cont >= opt_.continuity_tol &&
-            rel_cont < 8.0Q * opt_.continuity_tol &&
+            rel_cont < TCAD_CONST(8.0) * opt_.continuity_tol &&
             cont_res_.size() >= 8) {
             const size_t first = cont_res_.size() - 8;
             real_t near_min = cont_res_[first];
@@ -2229,8 +2349,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                 near_max = std::max(near_max, cont_res_[t]);
             }
             quantum_near_update_audit =
-                near_max < 1.10Q * near_min &&
-                cont_res_.back() > 0.95Q * cont_res_[first];
+                near_max < TCAD_CONST(1.10) * near_min &&
+                cont_res_.back() > TCAD_CONST(0.95) * cont_res_[first];
         }
         if (solved_electron && solved_hole &&
             rel_dphi_test < opt_.poisson_tol &&
@@ -2258,9 +2378,9 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             const real_t quantum_audit_reference =
                 best_quantum_audit_residual;
             bool polish_ok = true;
-            if (opt_.cont_damping < 1.0Q || opt_.use_log_damping) {
+            if (opt_.enable_quantum || opt_.cont_damping < TCAD_CONST(1.0) || opt_.use_log_damping) {
                 GummelOptions polish_opt = opt_;
-                polish_opt.cont_damping = 1.0Q;       // no relaxation
+                polish_opt.cont_damping = TCAD_CONST(1.0);       // no relaxation
                 polish_opt.use_log_damping = false;    // no log-space blend
                 // Allow a bounded fixed-phi solve; the explicit
                 // Q(n,p)-to-transport-Q residual provides early exit.
@@ -2298,17 +2418,17 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             const bool quantum_polish_regressed =
                 opt_.enable_quantum &&
                 (!std::isfinite((double)quantum_residual_final_) ||
-                 (quantum_audit_reference < 1.0e99Q &&
+                 (quantum_audit_reference < TCAD_CONST(1.0e99) &&
                   quantum_residual_final_ >
-                      8.0Q * quantum_audit_reference));
+                      TCAD_CONST(8.0) * quantum_audit_reference));
             if (opt_.enable_quantum &&
                 !quantum_polish_regressed &&
                 std::isfinite((double)quantum_residual_final_) &&
                 quantum_residual_final_ < best_quantum_audit_residual) {
                 quantum_audit_strongly_contracting =
-                    best_quantum_audit_residual < 1.0e99Q &&
+                    best_quantum_audit_residual < TCAD_CONST(1.0e99) &&
                     quantum_residual_final_ <
-                        0.5Q * best_quantum_audit_residual;
+                        TCAD_CONST(0.5) * best_quantum_audit_residual;
                 best_quantum_audit_residual = quantum_residual_final_;
                 quantum_audit_improvement_iter = iter;
             }
@@ -2328,7 +2448,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             if (std::isfinite((double)poisson_residual_final_) &&
                 poisson_residual_final_ < opt_.frozen_residual_gate &&
                 !quantum_polish_regressed &&
-                quantum_state_acceptable()) {
+                quantum_state_acceptable() &&
+                compute_continuity_residual(phi, n_try, p_try) < opt_.frozen_residual_gate) {
                 n = std::move(n_try);
                 p = std::move(p_try);
                 std::cout << "Gummel converged in " << iter + 1
@@ -2368,8 +2489,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
             if (opt_.enable_quantum &&
                 quantum_audit_history.size() == 3) {
                 const real_t quantum_tol = std::min(
-                    std::max(100.0Q * opt_.continuity_tol, 1.0e-8Q),
-                    1.0e-4Q);
+                    std::max(TCAD_CONST(100.0) * opt_.continuity_tol, TCAD_CONST(1.0e-8)),
+                    TCAD_CONST(1.0e-4));
                 const real_t audit_min = *std::min_element(
                     quantum_audit_history.begin(),
                     quantum_audit_history.end());
@@ -2379,12 +2500,12 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                 const real_t audit_first = quantum_audit_history.front();
                 const real_t audit_last = quantum_audit_history.back();
                 const bool audited_quantum_stall =
-                    audit_min > 2.0Q * quantum_tol &&
-                    audit_max < 1.5Q * audit_min &&
-                    audit_last > 0.75Q * audit_first;
+                    audit_min > TCAD_CONST(2.0) * quantum_tol &&
+                    audit_max < TCAD_CONST(1.5) * audit_min &&
+                    audit_last > TCAD_CONST(0.75) * audit_first;
                 if (audited_quantum_stall &&
                     quantum_damping_scale > minimum_quantum_damping_scale) {
-                    quantum_damping_scale *= 0.5Q;
+                    quantum_damping_scale *= TCAD_CONST(0.5);
                     quantum_damping_cooldown = 20;
                     quantum_audit_history.clear();
                     quantum_audit_history_scale = quantum_damping_scale;
@@ -2399,7 +2520,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                            quantum_damping_scale <=
                                minimum_quantum_damping_scale &&
                            !quantum_terminal_restart_used &&
-                           audit_min < 256.0Q * quantum_tol) {
+                           audit_min < TCAD_CONST(256.0) * quantum_tol) {
                     // A monotone minimum-damping plateau does not satisfy the
                     // period-2 carrier-cycle detector, so the terminal restart
                     // in that branch is otherwise unreachable.  Three
@@ -2410,7 +2531,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
                     // mixing.  Acceptance still requires the original
                     // Poisson, continuity and Q equation gates.
                     quantum_terminal_restart_used = true;
-                    quantum_damping_scale = 1.0Q;
+                    quantum_damping_scale = TCAD_CONST(1.0);
                     quantum_damping_cooldown = 20;
                     quantum_audit_history.clear();
                     quantum_audit_history_scale =
@@ -2446,9 +2567,9 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         // the TRUE Poisson equation residual as the acceptance criterion:
         // the frozen state is reported converged only if it actually solves
         // the discrete Poisson equation to frozen_residual_gate.
-        if (opt_.cont_damping < 1.0Q || opt_.use_log_damping) {
+        if (opt_.enable_quantum || opt_.cont_damping < TCAD_CONST(1.0) || opt_.use_log_damping) {
             GummelOptions saved = opt_;
-            opt_.cont_damping = 1.0Q;
+            opt_.cont_damping = TCAD_CONST(1.0);
             opt_.use_log_damping = false;
             opt_.inner_iterations = opt_.enable_quantum
                 ? (use_potential_form_pde() ? 64 : 256)
@@ -2465,7 +2586,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         poisson_residual_final_ = compute_poisson_residual(phi, n, p);
         if (std::isfinite((double)poisson_residual_final_) &&
             poisson_residual_final_ < opt_.frozen_residual_gate &&
-            quantum_state_acceptable()) {
+            quantum_state_acceptable() &&
+            compute_continuity_residual(phi, n, p) < opt_.frozen_residual_gate) {
             std::cout << "Gummel converged (frozen state, true Poisson residual="
                       << (double)poisson_residual_final_ << ")\n";
             return true;
@@ -2497,7 +2619,7 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         poisson_.assemble(n, p);
         if (!poisson_.solve(phi)) return false;
         GummelOptions saved = opt_;
-        opt_.cont_damping = 1.0Q;
+        opt_.cont_damping = TCAD_CONST(1.0);
         opt_.use_log_damping = false;
         opt_.inner_iterations = opt_.enable_quantum
             ? (use_potential_form_pde() ? 64 : 256)
@@ -2512,9 +2634,9 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
         }
         poisson_.assemble(n, p);
         if (!poisson_.solve(phi)) return false;
-    } else if (opt_.cont_damping < 1.0Q || opt_.use_log_damping) {
+    } else if (opt_.enable_quantum || opt_.cont_damping < TCAD_CONST(1.0) || opt_.use_log_damping) {
         GummelOptions saved = opt_;
-        opt_.cont_damping = 1.0Q;
+        opt_.cont_damping = TCAD_CONST(1.0);
         opt_.use_log_damping = false;
         opt_.inner_iterations = opt_.enable_quantum
             ? (use_potential_form_pde() ? 64 : 256)
@@ -2531,7 +2653,8 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     poisson_residual_final_ = compute_poisson_residual(phi, n, p);
     if (std::isfinite((double)poisson_residual_final_) &&
         poisson_residual_final_ < opt_.frozen_residual_gate &&
-        quantum_state_acceptable()) {
+        quantum_state_acceptable() &&
+        compute_continuity_residual(phi, n, p) < opt_.frozen_residual_gate) {
         std::cout << "Gummel accepted at max_iter (true Poisson residual="
                   << (double)poisson_residual_final_ << " < gate)\n";
         return true;
@@ -2539,9 +2662,68 @@ bool GummelSolver::solve(std::vector<real_t>& phi,
     return false;
 }
 
+real_t GummelSolver::compute_continuity_residual(const std::vector<real_t>& phi,
+                                                const std::vector<real_t>& n,
+                                                const std::vector<real_t>& p) {
+    const auto residuals = compute_continuity_residuals(phi, n, p);
+    return std::max(residuals.first, residuals.second);
+}
+
+std::pair<real_t,real_t> GummelSolver::compute_continuity_residuals(
+        const std::vector<real_t>& phi, const std::vector<real_t>& n,
+        const std::vector<real_t>& p) {
+    if (phi.size() != g_.npts() || n.size() != phi.size() || p.size() != phi.size())
+        throw std::invalid_argument("continuity audit requires full states");
+    for (size_t i = 0; i < phi.size(); ++i) {
+        if (!isfinite_q(phi[i]) || !isfinite_q(n[i]) || !isfinite_q(p[i]) || n[i] < 0 || p[i] < 0)
+            return {TCAD_CONST(1e100),TCAD_CONST(1e100)};
+    }
+    Vector n_audit(n), p_audit(p), phi_n(phi), phi_p(phi);
+    if (opt_.enable_quantum) {
+        if (Qn_prev_.size() != phi.size() || Qp_prev_.size() != phi.size())
+            return {TCAD_CONST(1e100),TCAD_CONST(1e100)};
+        for (size_t i = 0; i < phi.size(); ++i) {
+            phi_n[i] += Qn_prev_[i];
+            phi_p[i] -= Qp_prev_[i];
+        }
+    }
+    real_t rn = TCAD_CONST(1e100), rp = rn;
+    solve_electron_density(phi, n_audit, p_audit, &phi_n, &rn);
+    solve_hole_density(phi, n_audit, p_audit, &phi_p, &rp);
+    return {rn, rp};
+}
+
+std::pair<real_t,real_t> GummelSolver::compute_quantum_continuity_residuals(
+        const std::vector<real_t>& phi, const std::vector<real_t>& n,
+        const std::vector<real_t>& p, const std::vector<real_t>& Qn,
+        const std::vector<real_t>& Qp) {
+    if (!opt_.enable_quantum || Qn.size() != g_.npts() || Qp.size() != g_.npts())
+        throw std::invalid_argument("quantum continuity audit requires a full Q pair");
+    for (size_t i = 0; i < Qn.size(); ++i)
+        if (!isfinite_q(Qn[i]) || !isfinite_q(Qp[i]))
+            throw std::invalid_argument("quantum continuity audit requires finite Q");
+    // Allocate before touching either cache. Swaps make restoration noexcept,
+    // including the empty-cache case rejected by the public state setter.
+    std::vector<real_t> saved_n = Qn, saved_p = Qp;
+    struct Restore {
+        std::vector<real_t>& cache_n;
+        std::vector<real_t>& cache_p;
+        std::vector<real_t>& saved_n;
+        std::vector<real_t>& saved_p;
+        ~Restore() { cache_n.swap(saved_n); cache_p.swap(saved_p); }
+    } restore{Qn_prev_, Qp_prev_, saved_n, saved_p};
+    Qn_prev_.swap(saved_n);
+    Qp_prev_.swap(saved_p);
+    return compute_continuity_residuals(phi, n, p);
+}
+
 real_t GummelSolver::compute_poisson_residual(const std::vector<real_t>& phi,
                                               const std::vector<real_t>& n,
-                                              const std::vector<real_t>& p) {
+                                              const std::vector<real_t>& p, bool isolated, bool scaled) {
+    validate_gummel_state_size(g_.npts(), phi, n, p,
+                               "Gummel Poisson audit requires full states");
+    if (opt_.statistics_type == StatisticsType::FERMI_DIRAC)
+        validate_gummel_dos_size(g_.npts(), Nc_, Nv_);
     // The trap occupancy and leakage conductance read the cached phi, so
     // refresh it before re-assembling (mirrors the in-loop usage). NOTE: the
     // Density-Gradient correction is not re-applied here: n and p are the
@@ -2550,28 +2732,40 @@ real_t GummelSolver::compute_poisson_residual(const std::vector<real_t>& phi,
     // old residual used raw Boltzmann densities here, so a solved FD system
     // could be rejected forever with zero updates and a finite "true"
     // residual.
-    poisson_.set_leakage_field(phi);
+    std::unique_ptr<PoissonSolver> audit;
+    if (isolated) audit = std::make_unique<PoissonSolver>(poisson_);
+    PoissonSolver& op = isolated ? *audit : poisson_;
+    op.set_leakage_field(phi);
     if (opt_.statistics_type != StatisticsType::FERMI_DIRAC)
-        return poisson_.residual_norm(phi, n, p);
+        return scaled ? op.scaled_residual_norm(phi, n, p, opt_.VT) : op.residual_norm(phi, n, p);
 
     std::vector<real_t> n_score = n, p_score = p;
     for (size_t i = 0; i < n_score.size(); ++i) {
-        if (n_score[i] > 1.0Q && Nc_[i] > 1.0Q) {
+        if (n_score[i] > TCAD_CONST(1.0) && Nc_[i] > TCAD_CONST(1.0)) {
             real_t eta = log_q(n_score[i] / Nc_[i]);
             n_score[i] = Nc_[i] * fermi_dirac_half(eta);
         }
-        if (p_score[i] > 1.0Q && Nv_[i] > 1.0Q) {
+        if (p_score[i] > TCAD_CONST(1.0) && Nv_[i] > TCAD_CONST(1.0)) {
             real_t eta = log_q(p_score[i] / Nv_[i]);
             p_score[i] = Nv_[i] * fermi_dirac_half(eta);
         }
     }
-    return poisson_.residual_norm(phi, n_score, p_score);
+    return scaled ? op.scaled_residual_norm(phi, n_score, p_score, opt_.VT)
+                  : op.residual_norm(phi, n_score, p_score);
 }
 
 bool GummelSolver::recompute_poisson(std::vector<real_t>& phi,
                                      const std::vector<real_t>& n,
                                      const std::vector<real_t>& p) {
-    poisson_.set_leakage_field(phi);
+    const size_t N = g_.npts();
+    if (n.size() != N || p.size() != N)
+        throw std::invalid_argument("Carrier density size mismatch");
+    validate_material_finite(n, "Gummel Poisson carrier states must be finite");
+    validate_material_finite(p, "Gummel Poisson carrier states must be finite");
+    // Poisson::solve resets every differently-sized initial guess to zero.
+    // Use the same field for leakage/traps before assembling its RHS.
+    if (phi.size() == N) poisson_.set_leakage_field(phi);
+    else poisson_.set_leakage_field(std::vector<real_t>(N, TCAD_CONST(0.0)));
     poisson_.assemble(n, p);
     return poisson_.solve(phi);
 }

@@ -6,6 +6,9 @@
 #include <vector>
 #include <set>
 #include <functional>
+#include <array>
+#include <limits>
+#include <stdexcept>
 
 namespace tcad {
 
@@ -21,8 +24,31 @@ struct Grid3D {
     std::vector<real_t> zx;  // z node positions, size nz
     std::vector<real_t> xx;  // x node positions, size nx
     std::vector<real_t> yx;  // y node positions, size ny
+    // Explicit material-LK closure for cell-centred natural faces. The outer
+    // boundary is half the adjacent edge beyond the endpoint, with D.n=0.
+    // Order x-,x+,y-,y+,z-,z+; false retains endpoint-at-boundary LK support.
+    std::array<bool,6> lk_zero_d_faces{};
 
-    size_t npts() const { return nx * ny * nz; }
+    size_t npts() const {
+        // Preserve empty-grid counts even if the two nonzero axes would
+        // overflow. Nonempty grids must never allocate a wrapped node count.
+        if (nx == 0 || ny == 0 || nz == 0) return 0;
+        size_t plane, total;
+#if defined(__GNUC__) || defined(__clang__)
+        if (__builtin_mul_overflow(nx, ny, &plane) ||
+            __builtin_mul_overflow(plane, nz, &total))
+            throw std::overflow_error("grid node count overflows size_t");
+#else
+        const size_t limit = std::numeric_limits<size_t>::max();
+        if (nx > limit / ny)
+            throw std::overflow_error("grid node count overflows size_t");
+        plane = nx * ny;
+        if (plane > limit / nz)
+            throw std::overflow_error("grid node count overflows size_t");
+        total = plane * nz;
+#endif
+        return total;
+    }
     size_t index(size_t i, size_t j, size_t k) const {
         return i + nx * (j + ny * k);
     }
@@ -30,28 +56,45 @@ struct Grid3D {
     real_t dz_edge(size_t k) const { return zx.empty() ? dz : (zx[k+1]-zx[k]); }
     real_t dx_edge(size_t i) const { return xx.empty() ? dx : (xx[i+1]-xx[i]); }
     real_t dy_edge(size_t j) const { return yx.empty() ? dy : (yx[j+1]-yx[j]); }
-    // FV cell size at node n
+    // FV cell size at node n. A singleton axis has no edge from which to
+    // infer thickness, so retain its supplied uniform extrusion thickness
+    // even when a one-element position array specifies the plane location.
     real_t dz_cell(size_t k) const {
-        if (zx.empty()) return dz;
+        if (zx.size() < 2) return dz;
         real_t l = (k > 0) ? (zx[k] - zx[k-1]) / 2 : (zx[1] - zx[0]) / 2;
         real_t r = (k+1 < nz) ? (zx[k+1] - zx[k]) / 2 : (zx[nz-1] - zx[nz-2]) / 2;
         return l + r;
     }
     real_t dx_cell(size_t i) const {
-        if (xx.empty()) return dx;
+        if (xx.size() < 2) return dx;
         real_t l = (i > 0) ? (xx[i] - xx[i-1]) / 2 : (xx[1] - xx[0]) / 2;
         real_t r = (i+1 < nx) ? (xx[i+1] - xx[i]) / 2 : (xx[nx-1] - xx[nx-2]) / 2;
         return l + r;
     }
     real_t dy_cell(size_t j) const {
-        if (yx.empty()) return dy;
+        if (yx.size() < 2) return dy;
         real_t l = (j > 0) ? (yx[j] - yx[j-1]) / 2 : (yx[1] - yx[0]) / 2;
         real_t r = (j+1 < ny) ? (yx[j+1] - yx[j]) / 2 : (yx[ny-1] - yx[ny-2]) / 2;
         return l + r;
     }
 };
 
+// Read-only compact NLS drive for a caller-supplied potential predictor.
+// This does not solve Poisson, consume dwell, or change material memory.
+struct FerroelectricNlsDrive {
+    bool active = false;
+    real_t raw_mean_field = TCAD_CONST(0.0); // after imprint/depolarization [V/m]
+    real_t mean_field = TCAD_CONST(0.0);     // after numerical-zero guard [V/m]
+    real_t peak_field = TCAD_CONST(0.0);     // guarded local rate field [V/m]
+    real_t mean_polarization = TCAD_CONST(0.0); // geometric FE average [C/m^2]
+    real_t volume = TCAD_CONST(0.0);         // geometric FE support [m^3]
+    real_t zero_field_tolerance = TCAD_CONST(0.0); // existing roundoff guard
+};
+
 class PoissonSolver {
+    // Candidate rollback restores already validated material vectors by swap.
+    // Keep that operation internal; public setters retain input validation.
+    friend class DeviceSimulator;
 public:
     explicit PoissonSolver(const Grid3D& grid);
 
@@ -90,7 +133,10 @@ public:
 
     // Build matrix and RHS for thermal equation: div(kappa * grad(T)) = -P
     // where P is the volumetric heat generation [W/m^3].
-    void assemble_thermal(const std::vector<real_t>& power_density);
+    void assemble_thermal(const std::vector<real_t>& power_density,
+        const std::vector<real_t>& heat_capacity = {},
+        const std::vector<real_t>& previous_temperature = {},
+        real_t dt = TCAD_CONST(0.0));
 
     // Set ferroelectric region mask and Landau-Khalatnikov parameters.
     // fe_mask[i] == 1 marks node i as ferroelectric.
@@ -124,6 +170,11 @@ public:
     // effective dwell time dt [s] per bias step (controls loop slope).
     void set_ferroelectric_nls(real_t tau0, real_t E0, real_t dt);
 
+    // Requires enabled NLS and finite mesh-sized phi and polarization.
+    // Empty FE support returns active=false. Uses exactly the same volume,
+    // imprint, depolarization, peak and numerical-zero rule as NLS advancement.
+    FerroelectricNlsDrive ferroelectric_nls_drive(const std::vector<real_t>& phi) const;
+
     // Polar axis for the scalar FE models (Preisach / NLS) and for the LK
     // built-in field + depolarization drive: 0 = x, 1 = y, 2 = z (clamped).
     // The built-in FeFET template stacks gate/FE/oxide/channel along Z, so
@@ -152,6 +203,19 @@ public:
                             const std::map<size_t, real_t>& EFn,
                             const std::map<size_t, real_t>& EFp,
                             real_t ni) {
+        for (size_t node : nodes)
+            if (node >= g_.npts())
+                throw std::out_of_range("ohmic contact node is outside the grid");
+        for (const auto* shifts : {&EFn, &EFp})
+            for (const auto& entry : *shifts)
+                if (entry.first >= g_.npts())
+                    throw std::out_of_range("ohmic quasi-Fermi node is outside the grid");
+        for (const auto* shifts : {&EFn, &EFp})
+            for (const auto& entry : *shifts)
+                if (!isfinite_q(entry.second))
+                    throw std::invalid_argument("ohmic quasi-Fermi values must be finite");
+        if (!isfinite_q(ni) || ni <= TCAD_CONST(0.0))
+            throw std::invalid_argument("ohmic intrinsic density must be finite and positive");
         ohmic_nodes_ = nodes;
         ohmic_EFn_ = EFn;
         ohmic_EFp_ = EFp;
@@ -172,6 +236,7 @@ public:
     // retention/endurance). Empty mask disables the interface-trap term.
     void set_interface_traps(const std::vector<char>& mask,
                              real_t D_it, real_t E_t);
+    real_t trap_layer_thickness() const { return trap_layer_thickness_; }
     void set_oxide_traps(const std::vector<real_t>& Q_ot);
     // Cache the current potential for the leakage field-dependent conductance
     // (P2.2). Must be called before assemble() each iteration so the leaky-node
@@ -184,14 +249,26 @@ public:
     // the authoritative copy across solve() calls so a Vg sweep produces
     // path-dependent hysteresis. Layout: fe_polarization_[3*idx + c], c=0,1,2.
     const std::vector<real_t>& fe_polarization() const { return fe_polarization_; }
-    void set_fe_polarization(const std::vector<real_t>& P) { fe_polarization_ = P; }
+    void set_fe_polarization(const std::vector<real_t>& P) {
+        if (!P.empty() && P.size() != 3 * g_.npts())
+            throw std::invalid_argument("FE polarization size mismatch");
+        for (real_t value : P)
+            if (!isfinite_q(value))
+                throw std::invalid_argument("FE polarization values must be finite");
+        fe_polarization_ = P;
+    }
 
-    // Preisach play-operator internal state (M7c). One scalar per masked node:
-    // the play operator's "memory" value (the last turning-point field shifted
-    // by +/-Ec). Persisted across solve() like fe_polarization_. For the L-K
-    // path these are unused (kept empty).
+    // Persistent Preisach memory: model 1 has one play level per node;
+    // model 3 has per-node previous fields/directions and a shared ensemble
+    // turning-point stack (see fe_play_state_ below). Unused under L-K/NLS.
     const std::vector<real_t>& fe_play_state() const { return fe_play_state_; }
-    void set_fe_play_state(const std::vector<real_t>& s) { fe_play_state_ = s; }
+    void set_fe_play_state(const std::vector<real_t>& s) {
+        // Model-dependent lengths are normalized by the existing update paths.
+        for (real_t value : s)
+            if (!isfinite_q(value))
+                throw std::invalid_argument("FE play state values must be finite");
+        fe_play_state_ = s;
+    }
 
     // Update ferroelectric polarization from current potential (self-consistent).
     // Must be called before assemble() when ferroelectric is enabled.
@@ -205,7 +282,8 @@ public:
     // edge current. Poisson deliberately ignores both values.
     void set_breakdown_state(const std::vector<char>& bd_state, real_t sigma_bd);
 
-    // Transient LK time step: P^{k+1} = P^k + (dt/gamma)*(E - alpha*P^k - beta*(P^k)^3)
+    // Transient LK backward Euler: beta*P_new^3 + (alpha+gamma/dt)*P_new
+    // = E_drive + gamma/dt*P_old, retaining the previous stable branch.
     void update_ferroelectric_polarization_transient(const std::vector<real_t>& phi, real_t dt);
 
     // Solve for potential phi
@@ -213,6 +291,7 @@ public:
 
     // Access the system matrix (for Jacobian in Newton method)
     const SparseMatrix& matrix() const { return A_; }
+    const Vector& rhs() const { return rhs_; }
 
     // Dirichlet mask for external solvers
     const std::vector<char>& dirichlet_mask() const { return is_dirichlet_; }
@@ -234,23 +313,32 @@ public:
                                 std::vector<real_t>& Ey,
                                 std::vector<real_t>& Ez) const;
 
-    // True Poisson equation residual (P0-3 fix): reassembles A_ and rhs_ for
-    // the given carrier densities (WITHOUT solving) and returns the relative
-    // residual ||A_*phi - rhs_||_2 / (||rhs_||_2 + tiny). Callers that use the
-    // trap/leakage terms should call set_leakage_field(phi) first so the
-    // occupancy / field-dependent conductance use this phi.
+    // Physical relative residual ||A*phi-rhs||_2/(||rhs||_2+tiny).
+    // Excludes artificial Gummel charge stabilization from both terms and
+    // refreshes trap/leakage state at phi in an isolated assembly, leaving
+    // the live matrix and caches intact. At neutrality or nonzero boundary
+    // offsets, prefer scaled_residual_norm for an acceptance decision.
     real_t residual_norm(const std::vector<real_t>& phi,
                          const std::vector<real_t>& n,
                          const std::vector<real_t>& p);
 
+    // Maximum rowwise physical equation error, scaled by thermal-voltage
+    // stiffness and unsigned charge. Excludes the artificial Gummel charge
+    // Jacobian; meaningful at neutrality and invariant to potential offsets.
+    // Uses an isolated assembly, leaving this operator and its caches intact.
+    real_t scaled_residual_norm(const std::vector<real_t>& phi,
+                                const std::vector<real_t>& n,
+                                const std::vector<real_t>& p,
+                                real_t thermal_voltage) const;
+
 private:
     Grid3D g_;
     bool boltzmann_lin_ = true;     // stabilized-Gummel charge linearization
-    real_t VT_ = 0.02585Q;          // thermal voltage for the linearization
+    real_t VT_ = TCAD_CONST(0.02585);          // thermal voltage for the linearization
     // Ohmic contact data
     std::set<size_t> ohmic_nodes_;
     std::map<size_t, real_t> ohmic_EFn_, ohmic_EFp_;
-    real_t ohmic_ni_ = 1.07e16Q;   // intrinsic density for Boltzmann n(phi)
+    real_t ohmic_ni_ = TCAD_CONST(1.07e16);   // intrinsic density for Boltzmann n(phi)
     std::vector<real_t> eps_;       // Permittivity at each grid point
     std::vector<real_t> edge_eps_x_plus_;
     std::vector<real_t> edge_eps_x_minus_;
@@ -271,57 +359,59 @@ private:
     // Ferroelectric polarization
     std::vector<char> fe_mask_;
     std::vector<real_t> fe_polarization_;  // [Px,Py,Pz] per node, interleaved, len 3*npts [C/m^2]
-    real_t fe_alpha_ = 0.0Q;
-    real_t fe_beta_ = 0.0Q;
-    real_t fe_gamma_ = 0.0Q;  // LK damping coefficient [V*m/C * s]
+    real_t fe_alpha_ = TCAD_CONST(0.0);
+    real_t fe_beta_ = TCAD_CONST(0.0);
+    real_t fe_gamma_ = TCAD_CONST(0.0);  // LK damping coefficient [V*m/C * s]
     bool fe_enabled_ = false;
 
     // Ferroelectric model selection + Preisach params (M7c).
     int fe_model_ = 0;            // 0=LK, 1=play Preisach, 2=NLS, 3=Sentaurus Preisach
-    real_t fe_ps_ = 0.2Q;         // Preisach saturation polarization [C/m^2]
-    real_t fe_ec_ = 1.0e9Q;       // Preisach coercive field [V/m]
-    real_t fe_escale_ = 0.0Q;     // Preisach tanh width [V/m]; 0 => Ec (default)
+    real_t fe_ps_ = TCAD_CONST(0.2);         // Preisach saturation polarization [C/m^2]
+    real_t fe_ec_ = TCAD_CONST(1.0e9);       // Preisach coercive field [V/m]
+    real_t fe_escale_ = TCAD_CONST(0.0);     // Preisach tanh width [V/m]; 0 => Ec (default)
     // Internal field / Imprint offset (P2.1). Subtracted from the applied field
     // to form the effective switching drive E_eff = E - E_bi. 0 => symmetric.
-    real_t fe_E_bi_ = 0.0Q;
+    real_t fe_E_bi_ = TCAD_CONST(0.0);
     // Depolarization field (comments2.docx P3). The bound-charge self-field
     // E_dep = -P / (eps_fe * eps_0) opposes the polarization, limiting it in
     // thin films. eps_fe is the FE relative permittivity; 0 => no depol term.
-    real_t fe_eps_fe_ = 0.0Q;     // FE layer relative permittivity (0 => disabled)
+    real_t fe_eps_fe_ = TCAD_CONST(0.0);     // FE layer relative permittivity (0 => disabled)
     // Under-relaxation factor for P update (comments2.docx): correct div(P)
     // coupling produces stronger P-phi feedback; a relaxation factor < 1
     // stabilises the self-consistent iteration. P_new = relax*P_new + (1-relax)*P_old.
-    real_t fe_relax_ = 1.0Q;   // 1.0 = no relaxation (full update)
+    real_t fe_relax_ = TCAD_CONST(1.0);   // 1.0 = no relaxation (full update)
     // NLS (P3, model==2): Merz-law tau(E) = tau0*exp(E0/|E|).
-    real_t fe_nls_tau0_ = 1.0e-6Q;   // characteristic switching time [s]
-    real_t fe_nls_E0_ = 2.0e9Q;      // Merz activation field [V/m]
-    real_t fe_nls_dt_ = 1.0e-6Q;     // effective dwell time per bias step [s]
-    // Preisach internal state. Model 1 uses npts play levels. Model 3 uses
-    // 2*npts entries: previous field followed by branch state (-2/+2 virgin,
-    // -1/+1 major-loop direction). Empty under L-K/NLS.
+    real_t fe_nls_tau0_ = TCAD_CONST(1.0e-6);   // characteristic switching time [s]
+    real_t fe_nls_E0_ = TCAD_CONST(2.0e9);      // Merz activation field [V/m]
+    real_t fe_nls_dt_ = TCAD_CONST(1.0e-6);     // effective dwell time per bias step [s]
+    // Preisach internal state. Model 1 uses npts play levels.
+    // Model 3 starts with 2*npts entries (previous field, +/-1 direction),
+    // followed by ensemble turning-point (field, polarization) pairs, newest
+    // first. The final two pairs are the negative/positive saturation limits.
+    // Empty under L-K/NLS.
     std::vector<real_t> fe_play_state_;
 
     // Dielectric breakdown state retained for API compatibility/debugging.
     // It is not assembled into the electrostatic equation.
     std::vector<char> bd_state_;
-    real_t sigma_bd_ = 0.0Q;
+    real_t sigma_bd_ = TCAD_CONST(0.0);
 
     // Interface traps (Dit) + bulk oxide traps (P6).
     // trap_mask_[i]==1 marks an interface node; assemble() injects
     // Q_it = -q*D_it*dE*(f_t-0.5) into the Poisson RHS. Q_ot_ is a persistent
     // per-node oxide-trap charge [C/m^3] (evolved externally for retention).
     std::vector<char> trap_mask_;
-    real_t trap_D_it_ = 0.0Q;     // interface trap density [cm^-2 eV^-1]
-    real_t trap_E_t_ = 0.0Q;      // trap energy level [eV] (rel. intrinsic)
+    real_t trap_D_it_ = TCAD_CONST(0.0);     // interface trap density [cm^-2 eV^-1]
+    real_t trap_E_t_ = TCAD_CONST(0.0);      // trap energy level [eV] (rel. intrinsic)
     std::vector<real_t> Q_ot_;    // bulk oxide trap charge [C/m^3]
 
     // Leakage-current metadata (PF/FN). Poisson only caches the field for
     // compatibility; DeviceSimulator evaluates the explicit edge flux.
     std::vector<char> leak_mask_;
-    real_t leak_C_pf_ = 0.0Q, leak_B_pf_ = 0.0Q, leak_phi_t_ = 0.0Q;
-    real_t leak_C_fn_ = 0.0Q, leak_B_fn_ = 0.0Q, leak_phi_b_ = 0.0Q;
-    real_t leak_E_floor_ = 1.0e6Q;
-    real_t leak_sigma_cap_ = 0.05Q;
+    real_t leak_C_pf_ = TCAD_CONST(0.0), leak_B_pf_ = TCAD_CONST(0.0), leak_phi_t_ = TCAD_CONST(0.0);
+    real_t leak_C_fn_ = TCAD_CONST(0.0), leak_B_fn_ = TCAD_CONST(0.0), leak_phi_b_ = TCAD_CONST(0.0);
+    real_t leak_E_floor_ = TCAD_CONST(1.0e6);
+    real_t leak_sigma_cap_ = TCAD_CONST(0.05);
     std::vector<real_t> leak_phi_;     // cached potential for |E| (set before assemble)
     std::vector<real_t> leak_E_mag_;   // cached |E| per node (computed in set_leakage_field)
 
@@ -336,13 +426,17 @@ private:
     // thinnest axis (the interface normal) [m], used to convert the surface
     // charge Q_it [C/m^2] into a mesh-invariant volume charge [C/m^3].
     // Computed in set_interface_traps(); 0 => not computed (falls back to dx).
-    real_t trap_layer_thickness_ = 0.0Q;
+    real_t trap_layer_thickness_ = TCAD_CONST(0.0);
 
     // Electric field component E_axis = -d(phi)/d(axis) at grid node (i,j,k):
     // central differences interior, one-sided at the domain boundary (the same
     // differencing template as compute_electric_field).
     real_t e_field_component(const std::vector<real_t>& phi,
                              size_t i, size_t j, size_t k, int axis) const;
+
+    // Geometric FE dual volume; boundary half cells, singleton-axis extrusion.
+    // Separate from Grid3D::*_cell(), whose boundary stencil uses ghost cells.
+    real_t fe_node_volume(size_t i, size_t j, size_t k) const;
 
     // Extent of trap_mask_ along its thinnest axis [m] (P0-6 helper).
     real_t compute_trap_layer_thickness() const;

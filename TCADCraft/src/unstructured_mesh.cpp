@@ -19,8 +19,8 @@ void UnstructuredMesh::add_contact_face(const std::vector<size_t>& face_nodes, i
     MeshFace face;
     face.nodes = face_nodes;
     face.contact = contact_id;
-    face.area = 0.0Q;  // computed in finalize()
-    face.nx = face.ny = face.nz = 0.0Q;
+    face.area = TCAD_CONST(0.0);  // computed in finalize()
+    face.nx = face.ny = face.nz = TCAD_CONST(0.0);
     faces_.push_back(face);
 }
 
@@ -40,7 +40,7 @@ void UnstructuredMesh::finalize() {
             real_t dy = nodes_[a].y - nodes_[b].y;
             real_t dz = nodes_[a].z - nodes_[b].z;
             edge.length = sqrt_q(dx*dx + dy*dy + dz*dz);
-            if (edge.length > 1e-30Q) {
+            if (edge.length > TCAD_CONST(1e-30)) {
                 edge.nx = dx / edge.length;
                 edge.ny = dy / edge.length;
                 edge.nz = dz / edge.length;
@@ -91,9 +91,9 @@ void UnstructuredMesh::finalize() {
             real_t cx = ay*bz - az*by;
             real_t cy = az*bx - ax*bz;
             real_t cz = ax*by - ay*bx;
-            face.area = 0.5Q * sqrt_q(cx*cx + cy*cy + cz*cz);
+            face.area = TCAD_CONST(0.5) * sqrt_q(cx*cx + cy*cy + cz*cz);
             real_t len = sqrt_q(cx*cx + cy*cy + cz*cz);
-            if (len > 1e-30Q) {
+            if (len > TCAD_CONST(1e-30)) {
                 face.nx = cx / len; face.ny = cy / len; face.nz = cz / len;
             }
         }

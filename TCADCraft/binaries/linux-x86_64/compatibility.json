@@ -1,0 +1,43 @@
+{
+  "python": "3.13.5",
+  "implementation": "CPython",
+  "architecture": "x86_64",
+  "platform": "Linux-5.14.0-642.el9.x86_64-x86_64-with-glibc2.34",
+  "libc": [
+    "glibc",
+    "2.34"
+  ],
+  "wheel_tag": "tcad-0.3.0rc1-cp313-cp313-linux_x86_64.whl",
+  "precision": {
+    "backend": "float128",
+    "mantissa_bits": 113,
+    "max_decimal_exponent": 4932,
+    "exported_array_dtype": "float64"
+  },
+  "constants": {
+    "schema_version": 1,
+    "profile": "si",
+    "elementary_charge_C": "1.602176634000000000000000000000000091439e-19",
+    "elementary_charge_definition_C": "1.602176634e-19",
+    "boltzmann_definition_J_K": "1.380649e-23",
+    "vacuum_permittivity_definition_F_m": "8.854187817e-12",
+    "scope": "shared_QE_only",
+    "all_model_constants_profiled": false,
+    "standalone_transport_scope": "SI_cut_cell_spectral",
+    "standalone_elementary_charge_C": 1.602176634e-19,
+    "standalone_elementary_charge_definition_C": "1.602176634e-19"
+  },
+  "binary_sha256": "318988172b59c2ea14f627ecc9aa422ae86c2f4984784002a20475cb9a5d13b4",
+  "shared_library_dependencies": [
+    "\tlinux-vdso.so.1 (0x00007fff397c4000)",
+    "\tlibquadmath.so.0 => /apps/anaconda3/lib/libquadmath.so.0 (0x00007fdfdfc4c000)",
+    "\tlibstdc++.so.6 => /apps/anaconda3/lib/libstdc++.so.6 (0x00007fdfdf400000)",
+    "\tlibm.so.6 => /lib64/libm.so.6 (0x00007fdfdfb62000)",
+    "\tlibgcc_s.so.1 => /apps/anaconda3/lib/libgcc_s.so.1 (0x00007fdfdfb48000)",
+    "\tlibc.so.6 => /lib64/libc.so.6 (0x00007fdfdf000000)",
+    "\t/lib64/ld-linux-x86-64.so.2 (0x00007fdfdfc97000)"
+  ],
+  "manylinux_certified": false,
+  "numpy_build_version": "2.1.3",
+  "install_scope": "Linux x86_64 CPython 3.13; tested host runtime only; dependencies installed separately"
+}

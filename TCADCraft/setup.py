@@ -2,13 +2,51 @@ import os
 import platform
 import sys
 import subprocess
+import importlib.util
+from pathlib import Path
 import numpy as np
 from setuptools import setup, Extension
+from setuptools.command.build import build as _build
 from setuptools.command.build_ext import build_ext as _build_ext
 from Cython.Build import cythonize
+# PEP 517 hooks need not put the project directory on sys.path. Load the
+# adjacent build-only helper explicitly, including when rebuilding an sdist.
+_config_spec = importlib.util.spec_from_file_location(
+    "_tcad_build_config", Path(__file__).resolve().with_name("tcad_build_config.py")
+)
+_build_config = importlib.util.module_from_spec(_config_spec)
+_config_spec.loader.exec_module(_build_config)
+constants_profile = _build_config.constants_profile
+build_cache_tag = _build_config.build_cache_tag
+
+# Reject unknown profiles before generating code or probing optional libraries.
+selected_constants_profile = constants_profile()
+
+class build(_build):
+    """Isolate caches while keeping all wheel commands on the same library root."""
+    def finalize_options(self):
+        # Distutils does not track compiler definitions. Set the shared build
+        # base before deriving build_py/build_ext/install library directories.
+        # Changing only build_ext.build_lib nests the extension under the cache
+        # tag inside wheels, making the installed tcad.core import fail.
+        tag = build_cache_tag(force_long_double, selected_constants_profile)
+        self.build_base = os.path.join(self.build_base, tag)
+        super().finalize_options()
+
 
 class build_ext(_build_ext):
     """Custom build_ext that removes duplicate rpaths on macOS."""
+
+    def copy_extensions_to_source(self):
+        # A different backend's installed .so can be newer than this backend's
+        # cache. Always install the selected library; do not force compilation.
+        previous_force = self.force
+        try:
+            self.force = True
+            super().copy_extensions_to_source()
+        finally:
+            self.force = previous_force
+
     def run(self):
         super().run()
         if sys.platform == "darwin":
@@ -42,6 +80,7 @@ is_windows = sys.platform == "win32"
 machine = platform.machine().lower()
 is_arm64 = machine in ("arm64", "aarch64")
 use_lapack = os.environ.get("TCAD_USE_LAPACK", "0") == "1"
+force_long_double = os.environ.get("TCAD_FORCE_LONG_DOUBLE", "0") == "1"
 
 if is_windows:
     raise RuntimeError(
@@ -53,6 +92,8 @@ extra_link_args = []
 extra_compile_args = ["-std=c++17", "-O3"]
 if use_lapack:
     extra_compile_args.append("-DTCAD_USE_LAPACK")
+    if os.environ.get("TCAD_LAPACK_ILP64", "0") == "1":
+        extra_compile_args.append("-DTCAD_LAPACK_ILP64")
 
 # --- PETSc detection and configuration ---
 petsc_available = False
@@ -125,7 +166,7 @@ if is_macos:
     if petsc_available:
         extra_link_args.append("-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib")
     
-    if not is_arm64:
+    if not is_arm64 and not force_long_double:
         extra_link_args.append("-lquadmath")
 else:
     # Linux / other Unix.  Release wheels are portable by default; developers
@@ -134,7 +175,8 @@ else:
         extra_compile_args.append("-march=native")
     # GCC needs -fext-numeric-literals to accept __float128 'Q' suffix literals
     extra_compile_args.append("-fext-numeric-literals")
-    extra_link_args.append("-lquadmath")
+    if not force_long_double:
+        extra_link_args.append("-lquadmath")
     if use_lapack:
         extra_link_args.append("-llapack")
         extra_link_args.append("-lblas")
@@ -144,6 +186,9 @@ if os.environ.get("TCAD_DEBUG"):
     if is_macos:
         extra_compile_args.append("-arch")
         extra_compile_args.append(machine)
+
+if force_long_double:
+    extra_compile_args.append("-DTCAD_FORCE_LONG_DOUBLE")
 
 sources = [
     "tcad/core/_bindings.pyx",
@@ -176,13 +221,15 @@ extensions = [
         sources=sources,
         include_dirs=["src", np.get_include()] + petsc_include_dirs,
         language="c++",
+        define_macros=([("TCAD_CONSTANTS_LEGACY_CHARGE", "1")]
+                       if selected_constants_profile == "legacy-charge" else []),
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     )
 ]
 
 setup(
-    cmdclass={"build_ext": build_ext},
+    cmdclass={"build": build, "build_ext": build_ext},
     ext_modules=cythonize(
         extensions,
         compiler_directives={"language_level": "3"},

@@ -81,9 +81,9 @@ void IC0Preconditioner::setup(const SparseMatrix& A) {
         for (size_t k_idx = l_row_ptr_[i]; k_idx < diag_idx; ++k_idx) {
             diag_val -= l_vals_[k_idx] * l_vals_[k_idx];
         }
-        if (diag_val <= 0.0Q) {
+        if (diag_val <= TCAD_CONST(0.0)) {
             // Perturb to maintain positive definiteness
-            diag_val = abs_q(diag_val) + 1e-12Q;
+            diag_val = abs_q(diag_val) + TCAD_CONST(1e-12);
         }
         l_vals_[diag_idx] = sqrt_q(diag_val);
     }
@@ -118,8 +118,8 @@ void IC0Preconditioner::setup(const SparseMatrix& A) {
 }
 
 Vector IC0Preconditioner::apply(const Vector& r) const {
-    Vector y(n_, 0.0Q);
-    Vector z(n_, 0.0Q);
+    Vector y(n_, TCAD_CONST(0.0));
+    Vector z(n_, TCAD_CONST(0.0));
 
     // Forward solve L * y = r
     for (size_t i = 0; i < n_; ++i) {
