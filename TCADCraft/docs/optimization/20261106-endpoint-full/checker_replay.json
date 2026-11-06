@@ -1,0 +1,32 @@
+{
+  "status": "passed_checker_replay_on_inherited_128_step_and_x_probe_data",
+  "new_simulation_steps": 0,
+  "full": {
+    "expected_newton_dimension": 65385,
+    "accepted_diagnostics": 385,
+    "linear_solves": 894,
+    "factorizations": 2,
+    "gmres_iterations": 5968,
+    "gmres_corrections": 645,
+    "refreshes": 0,
+    "checkpoints": 4,
+    "steps": 384,
+    "full_pulse_completed": true,
+    "independent_physics_and_ledger_checks": 780479
+  },
+  "probe": {
+    "field_physics_checks": 411915,
+    "expected_newton_dimension": 69453,
+    "full_pulse_completed": false,
+    "spatial_convergence_qualified": false,
+    "independent_physics_and_ledger_checks": 411915
+  },
+  "tamper_rejections": [
+    "interior_time_ledger",
+    "wrong_dt",
+    "linear_residual",
+    "bulk_field",
+    "gate_drive",
+    "probe_x_geometry"
+  ]
+}

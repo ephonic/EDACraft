@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Recorded two independently audited complete endpoint-z pulses and a second
+  independent x probe, retaining the original spatial acceptance gates.
+
 - Recorded an independently audited third temporal pulse (1,536 steps) and
   endpoint z/x probes; all 26 initial/first-step z metrics pass, while full-pulse
   spatial acceptance remains open.
