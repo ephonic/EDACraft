@@ -1,0 +1,60 @@
+{
+  "status": "verified_integrated_GEOMETRIC_ND_regression_and_real_matrix",
+  "regression": {
+    "status": "passed",
+    "wall_s": 60.142068914021365,
+    "tests": 245,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "result": {
+    "status": "passed_integrated_GEOMETRIC_ND_original_true_residual_guard",
+    "ordering_s": 0.39515513798687607,
+    "solve_wall_s": 157.71770948707126,
+    "peak_rss_MiB": 4128.62109375,
+    "true_scaled_residual_linf": 4.440892098500626e-16,
+    "diagnostics": {
+      "method": "reused_gmres",
+      "factor_ordering": "GEOMETRIC_ND",
+      "absolute_tolerance": 1e-14,
+      "linear_solves": 1,
+      "factorizations": 1,
+      "reused_initial_factor": false,
+      "invalidated_initial_factor": false,
+      "acceptance_norm": "true_row_scaled_linf",
+      "gmres_iterations": 2,
+      "gmres_corrections": 0,
+      "refreshes": 0,
+      "max_accepted_true_scaled_residual_linf": 4.440892098500626e-16,
+      "attempts": [
+        [
+          {
+            "info": 0,
+            "iterations": 2,
+            "initial_info": 0,
+            "gmres_absolute_l2_tolerance": 4.8963762110360765e-12,
+            "initial_true_scaled_residual_linf": 4.440892098500626e-16,
+            "initial_true_scaled_residual_l2": 2.5596727479374782e-14,
+            "correction": null,
+            "true_scaled_residual_linf": 4.440892098500626e-16,
+            "accepted": true
+          }
+        ]
+      ]
+    },
+    "new_simulation_steps": 0,
+    "full_device_qualification": false
+  },
+  "fixture_sha256": "9541ea94cd7729983060e178b332f88d4865c8087bdaab511bc3da11024d1bcf",
+  "permutation_matches_sealed_prototype": true,
+  "solution_bitwise_equal_to_prototype": true,
+  "solution_max_abs_difference": 0.0,
+  "independent_float64_residual": 4.440892098500626e-16,
+  "independent_extended_residual": 3.6808663755882876e-16,
+  "independent_extended_epsilon": 1.0842021724855044e-19,
+  "supplementary_row_sums_are_descriptive": true,
+  "all_owned_integration_workers_exited": true,
+  "new_large_device_simulation_steps": 0,
+  "full_device_qualification": false
+}

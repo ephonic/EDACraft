@@ -1,0 +1,23 @@
+{
+  "capture.profile.jsonl": "de3c5590ad783a92e44f608f90503e912863c9365aa98ae6442b72a79e219262",
+  "capture_policy.json": "b5b9b000f1381428d4c0c6b5eb5517990c543b70cdada67150a7ede7c69a8c08",
+  "data/first_DC_matrix.npz": "9541ea94cd7729983060e178b332f88d4865c8087bdaab511bc3da11024d1bcf",
+  "data/product_matrix.solution.npz": "c072ea7a904b9b4f1eacd1688c957e23689978953ca8e2973998c629f689869e",
+  "integration_policy.json": "248218ec0c94e235a2fedcebf50a1523b3c44fdeaca3fa0b089e35e10ba0a0ca",
+  "integration_verification.json": "9a2f6f73e1e5d13344d38aba643ecff6951db7734ba385c9a43539a498220c26",
+  "prototype_policy.json": "cbc283c9f45ea2391cf7e31a4387ecdacdc45f9129cdf8214caac48e5ecbf26d",
+  "prototype_tool_checks.json": "7a48a5472ab3f32c5d2d1fff71ae9372e4326d247d3b6791bfaf1e40528943c3",
+  "prototype_verification.json": "5174570b9156a26ed2ffae569933bf7a65f82b850d65979860aa8feb768c63e3",
+  "PROVENANCE.json": "83e4d44b4bf64cdf0c8957b7f95bd457825daeae28714a2a5efc4504e4429d7b",
+  "README.md": "a9d046b90ba5461328cd9ea31784d13448466181539acda21c7da60244fb9a6a",
+  "reproduction/capture_matrix.py": "ced2f872d4e094e7fb237fb3a6be5599829f84e147a3c74ac93085377ff94e6e",
+  "reproduction/independent_y2_probe.py": "7d6c66cd81e8bde020a5229cae59d894e1fdc3ee226c693e262df6b357d4d7e3",
+  "reproduction/meshes.npz": "49f4fba29b92d7ec81408dac2781d0474fd1e801471f87d6b7f3ae8d4d992342",
+  "reproduction/product_matrix.py": "3b62a49b6f3d2b4ce6f972736489e334df6a296500da226cc62897bdd9590b82",
+  "reproduction/README.md": "1ba73e19680e3f8746989ae484fc65ee0d5749091921c16d223461d5b2df31c5",
+  "reproduction/sheet_electrode_convergence.py": "44e4991a6c54837c6ac2705522d698df925b0f72bc1289e5a8a10d0be40a80c1",
+  "reproduction/sheet_runtime_profile_20261106.py": "6049e8ad7bdfa096041eb313ed3348c955ceaabc96f2459c6f53379113f877da",
+  "reproduction/sheet_trap_convergence.py": "140d5eb5ac98b8bb3cf6b1a43b522f2d1e049cb9f548e3d7ab7d635e82d8ddda",
+  "source_checks.json": "afe3914aa040dadab506ce34bde74dce5b49be199d0178cdce61e733fa0def88",
+  "targeted_tests.xml": "2546b7cf46e4f329d9856e4d2c54104b8e94d1ba8e9a6e83ba7b008887a33025"
+}

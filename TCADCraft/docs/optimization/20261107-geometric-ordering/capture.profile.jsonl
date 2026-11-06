@@ -1,0 +1,4 @@
+{"sequence": 1, "event": "profile_installed", "phase": null, "elapsed_s": 0.00013641791883856058, "process_cpu_s": 0.49175857, "peak_rss_MiB": 81.0, "VmHWM_kB": 83988, "VmRSS_kB": 83988}
+{"sequence": 2, "event": "initial_bulk_solve_begin", "phase": null, "elapsed_s": 1.2119213449768722, "process_cpu_s": 1.290019743, "peak_rss_MiB": 233.3828125, "VmHWM_kB": 239284, "VmRSS_kB": 239284}
+{"sequence": 3, "event": "initial_bulk_solve_end", "phase": null, "elapsed_s": 370.16897241200786, "process_cpu_s": 255.64570039, "peak_rss_MiB": 6251.3515625, "VmHWM_kB": 6401384, "VmRSS_kB": 257028, "wall_s": 368.95701482193545, "cpu_s": 254.355655897}
+{"sequence": 4, "event": "first_DC_matrix_captured", "phase": null, "elapsed_s": 371.8092468699906, "process_cpu_s": 256.659730899, "peak_rss_MiB": 6251.3515625, "VmHWM_kB": 6401384, "VmRSS_kB": 353688, "dimension": 239745, "nnz": 1668115}

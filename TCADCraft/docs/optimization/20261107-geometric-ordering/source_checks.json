@@ -1,0 +1,10 @@
+{
+  "status": "passed_unchanged_GMRES_acceptance_correction_refresh_and_prototype_algorithm_AST_checks",
+  "candidate_files": {
+    "tcad/solver/_sheet_linear.py": "a282efb4d47d71439a60877d5cd81eb676e8b45936f09d0044a4ae6abb4a346d",
+    "tcad/solver/_sheet_ordering.py": "671f2a8c6cb5ef61bda1337892c7d34bb6c9b5fada0365d86599f399b69a5972",
+    "tcad/solver/sheet_dielectric.py": "6211ff2cd62a8d40d01697ed31aa12f480d684c7bbb9bd699ed1fb4325d5140b",
+    "tests/test_sheet_geometric_ordering.py": "a1fda01ced4a1792c40174e222c9bcfbaf84c425e1b4a2930334b50859bf56d6"
+  },
+  "new_physics_credit": 0
+}

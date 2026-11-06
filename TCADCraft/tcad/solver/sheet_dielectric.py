@@ -17,6 +17,7 @@ from scipy.sparse.linalg import splu, spsolve
 from tcad.material.sheet import Q, _finite
 from .sheet_drift_diffusion import SheetDriftDiffusion
 from ._sheet_linear import _ReusedGMRES
+from ._sheet_ordering import _geometric_nd_permutation, _SymmetricPermutation
 
 
 @dataclass(frozen=True)
@@ -285,13 +286,14 @@ class DielectricSheetDriftDiffusion(SheetDriftDiffusion):
             raise ValueError("linear_solver must be 'direct' or 'reused_gmres'")
         if linear_solver=='reused_gmres' and electrostatic_backend!='coupled':
             raise ValueError('reused_gmres requires the coupled electrostatic backend')
-        if not isinstance(linear_ordering,str) or linear_ordering not in ('COLAMD','MMD_AT_PLUS_A'):
-            raise ValueError("linear_ordering must be 'COLAMD' or 'MMD_AT_PLUS_A'")
+        if not isinstance(linear_ordering,str) or linear_ordering not in ('COLAMD','MMD_AT_PLUS_A','GEOMETRIC_ND'):
+            raise ValueError("linear_ordering must be 'COLAMD', 'MMD_AT_PLUS_A' or 'GEOMETRIC_ND'")
         if linear_solver!='reused_gmres' and linear_ordering!='COLAMD':
             raise ValueError('nondefault linear_ordering requires reused_gmres')
         self.linear_solver=linear_solver
         self.linear_ordering=linear_ordering
         self._linear_factor=None
+        self._geometric_permutation=None
         if 'gate_capacitance_F_m2' in kwargs:
             raise ValueError('explicit dielectric coupling cannot also use a local gate capacitor')
         self.dielectric=SheetDielectricPoisson(x_m,y_m,z_m,sheet_index=sheet_index,
@@ -305,7 +307,15 @@ class DielectricSheetDriftDiffusion(SheetDriftDiffusion):
         if self.linear_solver=='reused_gmres':
             storage=getattr(self,'_transient_storage',None)
             key=None if storage is None else ('backward_euler',float(storage[2]))
-            return _ReusedGMRES(self._linear_factor,tolerance,key,self.linear_ordering)
+            permutation=None
+            if self.linear_ordering=='GEOMETRIC_ND':
+                if self._geometric_permutation is None:
+                    d=self.dielectric
+                    nodes=np.concatenate((np.tile(d.sheet_nodes,3),d.free_nodes))
+                    coordinates=np.column_stack(np.unravel_index(nodes,d.shape))
+                    self._geometric_permutation=_SymmetricPermutation(_geometric_nd_permutation(coordinates))
+                permutation=self._geometric_permutation
+            return _ReusedGMRES(self._linear_factor,tolerance,key,self.linear_ordering,permutation)
         return None
 
     def _finish_linear_context(self,context,result):

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy.sparse.linalg import LinearOperator, gmres, splu
+from ._sheet_ordering import _PermutedLU, _SymmetricPermutation
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,7 @@ class _FrozenFactor:
     shape: tuple
     operator_key: tuple | None = None
     ordering: str = 'COLAMD'
+    permutation_key: str | None = None
 
     def __deepcopy__(self, memo):
         memo[id(self)] = self
@@ -24,12 +26,22 @@ class _ReusedGMRES:
     A caller publishes ``factor`` only after its whole transaction succeeds.
     Failure never alters the incoming factor or any counters on its owner.
     """
-    def __init__(self, factor, tolerance, operator_key=None, ordering='COLAMD'):
-        if not isinstance(ordering,str) or ordering not in ('COLAMD','MMD_AT_PLUS_A'):
-            raise ValueError("linear_ordering must be 'COLAMD' or 'MMD_AT_PLUS_A'")
+    def __init__(self, factor, tolerance, operator_key=None, ordering='COLAMD', permutation=None):
+        if not isinstance(ordering,str) or ordering not in ('COLAMD','MMD_AT_PLUS_A','GEOMETRIC_ND'):
+            raise ValueError("linear_ordering must be 'COLAMD', 'MMD_AT_PLUS_A' or 'GEOMETRIC_ND'")
+        if ordering=='GEOMETRIC_ND':
+            if permutation is None:
+                raise ValueError('GEOMETRIC_ND requires a geometry permutation')
+            if not isinstance(permutation,_SymmetricPermutation):
+                permutation=_SymmetricPermutation(permutation)
+        elif permutation is not None:
+            raise ValueError('a geometry permutation requires GEOMETRIC_ND')
+        self.permutation=permutation
+        self.permutation_key=None if permutation is None else permutation.key
         self.ordering = ordering
         self.invalidated_initial_factor = bool(
-            factor is not None and (factor.operator_key != operator_key or factor.ordering != ordering))
+            factor is not None and (factor.operator_key != operator_key or factor.ordering != ordering
+                                    or factor.permutation_key != self.permutation_key))
         self.factor = None if self.invalidated_initial_factor else factor
         self.operator_key = operator_key
         self.atol = min(1e-14, .01 * tolerance)
@@ -39,13 +51,22 @@ class _ReusedGMRES:
         self.factorizations = 0
         self.reused_initial_factor = self.factor is not None
 
+    def _factorize(self, A):
+        if self.permutation is None:
+            lu=splu(A.tocsc(),permc_spec=self.ordering)
+        else:
+            p=self.permutation.indices
+            if A.shape!=(p.size,p.size):
+                raise ValueError('geometry permutation does not match the linear system')
+            lu=_PermutedLU(splu(A[p][:,p].tocsc(),permc_spec='NATURAL'),self.permutation)
+        return _FrozenFactor(lu,A.shape,self.operator_key,self.ordering,self.permutation_key)
+
     def solve(self, A, b):
         A = A.tocsr()
         attempts = []
         for attempt in range(2):
             if self.factor is None or self.factor.shape != A.shape or attempt:
-                self.factor = _FrozenFactor(splu(A.tocsc(),permc_spec=self.ordering),
-                                            A.shape, self.operator_key, self.ordering)
+                self.factor = self._factorize(A)
                 self.factorizations += 1
             iterations = [0]
 

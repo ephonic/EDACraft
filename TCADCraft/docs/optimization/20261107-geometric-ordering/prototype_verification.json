@@ -1,0 +1,65 @@
+{
+  "status": "verified_matrix_only_prototype_original_true_residual_gate",
+  "fixture_sha256": "9541ea94cd7729983060e178b332f88d4865c8087bdaab511bc3da11024d1bcf",
+  "matrix_shape": [
+    239745,
+    239745
+  ],
+  "nnz": 1668115,
+  "permutation_coverage_and_independent_local_replay": true,
+  "original_guard_residual": 4.440892098500626e-16,
+  "independent_pairwise_float64_residual": 4.440892098500626e-16,
+  "independent_extended_residual": 3.6808663755882876e-16,
+  "independent_extended_epsilon": 1.0842021724855044e-19,
+  "supplementary_row_sums_are_descriptive": true,
+  "result": {
+    "status": "passed_original_matrix_true_residual_guard",
+    "fixture_sha256": "9541ea94cd7729983060e178b332f88d4865c8087bdaab511bc3da11024d1bcf",
+    "ordering": "prototype_symmetric_geometric_ND",
+    "leaf_size": 64,
+    "ordering_s": 1.5759073699591681,
+    "solve_wall_s": 218.42944013897795,
+    "factorization_s": 216.02944571699481,
+    "nnz_L": 172779061,
+    "nnz_U": 147916139,
+    "peak_rss_before_factor_nnz_export_MiB": 4146.80859375,
+    "peak_rss_with_factor_nnz_export_MiB": 7039.02734375,
+    "true_scaled_residual_linf": 4.440892098500626e-16,
+    "diagnostics": {
+      "method": "reused_gmres",
+      "factor_ordering": "MMD_AT_PLUS_A",
+      "absolute_tolerance": 1e-14,
+      "linear_solves": 1,
+      "factorizations": 1,
+      "reused_initial_factor": false,
+      "invalidated_initial_factor": false,
+      "acceptance_norm": "true_row_scaled_linf",
+      "gmres_iterations": 2,
+      "gmres_corrections": 0,
+      "refreshes": 0,
+      "max_accepted_true_scaled_residual_linf": 4.440892098500626e-16,
+      "attempts": [
+        [
+          {
+            "info": 0,
+            "iterations": 2,
+            "initial_info": 0,
+            "gmres_absolute_l2_tolerance": 4.8963762110360765e-12,
+            "initial_true_scaled_residual_linf": 4.440892098500626e-16,
+            "initial_true_scaled_residual_l2": 2.5596727479374782e-14,
+            "correction": null,
+            "true_scaled_residual_linf": 4.440892098500626e-16,
+            "accepted": true
+          }
+        ]
+      ]
+    },
+    "diagnostic_ordering_label_is_original_context": true,
+    "new_simulation_steps": 0,
+    "full_device_qualification": false
+  },
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0,
+  "full_device_qualification": false,
+  "all_owned_matrix_workers_exited": true
+}

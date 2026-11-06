@@ -85,6 +85,18 @@ and the direct/Schur backends retain their current behavior. Diagnostics report
 reuse. Ordering does not change the true residual gate, iteration limits,
 single-refresh policy or transactional rollback.
 
+Development sources also accept `linear_ordering='GEOMETRIC_ND'` with
+`linear_solver='reused_gmres'` and `electrostatic_backend='coupled'`.
+This constructs a deterministic nested-dissection permutation from the sheet
+and free dielectric node coordinates, permutes both rows and columns, and
+uses SuperLU `NATURAL` ordering on that permuted system. The returned solution
+is mapped back before checking the original equations. The immutable
+permutation is shared across device copies; the cache identity also includes
+its contents. Harmonic initialization keeps its existing sparse solve.
+See the [y33 matrix study](optimization/20261107-geometric-ordering/README.md)
+for targeted tests, captured-system measurements and remaining device checks.
+This option is unreleased and does not imply a completed finer-y trajectory.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

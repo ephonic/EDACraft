@@ -5,6 +5,12 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Added opt-in `linear_ordering='GEOMETRIC_ND'` for the coupled sheet
+  reused-GMRES preconditioner, with immutable permutation-aware cache identity,
+  original-equation residual checks and transactional failure recovery.
+  Recorded 245 passing targeted regressions and a captured y33 matrix study;
+  complete finer-y and joint space/time qualification remain open.
+
 - Preserved the bounded uniform-y33 capacity failure and an independently
   audited fresh MMD y9 control; three-grid y acceptance remains open.
 

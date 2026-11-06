@@ -53,6 +53,10 @@ adds a full y17 trajectory and y9/y17 field/ledger comparisons; a complete third
 The [bounded uniform third-y probe](docs/optimization/20261106-third-y-probe/README.md)
 retains a passing fresh MMD y9 control and the failed y33 capacity outcome; the three-grid y metrics remain unevaluated.
 
+The [geometric ordering update](docs/optimization/20261107-geometric-ordering/README.md)
+adds an opt-in `GEOMETRIC_ND` preconditioner ordering and a captured y33 matrix
+check; full y33 and joint convergence qualification remain open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

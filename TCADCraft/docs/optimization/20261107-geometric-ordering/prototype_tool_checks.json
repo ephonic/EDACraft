@@ -1,0 +1,12 @@
+{
+  "status": "passed_permutation_coverage_determinism_input_immutability_and_nonsymmetric_dense_inverse_mapping",
+  "prototype_sha256": "17a0f554a5cee9af8939f95c9d85b0b83fc1e730c8735ad5b0218ee9b5a40b9b",
+  "matrix_dimension": 441,
+  "right_hand_sides": [
+    "float_vector",
+    "three_float_columns",
+    "integer_vector"
+  ],
+  "new_physics_credit": 0,
+  "new_simulation_steps": 0
+}
