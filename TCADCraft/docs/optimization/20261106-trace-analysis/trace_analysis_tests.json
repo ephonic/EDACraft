@@ -1,0 +1,15 @@
+{
+  "status": "passed_trace_tests_including_three_resolution_orders_and_trace_loading",
+  "tests": 25,
+  "failures": 0,
+  "errors": 0,
+  "inherited_tests": 14,
+  "new_tests": 11,
+  "command": "python -B tests/test_sheet_refinement_trace.py",
+  "observed_result": "Ran 25 tests in 2.795s; OK",
+  "cli_help_passed": true,
+  "files": {
+    "benchmarks/sheet_refinement_trace.py": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+    "tests/test_sheet_refinement_trace.py": "693467a143e48dd9a53e9399aeb94a607b0af17ed1a4b9b6cbd2081a5decac2b"
+  }
+}

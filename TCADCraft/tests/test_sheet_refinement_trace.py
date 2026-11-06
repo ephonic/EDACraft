@@ -9,7 +9,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'benchmarks'))
-from sheet_refinement_trace import compare_traces,load_record
+from sheet_refinement_trace import compare_traces,compare_time_orders,load_record
 
 
 def trace(count):
@@ -121,6 +121,118 @@ class TraceComparisonTests(unittest.TestCase):
             stem=Path(folder)/'sample';np.savez(str(stem)+'.npz',z=np.array([-1.,0.,1.]))
             Path(str(stem)+'.json').write_text(json.dumps(dict(z={'__ndarray__':'z'})))
             np.testing.assert_array_equal(load_record(stem)['z'],[-1.,0.,1.])
+
+    def test_trace_loader_retains_initial_state_and_all_drives(self):
+        with tempfile.TemporaryDirectory() as folder:
+            stem=Path(folder)/'sample'
+            np.savez(str(stem)+'.npz',initial=np.array([.1,.2]),dynamic=np.ones(10000),drive=np.array([.3,.4]))
+            metadata=dict(checkpoints=[dict(result=dict(phi_V={'__ndarray__':'initial'})),
+                dict(top_gate_V={'__ndarray__':'drive'},result=dict(phi_V={'__ndarray__':'dynamic'}),
+                     previous=dict(phi_V={'__ndarray__':'initial'}))],trace=[{'time_s':0.}])
+            Path(str(stem)+'.json').write_text(json.dumps(metadata))
+            full=load_record(stem);lean=load_record(stem,trace_only=True)
+            np.testing.assert_array_equal(lean['checkpoints'][0]['result']['phi_V'],[.1,.2])
+            np.testing.assert_array_equal(lean['checkpoints'][1]['top_gate_V'],[.3,.4])
+            self.assertNotIn('result',lean['checkpoints'][1]);self.assertNotIn('previous',lean['checkpoints'][1])
+            self.assertEqual(full['checkpoints'][1]['result']['phi_V'].size,10000)
+            self.assertEqual(full['trace'],lean['trace'])
+
+    def test_trace_loader_preserves_comparison_results(self):
+        with tempfile.TemporaryDirectory() as folder:
+            full=[];lean=[]
+            for n in (2,4,8):
+                record=trace(n);record['checkpoints'][0]['result']={'phi_V':[.1]}
+                record['checkpoints'][1]['result']={'phi_V':[.2]}
+                stem=Path(folder)/str(n);np.savez(str(stem)+'.npz')
+                Path(str(stem)+'.json').write_text(json.dumps(record,default=lambda a:a.tolist()))
+                full.append(load_record(stem));lean.append(load_record(stem,trace_only=True))
+            self.assertEqual(compare_time_orders(*full),compare_time_orders(*lean))
+            self.assertEqual(compare_traces(*full[:2]),compare_traces(*lean[:2]))
+
+
+class ThreeResolutionTests(unittest.TestCase):
+    def test_first_and_second_order_use_identical_observation_support(self):
+        for order in (1,2):
+            records=[trace(n) for n in (2,4,8)]
+            for record in records:
+                dt=record['phase_s']/record['steps_per_phase']
+                for row in record['trace'][1:]:row['trap_charge_C']=1e-18*dt**order*row['time_s']
+            result=compare_time_orders(*records)
+            q=result['state_at_common_times']['trap_charge_C']
+            with self.subTest(order=order):
+                self.assertAlmostEqual(q['observed_order'],order)
+                self.assertAlmostEqual(q['increment_ratio'],2.**-order)
+                self.assertEqual(q['coarse_to_middle']['coarse_step'],2)
+                self.assertEqual(q['middle_to_fine']['coarse_step'],2)
+                self.assertEqual(result['common_accepted_ending_times'],2)
+
+    def test_drive_impulse_is_not_reported_as_time_error(self):
+        result=compare_time_orders(trace(2),trace(4),trace(8))
+        q=result['interval_average_currents_and_rates']['total/top_gate']
+        self.assertEqual(q['coarse_to_middle']['max_absolute'],0.)
+        self.assertEqual(q['middle_to_fine']['max_absolute'],0.)
+        self.assertIsNone(q['observed_order']);self.assertFalse(q['roundoff_resolved'])
+
+    def test_order_excludes_intermediate_times_outside_common_support(self):
+        records=[trace(n) for n in (2,4,8)]
+        for record in records:
+            dt=1./record['steps_per_phase']
+            for row in record['trace'][1:]:row['trap_charge_C']=1e-18*dt*row['time_s']
+        records[1]['trace'][1]['trap_charge_C']=1.
+        records[2]['trace'][2]['trap_charge_C']=-1.
+        q=compare_time_orders(*records)['state_at_common_times']['trap_charge_C']
+        self.assertAlmostEqual(q['observed_order'],1.)
+
+    def test_accumulated_clock_spread_is_reported_without_relaxing_adjacent_gate(self):
+        records=[]
+        for n in (128,256,512):
+            record=trace(n);record['phase_s']=20e-12;dt=20e-12/n
+            template=deepcopy(record['trace'][-1]);record['trace']=[dict(time_s=0.)];time=0.
+            for i in range(3*n):
+                time+=dt;row=deepcopy(template);row.update(time_s=time,dt_s=dt,phase=i//n+1)
+                record['trace'].append(row)
+            record['checkpoints']=[deepcopy(record['checkpoints'][0]) for _ in range(4)]
+            records.append(record)
+        result=compare_time_orders(*records)
+        self.assertTrue(all(x<1e-24 for x in result['adjacent_max_time_differences_s']))
+        self.assertGreater(result['max_three_way_accumulated_time_spread_s'],1e-24)
+        self.assertLess(result['max_three_way_accumulated_time_spread_s'],2e-24)
+        self.assertEqual(result['adjacent_time_atol_s'],1e-24)
+
+    def test_rate_and_cumulative_charge_have_known_first_order(self):
+        records=[trace(n) for n in (2,4,8)]
+        for record in records:
+            for row in record['trace'][1:]:row['conduction']['drain']=1e-7/record['steps_per_phase']
+        result=compare_time_orders(*records)
+        for category in ('interval_average_currents_and_rates','conduction_at_common_ending_times',
+                         'cumulative_current_and_rate_integrals'):
+            with self.subTest(category=category):
+                self.assertAlmostEqual(result[category]['conduction/drain']['observed_order'],1.)
+
+    def test_roundoff_floor_prevents_false_orders(self):
+        records=[trace(n) for n in (2,4,8)]
+        for record in records:
+            for row in record['trace'][1:]:row['trap_charge_C']=1e-30/record['steps_per_phase']
+        q=compare_time_orders(*records)['state_at_common_times']['trap_charge_C']
+        self.assertIsNone(q['observed_order']);self.assertIsNone(q['increment_ratio'])
+
+    def test_rejects_unequal_refinement_ratios(self):
+        with self.assertRaisesRegex(ValueError,'same refinement ratio'):
+            compare_time_orders(trace(2),trace(4),trace(16))
+
+    def test_rejects_different_initial_physical_states(self):
+        records=[trace(n) for n in (2,4,8)]
+        for record in records:record['checkpoints'][0]['result']={'phi_V':np.array([0.])}
+        records[-1]['checkpoints'][0]['result']['phi_V'][0]=.01
+        with self.assertRaisesRegex(ValueError,'initial physical states'):
+            compare_time_orders(*records)
+
+    def test_rejects_invalid_fine_clock_and_roundoff_floor(self):
+        fine=trace(8);fine['trace'][-1]['time_s']+=1e-3
+        with self.assertRaisesRegex(ValueError,'time/phase/dt'):
+            compare_time_orders(trace(2),trace(4),fine)
+        with self.assertRaisesRegex(ValueError,'roundoff_floor'):
+            compare_time_orders(trace(2),trace(4),trace(8),roundoff_floor=0.)
 
 
 if __name__=='__main__':unittest.main()

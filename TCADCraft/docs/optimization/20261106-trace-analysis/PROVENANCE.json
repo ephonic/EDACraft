@@ -1,0 +1,15 @@
+{
+  "status": "tested_postprocessing_feature_no_new_PDE_credit",
+  "parent_commit": "573a3cd622efc7c1138283261bb91d22ecfeaaf6",
+  "source_files": {
+    "benchmarks/sheet_refinement_trace.py": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+    "tests/test_sheet_refinement_trace.py": "693467a143e48dd9a53e9399aeb94a607b0af17ed1a4b9b6cbd2081a5decac2b"
+  },
+  "tests_passed": 25,
+  "new_tests": 11,
+  "compare_traces_ast_preserved": true,
+  "numerical_solver_source_changes": 0,
+  "new_simulated_steps": 0,
+  "production_deployed": false,
+  "statistical_speedup_claim": false
+}

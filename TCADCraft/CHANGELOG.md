@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Added three-resolution BE trace orders on fixed observation support and a
+  trace-only loader that retains initial states and all phase-drive checks.
+
 - Added complete second contact-z and two-grid half-dt validation, with replay
   drivers, incremental linear journals and atomic phase-end field exports.
 - Added a NumPy-only full-trace comparison CLI using matched BE intervals for
