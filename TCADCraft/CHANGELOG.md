@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Added explicit `SheetTransient.clear_linear_cache()` with 223 passing
+  regressions; retained the y17 wall-time failure and initial byte-parity evidence.
+
 - Recorded x83 local probe acceptance and independent y17 sensitivity; preserved
   the y17 frozen memory-budget failure alongside audited physical diagnostics.
 
