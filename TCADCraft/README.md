@@ -19,6 +19,9 @@ See the [2026-11-06 optimization results](docs/optimization/20261106/README.md)
 for usage, measurements and validation scope. This unreleased option requires
 installing the development sources; the tagged `0.3.0rc1` artifacts are unchanged.
 
+The [complete-pulse follow-up](docs/optimization/20261106-full-pulse/README.md)
+adds fresh 60 ps ordering controls and local contact-z refinement acceptance.
+
 ## Capabilities and limits
 
 | Area | Available implementation | Qualification boundary |

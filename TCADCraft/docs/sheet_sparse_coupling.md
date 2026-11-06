@@ -87,7 +87,9 @@ single-refresh policy or transactional rollback.
 
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
-This does not guarantee the same savings on other grids or a full trajectory.
+Fresh complete 60 ps controls are documented in the
+[full-pulse follow-up](optimization/20261106-full-pulse/README.md).
+Neither measurement guarantees the same savings on other grids.
 To compare on the included fixture, run each ordering in a fresh process with
 the same thread limits:
 

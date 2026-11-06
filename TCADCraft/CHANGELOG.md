@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Validated complete 60 ps default/MMD sheet pulses and a nested local contact-z
+  pulse with independent field equations and every-step charge/current ledgers.
+
 - Added optional `linear_ordering='MMD_AT_PLUS_A'` for the coupled sheet
   reused-GMRES preconditioner; retained COLAMD by default and the original
   true-residual/rollback contract. Ordering changes invalidate cached factors.
