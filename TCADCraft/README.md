@@ -47,6 +47,9 @@ adds an independently audited 60 ps x69 trajectory; full x/y convergence remains
 The [complete x sequence](docs/optimization/20261106-full-x-sequence/README.md)
 adds full x75/x83 pulses and the original 54-metric endpoint verdict; y and joint studies remain open.
 
+The [first complete y pulse](docs/optimization/20261106-first-full-y-pulse/README.md)
+adds a full y17 trajectory and y9/y17 field/ledger comparisons; a third y mesh and joint studies remain open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

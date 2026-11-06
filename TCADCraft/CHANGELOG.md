@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed and independently audited a full y17 pulse (384 BE steps),
+  with descriptive y9/y17 field and ledger comparisons.
+
 - Completed full x75/x83 pulses and evaluated the consecutive x69/x75/x83
   endpoint sequence with the original 54 convergence metrics and gates.
 

@@ -1,0 +1,166 @@
+{
+  "status": "descriptive_complete_y9_y17_comparison",
+  "y_nodes": [
+    9,
+    17
+  ],
+  "x_nodes": 65,
+  "z_nodes": 113,
+  "full_common_coarsest_mesh_changes": {
+    "common_support_xyz": [
+      65,
+      9,
+      113
+    ],
+    "absolute_field_increments": {
+      "0_phi_V": [
+        1.1641476889423519e-07
+      ],
+      "0_Fn_eV": [
+        1.291053193001221e-16
+      ],
+      "0_Fp_eV": [
+        0.0
+      ],
+      "0_trap_occupancy": [
+        6.769752314839117e-07
+      ],
+      "0_dielectric_phi_V": [
+        2.0584861013667188e-07
+      ],
+      "1_phi_V": [
+        1.0308781046852733e-07
+      ],
+      "1_Fn_eV": [
+        5.199685196083034e-09
+      ],
+      "1_Fp_eV": [
+        1.1843395313721958e-08
+      ],
+      "1_trap_occupancy": [
+        6.624162237345299e-07
+      ],
+      "1_dielectric_phi_V": [
+        1.9539075540864204e-07
+      ],
+      "2_phi_V": [
+        1.235876373739675e-07
+      ],
+      "2_Fn_eV": [
+        6.641133155124018e-09
+      ],
+      "2_Fp_eV": [
+        1.5266485247408118e-08
+      ],
+      "2_trap_occupancy": [
+        6.738184100407718e-07
+      ],
+      "2_dielectric_phi_V": [
+        2.1132648996002867e-07
+      ],
+      "3_phi_V": [
+        1.1333202108720908e-07
+      ],
+      "3_Fn_eV": [
+        5.610340977164549e-09
+      ],
+      "3_Fp_eV": [
+        1.2784306021142514e-08
+      ],
+      "3_trap_occupancy": [
+        6.707427163687996e-07
+      ],
+      "3_dielectric_phi_V": [
+        2.0400467160702762e-07
+      ]
+    },
+    "new_acceptance_gate": false
+  },
+  "accepted_clock_entries": 385,
+  "accepted_trace_changes": {
+    "sheet_charge_C": {
+      "max_absolute_change": 1.1822576341931673e-24,
+      "at_time_s": 4.000000000000012e-11
+    },
+    "trap_charge_C": {
+      "max_absolute_change": 4.254864234204072e-24,
+      "at_time_s": 5.453125000000037e-11
+    },
+    "untrapped_sheet_charge_C": {
+      "max_absolute_change": 3.1673157279071027e-24,
+      "at_time_s": 5.328125000000035e-11
+    },
+    "contact_charge_C/source": {
+      "max_absolute_change": 5.374158365797688e-26,
+      "at_time_s": 4.062500000000013e-11
+    },
+    "contact_charge_C/drain": {
+      "max_absolute_change": 6.010440485254984e-26,
+      "at_time_s": 4.046875000000013e-11
+    },
+    "sheet_contact_charge_C/source": {
+      "max_absolute_change": 6.567418278641603e-27,
+      "at_time_s": 4.062500000000013e-11
+    },
+    "sheet_contact_charge_C/drain": {
+      "max_absolute_change": 6.904721670852542e-27,
+      "at_time_s": 4.062500000000013e-11
+    },
+    "dielectric_contact_charge_C/source": {
+      "max_absolute_change": 4.7174165436511325e-26,
+      "at_time_s": 4.062500000000013e-11
+    },
+    "dielectric_contact_charge_C/drain": {
+      "max_absolute_change": 5.320199365063848e-26,
+      "at_time_s": 4.046875000000013e-11
+    },
+    "gates/top_gate": {
+      "max_absolute_change": 5.369535779560049e-25,
+      "at_time_s": 4.000000000000012e-11
+    },
+    "gates/bottom_gate": {
+      "max_absolute_change": 5.3695358720046865e-25,
+      "at_time_s": 4.000000000000012e-11
+    },
+    "dielectric_energy_J": {
+      "max_absolute_change": 6.754443092434515e-26,
+      "at_time_s": 2.2187499999999956e-11
+    },
+    "conduction/source": {
+      "max_absolute_change": 2.223123917443278e-14,
+      "at_time_s": 2.062499999999996e-11
+    },
+    "conduction/drain": {
+      "max_absolute_change": 3.300392077052234e-14,
+      "at_time_s": 2.0468749999999962e-11
+    },
+    "total/source": {
+      "max_absolute_change": 4.011296109422029e-14,
+      "at_time_s": 2.0156249999999963e-11
+    },
+    "total/drain": {
+      "max_absolute_change": 5.378021441607172e-14,
+      "at_time_s": 2.0156249999999963e-11
+    },
+    "total/bottom_gate": {
+      "max_absolute_change": 4.6946552073883104e-14,
+      "at_time_s": 2.0156249999999963e-11
+    },
+    "total/top_gate": {
+      "max_absolute_change": 4.694613025147537e-14,
+      "at_time_s": 2.0156249999999963e-11
+    },
+    "trap_charge_rate_A": {
+      "max_absolute_change": 1.0737661793720918e-14,
+      "at_time_s": 4.000000000000012e-11
+    },
+    "free_carrier_charge_rate_A": {
+      "max_absolute_change": 6.178435950669818e-14,
+      "at_time_s": 2.0468749999999962e-11
+    }
+  },
+  "convergence_ratio": null,
+  "new_acceptance_gate": false,
+  "full_y_convergence_qualified": false,
+  "joint_spacetime_qualified": false
+}

@@ -1,0 +1,30 @@
+{
+  "status": "passed_expected_xy_oracle_and_explicit_cache_protocol_tools",
+  "inherited_summary": {
+    "expected_newton_dimension": 65385,
+    "accepted_diagnostics": 385,
+    "linear_solves": 894,
+    "factorizations": 2,
+    "gmres_iterations": 5968,
+    "gmres_corrections": 645,
+    "refreshes": 0,
+    "checkpoints": 4,
+    "steps": 384,
+    "full_pulse_completed": true,
+    "independent_physics_and_ledger_checks": 4620
+  },
+  "reversible_geometry_AST": true,
+  "ledger_check_count_identical": 4620,
+  "tamper_rejections": [
+    "interior_trace_charge",
+    "wrong_dt",
+    "linear_residual",
+    "bulk_field",
+    "gate_drive",
+    "x_geometry",
+    "y_geometry",
+    "cache_flag"
+  ],
+  "new_simulation_steps": 0,
+  "derived_oracle_sha256": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c"
+}

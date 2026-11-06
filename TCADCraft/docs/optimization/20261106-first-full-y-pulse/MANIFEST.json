@@ -1,0 +1,13 @@
+{
+  "auditor_tool_checks.json": "18c5d451d3490e6562e404b779cfb152b3f3cdddeee33200fbaa66ce07136dbe",
+  "diagnostic_tool_check.json": "4ef20f9671bd0ac6e6dff2a630c56989f908d062c6ea7ed93d40e8f063f11404",
+  "independent_audit.json": "31229aa0753b61c99c4c9cb0ab32a89a3396c8ea6a28fb1016df40844277a4fd",
+  "policy.json": "5934d4b345f5d43757d8645f1b1e661b5f01bac2a2f31616cf3aa4f462675d13",
+  "PROVENANCE.json": "79beaee14a992be15abd7972a28b4a5d3956520d1bd6fdbbb43271ae5fa4627e",
+  "README.md": "8404b4277c9c1438901e1e7a7bd08a3c4c40a548b05bd56a683b375cfa1fbcaa",
+  "reproduction/independent_y1_full.py": "4a8eb5f2130495f1575e04cdac43ae2a6d1e14c87cebfe0bf150e328378f24cb",
+  "reproduction/meshes.npz": "b2c93091716b3ba797f4775be864b942972bcb3c2b6b8bdb34ce545eb9e263a6",
+  "reproduction/README.md": "e550423262b519e29c04e338c755f9932714d591d27fe41a93a63080b2cf2923",
+  "spatial_diagnostics.json": "3d9f19a01f30fd4c195d140277e88a0b9e8f28e8cc4918ef64fd07e781c1d7de",
+  "supplementary_diagnostics.json": "e02637d4652e6d21c6597ec294315f2b35aa7ed958488ffee10e249bda869ce4"
+}

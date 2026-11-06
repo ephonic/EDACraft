@@ -1,0 +1,7 @@
+{
+  "status": "passed_exact_inherited_y_dense_projection_replay",
+  "diagnostic_script_sha256": "02528cbf5a2065bb86e8ed442844b7a1622b4e63a92ad71618638e1d65090217",
+  "derived_dense_function_sha256": "aba098a50d54b3ba692f325b220aaeb0564a2868edcf2bcc6a5b453807208416",
+  "new_simulation_steps": 0,
+  "new_acceptance_gate": false
+}
