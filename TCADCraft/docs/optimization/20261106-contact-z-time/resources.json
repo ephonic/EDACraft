@@ -1,0 +1,47 @@
+{
+  "local_z2_n128": {
+    "mode": "full",
+    "contact": "thermionic",
+    "family": "space",
+    "level": 3,
+    "count": 128,
+    "checkpoints": 4,
+    "dynamic_steps": 384,
+    "sheet_nodes": 585,
+    "total_nodes": 66105,
+    "seconds": 713.848739029956,
+    "peak_rss_MiB": 1472.15234375,
+    "max_residual_scaled_linf": 9.906585851351774e-13,
+    "total_newton_iterations": 894
+  },
+  "local_z1_n256": {
+    "mode": "full",
+    "contact": "thermionic",
+    "family": "space",
+    "level": 3,
+    "count": 256,
+    "checkpoints": 4,
+    "dynamic_steps": 768,
+    "sheet_nodes": 585,
+    "total_nodes": 47385,
+    "seconds": 636.5734458749648,
+    "peak_rss_MiB": 703.546875,
+    "max_residual_scaled_linf": 9.902851582955747e-13,
+    "total_newton_iterations": 1678
+  },
+  "local_z2_n256": {
+    "mode": "full",
+    "contact": "thermionic",
+    "family": "space",
+    "level": 3,
+    "count": 256,
+    "checkpoints": 4,
+    "dynamic_steps": 768,
+    "sheet_nodes": 585,
+    "total_nodes": 66105,
+    "seconds": 1532.4707033830928,
+    "peak_rss_MiB": 1467.2421875,
+    "max_residual_scaled_linf": 9.90482107185991e-13,
+    "total_newton_iterations": 1678
+  }
+}

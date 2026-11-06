@@ -1,0 +1,793 @@
+{
+  "status": "passed_three_refinement_pulses_physics_with_unqualified_spacetime_diagnostics",
+  "development_commit": "95dd3aa47484780ddf371965e8fa1b75d77b722d",
+  "new_complete_pulses": 3,
+  "new_dynamic_steps": 1920,
+  "new_field_checkpoints": 12,
+  "new_physics_and_ledger_checks": 2135485,
+  "cases": {
+    "local_z2_n128": {
+      "checkpoints": 4,
+      "steps": 384,
+      "expected_newton_dimension": 65385,
+      "accepted_diagnostics": 385,
+      "linear_solves": 894,
+      "factorizations": 2,
+      "gmres_iterations": 5968,
+      "gmres_corrections": 645,
+      "refreshes": 0,
+      "independent_physics_and_ledger_checks": 780479
+    },
+    "local_z1_n256": {
+      "checkpoints": 4,
+      "steps": 768,
+      "expected_newton_dimension": 46953,
+      "accepted_diagnostics": 769,
+      "linear_solves": 1678,
+      "factorizations": 2,
+      "gmres_iterations": 10669,
+      "gmres_corrections": 1182,
+      "refreshes": 0,
+      "independent_physics_and_ledger_checks": 569919
+    },
+    "local_z2_n256": {
+      "checkpoints": 4,
+      "steps": 768,
+      "expected_newton_dimension": 65385,
+      "accepted_diagnostics": 769,
+      "linear_solves": 1678,
+      "factorizations": 2,
+      "gmres_iterations": 10743,
+      "gmres_corrections": 1154,
+      "refreshes": 0,
+      "independent_physics_and_ledger_checks": 785087
+    }
+  },
+  "resources": {
+    "local_z2_n128": {
+      "mode": "full",
+      "contact": "thermionic",
+      "family": "space",
+      "level": 3,
+      "count": 128,
+      "checkpoints": 4,
+      "dynamic_steps": 384,
+      "sheet_nodes": 585,
+      "total_nodes": 66105,
+      "seconds": 713.848739029956,
+      "peak_rss_MiB": 1472.15234375,
+      "max_residual_scaled_linf": 9.906585851351774e-13,
+      "total_newton_iterations": 894
+    },
+    "local_z1_n256": {
+      "mode": "full",
+      "contact": "thermionic",
+      "family": "space",
+      "level": 3,
+      "count": 256,
+      "checkpoints": 4,
+      "dynamic_steps": 768,
+      "sheet_nodes": 585,
+      "total_nodes": 47385,
+      "seconds": 636.5734458749648,
+      "peak_rss_MiB": 703.546875,
+      "max_residual_scaled_linf": 9.902851582955747e-13,
+      "total_newton_iterations": 1678
+    },
+    "local_z2_n256": {
+      "mode": "full",
+      "contact": "thermionic",
+      "family": "space",
+      "level": 3,
+      "count": 256,
+      "checkpoints": 4,
+      "dynamic_steps": 768,
+      "sheet_nodes": 585,
+      "total_nodes": 66105,
+      "seconds": 1532.4707033830928,
+      "peak_rss_MiB": 1467.2421875,
+      "max_residual_scaled_linf": 9.90482107185991e-13,
+      "total_newton_iterations": 1678
+    }
+  },
+  "physics_maxima": {
+    "energy_observation_time": 5.299125799167834e-25,
+    "top_boundary": 0.0,
+    "bottom_boundary": 0.0,
+    "dielectric_edge_flux": 1.357250474282221e-16,
+    "body_potential": 0.0,
+    "body_potential_export": 0.0,
+    "body_charge_export": 1.158189066587752e-19,
+    "bulk_Gauss": 1.9050257778052782e-15,
+    "dielectric_node_flux_export": 1.6263327577827094e-15,
+    "dielectric_energy": 3.610035614901464e-16,
+    "top_charge_export": 9.265512532702017e-20,
+    "bottom_charge_export": 9.265512532702017e-20,
+    "DOS_n": 8.434309493740911e-16,
+    "DOS_p": 7.277785620328857e-15,
+    "DOS_charge": 9.630323164709073e-16,
+    "quantum_capacitance": 8.366993575405533e-16,
+    "thermal_common_F": 8.5009336019207e-17,
+    "trap_occupancy": 4.996003610813204e-16,
+    "trap_capture_reference": 4.767226822153737e-15,
+    "trap_charge_density": 6.733311683462035e-16,
+    "thermal_initial_zero_net_capture": 1.3529985119536435e-14,
+    "edge_flux": 1.1466021847898564e-16,
+    "contact_voltage": 0.0,
+    "Gauss": 4.74844779469399e-15,
+    "sheet_terminal_export": 2.4089093101935524e-14,
+    "contact_drop_export": 0.0,
+    "contact_injection_export": 2.16290078668104e-17,
+    "sheet_dissipation_export": 9.897932251888646e-16,
+    "contact_dissipation_export": 4.037591390604396e-16,
+    "trap_charge_sum": 2.6131976575366624e-16,
+    "untrapped_charge_export": 0.0,
+    "continuity_0": 8.784220042613453e-15,
+    "continuity_1": 7.873003484281976e-15,
+    "terminal_flux": 3.9036670106925503e-16,
+    "KCL": 2.14025687063101e-09,
+    "KCL_export": 3.900184042060197e-16,
+    "dissipation_export": 7.348917484322786e-16,
+    "power_balance": 6.1229595284700554e-24,
+    "power_export": 4.8017684200678525e-16,
+    "sheet_contact_charge_export": 1.0342739021186956e-18,
+    "charge_export": 1.869731829378411e-17,
+    "contact_charge_export": 2.2027486201180446e-17,
+    "Gauss_ledger": 4.959932625404248e-15,
+    "Gauss_ledger_export": 1.7390163793772233e-17,
+    "trap_BE": 9.059903265990387e-14,
+    "carrier_rate_export": 0.0,
+    "trap_rate_export": 0.0,
+    "trap_rate_sum_export": 0.0,
+    "free_rate_sum_export": 0.0,
+    "sheet_rate_export": 0.0,
+    "sheet_charge_difference": 1.5814112796750614e-12,
+    "contact_displacement_export": 0.0,
+    "gate_displacement_export": 0.0,
+    "total_terminal_export": 0.0,
+    "total_terminal_KCL": 9.161198559187019e-11,
+    "total_terminal_sum_export": 0.0,
+    "continuity_defect_export": 0.0,
+    "trace_contact_split": 7.526126455674057e-18,
+    "energy_trace_Gauss": 7.813956101008552e-13,
+    "energy_trace_charge_split": 0.0,
+    "energy_trace_conduction_KCL": 4.90554033500024e-10,
+    "energy_trace_total_KCL": 5.054038670416475e-10,
+    "energy_trace_displacement": 0.0,
+    "energy_trace_storage": 4.051268030592969e-12,
+    "energy_integrated_conduction": 2.110697403979428e-10,
+    "energy_integrated_trap": 9.98464901588451e-17,
+    "energy_integrated_free": 2.262967684655002e-15,
+    "energy_nonzero_pulse": 0.009196225600780835
+  },
+  "diagnostics": {
+    "common_support_xyz": [
+      65,
+      9,
+      65
+    ],
+    "spatial": {
+      "status": "failed",
+      "metrics": {
+        "0_trap_occupancy": {
+          "normalized_d01": 0.000678128475816886,
+          "normalized_d12": 0.0002754330469653399,
+          "increment_ratio": 0.406166466661864
+        },
+        "0_phi_V": {
+          "normalized_d01": 0.004842840473728849,
+          "normalized_d12": 0.0019727884660003525,
+          "increment_ratio": 0.40736185234723654
+        },
+        "0_Fn_eV": {
+          "normalized_d01": 2.9306551132614763e-15,
+          "normalized_d12": 3.238640586647083e-15,
+          "increment_ratio": null
+        },
+        "0_Fp_eV": {
+          "normalized_d01": 0.0,
+          "normalized_d12": 0.0,
+          "increment_ratio": null
+        },
+        "0_dielectric_phi_V": {
+          "normalized_d01": 0.05162261600665463,
+          "normalized_d12": 0.02696471432717118,
+          "increment_ratio": 0.5223430428960667
+        },
+        "0_trap_charge_C": {
+          "normalized_d01": 1.5928269324894107e-05,
+          "normalized_d12": 6.5056676374353195e-06,
+          "increment_ratio": 0.40843531112747367
+        },
+        "0_sheet_charge_C": {
+          "normalized_d01": 0.0028880003455249437,
+          "normalized_d12": 0.0011805131262434543,
+          "increment_ratio": 0.4087648840044982
+        },
+        "0_contact_charge_C": {
+          "normalized_d01": 0.003986963080368555,
+          "normalized_d12": 0.0016360095504595606,
+          "increment_ratio": 0.4103397792959567
+        },
+        "0_sheet_contact_charge_C": {
+          "normalized_d01": 0.00013029079292938353,
+          "normalized_d12": 5.3939604428952445e-05,
+          "increment_ratio": 0.41399398388946207
+        },
+        "0_dielectric_contact_charge_C": {
+          "normalized_d01": 0.004117253873297921,
+          "normalized_d12": 0.0016899491548884593,
+          "increment_ratio": 0.41045541686133863
+        },
+        "0_gate_charges": {
+          "normalized_d01": 0.0025725842099193486,
+          "normalized_d12": 0.0010579509734354176,
+          "increment_ratio": 0.4112405608944419
+        },
+        "0_dielectric_energy_J": {
+          "normalized_d01": 0.015607189102311736,
+          "normalized_d12": 0.006411995813778049,
+          "increment_ratio": 0.4108360430404668
+        },
+        "1_trap_occupancy": {
+          "normalized_d01": 0.0007245960858552336,
+          "normalized_d12": 0.0002942121841167378,
+          "increment_ratio": 0.406036121171538
+        },
+        "1_phi_V": {
+          "normalized_d01": 0.005332917497913314,
+          "normalized_d12": 0.002170973140776411,
+          "increment_ratio": 0.40708920429124923
+        },
+        "1_Fn_eV": {
+          "normalized_d01": 2.241464979699237e-05,
+          "normalized_d12": 9.091312830916687e-06,
+          "increment_ratio": 0.4055969160016309
+        },
+        "1_Fp_eV": {
+          "normalized_d01": 3.556332297346282e-05,
+          "normalized_d12": 1.4508076917850443e-05,
+          "increment_ratio": 0.40795054299836664
+        },
+        "1_dielectric_phi_V": {
+          "normalized_d01": 0.06251227743783083,
+          "normalized_d12": 0.0326476713319126,
+          "increment_ratio": 0.5222601490464186
+        },
+        "1_trap_charge_C": {
+          "normalized_d01": 1.720157779466769e-05,
+          "normalized_d12": 7.023490780966313e-06,
+          "increment_ratio": 0.4083050325269303
+        },
+        "1_sheet_charge_C": {
+          "normalized_d01": 0.0033789769856138463,
+          "normalized_d12": 0.001380930572294048,
+          "increment_ratio": 0.40868303577485876
+        },
+        "1_contact_charge_C": {
+          "normalized_d01": 0.004505481684917045,
+          "normalized_d12": 0.00184856665371258,
+          "increment_ratio": 0.41029279064678204
+        },
+        "1_sheet_contact_charge_C": {
+          "normalized_d01": 0.00014495243271077894,
+          "normalized_d12": 5.9977555124435256e-05,
+          "increment_ratio": 0.41377404989199057
+        },
+        "1_dielectric_contact_charge_C": {
+          "normalized_d01": 0.0046504341176277775,
+          "normalized_d12": 0.0019085442088370153,
+          "increment_ratio": 0.4104013003006649
+        },
+        "1_gate_charges": {
+          "normalized_d01": 0.002978762048746475,
+          "normalized_d12": 0.0012251661709683503,
+          "increment_ratio": 0.41130044995837306
+        },
+        "1_dielectric_energy_J": {
+          "normalized_d01": 0.018931000472349524,
+          "normalized_d12": 0.0077788650203842735,
+          "increment_ratio": 0.4109061764456678
+        },
+        "1_terminal_currents_into_sheet_A": {
+          "normalized_d01": 8.593080405779052e-05,
+          "normalized_d12": 3.485608675836416e-05,
+          "increment_ratio": 0.4056297056748428
+        },
+        "1_terminal_total_currents_A": {
+          "normalized_d01": 7.990153137694966e-05,
+          "normalized_d12": 3.2439427984434777e-05,
+          "increment_ratio": 0.4059925689208135
+        },
+        "2_trap_occupancy": {
+          "normalized_d01": 0.0006734382431029529,
+          "normalized_d12": 0.00027354546474067654,
+          "increment_ratio": 0.4061923532591212
+        },
+        "2_phi_V": {
+          "normalized_d01": 0.00454873553621038,
+          "normalized_d12": 0.0018534898161446378,
+          "increment_ratio": 0.40747363775929873
+        },
+        "2_Fn_eV": {
+          "normalized_d01": 2.759236396333853e-05,
+          "normalized_d12": 1.1211111415984631e-05,
+          "increment_ratio": 0.4063121025396965
+        },
+        "2_Fp_eV": {
+          "normalized_d01": 4.588513153171159e-05,
+          "normalized_d12": 1.8821053465803428e-05,
+          "increment_ratio": 0.4101776073758456
+        },
+        "2_dielectric_phi_V": {
+          "normalized_d01": 0.04860168592897107,
+          "normalized_d12": 0.025385605567369574,
+          "increment_ratio": 0.5223194439071386
+        },
+        "2_trap_charge_C": {
+          "normalized_d01": 1.5227816856533405e-05,
+          "normalized_d12": 6.220724980576797e-06,
+          "increment_ratio": 0.40851062494278895
+        },
+        "2_sheet_charge_C": {
+          "normalized_d01": 0.002454501379684615,
+          "normalized_d12": 0.0010036125201953183,
+          "increment_ratio": 0.4088865170343783
+        },
+        "2_contact_charge_C": {
+          "normalized_d01": 0.003645987520316807,
+          "normalized_d12": 0.0014961807840718766,
+          "increment_ratio": 0.4103636602524275
+        },
+        "2_sheet_contact_charge_C": {
+          "normalized_d01": 0.00012139861240097714,
+          "normalized_d12": 5.0271894512801674e-05,
+          "increment_ratio": 0.4141060059793322
+        },
+        "2_dielectric_contact_charge_C": {
+          "normalized_d01": 0.003767386132717765,
+          "normalized_d12": 0.0015464526785846644,
+          "increment_ratio": 0.4104842519736793
+        },
+        "2_gate_charges": {
+          "normalized_d01": 0.0024564207275714622,
+          "normalized_d12": 0.00100999015034553,
+          "increment_ratio": 0.4111633398176279
+        },
+        "2_dielectric_energy_J": {
+          "normalized_d01": 0.013190204313890064,
+          "normalized_d12": 0.005418060765396859,
+          "increment_ratio": 0.41076397578552454
+        },
+        "2_terminal_currents_into_sheet_A": {
+          "normalized_d01": 8.787610540771096e-05,
+          "normalized_d12": 3.5692248686033934e-05,
+          "increment_ratio": 0.40616557277357457
+        },
+        "2_terminal_total_currents_A": {
+          "normalized_d01": 7.986460968061049e-05,
+          "normalized_d12": 3.247490678608134e-05,
+          "increment_ratio": 0.4066244975835096
+        },
+        "3_trap_occupancy": {
+          "normalized_d01": 0.0006885112896874157,
+          "normalized_d12": 0.0002795938045707935,
+          "increment_ratio": 0.40608456064348514
+        },
+        "3_phi_V": {
+          "normalized_d01": 0.005035122908649825,
+          "normalized_d12": 0.002050342467792454,
+          "increment_ratio": 0.4072080274883014
+        },
+        "3_Fn_eV": {
+          "normalized_d01": 2.339925787711583e-05,
+          "normalized_d12": 9.493621643832939e-06,
+          "increment_ratio": 0.40572319402990886
+        },
+        "3_Fp_eV": {
+          "normalized_d01": 2.2757516923904708e-05,
+          "normalized_d12": 9.273990912321561e-06,
+          "increment_ratio": 0.40751330399232066
+        },
+        "3_dielectric_phi_V": {
+          "normalized_d01": 0.055360510077194114,
+          "normalized_d12": 0.02891587128859996,
+          "increment_ratio": 0.5223194520476775
+        },
+        "3_trap_charge_C": {
+          "normalized_d01": 1.6113662247907445e-05,
+          "normalized_d12": 6.580059605187927e-06,
+          "increment_ratio": 0.4083528315260814
+        },
+        "3_sheet_charge_C": {
+          "normalized_d01": 0.0030553607538319483,
+          "normalized_d12": 0.0012486608314361547,
+          "increment_ratio": 0.4086786903543613
+        },
+        "3_contact_charge_C": {
+          "normalized_d01": 0.0041653091695939,
+          "normalized_d12": 0.001709065158841283,
+          "increment_ratio": 0.41030931660900205
+        },
+        "3_sheet_contact_charge_C": {
+          "normalized_d01": 0.00013585340195251816,
+          "normalized_d12": 5.622503629624902e-05,
+          "increment_ratio": 0.4138655012548019
+        },
+        "3_dielectric_contact_charge_C": {
+          "normalized_d01": 0.004301162571546335,
+          "normalized_d12": 0.0017652901951375477,
+          "increment_ratio": 0.4104216396784319
+        },
+        "3_gate_charges": {
+          "normalized_d01": 0.0026745941770656145,
+          "normalized_d12": 0.0011000646262804281,
+          "increment_ratio": 0.4113015109781422
+        },
+        "3_dielectric_energy_J": {
+          "normalized_d01": 0.016312651960717517,
+          "normalized_d12": 0.0067028498936672065,
+          "increment_ratio": 0.41089884770473456
+        },
+        "3_terminal_currents_into_sheet_A": {
+          "normalized_d01": 8.338576240708717e-05,
+          "normalized_d12": 3.382774397450716e-05,
+          "increment_ratio": 0.40567769602394443
+        },
+        "3_terminal_total_currents_A": {
+          "normalized_d01": 7.704748392403649e-05,
+          "normalized_d12": 3.128591172270323e-05,
+          "increment_ratio": 0.4060601349883013
+        }
+      },
+      "failures": {
+        "0_dielectric_phi_V": {
+          "normalized_d01": 0.05162261600665463,
+          "normalized_d12": 0.02696471432717118,
+          "increment_ratio": 0.5223430428960667
+        },
+        "1_dielectric_phi_V": {
+          "normalized_d01": 0.06251227743783083,
+          "normalized_d12": 0.0326476713319126,
+          "increment_ratio": 0.5222601490464186
+        },
+        "2_dielectric_phi_V": {
+          "normalized_d01": 0.04860168592897107,
+          "normalized_d12": 0.025385605567369574,
+          "increment_ratio": 0.5223194439071386
+        },
+        "3_dielectric_phi_V": {
+          "normalized_d01": 0.055360510077194114,
+          "normalized_d12": 0.02891587128859996,
+          "increment_ratio": 0.5223194520476775
+        }
+      },
+      "passed_metrics": 50,
+      "total_metrics": 54,
+      "difference_limit": 0.01,
+      "ratio_limit": 0.7,
+      "roundoff_cutoff": 1e-08
+    },
+    "temporal_sensitivity": {
+      "1": {
+        "normalized_phase_changes": {
+          "0_trap_occupancy": 0.0,
+          "0_phi_V": 0.0,
+          "0_Fn_eV": 0.0,
+          "0_Fp_eV": 0.0,
+          "0_dielectric_phi_V": 0.0,
+          "0_trap_charge_C": 0.0,
+          "0_sheet_charge_C": 0.0,
+          "0_contact_charge_C": 0.0,
+          "0_sheet_contact_charge_C": 0.0,
+          "0_dielectric_contact_charge_C": 0.0,
+          "0_gate_charges": 0.0,
+          "0_dielectric_energy_J": 0.0,
+          "1_trap_occupancy": 1.2077559105566626e-05,
+          "1_phi_V": 0.0002493597329049635,
+          "1_Fn_eV": 0.000318935084893085,
+          "1_Fp_eV": 0.00041624184083134674,
+          "1_dielectric_phi_V": 0.0002493597329049635,
+          "1_trap_charge_C": 3.695887119070651e-06,
+          "1_sheet_charge_C": 0.0009657997892951187,
+          "1_contact_charge_C": 2.2481960476494756e-05,
+          "1_sheet_contact_charge_C": 2.070373804168024e-06,
+          "1_dielectric_contact_charge_C": 2.0411586672430815e-05,
+          "1_gate_charges": 0.0004605686172416412,
+          "1_dielectric_energy_J": 0.0034049463783816236,
+          "1_terminal_currents_into_sheet_A": 0.001032368859886404,
+          "1_terminal_total_currents_A": 0.0009855888298608145,
+          "2_trap_occupancy": 1.5631429725410095e-05,
+          "2_phi_V": 0.0004126127034842497,
+          "2_Fn_eV": 0.0005552714811798698,
+          "2_Fp_eV": 0.0004998761325466922,
+          "2_dielectric_phi_V": 0.0004126127034842497,
+          "2_trap_charge_C": 4.529630533323115e-06,
+          "2_sheet_charge_C": 0.0015548225047989916,
+          "2_contact_charge_C": 3.330789358602093e-05,
+          "2_sheet_contact_charge_C": 3.1189672713340805e-06,
+          "2_dielectric_contact_charge_C": 3.0188926314678177e-05,
+          "2_gate_charges": 0.000744314349038433,
+          "2_dielectric_energy_J": 0.0044077709454590774,
+          "2_terminal_currents_into_sheet_A": 0.0016283205471504525,
+          "2_terminal_total_currents_A": 0.0015601192347678428,
+          "3_trap_occupancy": 7.5843444725665066e-06,
+          "3_phi_V": 0.00026492950172007923,
+          "3_Fn_eV": 0.00034573902968718095,
+          "3_Fp_eV": 0.0005666882481464991,
+          "3_dielectric_phi_V": 0.00026492950172007923,
+          "3_trap_charge_C": 2.291122446707039e-06,
+          "3_sheet_charge_C": 0.0010155229783084252,
+          "3_contact_charge_C": 2.288700901120766e-05,
+          "3_sheet_contact_charge_C": 2.1180492197243883e-06,
+          "3_dielectric_contact_charge_C": 2.0768959791417352e-05,
+          "3_gate_charges": 0.0004850292108500298,
+          "3_dielectric_energy_J": 0.0032882215178382523,
+          "3_terminal_currents_into_sheet_A": 0.001074124425138906,
+          "3_terminal_total_currents_A": 0.001026954421934359
+        },
+        "absolute_full_mesh_field_changes_by_phase": {
+          "0": {
+            "phi_V": 0.0,
+            "Fn_eV": 0.0,
+            "Fp_eV": 0.0,
+            "dielectric_phi_V": 0.0,
+            "trap_occupancy": 0.0
+          },
+          "1": {
+            "phi_V": 6.233993322626863e-06,
+            "Fn_eV": 7.973377122327385e-06,
+            "Fp_eV": 1.0406046020783669e-05,
+            "dielectric_phi_V": 6.233993322626863e-06,
+            "trap_occupancy": 1.2077559105566626e-05
+          },
+          "2": {
+            "phi_V": 1.0315317587106243e-05,
+            "Fn_eV": 1.3881787029496788e-05,
+            "Fp_eV": 1.2496903313667434e-05,
+            "dielectric_phi_V": 1.0315317587106243e-05,
+            "trap_occupancy": 1.5631429725410095e-05
+          },
+          "3": {
+            "phi_V": 6.62323754299643e-06,
+            "Fn_eV": 8.64347574217961e-06,
+            "Fp_eV": 1.416720620366226e-05,
+            "dielectric_phi_V": 6.62323754299643e-06,
+            "trap_occupancy": 7.5843444725665066e-06
+          }
+        },
+        "initial_state_exact": true,
+        "matched_scalar_states": 385,
+        "measured_temporal_order": null
+      },
+      "2": {
+        "normalized_phase_changes": {
+          "0_trap_occupancy": 0.0,
+          "0_phi_V": 0.0,
+          "0_Fn_eV": 0.0,
+          "0_Fp_eV": 0.0,
+          "0_dielectric_phi_V": 0.0,
+          "0_trap_charge_C": 0.0,
+          "0_sheet_charge_C": 0.0,
+          "0_contact_charge_C": 0.0,
+          "0_sheet_contact_charge_C": 0.0,
+          "0_dielectric_contact_charge_C": 0.0,
+          "0_gate_charges": 0.0,
+          "0_dielectric_energy_J": 0.0,
+          "1_trap_occupancy": 1.2078574510909768e-05,
+          "1_phi_V": 0.0002492845777974928,
+          "1_Fn_eV": 0.00031883879620400735,
+          "1_Fp_eV": 0.0004161318279652451,
+          "1_dielectric_phi_V": 0.0002492845777974928,
+          "1_trap_charge_C": 3.6966440848940074e-06,
+          "1_sheet_charge_C": 0.0009655042232932232,
+          "1_contact_charge_C": 2.245018275526256e-05,
+          "1_sheet_contact_charge_C": 2.072592542985696e-06,
+          "1_dielectric_contact_charge_C": 2.037759021222829e-05,
+          "1_gate_charges": 0.0004604525661076053,
+          "1_dielectric_energy_J": 0.003404097474636103,
+          "1_terminal_currents_into_sheet_A": 0.0010322417134295547,
+          "1_terminal_total_currents_A": 0.0009855197456188625,
+          "2_trap_occupancy": 1.563346406249777e-05,
+          "2_phi_V": 0.00041249211840543865,
+          "2_Fn_eV": 0.0005551094213261873,
+          "2_Fp_eV": 0.0004996923988268426,
+          "2_dielectric_phi_V": 0.00041249211840543865,
+          "2_trap_charge_C": 4.530858150886274e-06,
+          "2_sheet_charge_C": 0.0015543539868208,
+          "2_contact_charge_C": 3.325939669740485e-05,
+          "2_sheet_contact_charge_C": 3.1220581292821376e-06,
+          "2_dielectric_contact_charge_C": 3.0137338568159144e-05,
+          "2_gate_charges": 0.0007441285090221683,
+          "2_dielectric_energy_J": 0.004406661222034813,
+          "2_terminal_currents_into_sheet_A": 0.001628101354402084,
+          "2_terminal_total_currents_A": 0.0015599889248142929,
+          "3_trap_occupancy": 7.583103353414611e-06,
+          "3_phi_V": 0.0002648640067048902,
+          "3_Fn_eV": 0.0003456534696379826,
+          "3_Fp_eV": 0.0005665248606022549,
+          "3_dielectric_phi_V": 0.0002648640067048902,
+          "3_trap_charge_C": 2.2906737158767676e-06,
+          "3_sheet_charge_C": 0.001015265514892505,
+          "3_contact_charge_C": 2.2855492174733705e-05,
+          "3_sheet_contact_charge_C": 2.1203719480552413e-06,
+          "3_dielectric_contact_charge_C": 2.0735120226655912e-05,
+          "3_gate_charges": 0.00048493195262899746,
+          "3_dielectric_energy_J": 0.0032875705277319867,
+          "3_terminal_currents_into_sheet_A": 0.0010740464054330157,
+          "3_terminal_total_currents_A": 0.0010269332896815642
+        },
+        "absolute_full_mesh_field_changes_by_phase": {
+          "0": {
+            "phi_V": 0.0,
+            "Fn_eV": 0.0,
+            "Fp_eV": 0.0,
+            "dielectric_phi_V": 0.0,
+            "trap_occupancy": 0.0
+          },
+          "1": {
+            "phi_V": 6.2321144449345445e-06,
+            "Fn_eV": 7.970969905100184e-06,
+            "Fp_eV": 1.0403295699131171e-05,
+            "dielectric_phi_V": 6.2321144449345445e-06,
+            "trap_occupancy": 1.2078574510909768e-05
+          },
+          "2": {
+            "phi_V": 1.031230296012764e-05,
+            "Fn_eV": 1.3877735533154596e-05,
+            "Fp_eV": 1.2492309970671108e-05,
+            "dielectric_phi_V": 1.031230296012764e-05,
+            "trap_occupancy": 1.563346406249777e-05
+          },
+          "3": {
+            "phi_V": 6.621600167622255e-06,
+            "Fn_eV": 8.641336740949565e-06,
+            "Fp_eV": 1.416312151505646e-05,
+            "dielectric_phi_V": 6.621600167622255e-06,
+            "trap_occupancy": 7.583103353414611e-06
+          }
+        },
+        "initial_state_exact": true,
+        "matched_scalar_states": 385,
+        "measured_temporal_order": null
+      }
+    },
+    "fine_time_spatial_differences": {
+      "0_trap_occupancy": 0.0002754330469653399,
+      "0_phi_V": 0.0019727884660003525,
+      "0_Fn_eV": 3.238640586647083e-15,
+      "0_Fp_eV": 0.0,
+      "0_dielectric_phi_V": 0.02696471432717118,
+      "0_trap_charge_C": 6.5056676374353195e-06,
+      "0_sheet_charge_C": 0.0011805131262434543,
+      "0_contact_charge_C": 0.0016360095504595606,
+      "0_sheet_contact_charge_C": 5.3939604428952445e-05,
+      "0_dielectric_contact_charge_C": 0.0016899491548884593,
+      "0_gate_charges": 0.0010579509734354176,
+      "0_dielectric_energy_J": 0.006411995813778049,
+      "1_trap_occupancy": 0.0002942286378853076,
+      "1_phi_V": 0.002170884642275439,
+      "1_Fn_eV": 9.005483619192733e-06,
+      "1_Fp_eV": 1.4609111358886151e-05,
+      "1_dielectric_phi_V": 0.03264706285565655,
+      "1_trap_charge_C": 7.024247746789669e-06,
+      "1_sheet_charge_C": 0.0013806350062921524,
+      "1_contact_charge_C": 0.0018485348759913478,
+      "1_sheet_contact_charge_C": 5.9975336385617584e-05,
+      "1_dielectric_contact_charge_C": 0.0019085102123768127,
+      "1_gate_charges": 0.0012252822221050508,
+      "1_dielectric_energy_J": 0.007779713924129794,
+      "1_terminal_currents_into_sheet_A": 3.4728940301514966e-05,
+      "1_terminal_total_currents_A": 3.237034374248271e-05,
+      "2_trap_occupancy": 0.0002735295898942114,
+      "2_phi_V": 0.0018536140497333875,
+      "2_Fn_eV": 1.1063299030847351e-05,
+      "2_Fp_eV": 1.9000053216922108e-05,
+      "2_dielectric_phi_V": 0.025386507944305414,
+      "2_trap_charge_C": 6.2194973630136374e-06,
+      "2_sheet_charge_C": 0.00100408103817351,
+      "2_contact_charge_C": 0.0014962292809604927,
+      "2_sheet_contact_charge_C": 5.027498537074973e-05,
+      "2_dielectric_contact_charge_C": 0.0015465042663311834,
+      "2_gate_charges": 0.0010098043103283771,
+      "2_dielectric_energy_J": 0.005416951041972595,
+      "2_terminal_currents_into_sheet_A": 3.548822768575932e-05,
+      "2_terminal_total_currents_A": 3.235995507219758e-05,
+      "3_trap_occupancy": 0.0002795901115303645,
+      "3_phi_V": 0.0020502503107557857,
+      "3_Fn_eV": 9.414733089248284e-06,
+      "3_Fp_eV": 9.382026594610682e-06,
+      "3_dielectric_phi_V": 0.02891525071008516,
+      "3_trap_charge_C": 6.580508336018198e-06,
+      "3_sheet_charge_C": 0.0012484033680202344,
+      "3_contact_charge_C": 0.0017090336420048091,
+      "3_sheet_contact_charge_C": 5.6222713567918164e-05,
+      "3_dielectric_contact_charge_C": 0.0017652563555727863,
+      "3_gate_charges": 0.0011001618845156713,
+      "3_dielectric_energy_J": 0.006703500883773472,
+      "3_terminal_currents_into_sheet_A": 3.374972426861689e-05,
+      "3_terminal_total_currents_A": 3.1264779469908355e-05
+    },
+    "mixed_space_time_changes": {
+      "0_trap_occupancy": 0.0,
+      "0_phi_V": 0.0,
+      "0_Fn_eV": 0.0,
+      "0_Fp_eV": 0.0,
+      "0_dielectric_phi_V": 0.0,
+      "0_trap_charge_C": 0.0,
+      "0_sheet_charge_C": 0.0,
+      "0_contact_charge_C": 0.0,
+      "0_sheet_contact_charge_C": 0.0,
+      "0_dielectric_contact_charge_C": 0.0,
+      "0_gate_charges": 0.0,
+      "0_dielectric_energy_J": 0.0,
+      "1_trap_occupancy": 1.9633196957080656e-08,
+      "1_phi_V": 8.849850097192302e-08,
+      "1_Fn_eV": 9.628868907762822e-08,
+      "1_Fp_eV": 1.1040079856555751e-07,
+      "1_dielectric_phi_V": 6.084762596003657e-07,
+      "1_trap_charge_C": 7.569658233563814e-10,
+      "1_sheet_charge_C": 2.9556600189550863e-07,
+      "1_contact_charge_C": 3.177772123219569e-08,
+      "1_sheet_contact_charge_C": 2.2187388176719836e-09,
+      "1_dielectric_contact_charge_C": 3.399646020252334e-08,
+      "1_gate_charges": 1.1605113670043465e-07,
+      "1_dielectric_energy_J": 8.489037455206017e-07,
+      "1_terminal_currents_into_sheet_A": 1.2714645684919201e-07,
+      "1_terminal_total_currents_A": 6.908424195206653e-08,
+      "2_trap_occupancy": 2.4942844151221166e-08,
+      "2_phi_V": 1.2423358874968926e-07,
+      "2_Fn_eV": 1.6205985368250575e-07,
+      "2_Fp_eV": 1.8373371984958808e-07,
+      "2_dielectric_phi_V": 9.023769358407208e-07,
+      "2_trap_charge_C": 1.2276175631598107e-09,
+      "2_sheet_charge_C": 4.685179781915849e-07,
+      "2_contact_charge_C": 4.849688861607859e-08,
+      "2_sheet_contact_charge_C": 3.0908579480570797e-09,
+      "2_dielectric_contact_charge_C": 5.158774651903286e-08,
+      "2_gate_charges": 1.8584001715282739e-07,
+      "2_dielectric_energy_J": 1.1097234242640752e-06,
+      "2_terminal_currents_into_sheet_A": 2.191927483685685e-07,
+      "2_terminal_total_currents_A": 1.3030995354990083e-07,
+      "3_trap_occupancy": 7.1083741393085376e-09,
+      "3_phi_V": 9.21570366685387e-08,
+      "3_Fn_eV": 8.557155919963755e-08,
+      "3_Fp_eV": 1.6338754424416457e-07,
+      "3_dielectric_phi_V": 6.205785227919591e-07,
+      "3_trap_charge_C": 4.4873083027141547e-10,
+      "3_sheet_charge_C": 2.57463415920256e-07,
+      "3_contact_charge_C": 3.151683647395487e-08,
+      "3_sheet_contact_charge_C": 2.3227283308530078e-09,
+      "3_dielectric_contact_charge_C": 3.383956476143979e-08,
+      "3_gate_charges": 9.725823524320276e-08,
+      "3_dielectric_energy_J": 6.509901062656809e-07,
+      "3_terminal_currents_into_sheet_A": 7.80197058902754e-08,
+      "3_terminal_total_currents_A": 2.1132252794875406e-08
+    },
+    "temporal_convergence_order_established": false,
+    "global_spatial_convergence_qualified": false,
+    "joint_spacetime_qualified": false
+  },
+  "tamper_rejections": [
+    "interior_fine_trace_charge",
+    "wrong_fine_dt",
+    "wrong_level",
+    "linear_residual",
+    "bulk_field",
+    "phase_gate"
+  ],
+  "inherited_reference_pulses": 2,
+  "inherited_targeted_tests": 215,
+  "tests_rerun": 0,
+  "original_spatial_failures_preserved": true,
+  "temporal_order_established": false,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "physical_device_qualified": false,
+  "sentaurus_equivalence": false,
+  "commercial_runs": 0,
+  "production_deployed": false,
+  "native_rebuilt": false,
+  "all_owned_workers_exited": true,
+  "seconds": 27.141653300030157
+}

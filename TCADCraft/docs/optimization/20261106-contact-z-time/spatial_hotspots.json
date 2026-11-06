@@ -1,0 +1,197 @@
+{
+  "status": "descriptive_bulk_spatial_hotspots_on_fixed_common_nodes",
+  "common_support_xyz": [
+    65,
+    9,
+    65
+  ],
+  "new_simulated_steps": 0,
+  "qualification": false,
+  "hotspots": [
+    {
+      "phase": 0,
+      "time_ps": 0,
+      "z_levels": [
+        0,
+        1
+      ],
+      "index_zyx": [
+        40,
+        8,
+        63
+      ],
+      "position_nm": {
+        "x": 199.87954562051723,
+        "y": 100.0,
+        "z": 2.5
+      },
+      "signed_fine_minus_coarse_V": 0.0012905654001663658,
+      "max_absolute_change_V": 0.0012905654001663658,
+      "distance_from_nearest_contact_endpoint_z_nm": 0.0,
+      "distance_from_nearest_source_drain_plane_x_nm": 0.12045437948276065
+    },
+    {
+      "phase": 0,
+      "time_ps": 0,
+      "z_levels": [
+        1,
+        2
+      ],
+      "index_zyx": [
+        40,
+        8,
+        63
+      ],
+      "position_nm": {
+        "x": 199.87954562051723,
+        "y": 100.0,
+        "z": 2.5
+      },
+      "signed_fine_minus_coarse_V": 0.0006741178581792795,
+      "max_absolute_change_V": 0.0006741178581792795,
+      "distance_from_nearest_contact_endpoint_z_nm": 0.0,
+      "distance_from_nearest_source_drain_plane_x_nm": 0.12045437948276065
+    },
+    {
+      "phase": 1,
+      "time_ps": 20,
+      "z_levels": [
+        0,
+        1
+      ],
+      "index_zyx": [
+        40,
+        0,
+        1
+      ],
+      "position_nm": {
+        "x": 0.1204543794827595,
+        "y": 0.0,
+        "z": 2.5
+      },
+      "signed_fine_minus_coarse_V": 0.0015628069359457791,
+      "max_absolute_change_V": 0.0015628069359457791,
+      "distance_from_nearest_contact_endpoint_z_nm": 0.0,
+      "distance_from_nearest_source_drain_plane_x_nm": 0.1204543794827595
+    },
+    {
+      "phase": 1,
+      "time_ps": 20,
+      "z_levels": [
+        1,
+        2
+      ],
+      "index_zyx": [
+        40,
+        0,
+        1
+      ],
+      "position_nm": {
+        "x": 0.1204543794827595,
+        "y": 0.0,
+        "z": 2.5
+      },
+      "signed_fine_minus_coarse_V": 0.0008161917832978094,
+      "max_absolute_change_V": 0.0008161917832978094,
+      "distance_from_nearest_contact_endpoint_z_nm": 0.0,
+      "distance_from_nearest_source_drain_plane_x_nm": 0.1204543794827595
+    },
+    {
+      "phase": 2,
+      "time_ps": 40,
+      "z_levels": [
+        0,
+        1
+      ],
+      "index_zyx": [
+        24,
+        0,
+        1
+      ],
+      "position_nm": {
+        "x": 0.1204543794827595,
+        "y": 0.0,
+        "z": -2.5
+      },
+      "signed_fine_minus_coarse_V": 0.0012150421482242657,
+      "max_absolute_change_V": 0.0012150421482242657,
+      "distance_from_nearest_contact_endpoint_z_nm": 0.0,
+      "distance_from_nearest_source_drain_plane_x_nm": 0.1204543794827595
+    },
+    {
+      "phase": 2,
+      "time_ps": 40,
+      "z_levels": [
+        1,
+        2
+      ],
+      "index_zyx": [
+        24,
+        0,
+        1
+      ],
+      "position_nm": {
+        "x": 0.1204543794827595,
+        "y": 0.0,
+        "z": -2.5
+      },
+      "signed_fine_minus_coarse_V": 0.0006346401391842393,
+      "max_absolute_change_V": 0.0006346401391842393,
+      "distance_from_nearest_contact_endpoint_z_nm": 0.0,
+      "distance_from_nearest_source_drain_plane_x_nm": 0.1204543794827595
+    },
+    {
+      "phase": 3,
+      "time_ps": 60,
+      "z_levels": [
+        0,
+        1
+      ],
+      "index_zyx": [
+        40,
+        0,
+        1
+      ],
+      "position_nm": {
+        "x": 0.1204543794827595,
+        "y": 0.0,
+        "z": 2.5
+      },
+      "signed_fine_minus_coarse_V": 0.0013840127519298556,
+      "max_absolute_change_V": 0.0013840127519298556,
+      "distance_from_nearest_contact_endpoint_z_nm": 0.0,
+      "distance_from_nearest_source_drain_plane_x_nm": 0.1204543794827595
+    },
+    {
+      "phase": 3,
+      "time_ps": 60,
+      "z_levels": [
+        1,
+        2
+      ],
+      "index_zyx": [
+        40,
+        0,
+        1
+      ],
+      "position_nm": {
+        "x": 0.1204543794827595,
+        "y": 0.0,
+        "z": 2.5
+      },
+      "signed_fine_minus_coarse_V": 0.0007228967822149879,
+      "max_absolute_change_V": 0.0007228967822149879,
+      "distance_from_nearest_contact_endpoint_z_nm": 0.0,
+      "distance_from_nearest_source_drain_plane_x_nm": 0.1204543794827595
+    }
+  ],
+  "input_sha256": {
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_ordering_full_pulse_20261106_attempt1\\results\\base_mmd.json": "20ba32fb40a388bde90d9f5e290831a105e41158feeca568f11aacb189e892d9",
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_ordering_full_pulse_20261106_attempt1\\results\\base_mmd.npz": "99f93e33708ee65923260f5e43dd0a54fe3186fcb5890c4ec2d4517df138e827",
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_ordering_full_pulse_20261106_attempt1\\results\\local_z1_mmd.json": "d68168ff94fad85272e1ef217644702a80cc8b4c7f45107083fdf2d3259f3049",
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_ordering_full_pulse_20261106_attempt1\\results\\local_z1_mmd.npz": "689adabbee8387dfbd226839e096049ee3141d9cac6b32044623c0589415b009",
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_contact_z_time_20261106\\results\\local_z2_n128.json": "637c91ee6721708c3f01ceb43246f4e97e3384b8b65e9719ac44734c4d29d03f",
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_contact_z_time_20261106\\results\\local_z2_n128.npz": "263f84eeaa5fb3439f9acd519a9a226fb1b7fd79fb29335a44181ff1dadf9cd7"
+  },
+  "script_sha256": "06962abb35e1049b5d9d5df8fe3454524b549a913d2620e111cdeb6dd408c483"
+}

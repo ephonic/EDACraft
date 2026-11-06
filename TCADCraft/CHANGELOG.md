@@ -5,6 +5,11 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Added complete second contact-z and two-grid half-dt validation, with replay
+  drivers, incremental linear journals and atomic phase-end field exports.
+- Added a NumPy-only full-trace comparison CLI using matched BE intervals for
+  total currents, ending-time conduction and cumulative terminal charge.
+
 - Validated complete 60 ps default/MMD sheet pulses and a nested local contact-z
   pulse with independent field equations and every-step charge/current ledgers.
 

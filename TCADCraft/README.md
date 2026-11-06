@@ -22,6 +22,9 @@ installing the development sources; the tagged `0.3.0rc1` artifacts are unchange
 The [complete-pulse follow-up](docs/optimization/20261106-full-pulse/README.md)
 adds fresh 60 ps ordering controls and local contact-z refinement acceptance.
 
+The [contact-z/time study](docs/optimization/20261106-contact-z-time/README.md)
+adds a second full local refinement, half-dt controls, interval-current analysis and exact replay inputs.
+
 ## Capabilities and limits
 
 | Area | Available implementation | Qualification boundary |
