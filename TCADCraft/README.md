@@ -44,6 +44,9 @@ completes under a separately declared wall budget and passes physical parity and
 The [first complete x pulse](docs/optimization/20261106-first-full-x-pulse/README.md)
 adds an independently audited 60 ps x69 trajectory; full x/y convergence remains open.
 
+The [complete x sequence](docs/optimization/20261106-full-x-sequence/README.md)
+adds full x75/x83 pulses and the original 54-metric endpoint verdict; y and joint studies remain open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

@@ -1,0 +1,14 @@
+{
+  "auditor_tool_checks.json": "0a51715fbb95f840ae129c5166445f53abad585753d43f5bd75a99480419f1b2",
+  "dense_projection_tool_check.json": "578fd73411fc5a918085ff532a9a9bdd21a00d435dce78a432f9c2a7e881e4c7",
+  "independent_audit.json": "04740d0d38e113ccf5c4b2eab7e52180cde063d0f1859eb419edda5970fe5835",
+  "policy.json": "cffbce3f3f3d6d4d48a4c3e675cfd62aad46bca02482d22c72cca067253e47b4",
+  "PROVENANCE.json": "f01ab476ff383f755bda7f5556ffb6f5db3a821abf960cb3d8607b330827534f",
+  "README.md": "80195de095258102d7895a8b85f8fa6e06b7ef8580827f862454c3a55e578a15",
+  "reproduction/endpoint_x2_full.py": "3a5c4e296d9f8044fe7fe2babd60cded2db1cc81dcac932867071a2a6b7330b6",
+  "reproduction/endpoint_x3_full.py": "ce11219da225a29d6b8b4e300cfb4e8f9e9d18c71b1a9e45bae3fcc22f5122dd",
+  "reproduction/meshes.npz": "b2c93091716b3ba797f4775be864b942972bcb3c2b6b8bdb34ce545eb9e263a6",
+  "reproduction/README.md": "fdd332e9c4448ce5bee693ddcc32169707d1db2585e5ec4278603626f2ccec54",
+  "spatial_diagnostics.json": "7f462eb4f2aef41f8f7d4e24096c4b7d32ea7a32c08113352c327407dd4b5692",
+  "supplementary_diagnostics.json": "7b5eded186c198c9a5c859016f49fe3d9848b1235a8dca3a8d89dc56c6b84e32"
+}
