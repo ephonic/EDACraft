@@ -48,7 +48,10 @@ The [complete x sequence](docs/optimization/20261106-full-x-sequence/README.md)
 adds full x75/x83 pulses and the original 54-metric endpoint verdict; y and joint studies remain open.
 
 The [first complete y pulse](docs/optimization/20261106-first-full-y-pulse/README.md)
-adds a full y17 trajectory and y9/y17 field/ledger comparisons; a third y mesh and joint studies remain open.
+adds a full y17 trajectory and y9/y17 field/ledger comparisons; a complete third-y trajectory and joint studies remain open.
+
+The [bounded uniform third-y probe](docs/optimization/20261106-third-y-probe/README.md)
+retains a passing fresh MMD y9 control and the failed y33 capacity outcome; the three-grid y metrics remain unevaluated.
 
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.

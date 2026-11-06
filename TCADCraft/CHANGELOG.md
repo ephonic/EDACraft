@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Preserved the bounded uniform-y33 capacity failure and an independently
+  audited fresh MMD y9 control; three-grid y acceptance remains open.
+
 - Completed and independently audited a full y17 pulse (384 BE steps),
   with descriptive y9/y17 field and ledger comparisons.
 
