@@ -31,6 +31,10 @@ adds fixed-support temporal orders and narrowly localized z/x probes; global spa
 The [complete endpoint-pulse study](docs/optimization/20261106-endpoint-full/README.md)
 extends endpoint-z refinement to full 60 ps pulses and adds a second independent x probe.
 
+The [independent x/y probe study](docs/optimization/20261106-independent-xy-probes/README.md)
+adds a third consecutive x refinement and a first independent y sensitivity measurement;
+the y probe exceeds the frozen memory budget, so the cohort is not accepted.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

@@ -1,0 +1,20 @@
+{
+  "status": "passed_sealed_checker_replay_on_inherited_x75",
+  "new_simulated_steps": 0,
+  "inherited_result": {
+    "field_physics_checks": 447903,
+    "expected_newton_dimension": 75555,
+    "full_pulse_completed": false,
+    "spatial_convergence_qualified": false,
+    "independent_physics_and_ledger_checks": 447903
+  },
+  "tamper_rejections": [
+    "trace_charge",
+    "wrong_dt",
+    "linear_residual",
+    "bulk_field",
+    "gate_drive",
+    "geometry"
+  ],
+  "unchanged_checker_sha256": "aa0f18cb82f1c1138322db24b2c0ea595aee12d3b3aaf9727acff490e3ce26ef"
+}

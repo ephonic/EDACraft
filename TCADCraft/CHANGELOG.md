@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Recorded x83 local probe acceptance and independent y17 sensitivity; preserved
+  the y17 frozen memory-budget failure alongside audited physical diagnostics.
+
 - Recorded two independently audited complete endpoint-z pulses and a second
   independent x probe, retaining the original spatial acceptance gates.
 
