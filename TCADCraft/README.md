@@ -61,6 +61,10 @@ The [same-ordering y probe study](docs/optimization/20261107-geometric-probes/RE
 completes fresh y9/y17/y33 initial and first-BE probes with 26/26 initial-prefix metrics passing;
 a complete y33 pulse and joint qualification remain open.
 
+The [complete geometric y9 control](docs/optimization/20261107-geometric-full-y9/README.md)
+adds a fresh independently audited 60 ps trajectory with the same geometric ordering;
+full y17/y33 controls and the three-grid full-pulse y verdict remain open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

@@ -100,6 +100,10 @@ The [same-ordering y probe study](optimization/20261107-geometric-probes/README.
 adds independently audited y9/y17/y33 initial and first-BE probes, with 26/26
 original prefix metrics passing. Complete finer-y pulses and joint qualification remain open.
 
+The [complete geometric y9 control](optimization/20261107-geometric-full-y9/README.md)
+extends that ordering to a fresh full 60 ps pulse with every-step physical
+and linear auditing. Full same-ordering y17/y33 convergence remains open.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

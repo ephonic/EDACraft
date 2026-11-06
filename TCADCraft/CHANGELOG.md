@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed a fresh full 60 ps geometric-ordering y9 control with independent
+  field, all-step ledger and linear audits, exact prefix replay, and descriptive
+  full MMD/ND trajectory comparisons; full y17/y33 and joint qualification remain open.
+
 - Completed fresh same-ordering geometric y9/y17/y33 initial/first-BE probes,
   with independent physical audits and 26/26 original prefix metrics passing;
   full-pulse y and joint space/time qualification remain open.
