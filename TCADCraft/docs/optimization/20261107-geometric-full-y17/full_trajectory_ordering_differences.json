@@ -1,0 +1,207 @@
+{
+  "status": "descriptive_full_y17_same_grid_MMD_ND_field_and_trajectory_comparison",
+  "accepted_clock_entries": 385,
+  "initial_current_entries_excluded": true,
+  "full_field_checkpoints": [
+    {
+      "time_s": 0.0,
+      "max_absolute_differences": {
+        "phi_V": 1.3600232051658168e-15,
+        "Fn_eV": 4.786080992282397e-17,
+        "Fp_eV": 0.0,
+        "dielectric_phi_V": 3.2057689836051395e-15,
+        "trap_occupancy": 1.1157741397482823e-14,
+        "n_m2": 236.0,
+        "p_m2": 8.643391166325582e-26
+      }
+    },
+    {
+      "time_s": 1.9999999999999963e-11,
+      "max_absolute_differences": {
+        "phi_V": 1.6514567491299204e-15,
+        "Fn_eV": 9.777335191474279e-16,
+        "Fp_eV": 1.3512411675686842e-15,
+        "dielectric_phi_V": 3.4486302702418925e-15,
+        "trap_occupancy": 5.88418203051333e-15,
+        "n_m2": 240.0,
+        "p_m2": 5.573775611929581e-26
+      }
+    },
+    {
+      "time_s": 4.000000000000012e-11,
+      "max_absolute_differences": {
+        "phi_V": 2.1371793224034263e-15,
+        "Fn_eV": 1.0258720956057843e-15,
+        "Fp_eV": 1.3587221625588342e-15,
+        "dielectric_phi_V": 3.344546861683284e-15,
+        "trap_occupancy": 3.83026943495679e-15,
+        "n_m2": 284.5,
+        "p_m2": 6.220010465486634e-26
+      }
+    },
+    {
+      "time_s": 6.000000000000039e-11,
+      "max_absolute_differences": {
+        "phi_V": 1.6930901125533637e-15,
+        "Fn_eV": 8.96201515776518e-16,
+        "Fp_eV": 9.846724130513351e-16,
+        "dielectric_phi_V": 3.3861802251067274e-15,
+        "trap_occupancy": 2.55351295663786e-15,
+        "n_m2": 223.0,
+        "p_m2": 7.552869850948055e-26
+      }
+    }
+  ],
+  "all_step_scalar_changes": {
+    "sheet_charge_C": {
+      "max_absolute_difference": 1.8488927466117464e-32,
+      "at_time_s": 2.140624999999996e-11,
+      "samples": 385
+    },
+    "trap_charge_C": {
+      "max_absolute_difference": 1.4444474582904269e-34,
+      "at_time_s": 3.125e-13,
+      "samples": 385
+    },
+    "untrapped_sheet_charge_C": {
+      "max_absolute_difference": 1.8488927466117464e-32,
+      "at_time_s": 2.140624999999996e-11,
+      "samples": 385
+    },
+    "contact_charge_C/source": {
+      "max_absolute_difference": 6.740754805355325e-33,
+      "at_time_s": 0.0,
+      "samples": 385
+    },
+    "contact_charge_C/drain": {
+      "max_absolute_difference": 7.029644297013411e-33,
+      "at_time_s": 2.2968749999999953e-11,
+      "samples": 385
+    },
+    "sheet_contact_charge_C/source": {
+      "max_absolute_difference": 5.7777898331617076e-34,
+      "at_time_s": 0.0,
+      "samples": 385
+    },
+    "sheet_contact_charge_C/drain": {
+      "max_absolute_difference": 3.716442939559744e-34,
+      "at_time_s": 3.343750000000001e-11,
+      "samples": 385
+    },
+    "dielectric_contact_charge_C/source": {
+      "max_absolute_difference": 6.259272319258517e-33,
+      "at_time_s": 7.656250000000004e-12,
+      "samples": 385
+    },
+    "dielectric_contact_charge_C/drain": {
+      "max_absolute_difference": 6.692606556745645e-33,
+      "at_time_s": 2.2968749999999953e-11,
+      "samples": 385
+    },
+    "gates/top_gate": {
+      "max_absolute_difference": 6.77927340424307e-32,
+      "at_time_s": 2.999999999999995e-11,
+      "samples": 385
+    },
+    "gates/bottom_gate": {
+      "max_absolute_difference": 6.625199008692091e-32,
+      "at_time_s": 2.999999999999995e-11,
+      "samples": 385
+    },
+    "dielectric_energy_J": {
+      "max_absolute_difference": 7.607423280329582e-33,
+      "at_time_s": 2.999999999999995e-11,
+      "samples": 385
+    },
+    "conduction/source": {
+      "max_absolute_difference": 1.3393708478458624e-20,
+      "at_time_s": 2.4374999999999948e-11,
+      "samples": 384
+    },
+    "conduction/drain": {
+      "max_absolute_difference": 1.2004045049369538e-20,
+      "at_time_s": 5.671875000000041e-11,
+      "samples": 384
+    },
+    "total/source": {
+      "max_absolute_difference": 8.480917384383682e-20,
+      "at_time_s": 1.5625e-13,
+      "samples": 384
+    },
+    "total/drain": {
+      "max_absolute_difference": 6.751779031902833e-20,
+      "at_time_s": 2.953124999999994e-11,
+      "samples": 384
+    },
+    "total/bottom_gate": {
+      "max_absolute_difference": 5.127593355542712e-19,
+      "at_time_s": 4.7187500000000244e-11,
+      "samples": 384
+    },
+    "total/top_gate": {
+      "max_absolute_difference": 5.719259104089642e-19,
+      "at_time_s": 2.999999999999995e-11,
+      "samples": 384
+    },
+    "trap_charge_rate_A": {
+      "max_absolute_difference": 9.796920379924922e-24,
+      "at_time_s": 5.781250000000003e-12,
+      "samples": 384
+    },
+    "free_carrier_charge_rate_A": {
+      "max_absolute_difference": 2.9434394917086937e-20,
+      "at_time_s": 6.25e-13,
+      "samples": 384
+    }
+  },
+  "cumulative_BE_terminal_charge": {
+    "conduction/source": {
+      "MMD_final_C": -1.0112354303806259e-18,
+      "ND_final_C": -1.0112354303806168e-18,
+      "final_absolute_difference_C": 9.051870738620009e-33,
+      "max_absolute_difference_C": 9.051870738620009e-33,
+      "at_time_s": 5.984375000000039e-11
+    },
+    "conduction/drain": {
+      "MMD_final_C": 5.925267318423559e-19,
+      "ND_final_C": 5.925267318423909e-19,
+      "final_absolute_difference_C": 3.495562849062833e-32,
+      "max_absolute_difference_C": 3.505192498784769e-32,
+      "at_time_s": 5.750000000000042e-11
+    },
+    "total/source": {
+      "MMD_final_C": -1.034794927206063e-18,
+      "ND_final_C": -1.0347949272060612e-18,
+      "final_absolute_difference_C": 1.925929944387236e-33,
+      "max_absolute_difference_C": 1.5888922041194696e-32,
+      "at_time_s": 3.281249999999999e-12
+    },
+    "total/drain": {
+      "MMD_final_C": 5.86662541870289e-19,
+      "ND_final_C": 5.866625418703313e-19,
+      "final_absolute_difference_C": 4.2274162279299827e-32,
+      "max_absolute_difference_C": 4.2274162279299827e-32,
+      "at_time_s": 6.000000000000039e-11
+    },
+    "total/bottom_gate": {
+      "MMD_final_C": -2.2099882915276244e-19,
+      "ND_final_C": -2.2099882915276706e-19,
+      "final_absolute_difference_C": 4.622231866529366e-33,
+      "max_absolute_difference_C": 6.317050217590134e-32,
+      "at_time_s": 2.999999999999995e-11
+    },
+    "total/top_gate": {
+      "MMD_final_C": 6.691312147802068e-19,
+      "ND_final_C": 6.691312147802051e-19,
+      "final_absolute_difference_C": 1.7333369499485123e-33,
+      "max_absolute_difference_C": 6.952607099237921e-32,
+      "at_time_s": 2.999999999999995e-11
+    }
+  },
+  "new_acceptance_gate": false,
+  "new_physics_credit": 0,
+  "full_y_convergence_qualified": false,
+  "parent_manifest_sha256": "4c915ca93d52971dc3fee831e6c6d160dc70cf9ead599d0aa419292df214faa7",
+  "ND_probe_parent_manifest_sha256": "0047e271306c99c484e3dff3c5607a138e12e6ee52aa6277d05389b0ee8556c8",
+  "new_run_policy_sha256": "2435b7d9b8998856bc9b1a166a090e4e566684c20c457394867f56f97148f328"
+}

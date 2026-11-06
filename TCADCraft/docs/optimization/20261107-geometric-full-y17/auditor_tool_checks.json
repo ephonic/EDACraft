@@ -1,0 +1,34 @@
+{
+  "status": "passed_full_MMD_replay_and_synthetic_ND_label_and_nine_faults",
+  "inherited_summary": {
+    "expected_newton_dimension": 123505,
+    "accepted_diagnostics": 385,
+    "linear_solves": 887,
+    "factorizations": 2,
+    "gmres_iterations": 6006,
+    "gmres_corrections": 649,
+    "refreshes": 0,
+    "checkpoints": 4,
+    "steps": 384,
+    "full_pulse_completed": true,
+    "independent_physics_and_ledger_checks": 1496479
+  },
+  "inherited_maxima_identical": true,
+  "reversible_expected_label_AST": true,
+  "synthetic_ND_label_replay": true,
+  "tamper_rejections": [
+    "interior_trace_charge",
+    "wrong_dt",
+    "linear_residual",
+    "bulk_field",
+    "gate_drive",
+    "x_geometry",
+    "y_geometry",
+    "cache_flag",
+    "wrong_ordering"
+  ],
+  "physical_oracle_sha256": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "case_guard_sha256": "975740892a7a1cf0b35c2b6a1a2646d40e6607842f6cf36425b04cd602ef3b6e",
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0
+}

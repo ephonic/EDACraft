@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed the full geometric-ordering y17 pulse with independent physical,
+  all-step ledger and linear audits, exact prefix replay and full MMD/ND
+  comparisons; full y33 and three-grid y convergence remain open.
+
 - Completed a fresh full 60 ps geometric-ordering y9 control with independent
   field, all-step ledger and linear audits, exact prefix replay, and descriptive
   full MMD/ND trajectory comparisons; full y17/y33 and joint qualification remain open.

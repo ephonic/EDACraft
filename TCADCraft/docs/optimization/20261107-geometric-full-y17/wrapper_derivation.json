@@ -1,0 +1,94 @@
+{
+  "audit": {
+    "source": "audit_sheet_geometric_full_y9_20261107.py",
+    "source_sha256": "2747d2f3ce1580443b51ad068612d9cc5cd3e044057bb92154486582eb37da51",
+    "derived": "audit_sheet_geometric_full_y17_20261107.py",
+    "derived_sha256": "4e5c8d71420a5939e8f65685bf5f64f1e8fb17cd7876e8be720c044f90c1d39f",
+    "substitutions": [
+      {
+        "before": "sheet_geometric_full_y9_20261107",
+        "after": "sheet_geometric_full_y17_20261107",
+        "count": 1
+      },
+      {
+        "before": "geometric_y9_probe",
+        "after": "geometric_y17_probe",
+        "count": 2
+      },
+      {
+        "before": "old=s['load'](Z/'results/local_z2_n128')",
+        "after": "old=s['load'](Y/'results'/read(Y/'input/policy.json')['cases'][0]['label'])",
+        "count": 1
+      },
+      {
+        "before": "passed_geometric_y9_full_control",
+        "after": "passed_geometric_y17_full_control",
+        "count": 1
+      },
+      {
+        "before": "descriptive_same_y9_full",
+        "after": "descriptive_same_y17_full",
+        "count": 1
+      },
+      {
+        "before": "# Old MMD y9 uses implicit cache invalidation; physics comparison ignores metadata.",
+        "after": "# The retained full MMD y17 control has the same mesh and physical protocol.",
+        "count": 1
+      }
+    ],
+    "reverse_text_and_AST_identical": true
+  },
+  "status": {
+    "source": "status_sheet_geometric_full_y9_20261107.py",
+    "source_sha256": "f3d394f6ff4f1e70ea60d6dbd629b9d09901516cb80e96954f0547bb97d62e4d",
+    "derived": "status_sheet_geometric_full_y17_20261107.py",
+    "derived_sha256": "f578bf9f6fdb8ed1d37714acabdd6fd0c71d143bbd2256805cee87140cb072d3",
+    "substitutions": [
+      {
+        "before": "full-y9",
+        "after": "full-y17",
+        "count": 1
+      },
+      {
+        "before": "sheet_geometric_full_y9_20261107",
+        "after": "sheet_geometric_full_y17_20261107",
+        "count": 1
+      }
+    ],
+    "reverse_text_and_AST_identical": true
+  },
+  "compare": {
+    "source": "compare_sheet_geometric_full_y9_20261107.py",
+    "source_sha256": "64271f2de9fb43b739fed156a016151df2579bb2d2d5ad26c7b0787e79c0aa93",
+    "derived": "compare_sheet_geometric_full_y17_20261107.py",
+    "derived_sha256": "d8451d2ebff391cbb77f397e8644e83de63e93b0f4c3f1ceca66b0084ecf966d",
+    "substitutions": [
+      {
+        "before": "sheet_geometric_full_y9_20261107",
+        "after": "sheet_geometric_full_y17_20261107",
+        "count": 1
+      },
+      {
+        "before": "O,Z,G,read",
+        "after": "O,Y,G,read",
+        "count": 1
+      },
+      {
+        "before": "Z/'results/local_z2_n128'",
+        "after": "Y/'results'/read(Y/'input/policy.json')['cases'][0]['label']",
+        "count": 1
+      },
+      {
+        "before": "descriptive_full_y9_same_grid",
+        "after": "descriptive_full_y17_same_grid",
+        "count": 1
+      },
+      {
+        "before": "sha(Z/'run_manifest.json')",
+        "after": "sha(Y/'run_manifest.json')",
+        "count": 1
+      }
+    ],
+    "reverse_text_and_AST_identical": true
+  }
+}

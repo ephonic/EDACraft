@@ -102,7 +102,11 @@ original prefix metrics passing. Complete finer-y pulses and joint qualification
 
 The [complete geometric y9 control](optimization/20261107-geometric-full-y9/README.md)
 extends that ordering to a fresh full 60 ps pulse with every-step physical
-and linear auditing. Full same-ordering y17/y33 convergence remains open.
+and linear auditing. The y17 follow-up below adds the next full control.
+
+The [complete geometric y17 control](optimization/20261107-geometric-full-y17/README.md)
+adds a second full same-ordering pulse and descriptive y9/y17 increments.
+Full y33, fine-grid temporal and joint qualification remain open.
 
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
