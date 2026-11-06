@@ -1,0 +1,41 @@
+{
+  "status": "passed_candidate_targeted_tests_and_initial_BE_probe_pending_physics_audit",
+  "junit": {
+    "tests": 215,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "test_scope": [
+    "tests/test_sheet_linear_ordering.py",
+    "tests/test_sheet_reused_gmres.py",
+    "tests/test_sheet_coupled.py",
+    "tests/test_sheet_dielectric_contacts.py",
+    "tests/test_sheet_transient.py"
+  ],
+  "probe_summary": {
+    "mode": "probe",
+    "contact": "thermionic",
+    "family": "space",
+    "level": 3,
+    "count": 128,
+    "checkpoints": 2,
+    "dynamic_steps": 1,
+    "sheet_nodes": 585,
+    "total_nodes": 38025,
+    "seconds": 11.971212883945554,
+    "peak_rss_MiB": 416.71484375,
+    "max_residual_scaled_linf": 2.7782468185545314e-15,
+    "total_newton_iterations": 11
+  },
+  "candidate_files": {
+    "tcad/solver/_sheet_linear.py": "121c44e896645b50a7586c0e467a45f03a78a2c9e8dcd4126197bdc4261b4bce",
+    "tcad/solver/sheet_dielectric.py": "7bddc38bf30416c8fb144a6271794aea41c2b73ce9a393deed010550b7084c1c",
+    "tests/test_sheet_linear_ordering.py": "9c3fb832a4d7ff3ca57358b89e50a578d02cdf4b8bd64accc3f595574a46ac80"
+  },
+  "native_binary_sha256": "318988172b59c2ea14f627ecc9aa422ae86c2f4984784002a20475cb9a5d13b4",
+  "native_rebuilt": false,
+  "full_suite_rerun": false,
+  "spatial_convergence_qualified": false,
+  "physical_device_qualified": false
+}

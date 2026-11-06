@@ -11,6 +11,7 @@ class _FrozenFactor:
     factor: object
     shape: tuple
     operator_key: tuple | None = None
+    ordering: str = 'COLAMD'
 
     def __deepcopy__(self, memo):
         memo[id(self)] = self
@@ -23,9 +24,12 @@ class _ReusedGMRES:
     A caller publishes ``factor`` only after its whole transaction succeeds.
     Failure never alters the incoming factor or any counters on its owner.
     """
-    def __init__(self, factor, tolerance, operator_key=None):
+    def __init__(self, factor, tolerance, operator_key=None, ordering='COLAMD'):
+        if not isinstance(ordering,str) or ordering not in ('COLAMD','MMD_AT_PLUS_A'):
+            raise ValueError("linear_ordering must be 'COLAMD' or 'MMD_AT_PLUS_A'")
+        self.ordering = ordering
         self.invalidated_initial_factor = bool(
-            factor is not None and factor.operator_key != operator_key)
+            factor is not None and (factor.operator_key != operator_key or factor.ordering != ordering))
         self.factor = None if self.invalidated_initial_factor else factor
         self.operator_key = operator_key
         self.atol = min(1e-14, .01 * tolerance)
@@ -40,7 +44,8 @@ class _ReusedGMRES:
         attempts = []
         for attempt in range(2):
             if self.factor is None or self.factor.shape != A.shape or attempt:
-                self.factor = _FrozenFactor(splu(A.tocsc()), A.shape, self.operator_key)
+                self.factor = _FrozenFactor(splu(A.tocsc(),permc_spec=self.ordering),
+                                            A.shape, self.operator_key, self.ordering)
                 self.factorizations += 1
             iterations = [0]
 
@@ -97,7 +102,7 @@ class _ReusedGMRES:
         raise error
 
     def diagnostics(self):
-        return dict(method='reused_gmres', absolute_tolerance=self.atol,
+        return dict(method='reused_gmres', factor_ordering=self.ordering, absolute_tolerance=self.atol,
             linear_solves=len(self.calls), factorizations=self.factorizations,
             reused_initial_factor=self.reused_initial_factor,
             invalidated_initial_factor=self.invalidated_initial_factor,

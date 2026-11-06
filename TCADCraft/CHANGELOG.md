@@ -3,6 +3,14 @@
 All notable changes to TCADCraft are documented in this file. Versions follow
 Semantic Versioning, and dates use ISO 8601.
 
+## Unreleased
+
+- Added optional `linear_ordering='MMD_AT_PLUS_A'` for the coupled sheet
+  reused-GMRES preconditioner; retained COLAMD by default and the original
+  true-residual/rollback contract. Ordering changes invalidate cached factors.
+- Added a captured-system LU-fill/RSS benchmark and ordering-specific cache,
+  pulse, flux and failure rollback tests.
+
 ## [0.3.0rc1] - 2026-11-05
 
 - Added classical graphene/MoS2 sheet DD, dielectric coupling, contacts,

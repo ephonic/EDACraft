@@ -1,0 +1,94 @@
+{
+  "benchmark_script_sha256": "b5b64c2dfbe2676847ebc0e8f6f19fe155385faabd6633ff1311b0f3ef43b1fc",
+  "fresh_processes": true,
+  "results": [
+    {
+      "ordering": "COLAMD",
+      "fixture_sha256": "e30ee9d00cbab6ce511454fd786baa7e296429a3ff227d16e4b94390553033c9",
+      "shape": [
+        37737,
+        37737
+      ],
+      "nnz_A": 258829,
+      "nnz_L": 11986959,
+      "nnz_U": 12083489,
+      "seconds": 3.5116626039380208,
+      "peak_rss_MiB": 366.12109375,
+      "true_scaled_residual_linf": 9.43689570931383e-15,
+      "diagnostics": {
+        "method": "reused_gmres",
+        "factor_ordering": "COLAMD",
+        "absolute_tolerance": 1e-14,
+        "linear_solves": 1,
+        "factorizations": 1,
+        "reused_initial_factor": false,
+        "invalidated_initial_factor": false,
+        "acceptance_norm": "true_row_scaled_linf",
+        "gmres_iterations": 1,
+        "gmres_corrections": 0,
+        "refreshes": 0,
+        "max_accepted_true_scaled_residual_linf": 9.43689570931383e-15,
+        "attempts": [
+          [
+            {
+              "info": 0,
+              "iterations": 1,
+              "initial_info": 0,
+              "gmres_absolute_l2_tolerance": 1.942601348707449e-12,
+              "initial_true_scaled_residual_linf": 9.43689570931383e-15,
+              "initial_true_scaled_residual_l2": 1.9497467841686246e-13,
+              "correction": null,
+              "true_scaled_residual_linf": 9.43689570931383e-15,
+              "accepted": true
+            }
+          ]
+        ]
+      },
+      "full_device_qualification": false
+    },
+    {
+      "ordering": "MMD_AT_PLUS_A",
+      "fixture_sha256": "e30ee9d00cbab6ce511454fd786baa7e296429a3ff227d16e4b94390553033c9",
+      "shape": [
+        37737,
+        37737
+      ],
+      "nnz_A": 258829,
+      "nnz_L": 5075099,
+      "nnz_U": 5094130,
+      "seconds": 1.3611822760431096,
+      "peak_rss_MiB": 218.58984375,
+      "true_scaled_residual_linf": 3.3861802251067274e-15,
+      "diagnostics": {
+        "method": "reused_gmres",
+        "factor_ordering": "MMD_AT_PLUS_A",
+        "absolute_tolerance": 1e-14,
+        "linear_solves": 1,
+        "factorizations": 1,
+        "reused_initial_factor": false,
+        "invalidated_initial_factor": false,
+        "acceptance_norm": "true_row_scaled_linf",
+        "gmres_iterations": 1,
+        "gmres_corrections": 0,
+        "refreshes": 0,
+        "max_accepted_true_scaled_residual_linf": 3.3861802251067274e-15,
+        "attempts": [
+          [
+            {
+              "info": 0,
+              "iterations": 1,
+              "initial_info": 0,
+              "gmres_absolute_l2_tolerance": 1.942601348707449e-12,
+              "initial_true_scaled_residual_linf": 3.3861802251067274e-15,
+              "initial_true_scaled_residual_l2": 4.238249973959539e-14,
+              "correction": null,
+              "true_scaled_residual_linf": 3.3861802251067274e-15,
+              "accepted": true
+            }
+          ]
+        ]
+      },
+      "full_device_qualification": false
+    }
+  ]
+}

@@ -14,6 +14,11 @@ equivalence and complete 2D logic/memory-device qualification are not claimed.
 See [release notes](RELEASE_NOTES.md), [validation and open gaps](docs/releases/0.3.0rc1/VALIDATION.md)
 and [numerical provenance](docs/releases/0.3.0rc1/validation_summary.json).
 
+Development sources additionally offer an optional lower-fill LU ordering.
+See the [2026-11-06 optimization results](docs/optimization/20261106/README.md)
+for usage, measurements and validation scope. This unreleased option requires
+installing the development sources; the tagged `0.3.0rc1` artifacts are unchanged.
+
 ## Capabilities and limits
 
 | Area | Available implementation | Qualification boundary |

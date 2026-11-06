@@ -77,6 +77,25 @@ attempt records. `invalidated_initial_factor` reports an operator-key change;
 bulk solves are separate from these Newton
 counters. The initial LU still requires sparse direct-factorization memory;
 this option does not guarantee lower memory use or faster execution.
+The optional `linear_ordering='MMD_AT_PLUS_A'` selects a different SuperLU
+column ordering for this Newton preconditioner. `COLAMD` remains the default;
+the alternative requires `linear_solver='reused_gmres'`. Harmonic bulk solves
+and the direct/Schur backends retain their current behavior. Diagnostics report
+`factor_ordering`, and a factor from another ordering is invalidated before
+reuse. Ordering does not change the true residual gate, iteration limits,
+single-refresh policy or transactional rollback.
+
+On one captured 37,737-row phase-two system, the alternative reduced LU fill
+and peak process RSS while satisfying the same `1e-14` true max-norm bound.
+This does not guarantee the same savings on other grids or a full trajectory.
+To compare on the included fixture, run each ordering in a fresh process with
+the same thread limits:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python benchmarks/sheet_linear_ordering.py --ordering COLAMD
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python benchmarks/sheet_linear_ordering.py --ordering MMD_AT_PLUS_A
+```
+
 `gmres_corrections` and each attempt's correction record distinguish residual
 correction from a LU refresh. Unrecoverable residual failures attach the
 attempt records as `linear_solver_attempts` on the exception.

@@ -1,0 +1,52 @@
+{
+  "status": "passed_optional_ordering_tests_and_independent_initial_BE_physics",
+  "junit": {
+    "tests": 215,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "field_physics_checks": 226547,
+  "expected_newton_dimension": 37737,
+  "full_pulse_completed": false,
+  "spatial_convergence_qualified": false,
+  "physical_parity_constraints": 1315764,
+  "parity_with_default_ordering": "Passed original sealed backend-comparison thresholds; not bitwise parity",
+  "field_absolute_differences": {
+    "0": {
+      "phi_V": 4.579669976578771e-16,
+      "Fn_eV": 1.7155161632878896e-16,
+      "Fp_eV": 0.0,
+      "dielectric_phi_V": 6.106226635438361e-16,
+      "trap_occupancy": 3.497202527569243e-15
+    },
+    "1": {
+      "phi_V": 5.689893001203927e-16,
+      "Fn_eV": 4.180683577104105e-16,
+      "Fp_eV": 7.650130529057719e-16,
+      "dielectric_phi_V": 5.967448757360216e-16,
+      "trap_occupancy": 3.497202527569243e-15
+    }
+  },
+  "candidate_files": {
+    "tcad/solver/_sheet_linear.py": "121c44e896645b50a7586c0e467a45f03a78a2c9e8dcd4126197bdc4261b4bce",
+    "tcad/solver/sheet_dielectric.py": "7bddc38bf30416c8fb144a6271794aea41c2b73ce9a393deed010550b7084c1c",
+    "tests/test_sheet_linear_ordering.py": "9c3fb832a4d7ff3ca57358b89e50a578d02cdf4b8bd64accc3f595574a46ac80"
+  },
+  "native_binary_sha256": "318988172b59c2ea14f627ecc9aa422ae86c2f4984784002a20475cb9a5d13b4",
+  "native_rebuilt": false,
+  "default_ordering_unchanged": true,
+  "nonlinear_limit": 1e-12,
+  "true_linear_linf_limit": 1e-14,
+  "new_dynamic_steps": 1,
+  "new_complete_fields": 2,
+  "completed_full_pulses": 0,
+  "full_suite_rerun": false,
+  "physical_device_qualified": false,
+  "earlier_failed_attempt": {
+    "directory": "sheet_linear_ordering_20261106",
+    "tests_passed": 214,
+    "tests_failed": 1,
+    "reason": "New constructor test omitted required electron/hole mobility inputs; test corrected; solver candidate unchanged"
+  }
+}
