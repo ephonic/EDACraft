@@ -57,6 +57,10 @@ The [geometric ordering update](docs/optimization/20261107-geometric-ordering/RE
 adds an opt-in `GEOMETRIC_ND` preconditioner ordering and a captured y33 matrix
 check; full y33 and joint convergence qualification remain open.
 
+The [same-ordering y probe study](docs/optimization/20261107-geometric-probes/README.md)
+completes fresh y9/y17/y33 initial and first-BE probes with 26/26 initial-prefix metrics passing;
+a complete y33 pulse and joint qualification remain open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

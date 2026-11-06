@@ -96,6 +96,9 @@ its contents. Harmonic initialization keeps its existing sparse solve.
 See the [y33 matrix study](optimization/20261107-geometric-ordering/README.md)
 for targeted tests, captured-system measurements and remaining device checks.
 This option is unreleased and does not imply a completed finer-y trajectory.
+The [same-ordering y probe study](optimization/20261107-geometric-probes/README.md)
+adds independently audited y9/y17/y33 initial and first-BE probes, with 26/26
+original prefix metrics passing. Complete finer-y pulses and joint qualification remain open.
 
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.

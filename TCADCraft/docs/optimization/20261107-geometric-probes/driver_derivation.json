@@ -1,0 +1,20 @@
+{
+  "geometric_y9_probe": {
+    "source_sha256": "7d6c66cd81e8bde020a5229cae59d894e1fdc3ee226c693e262df6b357d4d7e3",
+    "driver_sha256": "dafd2a42dc731569a93e1ec1ad41ceb14ca367dbe82260ce1264d1f2d7cc5cb5",
+    "only_y_selector_and_ordering_keyword_changed": true,
+    "reversed_AST_identical": true
+  },
+  "geometric_y17_probe": {
+    "source_sha256": "7d6c66cd81e8bde020a5229cae59d894e1fdc3ee226c693e262df6b357d4d7e3",
+    "driver_sha256": "65cbd8eb68adfb093d9d21515b69bed91bf31b89137b1af39713ccc625f573c1",
+    "only_y_selector_and_ordering_keyword_changed": true,
+    "reversed_AST_identical": true
+  },
+  "geometric_y33_probe": {
+    "source_sha256": "7d6c66cd81e8bde020a5229cae59d894e1fdc3ee226c693e262df6b357d4d7e3",
+    "driver_sha256": "c3ab87d1b90d586e715ef90460ba5c6634c46d59202be8158342a7d01e467e1d",
+    "only_y_selector_and_ordering_keyword_changed": true,
+    "reversed_AST_identical": true
+  }
+}

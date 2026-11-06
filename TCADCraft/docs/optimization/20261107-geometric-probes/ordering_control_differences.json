@@ -1,0 +1,115 @@
+{
+  "status": "descriptive_same_geometry_MMD_ND_initial_first_BE_comparisons",
+  "comparisons": {
+    "9": {
+      "parent_manifest_sha256": "5a5a8263ab903a5c95d5d4cae29535662674d17d9b4a4ab6aef178542a2d7273",
+      "parent_label": "independent_y0_probe",
+      "ND_label": "geometric_y9_probe",
+      "time_s": [
+        0.0,
+        1.5625e-13
+      ],
+      "max_absolute_differences_by_checkpoint": [
+        {
+          "phi_V": 1.887379141862766e-15,
+          "Fn_eV": 7.386468769608087e-17,
+          "Fp_eV": 0.0,
+          "dielectric_phi_V": 4.0870085094013575e-15,
+          "trap_occupancy": 1.4099832412739488e-14,
+          "n_m2": 336.0,
+          "p_m2": 9.370405376577267e-26,
+          "sheet_charge_C": 4.3140830754274083e-32,
+          "trap_charge_C": 3.3703774026776627e-34,
+          "dielectric_energy_J": 1.7333369499485123e-33,
+          "top_gate_charge_C": 1.3866695599588098e-32,
+          "bottom_gate_charge_C": 1.6948183510607676e-32,
+          "contact_charge_C": {
+            "source": 1.0592614694129797e-32,
+            "drain": 1.7333369499485123e-33
+          }
+        },
+        {
+          "phi_V": 2.2620794126737565e-15,
+          "Fn_eV": 2.3245294578089215e-15,
+          "Fp_eV": 2.562186574017744e-15,
+          "dielectric_phi_V": 3.795574965437254e-15,
+          "trap_occupancy": 1.3988810110276972e-14,
+          "n_m2": 216.0,
+          "p_m2": 7.391311137558792e-26,
+          "sheet_charge_C": 3.697785493223493e-32,
+          "trap_charge_C": 2.8888949165808538e-34,
+          "dielectric_energy_J": 4.044452883213195e-33,
+          "top_gate_charge_C": 2.1570415377137042e-32,
+          "bottom_gate_charge_C": 2.5422275265911513e-32,
+          "contact_charge_C": {
+            "source": 3.851859888774472e-34,
+            "drain": 2.4074124304840448e-33
+          },
+          "terminal_total_currents_A": {
+            "source": 7.792703114739563e-20,
+            "drain": 2.837560373301906e-20,
+            "bottom_gate": 2.710505431213761e-19,
+            "top_gate": 2.270048298641525e-19
+          }
+        }
+      ]
+    },
+    "17": {
+      "parent_manifest_sha256": "409f9c23235ba83aa626f466a2ae95e430bb17f25b4e6b0071c7cd98effcb4d2",
+      "parent_label": "independent_y1_probe",
+      "ND_label": "geometric_y17_probe",
+      "time_s": [
+        0.0,
+        1.5625e-13
+      ],
+      "max_absolute_differences_by_checkpoint": [
+        {
+          "phi_V": 1.3600232051658168e-15,
+          "Fn_eV": 4.786080992282397e-17,
+          "Fp_eV": 0.0,
+          "dielectric_phi_V": 3.2057689836051395e-15,
+          "trap_occupancy": 1.1157741397482823e-14,
+          "n_m2": 236.0,
+          "p_m2": 8.643391166325582e-26,
+          "sheet_charge_C": 1.232595164407831e-32,
+          "trap_charge_C": 9.62964972193618e-35,
+          "dielectric_energy_J": 5.7777898331617076e-34,
+          "top_gate_charge_C": 1.5407439555097887e-33,
+          "bottom_gate_charge_C": 3.0814879110195774e-33,
+          "contact_charge_C": {
+            "source": 6.740754805355325e-33,
+            "drain": 2.792598419361492e-33
+          }
+        },
+        {
+          "phi_V": 1.762479051592436e-15,
+          "Fn_eV": 1.132774429812855e-15,
+          "Fp_eV": 1.4675760606763788e-15,
+          "dielectric_phi_V": 2.9629076969683865e-15,
+          "trap_occupancy": 1.1102230246251565e-14,
+          "n_m2": 198.0,
+          "p_m2": 1.1389889293943057e-25,
+          "sheet_charge_C": 9.244463733058732e-33,
+          "trap_charge_C": 4.81482486096809e-35,
+          "dielectric_energy_J": 1.829633447167874e-33,
+          "top_gate_charge_C": 1.232595164407831e-32,
+          "bottom_gate_charge_C": 9.244463733058732e-33,
+          "contact_charge_C": {
+            "source": 5.200010849845537e-33,
+            "drain": 4.237045877651919e-33
+          },
+          "terminal_total_currents_A": {
+            "source": 8.480917384383682e-20,
+            "drain": 4.817499887508833e-20,
+            "bottom_gate": 7.962109704190423e-20,
+            "top_gate": 6.945670167485263e-20
+          }
+        }
+      ]
+    }
+  },
+  "new_acceptance_gate": false,
+  "new_physics_credit": 0,
+  "new_simulation_steps": 0,
+  "full_device_qualification": false
+}

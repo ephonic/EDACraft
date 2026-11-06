@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed fresh same-ordering geometric y9/y17/y33 initial/first-BE probes,
+  with independent physical audits and 26/26 original prefix metrics passing;
+  full-pulse y and joint space/time qualification remain open.
+
 - Added opt-in `linear_ordering='GEOMETRIC_ND'` for the coupled sheet
   reused-GMRES preconditioner, with immutable permutation-aware cache identity,
   original-equation residual checks and transactional failure recovery.
