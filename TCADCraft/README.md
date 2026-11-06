@@ -41,6 +41,9 @@ adds an opt-in API with 223 passing regressions; the large y17 replay times out 
 The [profiled y17 replay](docs/optimization/20261106-cache-profile/README.md)
 completes under a separately declared wall budget and passes physical parity and the memory gate.
 
+The [first complete x pulse](docs/optimization/20261106-first-full-x-pulse/README.md)
+adds an independently audited 60 ps x69 trajectory; full x/y convergence remains open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

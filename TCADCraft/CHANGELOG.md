@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed and independently audited the first full endpoint-x pulse
+  (x69, 384 BE steps), preserving the remaining x/y convergence gaps.
+
 - Completed a profiled y17 cache-release replay under a separately declared
   wall budget, retaining earlier failures and reporting exact physical parity.
 
