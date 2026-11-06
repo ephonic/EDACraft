@@ -5,6 +5,9 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed a profiled y17 cache-release replay under a separately declared
+  wall budget, retaining earlier failures and reporting exact physical parity.
+
 - Added explicit `SheetTransient.clear_linear_cache()` with 223 passing
   regressions; retained the y17 wall-time failure and initial byte-parity evidence.
 

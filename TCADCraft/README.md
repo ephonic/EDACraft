@@ -38,6 +38,9 @@ the y probe exceeds the frozen memory budget, so the cohort is not accepted.
 The [explicit linear-cache release update](docs/optimization/20261106-linear-cache-release/README.md)
 adds an opt-in API with 223 passing regressions; the large y17 replay times out before its first BE step.
 
+The [profiled y17 replay](docs/optimization/20261106-cache-profile/README.md)
+completes under a separately declared wall budget and passes physical parity and the memory gate.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 
