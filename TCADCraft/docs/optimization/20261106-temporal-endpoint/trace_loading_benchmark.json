@@ -1,0 +1,30 @@
+{
+  "status": "passed_real_record_comparison_parity_and_lower_retained_array_memory",
+  "measurements": [
+    {
+      "mode": "full",
+      "seconds": 0.8558829000685364,
+      "retained_numpy_MiB": 57.69679260253906,
+      "peak_traced_MiB": 62.15614128112793,
+      "comparison_sha256": "c81ab1347e5a752997a2aba69dcb6d96ead6d60493cee9c32a76fa7b211e8278"
+    },
+    {
+      "mode": "trace",
+      "seconds": 0.5043508000671864,
+      "retained_numpy_MiB": 10.585128784179688,
+      "peak_traced_MiB": 14.845292091369629,
+      "comparison_sha256": "c81ab1347e5a752997a2aba69dcb6d96ead6d60493cee9c32a76fa7b211e8278"
+    }
+  ],
+  "one_measurement_per_mode": true,
+  "statistical_speedup_claim": false,
+  "retained_array_reduction_fraction": 0.8165386964038298,
+  "input_sha256": {
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_ordering_full_pulse_20261106_attempt1\\results\\local_z1_mmd.json": "d68168ff94fad85272e1ef217644702a80cc8b4c7f45107083fdf2d3259f3049",
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_ordering_full_pulse_20261106_attempt1\\results\\local_z1_mmd.npz": "689adabbee8387dfbd226839e096049ee3141d9cac6b32044623c0589415b009",
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_contact_z_time_20261106\\results\\local_z1_n256.json": "e05054c8f37bfbf7fb0e9a97d70323cb2edd6bed0e47140f2a21ea7ddfdf2a68",
+    "EDACraft\\TCADCraft\\docs\\validation\\sheet_contact_z_time_20261106\\results\\local_z1_n256.npz": "5b2bc30bfb663f721fa73661041a744f85f4ef4b21be8996c4b15e9398859c2e"
+  },
+  "analysis_source_sha256": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+  "script_sha256": "c3481a21fd79b7cfb1e2292d92f911da34c3e5234791276b899f953bf78cdd86"
+}

@@ -25,6 +25,9 @@ adds fresh 60 ps ordering controls and local contact-z refinement acceptance.
 The [contact-z/time study](docs/optimization/20261106-contact-z-time/README.md)
 adds a second full local refinement, half-dt controls, interval-current analysis and exact replay inputs.
 
+The [third-time-step and endpoint study](docs/optimization/20261106-temporal-endpoint/README.md)
+adds fixed-support temporal orders and narrowly localized z/x probes; global spatial acceptance remains open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

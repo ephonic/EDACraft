@@ -1,0 +1,254 @@
+{
+  "status": "descriptive_initial_and_first_BE_endpoint_probes_only",
+  "common_support_xyz": [
+    65,
+    9,
+    65
+  ],
+  "phase_times_s": [
+    0.0,
+    1.5625e-13
+  ],
+  "z_metrics": {
+    "0_trap_occupancy": {
+      "normalized_d01": 7.650751566970482e-05,
+      "normalized_d12": 1.7474193236916014e-05,
+      "increment_ratio": 0.22839838784407665
+    },
+    "0_phi_V": {
+      "normalized_d01": 0.0005551046998997222,
+      "normalized_d12": 0.00012674647728516675,
+      "increment_ratio": 0.2283289572364692
+    },
+    "0_Fn_eV": {
+      "normalized_d01": 5.979713998352833e-15,
+      "normalized_d12": 3.981991696429057e-15,
+      "increment_ratio": null
+    },
+    "0_Fp_eV": {
+      "normalized_d01": 0.0,
+      "normalized_d12": 0.0,
+      "increment_ratio": null
+    },
+    "0_dielectric_phi_V": {
+      "normalized_d01": 0.00880151373729987,
+      "normalized_d12": 0.002081941378960117,
+      "increment_ratio": 0.23654355842644123
+    },
+    "0_trap_charge_C": {
+      "normalized_d01": 1.8171079472772966e-06,
+      "normalized_d12": 4.153143173812879e-07,
+      "increment_ratio": 0.22855786746383625
+    },
+    "0_sheet_charge_C": {
+      "normalized_d01": 0.00032968149883316755,
+      "normalized_d12": 7.536028178378729e-05,
+      "increment_ratio": 0.22858511032771875
+    },
+    "0_contact_charge_C": {
+      "normalized_d01": 0.00045648093615524576,
+      "normalized_d12": 0.00010433548911154,
+      "increment_ratio": 0.22856483337577166
+    },
+    "0_sheet_contact_charge_C": {
+      "normalized_d01": 1.5765549163066633e-05,
+      "normalized_d12": 3.6037870665365374e-06,
+      "increment_ratio": 0.228586205863288
+    },
+    "0_dielectric_contact_charge_C": {
+      "normalized_d01": 0.00047224648531829505,
+      "normalized_d12": 0.00010793927617813726,
+      "increment_ratio": 0.22856554687831288
+    },
+    "0_gate_charges": {
+      "normalized_d01": 0.00029502630703692745,
+      "normalized_d12": 6.742896477351934e-05,
+      "increment_ratio": 0.2285523804664629
+    },
+    "0_dielectric_energy_J": {
+      "normalized_d01": 0.0017885569680125002,
+      "normalized_d12": 0.00040880705909884796,
+      "increment_ratio": 0.2285680950677948
+    },
+    "1_trap_occupancy": {
+      "normalized_d01": 7.652814747824421e-05,
+      "normalized_d12": 1.747889399508762e-05,
+      "increment_ratio": 0.22839823739437312
+    },
+    "1_phi_V": {
+      "normalized_d01": 0.0006791460564548046,
+      "normalized_d12": 0.00015504184225978435,
+      "increment_ratio": 0.2282893948749623
+    },
+    "1_Fn_eV": {
+      "normalized_d01": 6.323617814169014e-05,
+      "normalized_d12": 1.4438279484996208e-05,
+      "increment_ratio": 0.2283230882904574
+    },
+    "1_Fp_eV": {
+      "normalized_d01": 5.572933029152072e-05,
+      "normalized_d12": 1.2722277111298919e-05,
+      "increment_ratio": 0.22828691901999454
+    },
+    "1_dielectric_phi_V": {
+      "normalized_d01": 0.011018255240130337,
+      "normalized_d12": 0.0026064516369723734,
+      "increment_ratio": 0.2365575656188503
+    },
+    "1_trap_charge_C": {
+      "normalized_d01": 1.8173783588593118e-06,
+      "normalized_d12": 4.153760386760297e-07,
+      "increment_ratio": 0.22855782157367766
+    },
+    "1_sheet_charge_C": {
+      "normalized_d01": 0.0003376430193426927,
+      "normalized_d12": 7.717807385709818e-05,
+      "increment_ratio": 0.2285789115597437
+    },
+    "1_contact_charge_C": {
+      "normalized_d01": 0.0005232026130491674,
+      "normalized_d12": 0.00011958225866848249,
+      "increment_ratio": 0.22855822139643037
+    },
+    "1_sheet_contact_charge_C": {
+      "normalized_d01": 1.9343800008951237e-05,
+      "normalized_d12": 4.420806313912978e-06,
+      "increment_ratio": 0.22853866933421946
+    },
+    "1_dielectric_contact_charge_C": {
+      "normalized_d01": 0.0005425464130580648,
+      "normalized_d12": 0.000124003064982392,
+      "increment_ratio": 0.22855752429261908
+    },
+    "1_gate_charges": {
+      "normalized_d01": 0.000373102634860345,
+      "normalized_d12": 8.526969480016078e-05,
+      "increment_ratio": 0.22854219411256058
+    },
+    "1_dielectric_energy_J": {
+      "normalized_d01": 0.0023894158034529767,
+      "normalized_d12": 0.0005461214280977345,
+      "increment_ratio": 0.22855855699477967
+    },
+    "1_terminal_currents_into_sheet_A": {
+      "normalized_d01": 0.0002771925523135099,
+      "normalized_d12": 6.328873516814326e-05,
+      "increment_ratio": 0.22832047484653387
+    },
+    "1_terminal_total_currents_A": {
+      "normalized_d01": 0.004996884980656091,
+      "normalized_d12": 0.001141806721619787,
+      "increment_ratio": 0.22850370301496667
+    }
+  },
+  "z_failed_metrics": {},
+  "z_passed_metrics": 26,
+  "z_total_metrics": 26,
+  "x_changes_single_increment_normalized": {
+    "0_trap_occupancy": 0.000352165627876766,
+    "0_phi_V": 0.002452572416757448,
+    "0_Fn_eV": 5.470932548440061e-15,
+    "0_Fp_eV": 0.0,
+    "0_dielectric_phi_V": 0.02994983828894826,
+    "0_trap_charge_C": 8.126101268157715e-06,
+    "0_sheet_charge_C": 0.0014892439622329334,
+    "0_contact_charge_C": 0.0021366967691568983,
+    "0_sheet_contact_charge_C": 0.0003197296271227248,
+    "0_dielectric_contact_charge_C": 0.0024542634512957906,
+    "0_gate_charges": 0.0014086914057527267,
+    "0_dielectric_energy_J": 0.008470233619661371,
+    "1_trap_occupancy": 0.0003522558849258228,
+    "1_phi_V": 0.003025909207860167,
+    "1_Fn_eV": 0.00029534743967046806,
+    "1_Fp_eV": 0.00027075024631018074,
+    "1_dielectric_phi_V": 0.03751784624465904,
+    "1_trap_charge_C": 8.127358571252685e-06,
+    "1_sheet_charge_C": 0.0015263129598324099,
+    "1_contact_charge_C": 0.002452830330868183,
+    "1_sheet_contact_charge_C": 0.0002752224607744623,
+    "1_dielectric_contact_charge_C": 0.0027245725061464388,
+    "1_gate_charges": 0.0017829395966408867,
+    "1_dielectric_energy_J": 0.011325950596262402,
+    "1_terminal_currents_into_sheet_A": 0.0012898062118580356,
+    "1_terminal_total_currents_A": 0.023951884216785402
+  },
+  "hotspots": [
+    {
+      "comparison": "z_parent_to_endpoint1",
+      "phase": 0,
+      "time_s": 0.0,
+      "position_nm": {
+        "x": 199.87954562051723,
+        "y": 100.0,
+        "z": 2.5
+      },
+      "max_absolute_change_V": 0.00022003784343249677
+    },
+    {
+      "comparison": "z_endpoint1_to_endpoint2",
+      "phase": 0,
+      "time_s": 0.0,
+      "position_nm": {
+        "x": 199.87954562051723,
+        "y": 100.0,
+        "z": 2.5
+      },
+      "max_absolute_change_V": 5.2048534473991825e-05
+    },
+    {
+      "comparison": "x_parent_to_endpoint1",
+      "phase": 0,
+      "time_s": 0.0,
+      "position_nm": {
+        "x": 200.0,
+        "y": 100.0,
+        "z": 2.8125
+      },
+      "max_absolute_change_V": 0.0007487459572237121
+    },
+    {
+      "comparison": "z_parent_to_endpoint1",
+      "phase": 1,
+      "time_s": 1.5625e-13,
+      "position_nm": {
+        "x": 0.1204543794827595,
+        "y": 0.0,
+        "z": 2.5
+      },
+      "max_absolute_change_V": 0.00027545638100326397
+    },
+    {
+      "comparison": "z_endpoint1_to_endpoint2",
+      "phase": 1,
+      "time_s": 1.5625e-13,
+      "position_nm": {
+        "x": 0.1204543794827595,
+        "y": 0.0,
+        "z": 2.5
+      },
+      "max_absolute_change_V": 6.516129092432044e-05
+    },
+    {
+      "comparison": "x_parent_to_endpoint1",
+      "phase": 1,
+      "time_s": 1.5625e-13,
+      "position_nm": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 2.8125
+      },
+      "max_absolute_change_V": 0.0009379461561164759
+    }
+  ],
+  "difference_limit": 0.01,
+  "increment_ratio_limit": 0.7,
+  "full_pulse_spatial_qualification": false,
+  "global_spatial_convergence_qualified": false,
+  "inherited_baseline_manifest_sha256": "465df9b967204877a0dca0bb6873fa184bdbe19d9fa3eae07f301daf3eb66ad8",
+  "inherited_baseline_description": "Sealed SI local-z2 initial+BE probe; numerical ordering predates optional MMD. Same physical parameters and native SI profile; reference is inherited, not a new solve.",
+  "inherited_baseline_files": {
+    "results/probe_local_z_2_si.json": "d708dd277c8f0d8f7b8cccf2078a1b66edd712c0070e9b094246c71a356c509e",
+    "results/probe_local_z_2_si.npz": "01357259e6283155a760ed6d6febbcc5a6145aa565a164d0682cc506039724b8",
+    "results/probe_local_z_2_si.linear.json": "072dd6fe4cd0aea99110552c02b1c5be2226aefff99b4878947ea9ca1252a113"
+  }
+}

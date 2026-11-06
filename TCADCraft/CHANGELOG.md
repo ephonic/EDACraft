@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Recorded an independently audited third temporal pulse (1,536 steps) and
+  endpoint z/x probes; all 26 initial/first-step z metrics pass, while full-pulse
+  spatial acceptance remains open.
+
 - Added three-resolution BE trace orders on fixed observation support and a
   trace-only loader that retains initial states and all phase-drive checks.
 
