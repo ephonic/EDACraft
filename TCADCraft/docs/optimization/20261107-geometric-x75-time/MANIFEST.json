@@ -1,0 +1,23 @@
+{
+  "auditor_tool_checks.json": "fe12e71b496c88b8ac9ed376aa15d397fa1031a49a5dedf47ce98d570af9d061",
+  "derived/derived_case_guard.py": "ecce04c897460419570436bf5b95901d8e91665825dc1e5db648fc4f49189963",
+  "derived/derived_dense_projection.py": "aba098a50d54b3ba692f325b220aaeb0564a2868edcf2bcc6a5b453807208416",
+  "derived/derived_physical_oracle.py": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "derived/inherited_metric_function.py": "c4e3dd3f06968cb25dca1b72c3c1bb464f58c9775a5e308053fb16c3d20e1b7b",
+  "derived/sheet_y_time_interaction.py": "921708542ab5d4c380a01e6ae1352d9302508a4076d691a21252329bbbb6ab4b",
+  "diagnostic_tool_checks.json": "69e59b50cfb382f13a2799d2ba5982d66e8eafcbd755010d0c7c063919af5d08",
+  "independent_audit.json": "c1c4b0b48fb61fd5b77697e7057a5f547ba7c4588ce22c14d4f3ab9bcb8fc8cc",
+  "matrix_audit.json": "ba7e625ab8a30c2dc702978edd07770ea4745ff0197c54d2ad7b5789b2484871",
+  "policy.json": "20f10f93d369922c37fb2f4dd55b1716baf5502b6f7b0cad11281515b3acf64b",
+  "PROVENANCE.json": "40ff75c157c4665957cd58053a1107a66a742e8488dd20f388ca1c1b15b09c33",
+  "README.md": "ca04bda0c0a2dcc62f81226979d3bbf8f77efd23ed6032ed9acf8c058226bb65",
+  "reproduction/geometric_x75_n128.py": "181d48f8ca59c52d6deec8d5a092219e552f0edfaa6d8ffa15aac1e1c27038ee",
+  "reproduction/geometric_x75_n256.py": "181d48f8ca59c52d6deec8d5a092219e552f0edfaa6d8ffa15aac1e1c27038ee",
+  "reproduction/meshes.npz": "49f4fba29b92d7ec81408dac2781d0474fd1e801471f87d6b7f3ae8d4d992342",
+  "reproduction/README.md": "100adfc3e582e50a9be44a1b3c5b4f5be9b1bbae1f0217cb28da87cb9efad639",
+  "reproduction/sheet_electrode_convergence.py": "44e4991a6c54837c6ac2705522d698df925b0f72bc1289e5a8a10d0be40a80c1",
+  "reproduction/sheet_trap_convergence.py": "140d5eb5ac98b8bb3cf6b1a43b522f2d1e049cb9f548e3d7ab7d635e82d8ddda",
+  "space_time_interaction.json": "586c1bc1425a6084e8e4ff553e6d6624d69fbdf5062c072c9af09c4f3d10a9b1",
+  "spatial_diagnostics.json": "d6f3b0501765ceb246b608c84ff041d1bafbd233cd7105c9eaf7d4c0ac89d4d7",
+  "time_trace_diagnostics.json": "b96abbe594f8e8cf174fcaf409e406315a9fe92ad2fc9975d6d59f2fedadb04a"
+}

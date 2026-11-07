@@ -94,6 +94,12 @@ candidate and GEOMETRIC_ND ordering. Independent physical audits pass;
 signed mixed increments and interval-matched traces are reported.
 A two-mesh result establishes no spatial order or joint qualification.
 
+The [three-x/two-time study](docs/optimization/20261107-geometric-x75-time/README.md)
+adds full x75 pulses, completing x65/69/75 at n128/256. The original x
+endpoint gates pass 52/54 and 52/54 at the two time resolutions;
+signed field interactions and interval-matched traces remain scoped
+numerical evidence, with no global or joint qualification.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

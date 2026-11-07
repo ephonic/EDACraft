@@ -139,6 +139,12 @@ n128/256 with the same candidate and ND ordering. Both physical audits
 pass. Signed four-corner field differences and interval-matched temporal
 traces are descriptive; spatial order and joint qualification remain open.
 
+The [three-x/two-time matrix](optimization/20261107-geometric-x75-time/README.md)
+adds two x75 full pulses (1152 new BE steps), completing x65/69/75 at
+n128/256. Original x endpoint metrics pass 52/54 and 52/54;
+40 signed field interactions and interval-matched temporal traces are
+reported without asserting a spatial order or joint qualification.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

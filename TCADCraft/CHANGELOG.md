@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Added two independently audited x75 full pulses (1152 new BE steps),
+  completing x65/69/75 at n128/256 with original 54-metric x gates at each
+  dt, 40 signed field interactions and interval-matched temporal traces.
+
 - Added two independently audited x69 full pulses (1152 new BE steps),
   completing a matched x65/69 by n128/256 matrix with signed field
   interactions and interval-matched temporal traces; no joint qualification.
