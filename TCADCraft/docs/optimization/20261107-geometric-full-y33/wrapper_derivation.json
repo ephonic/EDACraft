@@ -1,0 +1,57 @@
+{
+  "audit": {
+    "source": "audit_sheet_geometric_full_y17_20261107.py",
+    "source_sha256": "4e5c8d71420a5939e8f65685bf5f64f1e8fb17cd7876e8be720c044f90c1d39f",
+    "derived": "audit_sheet_geometric_full_y33_20261107.py",
+    "derived_sha256": "16b972386869ca02cbbe4ea906912e39537a277c2426a36219acaa6dbd8029c8",
+    "substitutions": [
+      {
+        "before": "sheet_geometric_full_y17_20261107",
+        "after": "sheet_geometric_full_y33_20261107",
+        "count": 1
+      },
+      {
+        "before": "geometric_y17_probe",
+        "after": "geometric_y33_probe",
+        "count": 2
+      },
+      {
+        "before": "passed_geometric_y17_full_control",
+        "after": "passed_geometric_y33_full_control",
+        "count": 1
+      },
+      {
+        "before": "    # The retained full MMD y17 control has the same mesh and physical protocol.\n    from audit_sheet_refinement_20261106 import sample_vectors\n    old=s['load'](Y/'results'/read(Y/'input/policy.json')['cases'][0]['label'])\n    assert [x['time_s'] for x in old['trace']]==[x['time_s'] for x in r['trace']]\n    policy=read(O/'input/policy.json')['diagnostic_acceptance']\n    a,b=[sample_vectors(x,policy) for x in (old,r)]\n    changes={k:float(np.max(np.abs(b[k]-a[k]))) for k in a};assert len(changes)==54\n",
+        "after": "    # No full MMD y33 trajectory exists; do not invent same-grid parity.\n",
+        "count": 1
+      },
+      {
+        "before": "    comparison=dict(status='descriptive_same_y17_full_MMD_ND_comparison',normalized_phase_endpoint_differences=changes,\n        samples=54,phase_times_ps=[0,20,40,60],common_support_xyz=[65,9,65],new_acceptance_gate=False,new_physics_credit=0)\n",
+        "after": "    comparison=dict(status='unavailable_no_accepted_full_MMD_y33',samples=0,new_acceptance_gate=False,new_physics_credit=0)\n",
+        "count": 1
+      }
+    ],
+    "reverse_text_and_AST_identical": true,
+    "physical_and_linear_formula_changed": false
+  },
+  "status": {
+    "source": "status_sheet_geometric_full_y17_20261107.py",
+    "source_sha256": "f578bf9f6fdb8ed1d37714acabdd6fd0c71d143bbd2256805cee87140cb072d3",
+    "derived": "status_sheet_geometric_full_y33_20261107.py",
+    "derived_sha256": "1c4b5e89ef55140ace38bf65b980cb04e83a3a526aa8b4c8fb1a70a08794533a",
+    "substitutions": [
+      {
+        "before": "sheet_geometric_full_y17_20261107",
+        "after": "sheet_geometric_full_y33_20261107",
+        "count": 1
+      },
+      {
+        "before": "full-y17",
+        "after": "full-y33",
+        "count": 1
+      }
+    ],
+    "reverse_text_and_AST_identical": true,
+    "physical_and_linear_formula_changed": false
+  }
+}

@@ -106,7 +106,12 @@ and linear auditing. The y17 follow-up below adds the next full control.
 
 The [complete geometric y17 control](optimization/20261107-geometric-full-y17/README.md)
 adds a second full same-ordering pulse and descriptive y9/y17 increments.
-Full y33, fine-grid temporal and joint qualification remain open.
+The full y33 verdict follows below; fine-grid temporal and joint qualification remain open.
+
+The [full geometric y33 and y-sequence study](optimization/20261107-geometric-full-y33/README.md)
+adds the third full same-ordering pulse and passes all 54 original phase-end y metrics.
+This verdict covers saved phase endpoints at fixed x65/z113; fine-grid time
+and joint space/time qualification remain open.
 
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.

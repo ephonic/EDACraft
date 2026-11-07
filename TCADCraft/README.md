@@ -66,8 +66,12 @@ adds a fresh independently audited 60 ps trajectory with the same geometric orde
 This established the first full control; the y17 follow-up is linked below.
 
 The [complete geometric y17 control](docs/optimization/20261107-geometric-full-y17/README.md)
-adds a second audited 60 ps trajectory and same-ordering y9/y17 diagnostics;
-the full y33 trajectory and three-grid y verdict remain open.
+adds a second audited 60 ps trajectory and same-ordering y9/y17 diagnostics.
+The full y33 trajectory and three-grid verdict are reported below.
+
+The [full geometric y33 and y-sequence study](docs/optimization/20261107-geometric-full-y33/README.md)
+completes the third full 60 ps pulse and passes all 54 original phase-end y metrics;
+fine-grid temporal, global spatial and joint qualification remain open.
 
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.

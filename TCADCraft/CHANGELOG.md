@@ -5,9 +5,13 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed the full geometric-ordering y33 pulse and evaluated the original
+  54-metric y9/y17/y33 phase-end sequence (54/54 pass), with independent
+  fields, all-step ledgers and linear diagnostics; joint qualification remains open.
+
 - Completed the full geometric-ordering y17 pulse with independent physical,
   all-step ledger and linear audits, exact prefix replay and full MMD/ND
-  comparisons; full y33 and three-grid y convergence remain open.
+  comparisons; see the completed y33 sequence above.
 
 - Completed a fresh full 60 ps geometric-ordering y9 control with independent
   field, all-step ledger and linear audits, exact prefix replay, and descriptive
