@@ -75,7 +75,12 @@ fine-grid temporal, global spatial and joint qualification remain open.
 
 The [full y33 half-dt study](docs/optimization/20261107-geometric-time256/README.md)
 adds an audited 768-step pulse on the same x65/y33/z113 grid and compares
-complete fields and current traces; a third time resolution remains needed.
+complete fields and current traces; the third-resolution follow-up is linked below.
+
+The [full y33 three-resolution time study](docs/optimization/20261107-geometric-time512/README.md)
+adds an audited 1536-step pulse on the same x65/y33/z113 grid and compares
+complete fields and current traces across three time resolutions. Bulk-potential
+observed orders are 1.010-1.014; joint space/time qualification remains open.
 
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.

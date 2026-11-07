@@ -5,9 +5,13 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed a full y33 quarter-dt pulse (1536 BE steps / 60 ps) with independent
+  physical and all-step ledger checks, full-grid field increments and
+  three-resolution temporal orders; joint qualification remains open.
+
 - Completed a full y33 half-dt pulse (768 BE steps / 60 ps) with independent
   physical and all-step ledger checks, full-grid field increments and
-  interval-matched current traces; the third time resolution remains open.
+  interval-matched current traces as the second complete time resolution.
 
 - Completed the full geometric-ordering y33 pulse and evaluated the original
   54-metric y9/y17/y33 phase-end sequence (54/54 pass), with independent

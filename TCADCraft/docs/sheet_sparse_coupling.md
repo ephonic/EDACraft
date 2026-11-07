@@ -116,7 +116,15 @@ and joint space/time qualification remain open.
 The [full y33 half-dt study](optimization/20261107-geometric-time256/README.md)
 adds the second complete time resolution at fixed x65/y33/z113, with 768
 BE steps, full-field increments and interval-matched current traces.
-Observed temporal order and joint qualification remain open.
+These two-time increments do not establish an observed order; the three-resolution
+follow-up is linked below.
+
+The [full y33 three-resolution time study](optimization/20261107-geometric-time512/README.md)
+adds the third complete time resolution at fixed x65/y33/z113, with 1536
+BE steps, full-field increments and interval-matched current traces.
+Bulk-potential observed orders are 1.010-1.014. Interval-averaged total terminal
+current orders are 0.984-0.987, while conduction-current orders are about 0.86.
+These observations establish no asymptotic error bound or joint qualification.
 
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
