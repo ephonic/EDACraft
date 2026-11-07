@@ -133,6 +133,12 @@ All 54 original y endpoint gates pass at the finer dt. The largest normalized
 mixed increment is 2.02e-9, below the inherited 1e-8 analysis floor: these
 interactions are unresolved, which establishes no decoupling or joint qualification.
 
+The [matched x/time study](optimization/20261107-geometric-x-time/README.md)
+adds two x69 full pulses (1152 new BE steps), completing x65/69 at
+n128/256 with the same candidate and ND ordering. Both physical audits
+pass. Signed four-corner field differences and interval-matched temporal
+traces are descriptive; spatial order and joint qualification remain open.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

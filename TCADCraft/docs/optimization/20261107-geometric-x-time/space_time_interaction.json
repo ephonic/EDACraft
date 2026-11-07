@@ -1,0 +1,317 @@
+{
+  "status": "descriptive_x_time_signed_interaction",
+  "common_support_xyz": [
+    65,
+    9,
+    113
+  ],
+  "x_nodes": [
+    65,
+    69
+  ],
+  "steps_per_phase": [
+    128,
+    256
+  ],
+  "phase_times_ps": [
+    0,
+    20,
+    40,
+    60
+  ],
+  "analysis_floor_normalized": 1e-08,
+  "analysis_floor_source": "inherited diagnostic roundoff cutoff; descriptive classification only",
+  "metrics": {
+    "0_phi_V": {
+      "spatial_at_coarse_dt": 6.13143104191971e-05,
+      "spatial_at_fine_dt": 6.13143104191971e-05,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": false
+    },
+    "0_Fn_eV": {
+      "spatial_at_coarse_dt": 3.866077541735828e-17,
+      "spatial_at_fine_dt": 3.866077541735828e-17,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": false
+    },
+    "0_Fp_eV": {
+      "spatial_at_coarse_dt": 0.0,
+      "spatial_at_fine_dt": 0.0,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": false
+    },
+    "0_trap_occupancy": {
+      "spatial_at_coarse_dt": 0.00035216562787934724,
+      "spatial_at_fine_dt": 0.00035216562787934724,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": false
+    },
+    "0_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 0.0009922308753527453,
+      "spatial_at_fine_dt": 0.0009922308753527453,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105,
+      "resolved_above_inherited_analysis_floor": false
+    },
+    "1_phi_V": {
+      "spatial_at_coarse_dt": 6.679883405490139e-05,
+      "spatial_at_fine_dt": 6.679595756996226e-05,
+      "temporal_at_coarse_y": 6.232114443713299e-06,
+      "temporal_at_fine_y": 6.230049805502902e-06,
+      "mixed_absolute": 2.876484939129398e-09,
+      "mixed_normalized": 1.1505939756517591e-07,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "1_Fn_eV": {
+      "spatial_at_coarse_dt": 2.5533532897834693e-07,
+      "spatial_at_fine_dt": 2.5296443453273407e-07,
+      "temporal_at_coarse_y": 7.970969904765165e-06,
+      "temporal_at_fine_y": 7.968324776145338e-06,
+      "mixed_absolute": 2.645199241070595e-09,
+      "mixed_normalized": 1.058079696428238e-07,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "1_Fp_eV": {
+      "spatial_at_coarse_dt": 4.4094833123384247e-07,
+      "spatial_at_fine_dt": 4.436978645668433e-07,
+      "temporal_at_coarse_y": 1.0403295698655207e-05,
+      "temporal_at_fine_y": 1.040028391959642e-05,
+      "mixed_absolute": 3.024045712191753e-09,
+      "mixed_normalized": 1.2096182848767012e-07,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "1_trap_occupancy": {
+      "spatial_at_coarse_dt": 0.00037591812654100276,
+      "spatial_at_fine_dt": 0.0003759389805965685,
+      "temporal_at_coarse_y": 1.20785745103269e-05,
+      "temporal_at_fine_y": 1.2079762969574581e-05,
+      "mixed_absolute": 2.4962240968706695e-08,
+      "mixed_normalized": 2.4962240968706695e-08,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "1_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 0.0012003183336743162,
+      "spatial_at_fine_dt": 0.0012002948738858155,
+      "temporal_at_coarse_y": 6.232114443713299e-06,
+      "temporal_at_fine_y": 6.230049805502902e-06,
+      "mixed_absolute": 2.345978868112386e-08,
+      "mixed_normalized": 9.383915472449544e-07,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "2_phi_V": {
+      "spatial_at_coarse_dt": 5.810616400495072e-05,
+      "spatial_at_fine_dt": 5.8110206834674494e-05,
+      "temporal_at_coarse_y": 1.031230296257013e-05,
+      "temporal_at_fine_y": 1.0308995988639325e-05,
+      "mixed_absolute": 4.103177811409786e-09,
+      "mixed_normalized": 1.6412711245639144e-07,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "2_Fn_eV": {
+      "spatial_at_coarse_dt": 3.1424612683588274e-07,
+      "spatial_at_fine_dt": 3.102087918034017e-07,
+      "temporal_at_coarse_y": 1.3877735535130662e-05,
+      "temporal_at_fine_y": 1.3873291680880154e-05,
+      "mixed_absolute": 4.443952978392188e-09,
+      "mixed_normalized": 1.777581191356875e-07,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "2_Fp_eV": {
+      "spatial_at_coarse_dt": 5.37789911182144e-07,
+      "spatial_at_fine_dt": 5.423832073882077e-07,
+      "temporal_at_coarse_y": 1.2492309971162251e-05,
+      "temporal_at_fine_y": 1.2487590507534842e-05,
+      "mixed_absolute": 4.719463627409284e-09,
+      "mixed_normalized": 1.8877854509637138e-07,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "2_trap_occupancy": {
+      "spatial_at_coarse_dt": 0.00034984675715599156,
+      "spatial_at_fine_dt": 0.00034982691071630545,
+      "temporal_at_coarse_y": 1.5633464062830837e-05,
+      "temporal_at_fine_y": 1.563572774496147e-05,
+      "mixed_absolute": 3.14564285730512e-08,
+      "mixed_normalized": 3.14564285730512e-08,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "2_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 0.0009338918843523614,
+      "spatial_at_fine_dt": 0.0009339266706316213,
+      "temporal_at_coarse_y": 1.031230296257013e-05,
+      "temporal_at_fine_y": 1.0308995988639325e-05,
+      "mixed_absolute": 3.4786279259901853e-08,
+      "mixed_normalized": 1.3914511703960741e-06,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "3_phi_V": {
+      "spatial_at_coarse_dt": 6.348654141008492e-05,
+      "spatial_at_fine_dt": 6.348356324409332e-05,
+      "temporal_at_coarse_y": 6.621600167733277e-06,
+      "temporal_at_fine_y": 6.619805155774761e-06,
+      "mixed_absolute": 2.9950949637091995e-09,
+      "mixed_normalized": 1.1980379854836798e-07,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "3_Fn_eV": {
+      "spatial_at_coarse_dt": 2.6748513475721193e-07,
+      "spatial_at_fine_dt": 2.652965701798165e-07,
+      "temporal_at_coarse_y": 8.64133674088538e-06,
+      "temporal_at_fine_y": 8.638991882652667e-06,
+      "mixed_absolute": 2.3453856443783616e-09,
+      "mixed_normalized": 9.381542577513446e-08,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "3_Fp_eV": {
+      "spatial_at_coarse_dt": 3.03844566282253e-07,
+      "spatial_at_fine_dt": 3.0712780065087625e-07,
+      "temporal_at_coarse_y": 1.4163121514711033e-05,
+      "temporal_at_fine_y": 1.415844982484188e-05,
+      "mixed_absolute": 4.671689869152618e-09,
+      "mixed_normalized": 1.868675947661047e-07,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": true
+    },
+    "3_trap_occupancy": {
+      "spatial_at_coarse_dt": 0.0003573070673623946,
+      "spatial_at_fine_dt": 0.000357302134085663,
+      "temporal_at_coarse_y": 7.583103353414611e-06,
+      "temporal_at_fine_y": 7.581669942524627e-06,
+      "mixed_absolute": 8.875292695220693e-09,
+      "mixed_normalized": 8.875292695220693e-09,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585,
+      "resolved_above_inherited_analysis_floor": false
+    },
+    "3_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 0.0010637748829231547,
+      "spatial_at_fine_dt": 0.001063750961485685,
+      "temporal_at_coarse_y": 6.621600167733277e-06,
+      "temporal_at_fine_y": 6.619805155774761e-06,
+      "mixed_absolute": 2.392143746976494e-08,
+      "mixed_normalized": 9.568574987905976e-07,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105,
+      "resolved_above_inherited_analysis_floor": true
+    }
+  },
+  "max_normalized_mixed_increment": 1.3914511703960741e-06,
+  "resolved_metrics": 14,
+  "definition": "(u(x69,dt/2)-u(x65,dt/2))-(u(x69,dt)-u(x65,dt))",
+  "decoupling_established": false,
+  "error_bound_established": false,
+  "new_acceptance_gate": false,
+  "joint_spacetime_qualified": false
+}

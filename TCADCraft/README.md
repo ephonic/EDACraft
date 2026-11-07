@@ -88,6 +88,12 @@ all 54 original y endpoint gates pass at the finer dt. The 40 signed field
 interactions fall below the inherited normalized analysis floor; general
 joint space/time qualification remains open.
 
+The [matched x/time study](docs/optimization/20261107-geometric-x-time/README.md)
+adds two full x69 pulses to complete x65/69 at n128/256 with one frozen
+candidate and GEOMETRIC_ND ordering. Independent physical audits pass;
+signed mixed increments and interval-matched traces are reported.
+A two-mesh result establishes no spatial order or joint qualification.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

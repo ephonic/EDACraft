@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Added two independently audited x69 full pulses (1152 new BE steps),
+  completing a matched x65/69 by n128/256 matrix with signed field
+  interactions and interval-matched temporal traces; no joint qualification.
+
 - Completed two half-dt y controls (1536 BE steps / two 60 ps pulses),
   completing a three-y-grid/two-time-step matrix with original spatial gates and
   signed field interactions. All 54 original y gates pass at finer dt; the
