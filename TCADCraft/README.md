@@ -100,6 +100,12 @@ endpoint gates pass 52/54 and 52/54 at the two time resolutions;
 signed field interactions and interval-matched traces remain scoped
 numerical evidence, with no global or joint qualification.
 
+The [three-x/two-time study](docs/optimization/20261107-geometric-x83-time/README.md)
+adds full x83 pulses, completing refined x69/75/83 at n128/256. The original x
+endpoint gates pass 54/54 and 54/54 at the two time resolutions;
+the coarser x65/69/75 result remains 52/54. Interval-matched traces and
+signed interactions establish no global or joint qualification.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

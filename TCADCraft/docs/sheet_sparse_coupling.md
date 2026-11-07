@@ -145,6 +145,12 @@ n128/256. Original x endpoint metrics pass 52/54 and 52/54;
 40 signed field interactions and interval-matched temporal traces are
 reported without asserting a spatial order or joint qualification.
 
+The [three-x/two-time matrix](optimization/20261107-geometric-x83-time/README.md)
+adds two x83 full pulses (1152 new BE steps), completing x69/75/83 at
+n128/256. Original x endpoint metrics pass 54/54 and 54/54;
+the coarser sequence remains 52/54, with both failed metrics retained.
+These local results establish no spatial order or joint qualification.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

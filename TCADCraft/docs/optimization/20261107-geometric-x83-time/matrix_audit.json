@@ -1,0 +1,81 @@
+{
+  "status": "passed_three_x_two_time_matrix_and_original_x_gates",
+  "new_complete_pulses": 2,
+  "inherited_matrix_pulses": 4,
+  "matrix_pulses": 6,
+  "new_dynamic_steps": 1152,
+  "new_field_checkpoints": 8,
+  "new_physics_and_ledger_checks": 1997422,
+  "x_nodes": [
+    69,
+    75,
+    83
+  ],
+  "y_nodes": 9,
+  "z_nodes": 113,
+  "steps_per_phase": [
+    128,
+    256
+  ],
+  "spatial_verdicts": {
+    "128": {
+      "passed_metrics": 54,
+      "total_metrics": 54,
+      "failures": {}
+    },
+    "256": {
+      "passed_metrics": 54,
+      "total_metrics": 54,
+      "failures": {}
+    }
+  },
+  "coarser_sequence_verdicts_retained": {
+    "128": {
+      "passed_metrics": 52,
+      "total_metrics": 54,
+      "failures": {
+        "1_dielectric_phi_V": {
+          "normalized_d01": 0.03619588939152374,
+          "normalized_d12": 0.011370109372553117,
+          "increment_ratio": 0.31412708911680287
+        },
+        "3_dielectric_phi_V": {
+          "normalized_d01": 0.03209941374640435,
+          "normalized_d12": 0.010080895924656552,
+          "increment_ratio": 0.31405233766257723
+        }
+      }
+    },
+    "256": {
+      "passed_metrics": 52,
+      "total_metrics": 54,
+      "failures": {
+        "1_dielectric_phi_V": {
+          "normalized_d01": 0.036195168893270235,
+          "normalized_d12": 0.011369887272089318,
+          "increment_ratio": 0.31412720591568566
+        },
+        "3_dielectric_phi_V": {
+          "normalized_d01": 0.032098678435415806,
+          "normalized_d12": 0.010080669248132335,
+          "increment_ratio": 0.31405247005465226
+        }
+      }
+    }
+  },
+  "predeclared_refined_window": true,
+  "local_x_endpoint_sequence_at_each_dt_qualified": true,
+  "mixed_field_metrics": 40,
+  "resolved_mixed_metrics": 18,
+  "analysis_floor_normalized": 1e-08,
+  "inherited_solver_tests": 245,
+  "solver_tests_rerun": 0,
+  "inherited_trace_tests": 25,
+  "trace_tests_rerun": 0,
+  "spatial_order_available": false,
+  "temporal_order_available_on_x83": false,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "sentaurus_equivalence": false,
+  "new_acceptance_gate": false
+}

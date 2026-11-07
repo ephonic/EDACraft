@@ -1,0 +1,64 @@
+{
+  "status": "passed_exact_x75_128_256_and_original_x83_physics_replays",
+  "inherited_summaries": {
+    "geometric_x75_n128": {
+      "expected_newton_dimension": 75555,
+      "accepted_diagnostics": 385,
+      "linear_solves": 894,
+      "factorizations": 2,
+      "gmres_iterations": 6080,
+      "gmres_corrections": 679,
+      "refreshes": 0,
+      "checkpoints": 4,
+      "steps": 384,
+      "full_pulse_completed": true,
+      "independent_physics_and_ledger_checks": 900439
+    },
+    "geometric_x75_n256": {
+      "expected_newton_dimension": 75555,
+      "accepted_diagnostics": 769,
+      "linear_solves": 1678,
+      "factorizations": 2,
+      "gmres_iterations": 10796,
+      "gmres_corrections": 1128,
+      "refreshes": 0,
+      "checkpoints": 4,
+      "steps": 768,
+      "full_pulse_completed": true,
+      "independent_physics_and_ledger_checks": 905047
+    }
+  },
+  "x83_summary": {
+    "expected_newton_dimension": 83691,
+    "accepted_diagnostics": 385,
+    "linear_solves": 894,
+    "factorizations": 2,
+    "gmres_iterations": 6100,
+    "gmres_corrections": 668,
+    "refreshes": 0,
+    "checkpoints": 4,
+    "steps": 384,
+    "full_pulse_completed": true,
+    "independent_physics_and_ledger_checks": 996407
+  },
+  "metadata_only_ND_label_replay": true,
+  "tamper_rejections": [
+    "interior_trace_charge",
+    "wrong_dt",
+    "linear_residual",
+    "bulk_field",
+    "gate_drive",
+    "x_geometry",
+    "y_geometry",
+    "cache_flag",
+    "wrong_ordering",
+    "late_fine_trace_charge",
+    "late_fine_linear_residual",
+    "truncated_tail",
+    "wrong_cadence"
+  ],
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0,
+  "physical_oracle_sha256": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "derived_guard_sha256": "ecce04c897460419570436bf5b95901d8e91665825dc1e5db648fc4f49189963"
+}
