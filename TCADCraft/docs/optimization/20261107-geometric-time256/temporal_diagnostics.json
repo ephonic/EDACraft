@@ -1,0 +1,22 @@
+{
+  "status": "two_complete_time_resolutions_not_observed_order",
+  "new_complete_pulses": 1,
+  "inherited_complete_pulses": 1,
+  "steps_per_phase": [
+    128,
+    256
+  ],
+  "new_dynamic_steps": 768,
+  "new_field_checkpoints": 4,
+  "full_field_increments": 20,
+  "fixed_support_increments": 54,
+  "trace_source_sha256": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+  "inherited_trace_tests": 25,
+  "trace_tests_rerun": 0,
+  "next_steps_per_phase": 512,
+  "observed_time_order_available": false,
+  "fine_grid_temporal_qualified": false,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "new_acceptance_gate": false
+}

@@ -73,6 +73,10 @@ The [full geometric y33 and y-sequence study](docs/optimization/20261107-geometr
 completes the third full 60 ps pulse and passes all 54 original phase-end y metrics;
 fine-grid temporal, global spatial and joint qualification remain open.
 
+The [full y33 half-dt study](docs/optimization/20261107-geometric-time256/README.md)
+adds an audited 768-step pulse on the same x65/y33/z113 grid and compares
+complete fields and current traces; a third time resolution remains needed.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

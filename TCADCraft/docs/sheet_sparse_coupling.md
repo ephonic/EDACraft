@@ -113,6 +113,11 @@ adds the third full same-ordering pulse and passes all 54 original phase-end y m
 This verdict covers saved phase endpoints at fixed x65/z113; fine-grid time
 and joint space/time qualification remain open.
 
+The [full y33 half-dt study](optimization/20261107-geometric-time256/README.md)
+adds the second complete time resolution at fixed x65/y33/z113, with 768
+BE steps, full-field increments and interval-matched current traces.
+Observed temporal order and joint qualification remain open.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the
