@@ -126,6 +126,13 @@ Bulk-potential observed orders are 1.010-1.014. Interval-averaged total terminal
 current orders are 0.984-0.987, while conduction-current orders are about 0.86.
 These observations establish no asymptotic error bound or joint qualification.
 
+The [y/time matrix study](optimization/20261107-geometric-y-time256/README.md)
+completes y9/y17/y33 at n128/n256 with two new full 60 ps controls and 1536
+new BE steps, original y endpoint gates and signed space/time interactions.
+All 54 original y endpoint gates pass at the finer dt. The largest normalized
+mixed increment is 2.02e-9, below the inherited 1e-8 analysis floor: these
+interactions are unresolved, which establishes no decoupling or joint qualification.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

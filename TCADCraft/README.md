@@ -82,6 +82,12 @@ adds an audited 1536-step pulse on the same x65/y33/z113 grid and compares
 complete fields and current traces across three time resolutions. Bulk-potential
 observed orders are 1.010-1.014; joint space/time qualification remains open.
 
+The [y/time matrix study](docs/optimization/20261107-geometric-y-time256/README.md)
+adds two audited half-dt pulses, completing three y grids at two time steps;
+all 54 original y endpoint gates pass at the finer dt. The 40 signed field
+interactions fall below the inherited normalized analysis floor; general
+joint space/time qualification remains open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

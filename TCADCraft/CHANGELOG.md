@@ -5,6 +5,11 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed two half-dt y controls (1536 BE steps / two 60 ps pulses),
+  completing a three-y-grid/two-time-step matrix with original spatial gates and
+  signed field interactions. All 54 original y gates pass at finer dt; the
+  mixed increments remain below the inherited analysis floor.
+
 - Completed a full y33 quarter-dt pulse (1536 BE steps / 60 ps) with independent
   physical and all-step ledger checks, full-grid field increments and
   three-resolution temporal orders; joint qualification remains open.

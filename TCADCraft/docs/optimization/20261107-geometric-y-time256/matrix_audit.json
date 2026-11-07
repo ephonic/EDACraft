@@ -1,0 +1,31 @@
+{
+  "status": "passed_y_time_matrix_and_original_y_gates",
+  "new_complete_pulses": 2,
+  "inherited_matrix_pulses": 4,
+  "matrix_pulses": 6,
+  "new_dynamic_steps": 1536,
+  "new_field_checkpoints": 8,
+  "new_physics_and_ledger_checks": 2286174,
+  "y_nodes": [
+    9,
+    17,
+    33
+  ],
+  "steps_per_phase": [
+    128,
+    256
+  ],
+  "passed_endpoint_metrics": 54,
+  "total_endpoint_metrics": 54,
+  "local_y_endpoint_sequence_at_half_dt_qualified": true,
+  "mixed_field_metrics": 40,
+  "inherited_solver_tests": 245,
+  "solver_tests_rerun": 0,
+  "inherited_trace_tests": 25,
+  "trace_tests_rerun": 0,
+  "general_temporal_qualified": false,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "sentaurus_equivalence": false,
+  "new_acceptance_gate": false
+}
