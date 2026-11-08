@@ -1,0 +1,50 @@
+{
+  "status": "passed_exact_sealed_z129_n512_z121_n256_physics_replays",
+  "inherited_summaries": {
+    "geometric_z129_n512": {
+      "expected_newton_dimension": 95499,
+      "accepted_diagnostics": 1537,
+      "linear_solves": 3214,
+      "factorizations": 2,
+      "gmres_iterations": 19597,
+      "gmres_corrections": 2237,
+      "refreshes": 0,
+      "checkpoints": 4,
+      "steps": 1536,
+      "full_pulse_completed": true,
+      "independent_physics_and_ledger_checks": 1147767
+    },
+    "geometric_z121_n256": {
+      "expected_newton_dimension": 89595,
+      "accepted_diagnostics": 769,
+      "linear_solves": 1678,
+      "factorizations": 2,
+      "gmres_iterations": 10849,
+      "gmres_corrections": 1156,
+      "refreshes": 0,
+      "checkpoints": 4,
+      "steps": 768,
+      "full_pulse_completed": true,
+      "independent_physics_and_ledger_checks": 1069783
+    }
+  },
+  "tamper_rejections": [
+    "interior_trace_charge",
+    "wrong_dt",
+    "linear_residual",
+    "bulk_field",
+    "gate_drive",
+    "x_geometry",
+    "y_geometry",
+    "cache_flag",
+    "wrong_ordering",
+    "late_fine_trace_charge",
+    "late_fine_linear_residual",
+    "truncated_tail",
+    "wrong_cadence"
+  ],
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0,
+  "physical_oracle_sha256": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "derived_guard_sha256": "ecce04c897460419570436bf5b95901d8e91665825dc1e5db648fc4f49189963"
+}

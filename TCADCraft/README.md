@@ -117,6 +117,11 @@ adds a full n512 pulse at x83/y9/z129, comparing three complete time
 resolutions with unchanged field-order and interval-current diagnostics.
 Measured spatial/time components are recorded; joint qualification remains open.
 
+The [complete z/time matrix](docs/optimization/20261108-geometric-z-time512/README.md)
+adds full n512 controls on z113 and z121, completing three z meshes by
+three time steps at x83/y9. It preserves original spatial gates and
+reports matched spatial/time and signed mixed increments. Joint bounds remain open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

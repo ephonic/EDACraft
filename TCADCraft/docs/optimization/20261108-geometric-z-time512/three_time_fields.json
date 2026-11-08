@@ -1,0 +1,2708 @@
+{
+  "113": {
+    "status": "descriptive_full_field_phase_orders_on_fixed_mesh",
+    "mesh_xyz": [
+      83,
+      9,
+      113
+    ],
+    "steps_per_phase": [
+      128,
+      256,
+      512
+    ],
+    "dt_ps": [
+      0.15625,
+      0.078125,
+      0.0390625
+    ],
+    "phase_times_ps": [
+      0,
+      20,
+      40,
+      60
+    ],
+    "metrics": {
+      "0_phi_V": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fn_eV": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fp_eV": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_trap_occupancy": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_phi_V": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          113,
+          9,
+          83
+        ],
+        "compared_values": 84411,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "1_phi_V": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 6.229294371107308e-06,
+        "middle_to_fine_absolute": 3.0881730129911356e-06,
+        "normalized_coarse_to_middle": 0.0002491717748442923,
+        "normalized_middle_to_fine": 0.00012352692051964542,
+        "increment_ratio": 0.4957500527370627,
+        "observed_order": 1.012315168961742,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fn_eV": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 7.967356954020378e-06,
+        "middle_to_fine_absolute": 3.949740817992074e-06,
+        "normalized_coarse_to_middle": 0.00031869427816081514,
+        "normalized_middle_to_fine": 0.00015798963271968294,
+        "increment_ratio": 0.4957404118813843,
+        "observed_order": 1.0123432253378222,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fp_eV": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.0399182521950373e-05,
+        "middle_to_fine_absolute": 5.167954226438249e-06,
+        "normalized_coarse_to_middle": 0.00041596730087801494,
+        "normalized_middle_to_fine": 0.00020671816905752996,
+        "increment_ratio": 0.4969577383154725,
+        "observed_order": 1.0088049258263874,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_trap_occupancy": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.208018620282858e-05,
+        "middle_to_fine_absolute": 6.050604423907258e-06,
+        "normalized_coarse_to_middle": 1.208018620282858e-05,
+        "normalized_middle_to_fine": 6.050604423907258e-06,
+        "increment_ratio": 0.5008701291781832,
+        "observed_order": 0.9974915199685456,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_phi_V": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          113,
+          9,
+          83
+        ],
+        "compared_values": 84411,
+        "coarse_to_middle_absolute": 6.229294371107308e-06,
+        "middle_to_fine_absolute": 3.0881730129911356e-06,
+        "normalized_coarse_to_middle": 0.0002491717748442923,
+        "normalized_middle_to_fine": 0.00012352692051964542,
+        "increment_ratio": 0.4957500527370627,
+        "observed_order": 1.012315168961742,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_phi_V": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.0307777807291862e-05,
+        "middle_to_fine_absolute": 5.105648534287077e-06,
+        "normalized_coarse_to_middle": 0.0004123111122916745,
+        "normalized_middle_to_fine": 0.0002042259413714831,
+        "increment_ratio": 0.495320002986024,
+        "observed_order": 1.013567210991499,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fn_eV": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.3871654662237333e-05,
+        "middle_to_fine_absolute": 6.870955606634154e-06,
+        "normalized_coarse_to_middle": 0.0005548661864894933,
+        "normalized_middle_to_fine": 0.00027483822426536617,
+        "increment_ratio": 0.4953234328518059,
+        "observed_order": 1.013557221018971,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fp_eV": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.248580041953145e-05,
+        "middle_to_fine_absolute": 6.053416145047463e-06,
+        "normalized_coarse_to_middle": 0.000499432016781258,
+        "normalized_middle_to_fine": 0.0002421366458018985,
+        "increment_ratio": 0.48482403543613806,
+        "observed_order": 1.0444668718500731,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_occupancy": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.563656515102263e-05,
+        "middle_to_fine_absolute": 7.919814953988302e-06,
+        "normalized_coarse_to_middle": 1.563656515102263e-05,
+        "normalized_middle_to_fine": 7.919814953988302e-06,
+        "increment_ratio": 0.5064932661039274,
+        "observed_order": 0.9813850065579881,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_phi_V": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          113,
+          9,
+          83
+        ],
+        "compared_values": 84411,
+        "coarse_to_middle_absolute": 1.0307777807291862e-05,
+        "middle_to_fine_absolute": 5.105648534287077e-06,
+        "normalized_coarse_to_middle": 0.0004123111122916745,
+        "normalized_middle_to_fine": 0.0002042259413714831,
+        "increment_ratio": 0.495320002986024,
+        "observed_order": 1.013567210991499,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_phi_V": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 6.619146994846226e-06,
+        "middle_to_fine_absolute": 3.2873434855640316e-06,
+        "normalized_coarse_to_middle": 0.000264765879793849,
+        "normalized_middle_to_fine": 0.00013149373942256126,
+        "increment_ratio": 0.4966415594220237,
+        "observed_order": 1.0097231022744741,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fn_eV": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 8.638132132794338e-06,
+        "middle_to_fine_absolute": 4.2900304506369134e-06,
+        "normalized_coarse_to_middle": 0.0003455252853117735,
+        "normalized_middle_to_fine": 0.00017160121802547654,
+        "increment_ratio": 0.4966386696436348,
+        "observed_order": 1.0097314968218116,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fp_eV": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.4156763958334288e-05,
+        "middle_to_fine_absolute": 7.0885743886843315e-06,
+        "normalized_coarse_to_middle": 0.0005662705583333715,
+        "normalized_middle_to_fine": 0.00028354297554737326,
+        "increment_ratio": 0.5007199674690618,
+        "observed_order": 0.9979241072224115,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_occupancy": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 7.581162988323786e-06,
+        "middle_to_fine_absolute": 3.833606728842476e-06,
+        "normalized_coarse_to_middle": 7.581162988323786e-06,
+        "normalized_middle_to_fine": 3.833606728842476e-06,
+        "increment_ratio": 0.5056752815823705,
+        "observed_order": 0.9837168365133505,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_phi_V": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          113,
+          9,
+          83
+        ],
+        "compared_values": 84411,
+        "coarse_to_middle_absolute": 6.619146994846226e-06,
+        "middle_to_fine_absolute": 3.2873434855640316e-06,
+        "normalized_coarse_to_middle": 0.000264765879793849,
+        "normalized_middle_to_fine": 0.00013149373942256126,
+        "increment_ratio": 0.4966415594220237,
+        "observed_order": 1.0097231022744741,
+        "roundoff_resolved": true,
+        "decreasing": true
+      }
+    },
+    "fixed_support_metrics": {
+      "0_trap_occupancy": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_phi_V": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fp_eV": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_trap_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_gate_charges": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "1_trap_occupancy": {
+        "coarse_to_middle_absolute": 1.208018620282858e-05,
+        "middle_to_fine_absolute": 6.050604423907258e-06,
+        "normalized_coarse_to_middle": 1.208018620282858e-05,
+        "normalized_middle_to_fine": 6.050604423907258e-06,
+        "increment_ratio": 0.5008701291781832,
+        "observed_order": 0.9974915199685456,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_phi_V": {
+        "coarse_to_middle_absolute": 0.0002491717748442923,
+        "middle_to_fine_absolute": 0.0001235269205195344,
+        "normalized_coarse_to_middle": 0.0002491717748442923,
+        "normalized_middle_to_fine": 0.0001235269205195344,
+        "increment_ratio": 0.4957500527366171,
+        "observed_order": 1.0123151689630385,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0003186942781608082,
+        "middle_to_fine_absolute": 0.00015798963271969335,
+        "normalized_coarse_to_middle": 0.0003186942781608082,
+        "normalized_middle_to_fine": 0.00015798963271969335,
+        "increment_ratio": 0.4957404118814277,
+        "observed_order": 1.0123432253376956,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fp_eV": {
+        "coarse_to_middle_absolute": 0.0004159673008780132,
+        "middle_to_fine_absolute": 0.00020671816905753343,
+        "normalized_coarse_to_middle": 0.0004159673008780132,
+        "normalized_middle_to_fine": 0.00020671816905753343,
+        "increment_ratio": 0.4969577383154829,
+        "observed_order": 1.0088049258263572,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.0002491717748442923,
+        "middle_to_fine_absolute": 0.0001235269205195344,
+        "normalized_coarse_to_middle": 0.0002491717748442923,
+        "normalized_middle_to_fine": 0.0001235269205195344,
+        "increment_ratio": 0.4957500527366171,
+        "observed_order": 1.0123151689630385,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_trap_charge_C": {
+        "coarse_to_middle_absolute": 3.6978838731105412e-06,
+        "middle_to_fine_absolute": 1.8523833499872744e-06,
+        "normalized_coarse_to_middle": 3.6978838731105412e-06,
+        "normalized_middle_to_fine": 1.8523833499872744e-06,
+        "increment_ratio": 0.5009306439980521,
+        "observed_order": 0.9973172249730359,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0009650574554225244,
+        "middle_to_fine_absolute": 0.00047842516463880713,
+        "normalized_coarse_to_middle": 0.0009650574554225244,
+        "normalized_middle_to_fine": 0.00047842516463880713,
+        "increment_ratio": 0.49574785620338174,
+        "observed_order": 1.012321561165336,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.239381585567024e-05,
+        "middle_to_fine_absolute": 1.1101794716306124e-05,
+        "normalized_coarse_to_middle": 2.239381585567024e-05,
+        "normalized_middle_to_fine": 1.1101794716306124e-05,
+        "increment_ratio": 0.49575270190029214,
+        "observed_order": 1.01230745958396,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.0255470962217414e-06,
+        "middle_to_fine_absolute": 1.0041993632262103e-06,
+        "normalized_coarse_to_middle": 2.0255470962217414e-06,
+        "normalized_middle_to_fine": 1.0041993632262103e-06,
+        "increment_ratio": 0.49576697826446303,
+        "observed_order": 1.0122659143878239,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.0368268759396457e-05,
+        "middle_to_fine_absolute": 1.0097595353197875e-05,
+        "normalized_coarse_to_middle": 2.0368268759396457e-05,
+        "normalized_middle_to_fine": 1.0097595353197875e-05,
+        "increment_ratio": 0.49575128217706615,
+        "observed_order": 1.0123115911410498,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_gate_charges": {
+        "coarse_to_middle_absolute": 0.00046028555537347415,
+        "middle_to_fine_absolute": 0.00022818544302616317,
+        "normalized_coarse_to_middle": 0.00046028555537347415,
+        "normalized_middle_to_fine": 0.00022818544302616317,
+        "increment_ratio": 0.4957475644461931,
+        "observed_order": 1.012322410219483,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0034028822300982142,
+        "middle_to_fine_absolute": 0.00168704719616386,
+        "normalized_coarse_to_middle": 0.0034028822300982142,
+        "normalized_middle_to_fine": 0.00168704719616386,
+        "increment_ratio": 0.49577008021084773,
+        "observed_order": 1.0122568876699052,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.0010320549732316664,
+        "middle_to_fine_absolute": 0.0005116869368379517,
+        "normalized_coarse_to_middle": 0.0010320549732316664,
+        "normalized_middle_to_fine": 0.0005116869368379517,
+        "increment_ratio": 0.49579426494667245,
+        "observed_order": 1.012186511604818,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.0009854383439096837,
+        "middle_to_fine_absolute": 0.0004885737371535526,
+        "normalized_coarse_to_middle": 0.0009854383439096837,
+        "normalized_middle_to_fine": 0.0004885737371535526,
+        "increment_ratio": 0.495793308808299,
+        "observed_order": 1.0121892938423656,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_occupancy": {
+        "coarse_to_middle_absolute": 1.563656515102263e-05,
+        "middle_to_fine_absolute": 7.919814953988302e-06,
+        "normalized_coarse_to_middle": 1.563656515102263e-05,
+        "normalized_middle_to_fine": 7.919814953988302e-06,
+        "increment_ratio": 0.5064932661039274,
+        "observed_order": 0.9813850065579881,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_phi_V": {
+        "coarse_to_middle_absolute": 0.0004123111122917855,
+        "middle_to_fine_absolute": 0.0002042259413714831,
+        "normalized_coarse_to_middle": 0.0004123111122917855,
+        "normalized_middle_to_fine": 0.0002042259413714831,
+        "increment_ratio": 0.49532000298589063,
+        "observed_order": 1.0135672109918876,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0005548661864894916,
+        "middle_to_fine_absolute": 0.0002748382242653627,
+        "normalized_coarse_to_middle": 0.0005548661864894916,
+        "normalized_middle_to_fine": 0.0002748382242653627,
+        "increment_ratio": 0.4953234328518012,
+        "observed_order": 1.0135572210189845,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fp_eV": {
+        "coarse_to_middle_absolute": 0.000499432016781251,
+        "middle_to_fine_absolute": 0.00024213664580190197,
+        "normalized_coarse_to_middle": 0.000499432016781251,
+        "normalized_middle_to_fine": 0.00024213664580190197,
+        "increment_ratio": 0.4848240354361517,
+        "observed_order": 1.0444668718500323,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.0004123111122917855,
+        "middle_to_fine_absolute": 0.0002042259413714831,
+        "normalized_coarse_to_middle": 0.0004123111122917855,
+        "normalized_middle_to_fine": 0.0002042259413714831,
+        "increment_ratio": 0.49532000298589063,
+        "observed_order": 1.0135672109918876,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_charge_C": {
+        "coarse_to_middle_absolute": 4.532824793679335e-06,
+        "middle_to_fine_absolute": 2.30439755594114e-06,
+        "normalized_coarse_to_middle": 4.532824793679335e-06,
+        "normalized_middle_to_fine": 2.30439755594114e-06,
+        "increment_ratio": 0.5083800192662288,
+        "observed_order": 0.9760207653155177,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0015536449790189977,
+        "middle_to_fine_absolute": 0.000769556363062307,
+        "normalized_coarse_to_middle": 0.0015536449790189977,
+        "normalized_middle_to_fine": 0.000769556363062307,
+        "increment_ratio": 0.49532317450555546,
+        "observed_order": 1.013557973486807,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.317300445138116e-05,
+        "middle_to_fine_absolute": 1.6431148221862646e-05,
+        "normalized_coarse_to_middle": 3.317300445138116e-05,
+        "normalized_middle_to_fine": 1.6431148221862646e-05,
+        "increment_ratio": 0.495316854581091,
+        "observed_order": 1.0135763812301164,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.046859355858647e-06,
+        "middle_to_fine_absolute": 1.5090843938202897e-06,
+        "normalized_coarse_to_middle": 3.046859355858647e-06,
+        "normalized_middle_to_fine": 1.5090843938202897e-06,
+        "increment_ratio": 0.4952917800155593,
+        "observed_order": 1.0136494170387886,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.012614509551037e-05,
+        "middle_to_fine_absolute": 1.4922063827971233e-05,
+        "normalized_coarse_to_middle": 3.012614509551037e-05,
+        "normalized_middle_to_fine": 1.4922063827971233e-05,
+        "increment_ratio": 0.4953193905381221,
+        "observed_order": 1.0135689948405093,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_gate_charges": {
+        "coarse_to_middle_absolute": 0.0007438603980984837,
+        "middle_to_fine_absolute": 0.0003684514498791813,
+        "normalized_coarse_to_middle": 0.0007438603980984837,
+        "normalized_middle_to_fine": 0.0003684514498791813,
+        "increment_ratio": 0.4953233843622363,
+        "observed_order": 1.013557362251266,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.00440506600771684,
+        "middle_to_fine_absolute": 0.00218173111151998,
+        "normalized_coarse_to_middle": 0.00440506600771684,
+        "normalized_middle_to_fine": 0.00218173111151998,
+        "increment_ratio": 0.4952777342491579,
+        "observed_order": 1.0136903303866,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.0016277791199164615,
+        "middle_to_fine_absolute": 0.0008061289309396202,
+        "normalized_coarse_to_middle": 0.0016277791199164615,
+        "normalized_middle_to_fine": 0.0008061289309396202,
+        "increment_ratio": 0.4952323820083103,
+        "observed_order": 1.0138224430262104,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.0015598285043587068,
+        "middle_to_fine_absolute": 0.0007724800536939302,
+        "normalized_coarse_to_middle": 0.0015598285043587068,
+        "normalized_middle_to_fine": 0.0007724800536939302,
+        "increment_ratio": 0.495233964205264,
+        "observed_order": 1.0138178338283157,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_occupancy": {
+        "coarse_to_middle_absolute": 7.581162988323786e-06,
+        "middle_to_fine_absolute": 3.833606728842476e-06,
+        "normalized_coarse_to_middle": 7.581162988323786e-06,
+        "normalized_middle_to_fine": 3.833606728842476e-06,
+        "increment_ratio": 0.5056752815823705,
+        "observed_order": 0.9837168365133505,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_phi_V": {
+        "coarse_to_middle_absolute": 0.000264765879793849,
+        "middle_to_fine_absolute": 0.0001314937394227833,
+        "normalized_coarse_to_middle": 0.000264765879793849,
+        "normalized_middle_to_fine": 0.0001314937394227833,
+        "increment_ratio": 0.49664155942286237,
+        "observed_order": 1.009723102272038,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0003455252853117735,
+        "middle_to_fine_absolute": 0.00017160121802548,
+        "normalized_coarse_to_middle": 0.0003455252853117735,
+        "normalized_middle_to_fine": 0.00017160121802548,
+        "increment_ratio": 0.49663866964364484,
+        "observed_order": 1.0097314968217823,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fp_eV": {
+        "coarse_to_middle_absolute": 0.0005662705583333733,
+        "middle_to_fine_absolute": 0.00028354297554737673,
+        "normalized_coarse_to_middle": 0.0005662705583333733,
+        "normalized_middle_to_fine": 0.00028354297554737673,
+        "increment_ratio": 0.5007199674690664,
+        "observed_order": 0.9979241072223983,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.000264765879793849,
+        "middle_to_fine_absolute": 0.0001314937394227833,
+        "normalized_coarse_to_middle": 0.000264765879793849,
+        "normalized_middle_to_fine": 0.0001314937394227833,
+        "increment_ratio": 0.49664155942286237,
+        "observed_order": 1.009723102272038,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_charge_C": {
+        "coarse_to_middle_absolute": 2.2899816995436417e-06,
+        "middle_to_fine_absolute": 1.158414827950871e-06,
+        "normalized_coarse_to_middle": 2.2899816995436417e-06,
+        "normalized_middle_to_fine": 1.158414827950871e-06,
+        "increment_ratio": 0.5058620460511651,
+        "observed_order": 0.9831840945795727,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0010148763707356068,
+        "middle_to_fine_absolute": 0.0005040259829307558,
+        "normalized_coarse_to_middle": 0.0010148763707356068,
+        "normalized_middle_to_fine": 0.0005040259829307558,
+        "increment_ratio": 0.49663781467828017,
+        "observed_order": 1.0097339804289374,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.279920739567398e-05,
+        "middle_to_fine_absolute": 1.1322955357218056e-05,
+        "normalized_coarse_to_middle": 2.279920739567398e-05,
+        "normalized_middle_to_fine": 1.1322955357218056e-05,
+        "increment_ratio": 0.4966381138041896,
+        "observed_order": 1.0097331114912056,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.0714039546624458e-06,
+        "middle_to_fine_absolute": 1.0287709461074407e-06,
+        "normalized_coarse_to_middle": 2.0714039546624458e-06,
+        "normalized_middle_to_fine": 1.0287709461074407e-06,
+        "increment_ratio": 0.49665394516208133,
+        "observed_order": 1.0096871233625044,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.0727803440978576e-05,
+        "middle_to_fine_absolute": 1.029418441111929e-05,
+        "normalized_coarse_to_middle": 2.0727803440978576e-05,
+        "normalized_middle_to_fine": 1.029418441111929e-05,
+        "increment_ratio": 0.4966365317208591,
+        "observed_order": 1.0097377073273834,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_gate_charges": {
+        "coarse_to_middle_absolute": 0.00048479367804166174,
+        "middle_to_fine_absolute": 0.00024076687345697678,
+        "normalized_coarse_to_middle": 0.00048479367804166174,
+        "normalized_middle_to_fine": 0.00024076687345697678,
+        "increment_ratio": 0.49663781596649864,
+        "observed_order": 1.0097339766867608,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0032866511258866637,
+        "middle_to_fine_absolute": 0.0016323607323514011,
+        "normalized_coarse_to_middle": 0.0032866511258866637,
+        "normalized_middle_to_fine": 0.0016323607323514011,
+        "increment_ratio": 0.4966638288726271,
+        "observed_order": 1.009658413154023,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.0010739349919979546,
+        "middle_to_fine_absolute": 0.0005334198199246909,
+        "normalized_coarse_to_middle": 0.0010739349919979546,
+        "normalized_middle_to_fine": 0.0005334198199246909,
+        "increment_ratio": 0.49669656347849667,
+        "observed_order": 1.009563329730254,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.001026925868359202,
+        "middle_to_fine_absolute": 0.0005100695023093349,
+        "normalized_coarse_to_middle": 0.001026925868359202,
+        "normalized_middle_to_fine": 0.0005100695023093349,
+        "increment_ratio": 0.496695543490702,
+        "observed_order": 1.009566292369725,
+        "roundoff_resolved": true,
+        "decreasing": true
+      }
+    },
+    "metric_support_xyz": [
+      65,
+      9,
+      65
+    ],
+    "normalized_roundoff_floor": 1e-08,
+    "new_acceptance_gate": false,
+    "asymptotic_regime_established": false,
+    "fine_grid_temporal_qualified": false,
+    "joint_spacetime_qualified": false
+  },
+  "121": {
+    "status": "descriptive_full_field_phase_orders_on_fixed_mesh",
+    "mesh_xyz": [
+      83,
+      9,
+      121
+    ],
+    "steps_per_phase": [
+      128,
+      256,
+      512
+    ],
+    "dt_ps": [
+      0.15625,
+      0.078125,
+      0.0390625
+    ],
+    "phase_times_ps": [
+      0,
+      20,
+      40,
+      60
+    ],
+    "metrics": {
+      "0_phi_V": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fn_eV": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fp_eV": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_trap_occupancy": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_phi_V": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          121,
+          9,
+          83
+        ],
+        "compared_values": 90387,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "1_phi_V": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 6.2280996647040565e-06,
+        "middle_to_fine_absolute": 3.087570040846699e-06,
+        "normalized_coarse_to_middle": 0.00024912398658816226,
+        "normalized_middle_to_fine": 0.00012350280163386795,
+        "increment_ratio": 0.4957483352979407,
+        "observed_order": 1.0123201669343744,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fn_eV": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 7.965826375819956e-06,
+        "middle_to_fine_absolute": 3.948968349098319e-06,
+        "normalized_coarse_to_middle": 0.0003186330550327982,
+        "normalized_middle_to_fine": 0.00015795873396393274,
+        "increment_ratio": 0.4957386921067351,
+        "observed_order": 1.012348230204486,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fp_eV": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.0397439939061406e-05,
+        "middle_to_fine_absolute": 5.167071491520535e-06,
+        "normalized_coarse_to_middle": 0.00041589759756245626,
+        "normalized_middle_to_fine": 0.0002066828596608214,
+        "increment_ratio": 0.49695612783573095,
+        "observed_order": 1.008809601143265,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_trap_occupancy": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.2080830450095226e-05,
+        "middle_to_fine_absolute": 6.050938526347416e-06,
+        "normalized_coarse_to_middle": 1.2080830450095226e-05,
+        "normalized_middle_to_fine": 6.050938526347416e-06,
+        "increment_ratio": 0.5008710743307981,
+        "observed_order": 0.9974887975748062,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_phi_V": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          121,
+          9,
+          83
+        ],
+        "compared_values": 90387,
+        "coarse_to_middle_absolute": 6.2280996647040565e-06,
+        "middle_to_fine_absolute": 3.087570040846699e-06,
+        "normalized_coarse_to_middle": 0.00024912398658816226,
+        "normalized_middle_to_fine": 0.00012350280163386795,
+        "increment_ratio": 0.4957483352979407,
+        "observed_order": 1.0123201669343744,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_phi_V": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.0305856582806805e-05,
+        "middle_to_fine_absolute": 5.104674199937764e-06,
+        "normalized_coarse_to_middle": 0.0004122342633122722,
+        "normalized_middle_to_fine": 0.00020418696799751057,
+        "increment_ratio": 0.4953177990516441,
+        "observed_order": 1.0135736303007434,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fn_eV": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.3869072780353263e-05,
+        "middle_to_fine_absolute": 6.869646108310359e-06,
+        "normalized_coarse_to_middle": 0.0005547629112141305,
+        "normalized_middle_to_fine": 0.00027478584433241436,
+        "increment_ratio": 0.49532122421635894,
+        "observed_order": 1.0135636539763058,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fp_eV": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.2482863543655277e-05,
+        "middle_to_fine_absolute": 6.051953495422998e-06,
+        "normalized_coarse_to_middle": 0.0004993145417462111,
+        "normalized_middle_to_fine": 0.00024207813981691993,
+        "increment_ratio": 0.4848209286481428,
+        "observed_order": 1.0444761167753807,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_occupancy": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.563786681488266e-05,
+        "middle_to_fine_absolute": 7.920437244179901e-06,
+        "normalized_coarse_to_middle": 1.563786681488266e-05,
+        "normalized_middle_to_fine": 7.920437244179901e-06,
+        "increment_ratio": 0.5064909004495401,
+        "observed_order": 0.9813917449019143,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_phi_V": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          121,
+          9,
+          83
+        ],
+        "compared_values": 90387,
+        "coarse_to_middle_absolute": 1.0305856582806805e-05,
+        "middle_to_fine_absolute": 5.104674199937764e-06,
+        "normalized_coarse_to_middle": 0.0004122342633122722,
+        "normalized_middle_to_fine": 0.00020418696799751057,
+        "increment_ratio": 0.4953177990516441,
+        "observed_order": 1.0135736303007434,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_phi_V": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 6.618104708339123e-06,
+        "middle_to_fine_absolute": 3.286813986758119e-06,
+        "normalized_coarse_to_middle": 0.0002647241883335649,
+        "normalized_middle_to_fine": 0.00013147255947032477,
+        "increment_ratio": 0.49663976797112,
+        "observed_order": 1.0097283062731068,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fn_eV": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 8.636770630041134e-06,
+        "middle_to_fine_absolute": 4.289338805358537e-06,
+        "normalized_coarse_to_middle": 0.00034547082520164536,
+        "normalized_middle_to_fine": 0.00017157355221434148,
+        "increment_ratio": 0.49663687842293763,
+        "observed_order": 1.0097367001819908,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fp_eV": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.4154171025858786e-05,
+        "middle_to_fine_absolute": 7.087257769130065e-06,
+        "normalized_coarse_to_middle": 0.0005661668410343514,
+        "normalized_middle_to_fine": 0.0002834903107652026,
+        "increment_ratio": 0.5007186755184806,
+        "observed_order": 0.9979278296485625,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_occupancy": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 7.580381799987546e-06,
+        "middle_to_fine_absolute": 3.833183743640056e-06,
+        "normalized_coarse_to_middle": 7.580381799987546e-06,
+        "normalized_middle_to_fine": 3.833183743640056e-06,
+        "increment_ratio": 0.5056715934342982,
+        "observed_order": 0.9837273588634271,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_phi_V": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          121,
+          9,
+          83
+        ],
+        "compared_values": 90387,
+        "coarse_to_middle_absolute": 6.618104708339123e-06,
+        "middle_to_fine_absolute": 3.286813986758119e-06,
+        "normalized_coarse_to_middle": 0.0002647241883335649,
+        "normalized_middle_to_fine": 0.00013147255947032477,
+        "increment_ratio": 0.49663976797112,
+        "observed_order": 1.0097283062731068,
+        "roundoff_resolved": true,
+        "decreasing": true
+      }
+    },
+    "fixed_support_metrics": {
+      "0_trap_occupancy": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_phi_V": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fp_eV": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_trap_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_gate_charges": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "1_trap_occupancy": {
+        "coarse_to_middle_absolute": 1.2080830450095226e-05,
+        "middle_to_fine_absolute": 6.050938526347416e-06,
+        "normalized_coarse_to_middle": 1.2080830450095226e-05,
+        "normalized_middle_to_fine": 6.050938526347416e-06,
+        "increment_ratio": 0.5008710743307981,
+        "observed_order": 0.9974887975748062,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_phi_V": {
+        "coarse_to_middle_absolute": 0.0002491239865878292,
+        "middle_to_fine_absolute": 0.00012350280163397898,
+        "normalized_coarse_to_middle": 0.0002491239865878292,
+        "normalized_middle_to_fine": 0.00012350280163397898,
+        "increment_ratio": 0.49574833529904916,
+        "observed_order": 1.0123201669311486,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0003186330550327965,
+        "middle_to_fine_absolute": 0.000157958733963931,
+        "normalized_coarse_to_middle": 0.0003186330550327965,
+        "normalized_middle_to_fine": 0.000157958733963931,
+        "increment_ratio": 0.4957386921067324,
+        "observed_order": 1.012348230204494,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fp_eV": {
+        "coarse_to_middle_absolute": 0.00041589759756245626,
+        "middle_to_fine_absolute": 0.0002066828596608214,
+        "normalized_coarse_to_middle": 0.00041589759756245626,
+        "normalized_middle_to_fine": 0.0002066828596608214,
+        "increment_ratio": 0.49695612783573095,
+        "observed_order": 1.008809601143265,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.0002491239865878292,
+        "middle_to_fine_absolute": 0.00012350280163397898,
+        "normalized_coarse_to_middle": 0.0002491239865878292,
+        "normalized_middle_to_fine": 0.00012350280163397898,
+        "increment_ratio": 0.49574833529904916,
+        "observed_order": 1.0123201669311486,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_trap_charge_C": {
+        "coarse_to_middle_absolute": 3.6983644674526417e-06,
+        "middle_to_fine_absolute": 1.8526282630215718e-06,
+        "normalized_coarse_to_middle": 3.6983644674526417e-06,
+        "normalized_middle_to_fine": 1.8526282630215718e-06,
+        "increment_ratio": 0.5009317711452124,
+        "observed_order": 0.9973139787595958,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0009648706489944203,
+        "middle_to_fine_absolute": 0.0004783308982698742,
+        "normalized_coarse_to_middle": 0.0009648706489944203,
+        "normalized_middle_to_fine": 0.0004783308982698742,
+        "increment_ratio": 0.4957461383744924,
+        "observed_order": 1.0123265602943945,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.237407014127335e-05,
+        "middle_to_fine_absolute": 1.1091967202281339e-05,
+        "normalized_coarse_to_middle": 2.237407014127335e-05,
+        "normalized_middle_to_fine": 1.1091967202281339e-05,
+        "increment_ratio": 0.4957509801410712,
+        "observed_order": 1.0123124701018926,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.026943467240555e-06,
+        "middle_to_fine_absolute": 1.0048881060840953e-06,
+        "normalized_coarse_to_middle": 2.026943467240555e-06,
+        "normalized_middle_to_fine": 1.0048881060840953e-06,
+        "increment_ratio": 0.49576523584652915,
+        "observed_order": 1.0122709848790827,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.0347126674091776e-05,
+        "middle_to_fine_absolute": 1.0087079096110507e-05,
+        "normalized_coarse_to_middle": 2.0347126674091776e-05,
+        "normalized_middle_to_fine": 1.0087079096110507e-05,
+        "increment_ratio": 0.49574956000812137,
+        "observed_order": 1.012316602865681,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_gate_charges": {
+        "coarse_to_middle_absolute": 0.00046021186946187953,
+        "middle_to_fine_absolute": 0.0002281481230186344,
+        "normalized_coarse_to_middle": 0.00046021186946187953,
+        "normalized_middle_to_fine": 0.0002281481230186344,
+        "increment_ratio": 0.4957458469843583,
+        "observed_order": 1.0123274082832996,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0034023421610598348,
+        "middle_to_fine_absolute": 0.001686773584765433,
+        "normalized_coarse_to_middle": 0.0034023421610598348,
+        "normalized_middle_to_fine": 0.001686773584765433,
+        "increment_ratio": 0.49576835747760317,
+        "observed_order": 1.0122619008466298,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.001031974929344176,
+        "middle_to_fine_absolute": 0.000511645461598112,
+        "normalized_coarse_to_middle": 0.001031974929344176,
+        "normalized_middle_to_fine": 0.000511645461598112,
+        "increment_ratio": 0.49579253046705757,
+        "observed_order": 1.0121915587174874,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.000985394305692347,
+        "middle_to_fine_absolute": 0.0004885501942628323,
+        "normalized_coarse_to_middle": 0.000985394305692347,
+        "normalized_middle_to_fine": 0.0004885501942628323,
+        "increment_ratio": 0.49579157443940425,
+        "observed_order": 1.012194340642586,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_occupancy": {
+        "coarse_to_middle_absolute": 1.563786681488266e-05,
+        "middle_to_fine_absolute": 7.920437244179901e-06,
+        "normalized_coarse_to_middle": 1.563786681488266e-05,
+        "normalized_middle_to_fine": 7.920437244179901e-06,
+        "increment_ratio": 0.5064909004495401,
+        "observed_order": 0.9813917449019143,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_phi_V": {
+        "coarse_to_middle_absolute": 0.0004122342633121612,
+        "middle_to_fine_absolute": 0.0002041869679976216,
+        "normalized_coarse_to_middle": 0.0004122342633121612,
+        "normalized_middle_to_fine": 0.0002041869679976216,
+        "increment_ratio": 0.4953177990520468,
+        "observed_order": 1.0135736302995706,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0005547629112141253,
+        "middle_to_fine_absolute": 0.0002747858443324161,
+        "normalized_coarse_to_middle": 0.0005547629112141253,
+        "normalized_middle_to_fine": 0.0002747858443324161,
+        "increment_ratio": 0.4953212242163667,
+        "observed_order": 1.0135636539762833,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fp_eV": {
+        "coarse_to_middle_absolute": 0.000499314541746218,
+        "middle_to_fine_absolute": 0.00024207813981691473,
+        "normalized_coarse_to_middle": 0.000499314541746218,
+        "normalized_middle_to_fine": 0.00024207813981691473,
+        "increment_ratio": 0.48482092864812565,
+        "observed_order": 1.0444761167754315,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.0004122342633121612,
+        "middle_to_fine_absolute": 0.0002041869679976216,
+        "normalized_coarse_to_middle": 0.0004122342633121612,
+        "normalized_middle_to_fine": 0.0002041869679976216,
+        "increment_ratio": 0.4953177990520468,
+        "observed_order": 1.0135736302995706,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_charge_C": {
+        "coarse_to_middle_absolute": 4.533608594259331e-06,
+        "middle_to_fine_absolute": 2.3047786832930406e-06,
+        "normalized_coarse_to_middle": 4.533608594259331e-06,
+        "normalized_middle_to_fine": 2.3047786832930406e-06,
+        "increment_ratio": 0.5083761942333223,
+        "observed_order": 0.976031620141743,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0015533479615612578,
+        "middle_to_fine_absolute": 0.0007694058222238453,
+        "normalized_coarse_to_middle": 0.0015533479615612578,
+        "normalized_middle_to_fine": 0.0007694058222238453,
+        "increment_ratio": 0.4953209720316121,
+        "observed_order": 1.013564388501213,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.314279413907384e-05,
+        "middle_to_fine_absolute": 1.6416111868033934e-05,
+        "normalized_coarse_to_middle": 3.314279413907384e-05,
+        "normalized_middle_to_fine": 1.6416111868033934e-05,
+        "increment_ratio": 0.4953146617375898,
+        "observed_order": 1.01358276827594,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.0488002094909705e-06,
+        "middle_to_fine_absolute": 1.5100390985175322e-06,
+        "normalized_coarse_to_middle": 3.0488002094909705e-06,
+        "normalized_middle_to_fine": 1.5100390985175322e-06,
+        "increment_ratio": 0.49528962042732516,
+        "observed_order": 1.0136557075409813,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.0093993929614093e-05,
+        "middle_to_fine_absolute": 1.490607276949385e-05,
+        "normalized_coarse_to_middle": 3.0093993929614093e-05,
+        "normalized_middle_to_fine": 1.490607276949385e-05,
+        "increment_ratio": 0.49531719865290064,
+        "observed_order": 1.0135753790624809,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_gate_charges": {
+        "coarse_to_middle_absolute": 0.0007437420518394688,
+        "middle_to_fine_absolute": 0.0003683911917704563,
+        "normalized_coarse_to_middle": 0.0007437420518394688,
+        "normalized_middle_to_fine": 0.0003683911917704563,
+        "increment_ratio": 0.4953211813952545,
+        "observed_order": 1.0135637786990004,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.00440435802436312,
+        "middle_to_fine_absolute": 0.002181370805885763,
+        "normalized_coarse_to_middle": 0.00440435802436312,
+        "normalized_middle_to_fine": 0.002181370805885763,
+        "increment_ratio": 0.4952755415929644,
+        "observed_order": 1.013696717391305,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.001627640345096576,
+        "middle_to_fine_absolute": 0.0008060566510020573,
+        "normalized_coarse_to_middle": 0.001627640345096576,
+        "normalized_middle_to_fine": 0.0008060566510020573,
+        "increment_ratio": 0.49523019838527654,
+        "observed_order": 1.0138288043005972,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.001559745005922264,
+        "middle_to_fine_absolute": 0.0007724352916282928,
+        "normalized_coarse_to_middle": 0.001559745005922264,
+        "normalized_middle_to_fine": 0.0007724352916282928,
+        "increment_ratio": 0.49523177743502916,
+        "observed_order": 1.0138242042507153,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_occupancy": {
+        "coarse_to_middle_absolute": 7.580381799987546e-06,
+        "middle_to_fine_absolute": 3.833183743640056e-06,
+        "normalized_coarse_to_middle": 7.580381799987546e-06,
+        "normalized_middle_to_fine": 3.833183743640056e-06,
+        "increment_ratio": 0.5056715934342982,
+        "observed_order": 0.9837273588634271,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_phi_V": {
+        "coarse_to_middle_absolute": 0.00026472418833378697,
+        "middle_to_fine_absolute": 0.00013147255947032477,
+        "normalized_coarse_to_middle": 0.00026472418833378697,
+        "normalized_middle_to_fine": 0.00013147255947032477,
+        "increment_ratio": 0.49663976797070347,
+        "observed_order": 1.0097283062743168,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fn_eV": {
+        "coarse_to_middle_absolute": 0.00034547082520164363,
+        "middle_to_fine_absolute": 0.0001715735522143519,
+        "normalized_coarse_to_middle": 0.00034547082520164363,
+        "normalized_middle_to_fine": 0.0001715735522143519,
+        "increment_ratio": 0.4966368784229702,
+        "observed_order": 1.009736700181896,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fp_eV": {
+        "coarse_to_middle_absolute": 0.0005661668410343601,
+        "middle_to_fine_absolute": 0.0002834903107652026,
+        "normalized_coarse_to_middle": 0.0005661668410343601,
+        "normalized_middle_to_fine": 0.0002834903107652026,
+        "increment_ratio": 0.5007186755184729,
+        "observed_order": 0.9979278296485846,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.00026472418833378697,
+        "middle_to_fine_absolute": 0.00013147255947032477,
+        "normalized_coarse_to_middle": 0.00026472418833378697,
+        "normalized_middle_to_fine": 0.00013147255947032477,
+        "increment_ratio": 0.49663976797070347,
+        "observed_order": 1.0097283062743168,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_charge_C": {
+        "coarse_to_middle_absolute": 2.289700376412185e-06,
+        "middle_to_fine_absolute": 1.158262595446491e-06,
+        "normalized_coarse_to_middle": 2.289700376412185e-06,
+        "normalized_middle_to_fine": 1.158262595446491e-06,
+        "increment_ratio": 0.5058577128163009,
+        "observed_order": 0.9831964528169104,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0010147135996252388,
+        "middle_to_fine_absolute": 0.000503943326510381,
+        "normalized_coarse_to_middle": 0.0010147135996252388,
+        "normalized_middle_to_fine": 0.000503943326510381,
+        "increment_ratio": 0.49663602290981507,
+        "observed_order": 1.0097391853893043,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.2779614897605605e-05,
+        "middle_to_fine_absolute": 1.1313184133276977e-05,
+        "normalized_coarse_to_middle": 2.2779614897605605e-05,
+        "normalized_middle_to_fine": 1.1313184133276977e-05,
+        "increment_ratio": 0.4966363208565971,
+        "observed_order": 1.009738319873723,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.07286397292325e-06,
+        "middle_to_fine_absolute": 1.0294923107837667e-06,
+        "normalized_coarse_to_middle": 2.07286397292325e-06,
+        "normalized_middle_to_fine": 1.0294923107837667e-06,
+        "increment_ratio": 0.49665213165528094,
+        "observed_order": 1.0096923913002098,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.070675092463725e-05,
+        "middle_to_fine_absolute": 1.0283691822488006e-05,
+        "normalized_coarse_to_middle": 2.070675092463725e-05,
+        "normalized_middle_to_fine": 1.0283691822488006e-05,
+        "increment_ratio": 0.49663473810622266,
+        "observed_order": 1.0097429176642165,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_gate_charges": {
+        "coarse_to_middle_absolute": 0.00048473185843889155,
+        "middle_to_fine_absolute": 0.00024073530297652468,
+        "normalized_coarse_to_middle": 0.00048473185843889155,
+        "normalized_middle_to_fine": 0.00024073530297652468,
+        "increment_ratio": 0.4966360241966092,
+        "observed_order": 1.0097391816512518,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0032862363268044703,
+        "middle_to_fine_absolute": 0.0016321488114563465,
+        "normalized_coarse_to_middle": 0.0032862363268044703,
+        "normalized_middle_to_fine": 0.0016321488114563465,
+        "increment_ratio": 0.4966620319249665,
+        "observed_order": 1.0096636328861992,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.0010738860442294218,
+        "middle_to_fine_absolute": 0.0005333935692151542,
+        "normalized_coarse_to_middle": 0.0010738860442294218,
+        "normalized_middle_to_fine": 0.0005333935692151542,
+        "increment_ratio": 0.4966947583324787,
+        "observed_order": 1.0095685729312986,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.0010269122107023493,
+        "middle_to_fine_absolute": 0.0005100608663337891,
+        "normalized_coarse_to_middle": 0.0010269122107023493,
+        "normalized_middle_to_fine": 0.0005100608663337891,
+        "increment_ratio": 0.4966937397549656,
+        "observed_order": 1.0095715314852376,
+        "roundoff_resolved": true,
+        "decreasing": true
+      }
+    },
+    "metric_support_xyz": [
+      65,
+      9,
+      65
+    ],
+    "normalized_roundoff_floor": 1e-08,
+    "new_acceptance_gate": false,
+    "asymptotic_regime_established": false,
+    "fine_grid_temporal_qualified": false,
+    "joint_spacetime_qualified": false
+  },
+  "129": {
+    "status": "descriptive_full_field_phase_orders_on_fixed_mesh",
+    "mesh_xyz": [
+      83,
+      9,
+      129
+    ],
+    "steps_per_phase": [
+      128,
+      256,
+      512
+    ],
+    "dt_ps": [
+      0.15625,
+      0.078125,
+      0.0390625
+    ],
+    "phase_times_ps": [
+      0,
+      20,
+      40,
+      60
+    ],
+    "metrics": {
+      "0_phi_V": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fn_eV": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fp_eV": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_trap_occupancy": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_phi_V": {
+        "nominal_time_ps": 0,
+        "array_shape": [
+          129,
+          9,
+          83
+        ],
+        "compared_values": 96363,
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "1_phi_V": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 6.2275628904262526e-06,
+        "middle_to_fine_absolute": 3.0872991261948757e-06,
+        "normalized_coarse_to_middle": 0.0002491025156170501,
+        "normalized_middle_to_fine": 0.00012349196504779503,
+        "increment_ratio": 0.4957475629737979,
+        "observed_order": 1.0123224145043597,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fn_eV": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 7.965138695710918e-06,
+        "middle_to_fine_absolute": 3.9486212821441494e-06,
+        "normalized_coarse_to_middle": 0.0003186055478284367,
+        "normalized_middle_to_fine": 0.00015794485128576598,
+        "increment_ratio": 0.4957379190735762,
+        "observed_order": 1.0123504798815681,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fp_eV": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.0396657368786548e-05,
+        "middle_to_fine_absolute": 5.166675081743786e-06,
+        "normalized_coarse_to_middle": 0.00041586629475146193,
+        "normalized_middle_to_fine": 0.00020666700326975145,
+        "increment_ratio": 0.4969554058072049,
+        "observed_order": 1.0088116972392225,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_trap_occupancy": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.2081119786261363e-05,
+        "middle_to_fine_absolute": 6.051088584091424e-06,
+        "normalized_coarse_to_middle": 1.2081119786261363e-05,
+        "normalized_middle_to_fine": 6.051088584091424e-06,
+        "increment_ratio": 0.5008714995916782,
+        "observed_order": 0.9974875726657751,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_phi_V": {
+        "nominal_time_ps": 20,
+        "array_shape": [
+          129,
+          9,
+          83
+        ],
+        "compared_values": 96363,
+        "coarse_to_middle_absolute": 6.2275628904262526e-06,
+        "middle_to_fine_absolute": 3.0872991261948757e-06,
+        "normalized_coarse_to_middle": 0.0002491025156170501,
+        "normalized_middle_to_fine": 0.00012349196504779503,
+        "increment_ratio": 0.4957475629737979,
+        "observed_order": 1.0123224145043597,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_phi_V": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.0304992550447256e-05,
+        "middle_to_fine_absolute": 5.104236015490704e-06,
+        "normalized_coarse_to_middle": 0.00041219970201789025,
+        "normalized_middle_to_fine": 0.00020416944061962816,
+        "increment_ratio": 0.49531680789707805,
+        "observed_order": 1.0135765172052937,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fn_eV": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.386791163258223e-05,
+        "middle_to_fine_absolute": 6.869057189831055e-06,
+        "normalized_coarse_to_middle": 0.0005547164653032892,
+        "normalized_middle_to_fine": 0.0002747622875932422,
+        "increment_ratio": 0.49532023074710235,
+        "observed_order": 1.0135665476027793,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fp_eV": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.248154267146132e-05,
+        "middle_to_fine_absolute": 6.051295606311537e-06,
+        "normalized_coarse_to_middle": 0.0004992617068584528,
+        "normalized_middle_to_fine": 0.0002420518242524615,
+        "increment_ratio": 0.4848195263673333,
+        "observed_order": 1.0444802895871876,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_occupancy": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.5638453554844833e-05,
+        "middle_to_fine_absolute": 7.920717781523257e-06,
+        "normalized_coarse_to_middle": 1.5638453554844833e-05,
+        "normalized_middle_to_fine": 7.920717781523257e-06,
+        "increment_ratio": 0.5064898363348336,
+        "observed_order": 0.9813947759427905,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_phi_V": {
+        "nominal_time_ps": 40,
+        "array_shape": [
+          129,
+          9,
+          83
+        ],
+        "compared_values": 96363,
+        "coarse_to_middle_absolute": 1.0304992550447256e-05,
+        "middle_to_fine_absolute": 5.104236015490704e-06,
+        "normalized_coarse_to_middle": 0.00041219970201789025,
+        "normalized_middle_to_fine": 0.00020416944061962816,
+        "increment_ratio": 0.49531680789707805,
+        "observed_order": 1.0135765172052937,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_phi_V": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 6.617636342756694e-06,
+        "middle_to_fine_absolute": 3.286576041497402e-06,
+        "normalized_coarse_to_middle": 0.00026470545371026777,
+        "normalized_middle_to_fine": 0.00013146304165989608,
+        "increment_ratio": 0.49663896159762694,
+        "observed_order": 1.009730648719401,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fn_eV": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 8.636158818080882e-06,
+        "middle_to_fine_absolute": 4.289027999889068e-06,
+        "normalized_coarse_to_middle": 0.0003454463527232353,
+        "normalized_middle_to_fine": 0.00017156111999556273,
+        "increment_ratio": 0.49663607284635036,
+        "observed_order": 1.0097390403269548,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fp_eV": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 1.4153005405234025e-05,
+        "middle_to_fine_absolute": 7.086665936132525e-06,
+        "normalized_coarse_to_middle": 0.000566120216209361,
+        "normalized_middle_to_fine": 0.000283466637445301,
+        "increment_ratio": 0.5007180971973454,
+        "observed_order": 0.997929495936553,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_occupancy": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          9,
+          83
+        ],
+        "compared_values": 747,
+        "coarse_to_middle_absolute": 7.580031950615851e-06,
+        "middle_to_fine_absolute": 3.832994251717903e-06,
+        "normalized_coarse_to_middle": 7.580031950615851e-06,
+        "normalized_middle_to_fine": 3.832994251717903e-06,
+        "increment_ratio": 0.505669933410569,
+        "observed_order": 0.9837320949648101,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_phi_V": {
+        "nominal_time_ps": 60,
+        "array_shape": [
+          129,
+          9,
+          83
+        ],
+        "compared_values": 96363,
+        "coarse_to_middle_absolute": 6.617636342756694e-06,
+        "middle_to_fine_absolute": 3.286576041497402e-06,
+        "normalized_coarse_to_middle": 0.00026470545371026777,
+        "normalized_middle_to_fine": 0.00013146304165989608,
+        "increment_ratio": 0.49663896159762694,
+        "observed_order": 1.009730648719401,
+        "roundoff_resolved": true,
+        "decreasing": true
+      }
+    },
+    "fixed_support_metrics": {
+      "0_trap_occupancy": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_phi_V": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_Fp_eV": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_trap_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_gate_charges": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "0_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0,
+        "middle_to_fine_absolute": 0.0,
+        "normalized_coarse_to_middle": 0.0,
+        "normalized_middle_to_fine": 0.0,
+        "increment_ratio": null,
+        "observed_order": null,
+        "roundoff_resolved": false,
+        "decreasing": null
+      },
+      "1_trap_occupancy": {
+        "coarse_to_middle_absolute": 1.2081119786261363e-05,
+        "middle_to_fine_absolute": 6.051088584091424e-06,
+        "normalized_coarse_to_middle": 1.2081119786261363e-05,
+        "normalized_middle_to_fine": 6.051088584091424e-06,
+        "increment_ratio": 0.5008714995916782,
+        "observed_order": 0.9974875726657751,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_phi_V": {
+        "coarse_to_middle_absolute": 0.0002491025156170501,
+        "middle_to_fine_absolute": 0.000123491965047684,
+        "normalized_coarse_to_middle": 0.0002491025156170501,
+        "normalized_middle_to_fine": 0.000123491965047684,
+        "increment_ratio": 0.49574756297335226,
+        "observed_order": 1.0123224145056569,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fn_eV": {
+        "coarse_to_middle_absolute": 0.000318605547828435,
+        "middle_to_fine_absolute": 0.00015794485128577118,
+        "normalized_coarse_to_middle": 0.000318605547828435,
+        "normalized_middle_to_fine": 0.00015794485128577118,
+        "increment_ratio": 0.49573791907359527,
+        "observed_order": 1.0123504798815128,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_Fp_eV": {
+        "coarse_to_middle_absolute": 0.00041586629475146714,
+        "middle_to_fine_absolute": 0.00020666700326974624,
+        "normalized_coarse_to_middle": 0.00041586629475146714,
+        "normalized_middle_to_fine": 0.00020666700326974624,
+        "increment_ratio": 0.49695540580718617,
+        "observed_order": 1.0088116972392769,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.0002491025156170501,
+        "middle_to_fine_absolute": 0.000123491965047684,
+        "normalized_coarse_to_middle": 0.0002491025156170501,
+        "normalized_middle_to_fine": 0.000123491965047684,
+        "increment_ratio": 0.49574756297335226,
+        "observed_order": 1.0123224145056569,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_trap_charge_C": {
+        "coarse_to_middle_absolute": 3.698580686606334e-06,
+        "middle_to_fine_absolute": 1.8527384500477417e-06,
+        "normalized_coarse_to_middle": 3.698580686606334e-06,
+        "normalized_middle_to_fine": 1.8527384500477417e-06,
+        "increment_ratio": 0.5009322783620921,
+        "observed_order": 0.9973125179640371,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0009647867579971603,
+        "middle_to_fine_absolute": 0.00047828856469323,
+        "normalized_coarse_to_middle": 0.0009647867579971603,
+        "normalized_middle_to_fine": 0.00047828856469323,
+        "increment_ratio": 0.49574536624666005,
+        "observed_order": 1.0123288073030468,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.2365183818040535e-05,
+        "middle_to_fine_absolute": 1.108754443435167e-05,
+        "normalized_coarse_to_middle": 2.2365183818040535e-05,
+        "normalized_middle_to_fine": 1.108754443435167e-05,
+        "increment_ratio": 0.4957502037344344,
+        "observed_order": 1.012314729540455,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.027568231199872e-06,
+        "middle_to_fine_absolute": 1.0051962472789472e-06,
+        "normalized_coarse_to_middle": 2.027568231199872e-06,
+        "normalized_middle_to_fine": 1.0051962472789472e-06,
+        "increment_ratio": 0.4957644491618875,
+        "observed_order": 1.0122732741620937,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.0337615586951685e-05,
+        "middle_to_fine_absolute": 1.00823481870016e-05,
+        "normalized_coarse_to_middle": 2.0337615586951685e-05,
+        "normalized_middle_to_fine": 1.00823481870016e-05,
+        "increment_ratio": 0.49574878352358503,
+        "observed_order": 1.0123188625374135,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_gate_charges": {
+        "coarse_to_middle_absolute": 0.0004601787972910998,
+        "middle_to_fine_absolute": 0.00022813137235999648,
+        "normalized_coarse_to_middle": 0.0004601787972910998,
+        "normalized_middle_to_fine": 0.00022813137235999648,
+        "increment_ratio": 0.49574507496416703,
+        "observed_order": 1.01232965498002,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0034020997525132657,
+        "middle_to_fine_absolute": 0.0016866507717310242,
+        "normalized_coarse_to_middle": 0.0034020997525132657,
+        "normalized_middle_to_fine": 0.0016866507717310242,
+        "increment_ratio": 0.4957675830889522,
+        "observed_order": 1.0122641543336106,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.0010319390276288254,
+        "middle_to_fine_absolute": 0.0005116268575301314,
+        "normalized_coarse_to_middle": 0.0010319390276288254,
+        "normalized_middle_to_fine": 0.0005116268575301314,
+        "increment_ratio": 0.4957917510938027,
+        "observed_order": 1.012193826599201,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "1_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.000985374614692655,
+        "middle_to_fine_absolute": 0.0004885396632001437,
+        "normalized_coarse_to_middle": 0.000985374614692655,
+        "normalized_middle_to_fine": 0.0004885396632001437,
+        "increment_ratio": 0.49579079460304804,
+        "observed_order": 1.0121966098762452,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_occupancy": {
+        "coarse_to_middle_absolute": 1.5638453554844833e-05,
+        "middle_to_fine_absolute": 7.920717781523257e-06,
+        "normalized_coarse_to_middle": 1.5638453554844833e-05,
+        "normalized_middle_to_fine": 7.920717781523257e-06,
+        "increment_ratio": 0.5064898363348336,
+        "observed_order": 0.9813947759427905,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_phi_V": {
+        "coarse_to_middle_absolute": 0.00041219970201789025,
+        "middle_to_fine_absolute": 0.00020416944061940612,
+        "normalized_coarse_to_middle": 0.00041219970201789025,
+        "normalized_middle_to_fine": 0.00020416944061940612,
+        "increment_ratio": 0.49531680789653937,
+        "observed_order": 1.0135765172068627,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0005547164653032927,
+        "middle_to_fine_absolute": 0.00027476228759323873,
+        "normalized_coarse_to_middle": 0.0005547164653032927,
+        "normalized_middle_to_fine": 0.00027476228759323873,
+        "increment_ratio": 0.495320230747093,
+        "observed_order": 1.0135665476028062,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_Fp_eV": {
+        "coarse_to_middle_absolute": 0.0004992617068584476,
+        "middle_to_fine_absolute": 0.00024205182425246496,
+        "normalized_coarse_to_middle": 0.0004992617068584476,
+        "normalized_middle_to_fine": 0.00024205182425246496,
+        "increment_ratio": 0.4848195263673453,
+        "observed_order": 1.0444802895871519,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.00041219970201789025,
+        "middle_to_fine_absolute": 0.00020416944061940612,
+        "normalized_coarse_to_middle": 0.00041219970201789025,
+        "normalized_middle_to_fine": 0.00020416944061940612,
+        "increment_ratio": 0.49531680789653937,
+        "observed_order": 1.0135765172068627,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_trap_charge_C": {
+        "coarse_to_middle_absolute": 4.5339618672257664e-06,
+        "middle_to_fine_absolute": 2.3049504770944473e-06,
+        "normalized_coarse_to_middle": 4.5339618672257664e-06,
+        "normalized_middle_to_fine": 2.3049504770944473e-06,
+        "increment_ratio": 0.5083744734943695,
+        "observed_order": 0.9760365033478872,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.0015532144434544648,
+        "middle_to_fine_absolute": 0.0007693381487872131,
+        "normalized_coarse_to_middle": 0.0015532144434544648,
+        "normalized_middle_to_fine": 0.0007693381487872131,
+        "increment_ratio": 0.4953199811071468,
+        "observed_order": 1.0135672747170665,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.312919607345588e-05,
+        "middle_to_fine_absolute": 1.6409343866430337e-05,
+        "normalized_coarse_to_middle": 3.312919607345588e-05,
+        "normalized_middle_to_fine": 1.6409343866430337e-05,
+        "increment_ratio": 0.49531367528649456,
+        "observed_order": 1.0135856414990247,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.049668192801197e-06,
+        "middle_to_fine_absolute": 1.5104660343011334e-06,
+        "normalized_coarse_to_middle": 3.049668192801197e-06,
+        "normalized_middle_to_fine": 1.5104660343011334e-06,
+        "increment_ratio": 0.4952886474228963,
+        "observed_order": 1.0136585417413873,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 3.0079527880588763e-05,
+        "middle_to_fine_absolute": 1.4898877832181245e-05,
+        "normalized_coarse_to_middle": 3.0079527880588763e-05,
+        "normalized_middle_to_fine": 1.4898877832181245e-05,
+        "increment_ratio": 0.4953162127852394,
+        "observed_order": 1.0135782505714959,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_gate_charges": {
+        "coarse_to_middle_absolute": 0.000743688868984016,
+        "middle_to_fine_absolute": 0.00036836411204621555,
+        "normalized_coarse_to_middle": 0.000743688868984016,
+        "normalized_middle_to_fine": 0.00036836411204621555,
+        "increment_ratio": 0.49532019021536916,
+        "observed_order": 1.0135666656575835,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.004404039842171414,
+        "middle_to_fine_absolute": 0.002181208873295759,
+        "normalized_coarse_to_middle": 0.004404039842171414,
+        "normalized_middle_to_fine": 0.002181208873295759,
+        "increment_ratio": 0.4952745550595003,
+        "observed_order": 1.0136995910812703,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.0016275779877604202,
+        "middle_to_fine_absolute": 0.0008060241707812943,
+        "normalized_coarse_to_middle": 0.0016275779877604202,
+        "normalized_middle_to_fine": 0.0008060241707812943,
+        "increment_ratio": 0.4952292159532089,
+        "observed_order": 1.0138316663055447,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "2_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.0015597075351138634,
+        "middle_to_fine_absolute": 0.0007724151978857619,
+        "normalized_coarse_to_middle": 0.0015597075351138634,
+        "normalized_middle_to_fine": 0.0007724151978857619,
+        "increment_ratio": 0.495230791989072,
+        "observed_order": 1.0138270750265315,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_occupancy": {
+        "coarse_to_middle_absolute": 7.580031950615851e-06,
+        "middle_to_fine_absolute": 3.832994251717903e-06,
+        "normalized_coarse_to_middle": 7.580031950615851e-06,
+        "normalized_middle_to_fine": 3.832994251717903e-06,
+        "increment_ratio": 0.505669933410569,
+        "observed_order": 0.9837320949648101,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_phi_V": {
+        "coarse_to_middle_absolute": 0.00026470545371015675,
+        "middle_to_fine_absolute": 0.00013146304165978506,
+        "normalized_coarse_to_middle": 0.00026470545371015675,
+        "normalized_middle_to_fine": 0.00013146304165978506,
+        "increment_ratio": 0.49663896159741583,
+        "observed_order": 1.0097306487200142,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fn_eV": {
+        "coarse_to_middle_absolute": 0.0003454463527232249,
+        "middle_to_fine_absolute": 0.00017156111999556967,
+        "normalized_coarse_to_middle": 0.0003454463527232249,
+        "normalized_middle_to_fine": 0.00017156111999556967,
+        "increment_ratio": 0.49663607284638545,
+        "observed_order": 1.009739040326853,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_Fp_eV": {
+        "coarse_to_middle_absolute": 0.0005661202162093593,
+        "middle_to_fine_absolute": 0.000283466637445301,
+        "normalized_coarse_to_middle": 0.0005661202162093593,
+        "normalized_middle_to_fine": 0.000283466637445301,
+        "increment_ratio": 0.5007180971973468,
+        "observed_order": 0.9979294959365487,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_phi_V": {
+        "coarse_to_middle_absolute": 0.00026470545371015675,
+        "middle_to_fine_absolute": 0.00013146304165978506,
+        "normalized_coarse_to_middle": 0.00026470545371015675,
+        "normalized_middle_to_fine": 0.00013146304165978506,
+        "increment_ratio": 0.49663896159741583,
+        "observed_order": 1.0097306487200142,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_trap_charge_C": {
+        "coarse_to_middle_absolute": 2.289574353997459e-06,
+        "middle_to_fine_absolute": 1.1581943795690997e-06,
+        "normalized_coarse_to_middle": 2.289574353997459e-06,
+        "normalized_middle_to_fine": 1.1581943795690997e-06,
+        "increment_ratio": 0.505855762031472,
+        "observed_order": 0.9832020164229479,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_sheet_charge_C": {
+        "coarse_to_middle_absolute": 0.001014640496292074,
+        "middle_to_fine_absolute": 0.0005039062034217778,
+        "normalized_coarse_to_middle": 0.001014640496292074,
+        "normalized_middle_to_fine": 0.0005039062034217778,
+        "increment_ratio": 0.4966352173634548,
+        "observed_order": 1.0097415254504922,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.2770796454296693e-05,
+        "middle_to_fine_absolute": 1.1308786172503638e-05,
+        "normalized_coarse_to_middle": 2.2770796454296693e-05,
+        "normalized_middle_to_fine": 1.1308786172503638e-05,
+        "increment_ratio": 0.49663551273674256,
+        "observed_order": 1.0097406674093465,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_sheet_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.0735173301804355e-06,
+        "middle_to_fine_absolute": 1.0298151062390626e-06,
+        "normalized_coarse_to_middle": 2.0735173301804355e-06,
+        "normalized_middle_to_fine": 1.0298151062390626e-06,
+        "increment_ratio": 0.4966513138086235,
+        "observed_order": 1.0096947670159537,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_contact_charge_C": {
+        "coarse_to_middle_absolute": 2.0697279124015644e-05,
+        "middle_to_fine_absolute": 1.0278971066202125e-05,
+        "normalized_coarse_to_middle": 2.0697279124015644e-05,
+        "normalized_middle_to_fine": 1.0278971066202125e-05,
+        "increment_ratio": 0.4966339297359691,
+        "observed_order": 1.0097452659347175,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_gate_charges": {
+        "coarse_to_middle_absolute": 0.0004847041129147911,
+        "middle_to_fine_absolute": 0.00024072113323470035,
+        "normalized_coarse_to_middle": 0.0004847041129147911,
+        "normalized_middle_to_fine": 0.00024072113323470035,
+        "increment_ratio": 0.4966352189320458,
+        "observed_order": 1.0097415208938307,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_dielectric_energy_J": {
+        "coarse_to_middle_absolute": 0.0032860501466345227,
+        "middle_to_fine_absolute": 0.0016320536888301262,
+        "normalized_coarse_to_middle": 0.0032860501466345227,
+        "normalized_middle_to_fine": 0.0016320536888301262,
+        "increment_ratio": 0.49666122426696024,
+        "observed_order": 1.0096659789587255,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_terminal_currents_into_sheet_A": {
+        "coarse_to_middle_absolute": 0.001073864114767814,
+        "middle_to_fine_absolute": 0.0005333818051297262,
+        "normalized_coarse_to_middle": 0.001073864114767814,
+        "normalized_middle_to_fine": 0.0005333818051297262,
+        "increment_ratio": 0.4966939464636562,
+        "observed_order": 1.0095709310799637,
+        "roundoff_resolved": true,
+        "decreasing": true
+      },
+      "3_terminal_total_currents_A": {
+        "coarse_to_middle_absolute": 0.0010269061703291754,
+        "middle_to_fine_absolute": 0.0005100570311262903,
+        "normalized_coarse_to_middle": 0.0010269061703291754,
+        "normalized_middle_to_fine": 0.0005100570311262903,
+        "increment_ratio": 0.4966929266407964,
+        "observed_order": 1.0095738932559746,
+        "roundoff_resolved": true,
+        "decreasing": true
+      }
+    },
+    "metric_support_xyz": [
+      65,
+      9,
+      65
+    ],
+    "normalized_roundoff_floor": 1e-08,
+    "new_acceptance_gate": false,
+    "asymptotic_regime_established": false,
+    "fine_grid_temporal_qualified": false,
+    "joint_spacetime_qualified": false
+  }
+}

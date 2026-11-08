@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Completed the three-z by three-time full-pulse matrix with two fresh n512
+  controls (3072 BE steps), independent audits, unchanged spatial gates,
+  temporal field/trace orders and signed mixed increments.
+
 - Added a complete refined x83/y9/z129 n512 pulse (1536 BE steps), independent
   physical auditing, three-time field/trace orders and measured spatial/time
   components on original observable support; joint qualification remains open.

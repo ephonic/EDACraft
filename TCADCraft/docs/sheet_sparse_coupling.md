@@ -161,6 +161,11 @@ adds one complete x83/y9/z129 n512 pulse (1536 new BE steps). Full-field
 and interval-matched trace orders, plus original-support spatial/time
 increments, are descriptive; joint error bounds remain open.
 
+The [complete z/time matrix](optimization/20261108-geometric-z-time512/README.md)
+fills the two missing n512 pulses (3072 fresh BE steps), providing original
+54 spatial gates at all three dt, field/trace temporal orders on each z mesh
+and eighty signed mixed metrics. Joint error bounds remain open.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

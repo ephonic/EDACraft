@@ -1,0 +1,239 @@
+{
+  "status": "passed_three_z_three_time_matrix_and_original_z_gates",
+  "new_complete_pulses": 2,
+  "inherited_matrix_pulses": 7,
+  "matrix_pulses": 9,
+  "new_dynamic_steps": 3072,
+  "new_field_checkpoints": 8,
+  "new_physics_and_ledger_checks": 2089230,
+  "x_nodes": 83,
+  "y_nodes": 9,
+  "z_nodes": [
+    113,
+    121,
+    129
+  ],
+  "steps_per_phase": [
+    128,
+    256,
+    512
+  ],
+  "spatial_verdicts": {
+    "128": {
+      "passed_metrics": 54,
+      "total_metrics": 54,
+      "failures": {}
+    },
+    "256": {
+      "passed_metrics": 54,
+      "total_metrics": 54,
+      "failures": {}
+    },
+    "512": {
+      "passed_metrics": 54,
+      "total_metrics": 54,
+      "failures": {}
+    }
+  },
+  "local_z_endpoint_sequence_at_each_dt_qualified": true,
+  "mixed_field_metrics": 80,
+  "resolved_mixed_metrics_by_time_pair": {
+    "128_256": 26,
+    "256_512": 24
+  },
+  "trace_summary": {
+    "113": {
+      "state_at_common_times": {
+        "metrics": 12,
+        "resolved": 12,
+        "decreasing": 12,
+        "orders": {
+          "sheet_charge_C": 0.9771245977440882,
+          "trap_charge_C": 0.9863116411211638,
+          "untrapped_sheet_charge_C": 0.9771228422170951,
+          "contact_charge_C/drain": 1.0859268988991542,
+          "contact_charge_C/source": 1.0743560340233773,
+          "sheet_contact_charge_C/drain": 1.2225261551780113,
+          "sheet_contact_charge_C/source": 1.2105457834777276,
+          "dielectric_contact_charge_C/drain": 1.0607386117339468,
+          "dielectric_contact_charge_C/source": 1.0498911565397886,
+          "gates/bottom_gate": 0.9771310042058158,
+          "gates/top_gate": 0.9771310041943715,
+          "dielectric_energy_J": 0.9763330198868062
+        }
+      },
+      "interval_average_currents_and_rates": {
+        "metrics": 8,
+        "resolved": 8,
+        "decreasing": 8,
+        "orders": {
+          "conduction/drain": 0.8643269225133806,
+          "conduction/source": 0.8597917233856539,
+          "total/bottom_gate": 0.9858037390136372,
+          "total/drain": 0.9842621097535085,
+          "total/source": 0.9873836898557126,
+          "total/top_gate": 0.9858037390175227,
+          "trap_charge_rate_A": 0.9470298354229604,
+          "free_carrier_charge_rate_A": 0.8621310795985179
+        }
+      },
+      "conduction_at_common_ending_times": {
+        "metrics": 2,
+        "resolved": 2,
+        "decreasing": 2,
+        "orders": {
+          "conduction/drain": 1.2917282856093926,
+          "conduction/source": 1.2812870288305975
+        }
+      },
+      "cumulative_current_and_rate_integrals": {
+        "metrics": 8,
+        "resolved": 8,
+        "decreasing": 8,
+        "orders": {
+          "conduction/drain": 0.9773258285529489,
+          "conduction/source": 0.9769208767399988,
+          "total/bottom_gate": 0.9771310042060231,
+          "total/drain": 0.9773606584904438,
+          "total/source": 0.9768983543018964,
+          "total/top_gate": 0.9771310041943715,
+          "trap_charge_rate_A": 0.9863116411269408,
+          "free_carrier_charge_rate_A": 0.9771228422153638
+        }
+      }
+    },
+    "121": {
+      "state_at_common_times": {
+        "metrics": 12,
+        "resolved": 12,
+        "decreasing": 12,
+        "orders": {
+          "sheet_charge_C": 0.9771210314152884,
+          "trap_charge_C": 0.9863076076022712,
+          "untrapped_sheet_charge_C": 0.9771192701653041,
+          "contact_charge_C/drain": 1.0865845228314437,
+          "contact_charge_C/source": 1.074970074622851,
+          "sheet_contact_charge_C/drain": 1.2231741983407223,
+          "sheet_contact_charge_C/source": 1.2111521189466445,
+          "dielectric_contact_charge_C/drain": 1.06136496106464,
+          "dielectric_contact_charge_C/source": 1.0504747098448404,
+          "gates/bottom_gate": 0.977127368463633,
+          "gates/top_gate": 0.9771273684779683,
+          "dielectric_energy_J": 0.976336385348611
+        }
+      },
+      "interval_average_currents_and_rates": {
+        "metrics": 8,
+        "resolved": 8,
+        "decreasing": 8,
+        "orders": {
+          "conduction/drain": 0.8645522998265931,
+          "conduction/source": 0.8600111062599305,
+          "total/bottom_gate": 0.9859290394918793,
+          "total/drain": 0.9843799914264196,
+          "total/source": 0.9875166639849846,
+          "total/top_gate": 0.9859290394485223,
+          "trap_charge_rate_A": 0.9469878295045827,
+          "free_carrier_charge_rate_A": 0.8623534580292201
+        }
+      },
+      "conduction_at_common_ending_times": {
+        "metrics": 2,
+        "resolved": 2,
+        "decreasing": 2,
+        "orders": {
+          "conduction/drain": 1.2925144047261448,
+          "conduction/source": 1.2820364216953826
+        }
+      },
+      "cumulative_current_and_rate_integrals": {
+        "metrics": 8,
+        "resolved": 8,
+        "decreasing": 8,
+        "orders": {
+          "conduction/drain": 0.9773218017229166,
+          "conduction/source": 0.9769177779098016,
+          "total/bottom_gate": 0.9771273684637366,
+          "total/drain": 0.9773565099064424,
+          "total/source": 0.976895239806747,
+          "total/top_gate": 0.9771273684776561,
+          "trap_charge_rate_A": 0.9863076076275229,
+          "free_carrier_charge_rate_A": 0.9771192701657886
+        }
+      }
+    },
+    "129": {
+      "state_at_common_times": {
+        "metrics": 12,
+        "resolved": 12,
+        "decreasing": 12,
+        "orders": {
+          "sheet_charge_C": 0.9771194244819782,
+          "trap_charge_C": 0.9863057926023818,
+          "untrapped_sheet_charge_C": 0.9771176606582794,
+          "contact_charge_C/drain": 1.0868815578197875,
+          "contact_charge_C/source": 1.0752474339183264,
+          "sheet_contact_charge_C/drain": 1.2234669084671672,
+          "sheet_contact_charge_C/source": 1.2114260081950206,
+          "dielectric_contact_charge_C/drain": 1.0616479585920218,
+          "dielectric_contact_charge_C/source": 1.050738383304065,
+          "gates/bottom_gate": 0.9771257305399418,
+          "gates/top_gate": 0.9771257305253709,
+          "dielectric_energy_J": 0.9763378991954581
+        }
+      },
+      "interval_average_currents_and_rates": {
+        "metrics": 8,
+        "resolved": 8,
+        "decreasing": 8,
+        "orders": {
+          "conduction/drain": 0.8646538596191754,
+          "conduction/source": 0.8601099713053222,
+          "total/bottom_gate": 0.9859856278386919,
+          "total/drain": 0.984433232573481,
+          "total/source": 0.98757671423449,
+          "total/top_gate": 0.9859856277592964,
+          "trap_charge_rate_A": 0.9469689206333798,
+          "free_carrier_charge_rate_A": 0.8624536696441788
+        }
+      },
+      "conduction_at_common_ending_times": {
+        "metrics": 2,
+        "resolved": 2,
+        "decreasing": 2,
+        "orders": {
+          "conduction/drain": 1.2928691873728497,
+          "conduction/source": 1.2823746388572406
+        }
+      },
+      "cumulative_current_and_rate_integrals": {
+        "metrics": 8,
+        "resolved": 8,
+        "decreasing": 8,
+        "orders": {
+          "conduction/drain": 0.9773199872944109,
+          "conduction/source": 0.9769163817217066,
+          "total/bottom_gate": 0.9771257305397348,
+          "total/drain": 0.9773546408503241,
+          "total/source": 0.9768938367377064,
+          "total/top_gate": 0.9771257305253709,
+          "trap_charge_rate_A": 0.986305792599765,
+          "free_carrier_charge_rate_A": 0.9771176606576613
+        }
+      }
+    }
+  },
+  "full_field_temporal_metrics": 60,
+  "fixed_support_temporal_metrics": 162,
+  "observed_time_order_available_on_all_z": true,
+  "inherited_solver_tests": 245,
+  "solver_tests_rerun": 0,
+  "inherited_trace_tests": 25,
+  "trace_tests_rerun": 0,
+  "spatial_order_available": false,
+  "asymptotic_regime_established": false,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "sentaurus_equivalence": false,
+  "new_acceptance_gate": false
+}
