@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tcad"
-version = "0.3.0rc1"
+version = "0.3.0rc2"
 description = "3D Quantum-Corrected Semiconductor Device Simulator with Extended Precision"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -48,4 +48,4 @@ Issues = "https://github.com/ephonic/EDACraft/issues"
 include = ["tcad", "tcad.*"]
 
 [tool.setuptools.package-data]
-tcad = ["*.pyx", "*.pxd", "*.json"]
+"*" = ["*.pyx", "*.pxd", "*.json", "*.cpp", "*.h", "*.md"]

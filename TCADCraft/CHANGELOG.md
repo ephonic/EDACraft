@@ -5,6 +5,8 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+## 0.3.0rc2 - 2026-11-08
+
 - Completed the three-z by three-time full-pulse matrix with two fresh n512
   controls (3072 BE steps), independent audits, unchanged spatial gates,
   temporal field/trace orders and signed mixed increments.

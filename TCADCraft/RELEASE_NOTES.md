@@ -1,51 +1,49 @@
-# TCADCraft 0.3.0rc1
+# TCADCraft 0.3.0rc2
 
-Release candidate prepared on 2026-11-05. This scoped research release does
-not certify every physics combination, 2D device or commercial alignment target.
+Release candidate prepared on 2026-11-08. This release packages the numerical
+solver updates and audited studies after 0.3.0rc1. It is a scoped research
+release with explicit model and acceptance limits.
 
 ## Changes
 
-- Graphene Dirac and MoS₂ parabolic-band sheet statistics, Fermi–Dirac surface
-  densities, charge derivatives and quantum capacitance.
-- Sheet phi/Fn/Fp drift–diffusion, optional diffusion-enhanced modified SG,
-  ideal/resistive/thermionic/Dirac edge contacts and single-level trap dynamics.
-- Cartesian dielectric Poisson coupling, finite side electrodes, backward
-  Euler transients and terminal conduction/displacement current accounting.
-- Sparse coupled Newton and optional reused GMRES, with steady/BE cache keys,
-  true max-norm acceptance, residual correction and transactional publication.
-- Accumulated native nonlinear solver, finite-input, contact, recovery and
-  physics-accounting fixes from the frozen development source.
-- Updated installation, source provenance and explicit model limits.
+- Optional `MMD_AT_PLUS_A` and geometry-only `GEOMETRIC_ND` orderings for
+  coupled sheet reused GMRES. Default ordering and physical/residual gates remain.
+- Explicit cache-release APIs preserve the accepted sheet state, time and drive.
+- Interval-aware BE trace comparisons, signed terminal integrals, three-time
+  observed orders and reduced-memory record loading.
+- Complete independent x/y/z refinement controls, including the nine-pulse
+  z113/121/129 by n128/256/512 matrix at x83/y9. All original 54 z endpoint
+  gates pass at each dt. Coarse-x 52/54 results and resource failures remain.
+- Source archives include the compact report reproduction scripts and fixtures.
 
-## Validation and known gaps
+## Validation and open gaps
 
-Two fine-grid MoS₂ 60 ps trajectories completed independent full-field/trace
-checks. Local-z initialization/one-step probes also passed. See
-[validation details](docs/releases/0.3.0rc1/VALIDATION.md) for counts, provenance
-and release-specific build/install verification.
+The newest two complete 60 ps pulses add 3072 BE steps, eight complete fields
+and 2,089,230 independently reconstructed physical/ledger checks. Three z
+meshes have bulk-potential observed time orders about 1.01 and decreasing
+increments in all ninety trace metrics. Observed orders are descriptive;
+combined x/y/z error bounds and an asymptotic regime are not established.
 
-Full spatial convergence is unqualified; fine-grid temporal and joint
-spacetime bounds are not established. Sheet models are isothermal,
-homogeneous-band and constant-mobility, with representative parameters.
-Complete 2D logic circuits, full memory write/erase/read/retention/disturb/
-endurance, dedicated Schrödinger–Poisson and NEGF transport remain open.
-Density-gradient and quantum capacitance do not replace those solvers.
+See [scope and provenance](docs/releases/0.3.0rc2/VALIDATION.md) and
+[fresh build/install results](docs/releases/0.3.0rc2/RELEASE_VERIFICATION.json).
+Development regression and numerical-study counts are inherited evidence,
+separate from this release's freshly executed installed-package tests.
 
-Historical targeted regressions are inherited evidence, not fresh full-suite
-tests. This release claims no new commercial solver or experimental acceptance.
-The old 0.2.0 fixed gap-list wording did not certify whole-product equivalence.
+The sheet path remains isothermal, homogeneous-band and constant-mobility,
+using representative material/contact parameters and aligned Cartesian geometry.
+Full 2D logic/memory qualification, real material calibration, dedicated
+Schrödinger–Poisson/NEGF and full Sentaurus equivalence remain open. The four
+previously excluded three-temperature/energy research qualifications remain
+separate; this release supplies no new commercial or experimental acceptance.
 
-## Build and artifact scope
+## Installation and compatibility
 
-- Package/runtime version: `0.3.0rc1`; Python >=3.10.
-- C++17 GCC with libquadmath; default SI constants and `__float128` core
-  (113 mantissa bits). Python/SciPy sheet solvers use float64.
-- Native Windows is unsupported; use Linux or WSL2.
-- Linux wheels are specific to the Python ABI/runtime in their compatibility
-  report; no universal or manylinux compatibility is implied.
-- Large raw validation archives and external calibration dashboards are not
-  bundled; compact input identity and numerical summaries are included.
-
-```bash
-TCAD_USE_PETSC=0 TCAD_USE_LAPACK=0 python -m pip install '.[dev]'
-```
+- Package/runtime version `0.3.0rc2`; Python >=3.10 for source builds.
+- Bundled wheel: Linux x86_64 / CPython 3.13, native GCC float128 (113 mantissa
+  bits), SI constants. Python/SciPy sheet arithmetic remains float64.
+- C++17 GCC and libquadmath are required for source builds. Windows uses WSL2
+  or Linux; other platforms/Python ABIs require their own builds and checks.
+- Host-built wheel, not manylinux-certified; inspect the compatibility report.
+- [Artifacts, checksums and install instructions](binaries/README.md).
+- Publication updates the GitHub source/tag and artifacts; it does not replace
+  `/apps/EDAs/own/tcad/current` on the numerical host.

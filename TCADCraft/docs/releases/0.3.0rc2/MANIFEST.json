@@ -1,0 +1,11 @@
+{
+  "build_provenance.json": "93fcb04f9c14c959a0ec0a8b8551af0487e69d753ca41e35213d53dc33a06df5",
+  "compatibility.json": "7d25da7618f057e3841a94c0e7a35f3cd8ce11d8d0ba056c1b5cb157897c2522",
+  "numerical_source_identity.json": "d082fac433549fbdfde2477768b2e28e0c1b7b9aeef8dcaaff03d848565f32f0",
+  "packaging_attempts.json": "74446ff8fc771c16b540427887e2bfac557be4017369ed135f64d3afeaf1ccc9",
+  "RELEASE_VERIFICATION.json": "6a5f32bcf8aaf1ac265af5528f7489cf70a239b0e1b3450c054d5676f317b793",
+  "reproduce_release.py": "ffd97b3680109171a37bda6cd97d4197d2d81ee5e2214545cc641819c304fa6b",
+  "targeted_tests.xml": "0c824a700abda4af371b30ef965098cfc52ec347d2ad225d15cc25c618bfa74f",
+  "VALIDATION.md": "e47d094bb53934c534eb4c1302ad14af42efa60a3f5e5f0ef7a75a6e12c40eb6",
+  "validation_summary.json": "31b77d847b9d8c1723f57c3c9c10179e15500db17808a4efc6d6e57fde2fb51a"
+}

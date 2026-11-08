@@ -5,125 +5,41 @@ a Python API, Cython bindings and a C++ numerical core with classical
 drift–diffusion, density-gradient quantum corrections and scoped multiphysics
 models.
 
-**Release candidate: 0.3.0rc1 (2026-11-05).** This release adds a dedicated
-classical sheet model for graphene and MoS₂, sparse coupling to a 3D dielectric,
-transient carrier/trap dynamics and stronger solver acceptance/recovery checks.
-It is a research release with explicit model limits. Complete Sentaurus
-equivalence and complete 2D logic/memory-device qualification are not claimed.
+**Release candidate: 0.3.0rc2 (2026-11-08).** This release adds optional
+lower-fill sparse orderings, explicit linear-cache release and interval-aware
+transient diagnostics to the graphene/MoS2 classical sheet solver. It includes
+the independently audited refinement studies completed through November 8.
+It is a scoped research release; full Sentaurus equivalence and complete 2D
+logic/memory-device qualification remain open.
 
-See [release notes](RELEASE_NOTES.md), [validation and open gaps](docs/releases/0.3.0rc1/VALIDATION.md)
-and [numerical provenance](docs/releases/0.3.0rc1/validation_summary.json).
+See [release notes](RELEASE_NOTES.md), [validation scope](docs/releases/0.3.0rc2/VALIDATION.md),
+[installation verification](docs/releases/0.3.0rc2/RELEASE_VERIFICATION.json)
+and the [handoff manual](handoff1108.md).
 
-Development sources additionally offer an optional lower-fill LU ordering.
-See the [2026-11-06 optimization results](docs/optimization/20261106/README.md)
-for usage, measurements and validation scope. This unreleased option requires
-installing the development sources; the tagged `0.3.0rc1` artifacts are unchanged.
+## Changes since 0.3.0rc1
 
-The [complete-pulse follow-up](docs/optimization/20261106-full-pulse/README.md)
-adds fresh 60 ps ordering controls and local contact-z refinement acceptance.
+- Optional `MMD_AT_PLUS_A` and `GEOMETRIC_ND` preconditioner orderings for the
+  coupled reused-GMRES backend; `COLAMD` remains the default. Original true
+  row-scaled residual, correction, refresh and transactional guards are retained.
+- Explicit `clear_linear_cache()` API on `SheetTransient` drivers
+  drops the retained factor reference without changing the accepted physical state.
+- Interval-matched BE currents, signed cumulative charges, three-time observed
+  orders and lower-memory loading of complete transient records.
+- Complete 60 ps MoS2 refinement controls with unchanged original observable
+  support and thresholds, preserving failed coarse-grid and resource trials.
 
-The [contact-z/time study](docs/optimization/20261106-contact-z-time/README.md)
-adds a second full local refinement, half-dt controls, interval-current analysis and exact replay inputs.
+| Evidence | Result and scope |
+| --- | --- |
+| [z/time matrix](docs/optimization/20261108-geometric-z-time512/README.md) | z113/121/129 at x83/y9, three dt: original 54/54 gates at each dt; observed bulk time orders about 1.01 |
+| [Refined x/time matrix](docs/optimization/20261107-geometric-x83-time/README.md) | x69/75/83 at two dt: 54/54 at both; [coarser sequence](docs/optimization/20261107-geometric-x75-time/README.md) remains 52/54 |
+| [y/time matrix](docs/optimization/20261107-geometric-y-time256/README.md) | Three y meshes at two dt: 54/54; mixed increments below the analysis floor do not prove decoupling |
+| [Geometric ordering](docs/optimization/20261107-geometric-ordering/README.md) | Captured-system checks and 245 targeted development regressions |
+| [Explicit cache release](docs/optimization/20261106-linear-cache-release/README.md) | State-preserving API, with timeout evidence retained |
+| [Trace analysis](docs/optimization/20261106-trace-analysis/README.md) | Gate-edge interval-current and signed-integral checks |
 
-The [third-time-step and endpoint study](docs/optimization/20261106-temporal-endpoint/README.md)
-adds fixed-support temporal orders and narrowly localized z/x probes; global spatial acceptance remains open.
-
-The [complete endpoint-pulse study](docs/optimization/20261106-endpoint-full/README.md)
-extends endpoint-z refinement to full 60 ps pulses and adds a second independent x probe.
-
-The [independent x/y probe study](docs/optimization/20261106-independent-xy-probes/README.md)
-adds a third consecutive x refinement and a first independent y sensitivity measurement;
-the y probe exceeds the frozen memory budget, so the cohort is not accepted.
-
-The [explicit linear-cache release update](docs/optimization/20261106-linear-cache-release/README.md)
-adds an opt-in API with 223 passing regressions; the large y17 replay times out before its first BE step.
-
-The [profiled y17 replay](docs/optimization/20261106-cache-profile/README.md)
-completes under a separately declared wall budget and passes physical parity and the memory gate.
-
-The [first complete x pulse](docs/optimization/20261106-first-full-x-pulse/README.md)
-adds an independently audited 60 ps x69 trajectory; full x/y convergence remains open.
-
-The [complete x sequence](docs/optimization/20261106-full-x-sequence/README.md)
-adds full x75/x83 pulses and the original 54-metric endpoint verdict; y and joint studies remain open.
-
-The [first complete y pulse](docs/optimization/20261106-first-full-y-pulse/README.md)
-adds a full y17 trajectory and y9/y17 field/ledger comparisons; a complete third-y trajectory and joint studies remain open.
-
-The [bounded uniform third-y probe](docs/optimization/20261106-third-y-probe/README.md)
-retains a passing fresh MMD y9 control and the failed y33 capacity outcome; the three-grid y metrics remain unevaluated.
-
-The [geometric ordering update](docs/optimization/20261107-geometric-ordering/README.md)
-adds an opt-in `GEOMETRIC_ND` preconditioner ordering and a captured y33 matrix
-check; full y33 and joint convergence qualification remain open.
-
-The [same-ordering y probe study](docs/optimization/20261107-geometric-probes/README.md)
-completes fresh y9/y17/y33 initial and first-BE probes with 26/26 initial-prefix metrics passing;
-a complete y33 pulse and joint qualification remain open.
-
-The [complete geometric y9 control](docs/optimization/20261107-geometric-full-y9/README.md)
-adds a fresh independently audited 60 ps trajectory with the same geometric ordering;
-This established the first full control; the y17 follow-up is linked below.
-
-The [complete geometric y17 control](docs/optimization/20261107-geometric-full-y17/README.md)
-adds a second audited 60 ps trajectory and same-ordering y9/y17 diagnostics.
-The full y33 trajectory and three-grid verdict are reported below.
-
-The [full geometric y33 and y-sequence study](docs/optimization/20261107-geometric-full-y33/README.md)
-completes the third full 60 ps pulse and passes all 54 original phase-end y metrics;
-fine-grid temporal, global spatial and joint qualification remain open.
-
-The [full y33 half-dt study](docs/optimization/20261107-geometric-time256/README.md)
-adds an audited 768-step pulse on the same x65/y33/z113 grid and compares
-complete fields and current traces; the third-resolution follow-up is linked below.
-
-The [full y33 three-resolution time study](docs/optimization/20261107-geometric-time512/README.md)
-adds an audited 1536-step pulse on the same x65/y33/z113 grid and compares
-complete fields and current traces across three time resolutions. Bulk-potential
-observed orders are 1.010-1.014; joint space/time qualification remains open.
-
-The [y/time matrix study](docs/optimization/20261107-geometric-y-time256/README.md)
-adds two audited half-dt pulses, completing three y grids at two time steps;
-all 54 original y endpoint gates pass at the finer dt. The 40 signed field
-interactions fall below the inherited normalized analysis floor; general
-joint space/time qualification remains open.
-
-The [matched x/time study](docs/optimization/20261107-geometric-x-time/README.md)
-adds two full x69 pulses to complete x65/69 at n128/256 with one frozen
-candidate and GEOMETRIC_ND ordering. Independent physical audits pass;
-signed mixed increments and interval-matched traces are reported.
-A two-mesh result establishes no spatial order or joint qualification.
-
-The [three-x/two-time study](docs/optimization/20261107-geometric-x75-time/README.md)
-adds full x75 pulses, completing x65/69/75 at n128/256. The original x
-endpoint gates pass 52/54 and 52/54 at the two time resolutions;
-signed field interactions and interval-matched traces remain scoped
-numerical evidence, with no global or joint qualification.
-
-The [three-x/two-time study](docs/optimization/20261107-geometric-x83-time/README.md)
-adds full x83 pulses, completing refined x69/75/83 at n128/256. The original x
-endpoint gates pass 54/54 and 54/54 at the two time resolutions;
-the coarser x65/69/75 result remains 52/54. Interval-matched traces and
-signed interactions establish no global or joint qualification.
-
-The [three-z/two-time study](docs/optimization/20261108-geometric-z-time/README.md)
-adds four full pulses, completing z113/121/129 at x83/y9 and n128/256.
-Original z endpoint gates: 54/54 and 54/54 passed at the two dt.
-Full signed interactions and interval-matched traces remain descriptive;
-global spatial convergence and joint qualification remain open.
-
-The [refined-grid three-time study](docs/optimization/20261108-geometric-fine-time512/README.md)
-adds a full n512 pulse at x83/y9/z129, comparing three complete time
-resolutions with unchanged field-order and interval-current diagnostics.
-Measured spatial/time components are recorded; joint qualification remains open.
-
-The [complete z/time matrix](docs/optimization/20261108-geometric-z-time512/README.md)
-adds full n512 controls on z113 and z121, completing three z meshes by
-three time steps at x83/y9. It preserves original spatial gates and
-reports matched spatial/time and signed mixed increments. Joint bounds remain open.
-
-The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
-adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
+These are scoped numerical controls, not absolute error bounds or combined
+x/y/z qualification. Historical reports describe their status when sealed;
+later follow-ups above do not rewrite their raw evidence.
 
 ## Capabilities and limits
 
@@ -151,12 +67,13 @@ GCC float128; it is host-built and is not manylinux-certified. Follow the
 compatibility notes and checksum instructions before installation.
 
 ```bash
-python -m pip install binaries/linux-x86_64/tcad-0.3.0rc1-cp313-cp313-linux_x86_64.whl
+python -m pip install binaries/linux-x86_64/tcad-0.3.0rc2-cp313-cp313-linux_x86_64.whl
 ```
 
-Clean-source build, separate wheel installation, the graphene/MoS2 examples
-and installed-package targeted tests passed: **1055 passed, 0 skipped; zero failures/errors**. See the
-[release verification report](docs/releases/0.3.0rc1/RELEASE_VERIFICATION.json).
+The wheel is built from a clean source distribution and installed outside
+the source tree. Fresh targeted test counts, example checks and artifact hashes
+are recorded in the [release verification report](docs/releases/0.3.0rc2/RELEASE_VERIFICATION.json).
+This is separate from inherited numerical evidence and is not a full-suite claim.
 
 ## Install from source
 
@@ -213,6 +130,7 @@ device = DielectricSheetDriftDiffusion(
     contact_z_bounds_m=(-2.5e-9, 2.5e-9),
     electrostatic_backend='coupled',
     linear_solver='reused_gmres',
+    linear_ordering='GEOMETRIC_ND',
     mobility_n_m2_Vs=0.02,
     mobility_p_m2_Vs=0.01,
     transport_scheme='diffusion_enhanced',
@@ -246,17 +164,26 @@ See the [sheet API](docs/sheet_sparse_coupling.md). Runnable examples under
 
 ## Validation status
 
-The sealed MoS₂ fine-mesh comparison completed **two 60 ps trajectories** on
-a 129×17×129 mesh: **768 dynamic steps, 8 complete fields and 6,769,086
-independent physics checks**. SI and legacy-charge physical records agree
-exactly. Separate local-z probes passed 1,336,524 field checks, but cover only
-initialization and one BE step at each of two refinements per profile.
+The latest nine-corner z/time matrix contains complete 60 ps trajectories.
+Its two fresh n512 controls add **3072 steps, 8 complete fields and 2,089,230
+independent physical/ledger checks**; seven parent pulses are inherited once.
+All three dt pass the original 54 spatial endpoint metrics. The three z meshes
+show bulk-potential observed time orders of approximately 1.01; all 90 trace
+metrics have resolved decreasing temporal increments. Interval-conduction
+orders near 0.86 show why uniform first-order or asymptotic claims are premature.
 
-**Spatial convergence remains unqualified.** Fine-grid temporal and joint
-spacetime bounds, real sample/contact calibration, complete logic/memory
-workflows and dedicated quantum transport remain open. The historical 282
-final-source affected regressions are inherited evidence, not a fresh
-full-suite result. Release build/install checks are recorded separately.
+**Global spatial and joint spacetime error bounds remain unqualified.** Local
+contact refinements do not provide a uniform global h ratio. Combined x/y/z
+controls and a physical observable error budget remain necessary. Failed coarse
+x controls and original timeout/memory-budget outcomes are retained.
+
+Real sample/contact calibration, complete logic and memory workflows,
+Schrödinger–Poisson/NEGF transport and comprehensive commercial/experimental
+acceptance remain open. Previously excluded real a/c calibration, independent
+three-temperature measurements, 200 ps three-temperature commercial/native
+profiles and general complex energy/entropy closure are separate research items.
+See [validation scope](docs/releases/0.3.0rc2/VALIDATION.md) and the
+[previous release baseline](docs/releases/0.3.0rc1/VALIDATION.md).
 
 ## Development and release checks
 

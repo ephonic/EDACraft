@@ -8,12 +8,12 @@ include tcad_build_config.py
 include pytest.ini
 include conftest.py
 recursive-include src *.cpp *.h
-recursive-include tcad *.py *.pyx *.json
+recursive-include tcad *
 recursive-include scripts *.py
 recursive-include tests *.py *.cpp *.json *.txt *.dat *.tsv *.npz
 recursive-include examples *.py
-recursive-include benchmarks *.py
-recursive-include docs *.md *.json
+recursive-include benchmarks *
+recursive-include docs *.md *.json *.py *.npz *.xml *.log *.jsonl
 prune build
 prune dist
 global-exclude __pycache__ *.py[cod] *.so *.pyd

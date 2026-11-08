@@ -1,0 +1,68 @@
+{
+  "version": "0.3.0rc2",
+  "status": "passed_clean_sdist_wheel_install_and_targeted_checks",
+  "utc": "2026-11-08T07:52:20.234869+00:00",
+  "wheel_built_from_sdist": true,
+  "installation_verified_outside_source_tree": true,
+  "readme_graphene_example_passed": true,
+  "mos2_variant_passed": true,
+  "test_scope": [
+    "tests/test_sheet_contacts.py",
+    "tests/test_sheet_coupled.py",
+    "tests/test_sheet_dielectric.py",
+    "tests/test_sheet_dielectric_contacts.py",
+    "tests/test_sheet_dirac_contact.py",
+    "tests/test_sheet_drift_diffusion.py",
+    "tests/test_sheet_flux.py",
+    "tests/test_sheet_geometric_ordering.py",
+    "tests/test_sheet_linear_cache_release.py",
+    "tests/test_sheet_linear_ordering.py",
+    "tests/test_sheet_refinement_trace.py",
+    "tests/test_sheet_reused_gmres.py",
+    "tests/test_sheet_schur_blocks.py",
+    "tests/test_sheet_statistics.py",
+    "tests/test_sheet_thermionic.py",
+    "tests/test_sheet_transient.py",
+    "tests/test_sheet_trap_balance.py",
+    "tests/test_sheet_trap_equilibrium.py",
+    "tests/test_sheet_traps.py",
+    "tests/test_constants_profile.py",
+    "tests/test_precision_backend.py"
+  ],
+  "junit": {
+    "tests": 1127,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "full_suite_rerun": false,
+  "build_flags": {
+    "TCAD_USE_PETSC": "0",
+    "TCAD_USE_LAPACK": "0",
+    "TCAD_CONSTANTS_PROFILE": "si",
+    "TCAD_NATIVE_OPT": "0"
+  },
+  "artifacts": {
+    "tcad-0.3.0rc2.tar.gz": {
+      "bytes": 12039678,
+      "sha256": "b525fa3a4feb15b8a8c178e72fa3e6d91270c23407263c6b7a6ae1bb806fd47c"
+    },
+    "tcad-0.3.0rc2-cp313-cp313-linux_x86_64.whl": {
+      "bytes": 2633217,
+      "sha256": "b872189df7271debd6de55d6806b1d8ccdff710933d6d5c0e59c85b295bbded4"
+    }
+  },
+  "input_tar_sha256": "28bba7ca8cff71387b10d095402c72b20f58b8e73cc36d173c749ca2ba36fdc3",
+  "binary_sha256": "318988172b59c2ea14f627ecc9aa422ae86c2f4984784002a20475cb9a5d13b4",
+  "legacy_charge_binary_built": false,
+  "commercial_runs": 0,
+  "experimental_acceptance": false,
+  "physical_device_qualification": false,
+  "input_policy_sha256": "eeb6f8c4fbb0b22f91416c1f51c511f1da0c741a1fa02e8b91a0161f7e1b6a05",
+  "input_source_files_verified": 1580,
+  "all_packaged_numerical_sources_verified": true,
+  "production_unchanged": true,
+  "numerical_development_commit": "6f399e367db4a0848b7406768e203ee7daa143ce",
+  "new_complete_device_pulses": 0,
+  "numerical_evidence_inherited": true
+}

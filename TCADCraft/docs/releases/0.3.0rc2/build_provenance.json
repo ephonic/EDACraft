@@ -1,0 +1,18 @@
+{
+  "launch": {
+    "pid": 4170103,
+    "work": "/tmp/tcadcraft_release_0_3_0rc2_20261108_run2",
+    "input_sha256": "28bba7ca8cff71387b10d095402c72b20f58b8e73cc36d173c749ca2ba36fdc3",
+    "worker_sha256": "ffd97b3680109171a37bda6cd97d4197d2d81ee5e2214545cc641819c304fa6b",
+    "policy_sha256": "eeb6f8c4fbb0b22f91416c1f51c511f1da0c741a1fa02e8b91a0161f7e1b6a05"
+  },
+  "input_file_count": 1580,
+  "build_policy_sha256": "eeb6f8c4fbb0b22f91416c1f51c511f1da0c741a1fa02e8b91a0161f7e1b6a05",
+  "source_archive_sha256": "b525fa3a4feb15b8a8c178e72fa3e6d91270c23407263c6b7a6ae1bb806fd47c",
+  "wheel_sha256": "b872189df7271debd6de55d6806b1d8ccdff710933d6d5c0e59c85b295bbded4",
+  "numerical_development_commit": "6f399e367db4a0848b7406768e203ee7daa143ce",
+  "build_worker_sha256": "ffd97b3680109171a37bda6cd97d4197d2d81ee5e2214545cc641819c304fa6b",
+  "all_owned_workers_exited": true,
+  "production_unchanged": true,
+  "final_repository_additions": "Final artifact reports, download links, handoff, versioned compatibility and checksums were added after building the source archive; numerical wheel sources are unchanged."
+}

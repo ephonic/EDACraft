@@ -1,0 +1,21 @@
+{
+  "failed_attempts": [
+    {
+      "attempt": 0,
+      "status": "failed_before_wheel_build_preserved",
+      "reason": "sdist omitted auxiliary tcad/core C++ sources",
+      "local_evidence_sha256": "34946a796539091d817e0743449bc370d758627e630703931548fe994a138f4e",
+      "all_owned_workers_exited": true
+    },
+    {
+      "attempt": 1,
+      "status": "failed_before_wheel_build_preserved",
+      "reason": "sdist omitted tcad/validation/README.md",
+      "local_evidence_sha256": "9b925a36dd343aafca090d294ba211bfc9ddd86599c862d2bcd8e04cdde8ba03",
+      "all_owned_workers_exited": true
+    }
+  ],
+  "accepted_attempt": 2,
+  "correction": "Include every controlled tcad and benchmark source in sdist, C++/header/pxd/markdown package data in wheel, and compact report scripts/fixtures in sdist; no numerical source change.",
+  "source_guard": "Accepted sdist source inventory and wheel package sources verified by SHA-256; every inherited optimization MANIFEST reproduced from sdist."
+}
