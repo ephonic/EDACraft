@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.18)
+project(ftimer_consumer LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+find_package(TimeEngine CONFIG REQUIRED)
+add_executable(ftimer_consumer main.cc)
+target_link_libraries(ftimer_consumer PRIVATE TimeEngine::time_engine)

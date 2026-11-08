@@ -1,0 +1,132 @@
+library (simple_cell) {
+  delay_model : "table_lookup";
+  time_unit : "1ns";
+  capacitive_load_unit (1,pf);
+  voltage_unit : "1V";
+  current_unit : "1mA";
+  leakage_power_unit : "1pW";
+  pulling_resistance_unit : "1kohm";
+
+  nom_process : 1.0;
+  nom_temperature : 25.0;
+  nom_voltage : 1.0;
+
+  input_threshold_pct_rise : 50;
+  input_threshold_pct_fall : 50;
+  output_threshold_pct_rise : 50;
+  output_threshold_pct_fall : 50;
+  slew_lower_threshold_pct_rise : 20;
+  slew_lower_threshold_pct_fall : 20;
+  slew_upper_threshold_pct_rise : 80;
+  slew_upper_threshold_pct_fall : 80;
+  slew_derate_from_library : 1.0;
+
+  lu_table_template (delay_template_3x3) {
+    variable_1 : input_net_transition;
+    variable_2 : total_output_net_capacitance;
+    index_1 ("0.01, 0.05, 0.1");
+    index_2 ("0.001, 0.01, 0.1");
+  }
+
+  cell (INVx1) {
+    area : 1.0;
+
+    pin (A) {
+      capacitance : 0.001;
+      direction : "input";
+    }
+
+    pin (Y) {
+      direction : "output";
+
+      timing () {
+        related_pin : "A";
+        timing_sense : "negative_unate";
+        timing_type : "combinational";
+
+        cell_rise (delay_template_3x3) {
+          values ( \
+            "0.10, 0.15, 0.25", \
+            "0.12, 0.18, 0.30", \
+            "0.15, 0.22, 0.35" \
+          );
+        }
+
+        cell_fall (delay_template_3x3) {
+          values ( \
+            "0.08, 0.12, 0.20", \
+            "0.10, 0.15, 0.25", \
+            "0.13, 0.20, 0.32" \
+          );
+        }
+
+        rise_transition (delay_template_3x3) {
+          values ( \
+            "0.05, 0.08, 0.15", \
+            "0.06, 0.10, 0.18", \
+            "0.08, 0.13, 0.22" \
+          );
+        }
+
+        fall_transition (delay_template_3x3) {
+          values ( \
+            "0.04, 0.07, 0.12", \
+            "0.05, 0.09, 0.16", \
+            "0.07, 0.11, 0.20" \
+          );
+        }
+      }
+    }
+  }
+
+  cell (BUFx1) {
+    area : 1.2;
+
+    pin (A) {
+      capacitance : 0.001;
+      direction : "input";
+    }
+
+    pin (Y) {
+      direction : "output";
+
+      timing () {
+        related_pin : "A";
+        timing_sense : "positive_unate";
+        timing_type : "combinational";
+
+        cell_rise (delay_template_3x3) {
+          values ( \
+            "0.12, 0.18, 0.30", \
+            "0.14, 0.22, 0.36", \
+            "0.18, 0.28, 0.42" \
+          );
+        }
+
+        cell_fall (delay_template_3x3) {
+          values ( \
+            "0.10, 0.15, 0.25", \
+            "0.12, 0.18, 0.30", \
+            "0.16, 0.25, 0.40" \
+          );
+        }
+
+        rise_transition (delay_template_3x3) {
+          values ( \
+            "0.06, 0.10, 0.18", \
+            "0.07, 0.12, 0.22", \
+            "0.10, 0.16, 0.28" \
+          );
+        }
+
+        fall_transition (delay_template_3x3) {
+          values ( \
+            "0.05, 0.08, 0.15", \
+            "0.06, 0.10, 0.18", \
+            "0.08, 0.14, 0.24" \
+          );
+        }
+      }
+    }
+  }
+}

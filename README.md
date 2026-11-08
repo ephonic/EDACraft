@@ -8,6 +8,29 @@ EDACraft is a monorepo hosting multiple EDA sub-projects, each focusing on diffe
 
 ## Sub-projects
 
+### [FTimer](FTimer/README.md) (`FTimer/`)
+
+FTimer **0.1.1** is a standalone C++17 static timing and power analysis engine.
+It reads Liberty, gate-level Verilog, SDC and optional SPEF, and provides
+setup/hold reports, NLDM/CCS delay calculation, incremental timing, power
+estimation, and coupled-RC/CCSN analysis interfaces. C++, C and Python APIs
+support use as a command-line tool or an embedded timing library.
+
+```sh
+cmake -S FTimer -B build/ftimer -DCMAKE_BUILD_TYPE=Release -DTIME_ENGINE_ENABLE_TBB=OFF
+cmake --build build/ftimer -j 4
+./build/ftimer/bin/ftimer -lib FTimer/examples/simple/cells.lib \
+  -verilog FTimer/examples/simple/design.v -sdc FTimer/examples/simple/design.sdc -report 5
+```
+
+The source snapshot contains `src`, `include`, `docs`, `python`, `examples`
+and `cmake`, with the shared data model embedded under `src/core` and
+`include/edacraft`. It builds independently of fsyn. Synthetic examples are
+included; foundry libraries and commercial tools are supplied by the user.
+See the [FTimer README](FTimer/README.md) for installation and APIs, and
+[validation scope](FTimer/docs/VALIDATION.md) for the 0.1.1 regression results
+and the remaining full-design SI qualification limits.
+
 ### [DSIMCraft](DSIMCraft/README.md) (`DSIMCraft/`)
 
 DSIMCraft v0.13.0 provides a **source snapshot and a prebuilt Linux x86_64 package** of the compiled

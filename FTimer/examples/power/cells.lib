@@ -1,0 +1,63 @@
+library(power_clocked) {
+ delay_model : table_lookup;
+ time_unit : "1ns"; voltage_unit : "1V"; current_unit : "1mA";
+ leakage_power_unit : "1nW"; capacitive_load_unit(1,pf);
+ nom_process : 1; nom_voltage : 1; nom_temperature : 25;
+ input_threshold_pct_rise : 50; input_threshold_pct_fall : 50;
+ output_threshold_pct_rise : 50; output_threshold_pct_fall : 50;
+ slew_lower_threshold_pct_rise : 20; slew_upper_threshold_pct_rise : 80;
+ slew_lower_threshold_pct_fall : 20; slew_upper_threshold_pct_fall : 80;
+ lu_table_template(delay) {
+  variable_1 : input_net_transition; variable_2 : total_output_net_capacitance;
+  index_1(".01,.1"); index_2(".001,.1");
+ }
+ power_lut_template(energy) {
+  variable_1 : input_transition_time; variable_2 : total_output_net_capacitance;
+  index_1(".01,.1"); index_2(".001,.1");
+ }
+ cell(BUF) {
+  area : 1;
+  pg_pin(VDD) { pg_type : primary_power; voltage_name : VDD; }
+  pg_pin(VPP) { pg_type : primary_power; voltage_name : VPP; }
+  leakage_power() { related_pg_pin : VDD; value : 5; }
+  leakage_power() { related_pg_pin : VDD; when : "!A !Y"; value : 3; }
+  leakage_power() { related_pg_pin : VDD; when : "A Y"; value : 7; }
+  leakage_power() { related_pg_pin : VPP; value : 10; }
+  leakage_power() { related_pg_pin : VPP; when : "A Y"; value : 20; }
+  pin(A) { direction : input; capacitance : .001; }
+  pin(Y) { direction : output; function : "A";
+   internal_power() { related_pin : "A";
+    rise_power(energy) { values("1,1","1,1"); }
+    fall_power(energy) { values("3,3","3,3"); }
+   }
+   timing() { related_pin : "A"; timing_sense : positive_unate;
+    cell_rise(delay) { values(".02,.02",".02,.02"); }
+    cell_fall(delay) { values(".02,.02",".02,.02"); }
+    rise_transition(delay) { values(".02,.02",".02,.02"); }
+    fall_transition(delay) { values(".02,.02",".02,.02"); }
+   }
+  }
+ }
+ cell(XOR2) {
+  area : 1; cell_leakage_power : 0;
+  pin(A) { direction : input; capacitance : .001; }
+  pin(B) { direction : input; capacitance : .001; }
+  pin(Y) { direction : output; function : "A ^ B"; }
+ }
+ cell(DFF) {
+  area : 1;
+  ff(IQ,IQN) { clocked_on : "CK"; next_state : "D"; }
+  leakage_power() { when : "Q"; value : 10; }
+  leakage_power() { when : "!Q"; value : 20; }
+  pin(CK) { direction : input; clock : true; capacitance : .001; }
+  pin(D) { direction : input; capacitance : .001; }
+  pin(Q) { direction : output; function : "IQ";
+   timing() { related_pin : "CK"; timing_type : rising_edge; timing_sense : positive_unate;
+    cell_rise(delay) { values(".02,.02",".02,.02"); }
+    cell_fall(delay) { values(".02,.02",".02,.02"); }
+    rise_transition(delay) { values(".02,.02",".02,.02"); }
+    fall_transition(delay) { values(".02,.02",".02,.02"); }
+   }
+  }
+ }
+}

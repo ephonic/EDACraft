@@ -1,0 +1,8 @@
+/build*/
+/install/
+/dist/
+__pycache__/
+*.py[cod]
+*.ftlib
+*.ftlib.gz
+!examples/**/cells.lib
