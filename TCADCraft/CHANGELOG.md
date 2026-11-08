@@ -3,6 +3,112 @@
 All notable changes to TCADCraft are documented in this file. Versions follow
 Semantic Versioning, and dates use ISO 8601.
 
+## Unreleased
+
+- Completed the three-z by three-time full-pulse matrix with two fresh n512
+  controls (3072 BE steps), independent audits, unchanged spatial gates,
+  temporal field/trace orders and signed mixed increments.
+
+- Added a complete refined x83/y9/z129 n512 pulse (1536 BE steps), independent
+  physical auditing, three-time field/trace orders and measured spatial/time
+  components on original observable support; joint qualification remains open.
+
+- Added four independently audited z/time full pulses (2304 new BE steps),
+  completing z113/121/129 at x83/y9 and n128/256 with original spatial
+  gates, signed interactions and interval-matched terminal traces.
+
+- Added two independently audited x83 full pulses (1152 new BE steps),
+  completing x69/75/83 at n128/256 with original 54-metric x gates at each
+  dt, retaining the coarser x65/69/75 failures without waiver.
+
+- Added two independently audited x75 full pulses (1152 new BE steps),
+  completing x65/69/75 at n128/256 with original 54-metric x gates at each
+  dt, 40 signed field interactions and interval-matched temporal traces.
+
+- Added two independently audited x69 full pulses (1152 new BE steps),
+  completing a matched x65/69 by n128/256 matrix with signed field
+  interactions and interval-matched temporal traces; no joint qualification.
+
+- Completed two half-dt y controls (1536 BE steps / two 60 ps pulses),
+  completing a three-y-grid/two-time-step matrix with original spatial gates and
+  signed field interactions. All 54 original y gates pass at finer dt; the
+  mixed increments remain below the inherited analysis floor.
+
+- Completed a full y33 quarter-dt pulse (1536 BE steps / 60 ps) with independent
+  physical and all-step ledger checks, full-grid field increments and
+  three-resolution temporal orders; joint qualification remains open.
+
+- Completed a full y33 half-dt pulse (768 BE steps / 60 ps) with independent
+  physical and all-step ledger checks, full-grid field increments and
+  interval-matched current traces as the second complete time resolution.
+
+- Completed the full geometric-ordering y33 pulse and evaluated the original
+  54-metric y9/y17/y33 phase-end sequence (54/54 pass), with independent
+  fields, all-step ledgers and linear diagnostics; joint qualification remains open.
+
+- Completed the full geometric-ordering y17 pulse with independent physical,
+  all-step ledger and linear audits, exact prefix replay and full MMD/ND
+  comparisons; see the completed y33 sequence above.
+
+- Completed a fresh full 60 ps geometric-ordering y9 control with independent
+  field, all-step ledger and linear audits, exact prefix replay, and descriptive
+  full MMD/ND trajectory comparisons; full y17/y33 and joint qualification remain open.
+
+- Completed fresh same-ordering geometric y9/y17/y33 initial/first-BE probes,
+  with independent physical audits and 26/26 original prefix metrics passing;
+  full-pulse y and joint space/time qualification remain open.
+
+- Added opt-in `linear_ordering='GEOMETRIC_ND'` for the coupled sheet
+  reused-GMRES preconditioner, with immutable permutation-aware cache identity,
+  original-equation residual checks and transactional failure recovery.
+  Recorded 245 passing targeted regressions and a captured y33 matrix study;
+  complete finer-y and joint space/time qualification remain open.
+
+- Preserved the bounded uniform-y33 capacity failure and an independently
+  audited fresh MMD y9 control; three-grid y acceptance remains open.
+
+- Completed and independently audited a full y17 pulse (384 BE steps),
+  with descriptive y9/y17 field and ledger comparisons.
+
+- Completed full x75/x83 pulses and evaluated the consecutive x69/x75/x83
+  endpoint sequence with the original 54 convergence metrics and gates.
+
+- Completed and independently audited the first full endpoint-x pulse
+  (x69, 384 BE steps), preserving the remaining x/y convergence gaps.
+
+- Completed a profiled y17 cache-release replay under a separately declared
+  wall budget, retaining earlier failures and reporting exact physical parity.
+
+- Added explicit `SheetTransient.clear_linear_cache()` with 223 passing
+  regressions; retained the y17 wall-time failure and initial byte-parity evidence.
+
+- Recorded x83 local probe acceptance and independent y17 sensitivity; preserved
+  the y17 frozen memory-budget failure alongside audited physical diagnostics.
+
+- Recorded two independently audited complete endpoint-z pulses and a second
+  independent x probe, retaining the original spatial acceptance gates.
+
+- Recorded an independently audited third temporal pulse (1,536 steps) and
+  endpoint z/x probes; all 26 initial/first-step z metrics pass, while full-pulse
+  spatial acceptance remains open.
+
+- Added three-resolution BE trace orders on fixed observation support and a
+  trace-only loader that retains initial states and all phase-drive checks.
+
+- Added complete second contact-z and two-grid half-dt validation, with replay
+  drivers, incremental linear journals and atomic phase-end field exports.
+- Added a NumPy-only full-trace comparison CLI using matched BE intervals for
+  total currents, ending-time conduction and cumulative terminal charge.
+
+- Validated complete 60 ps default/MMD sheet pulses and a nested local contact-z
+  pulse with independent field equations and every-step charge/current ledgers.
+
+- Added optional `linear_ordering='MMD_AT_PLUS_A'` for the coupled sheet
+  reused-GMRES preconditioner; retained COLAMD by default and the original
+  true-residual/rollback contract. Ordering changes invalidate cached factors.
+- Added a captured-system LU-fill/RSS benchmark and ordering-specific cache,
+  pulse, flux and failure rollback tests.
+
 ## [0.3.0rc1] - 2026-11-05
 
 - Added classical graphene/MoS2 sheet DD, dielectric coupling, contacts,

@@ -1,0 +1,12 @@
+{
+  "status": "passed_inherited_ledger_inventory_and_guard_tool_checks",
+  "new_simulation_steps": 0,
+  "inherited_accepted_diagnostics": 769,
+  "tamper_rejections": [
+    "wrong_expected_count",
+    "interior_charge",
+    "linear_residual"
+  ],
+  "derived_oracle_sha256": "de3ba8cb182a8b872b6f5d17b10966e01ef72f828df8fe4f63e20ba7de9a8035",
+  "derived_guard_sha256": "6180548e19f2cd67f7b91a406ec4269bb62b156fc81f3e6caa805db868c19361"
+}

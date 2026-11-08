@@ -1,0 +1,10 @@
+{
+  "candidate_verification.json": "7e45db1ee944f2314b4001395a7435b003a1a29b642b932c432a66b31d5dbb9d",
+  "directional_diagnosis.md": "c22b5bce970c09acff708ecedf5914ce6b0d3c037af055e8083f0ac2e5a03412",
+  "directional_summary.json": "705ae2a2e0a4a88ce5b6d9561b97016215a636e9b0183bebb736bd425b89bf08",
+  "linear_ordering_benchmark.json": "d2beb806ffea18e697fba0a7eba2a4f02e260ed21b4e0e9792a98b3f6f6ffe7c",
+  "ordering_physics_audit.json": "35af50c43a74950d62a95bac7b761529dc93d93fce955e28e41f6dd756393e6e",
+  "PROVENANCE.json": "8779422d06bf790f8277b3bd4244b05f349e9544538309d1eab93b7fcd2ba508",
+  "README.md": "4a282f546805dc1b4abc4eb8bd32aa9be33a0f541fd95fa5b79353b4cbe58cd5",
+  "targeted_tests.xml": "88a04b1eb3a355ad13d3043c0d4cb0e8b04d7732bce91059ad38220bcbac5c3d"
+}

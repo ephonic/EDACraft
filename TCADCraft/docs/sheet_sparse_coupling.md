@@ -77,6 +77,108 @@ attempt records. `invalidated_initial_factor` reports an operator-key change;
 bulk solves are separate from these Newton
 counters. The initial LU still requires sparse direct-factorization memory;
 this option does not guarantee lower memory use or faster execution.
+The optional `linear_ordering='MMD_AT_PLUS_A'` selects a different SuperLU
+column ordering for this Newton preconditioner. `COLAMD` remains the default;
+the alternative requires `linear_solver='reused_gmres'`. Harmonic bulk solves
+and the direct/Schur backends retain their current behavior. Diagnostics report
+`factor_ordering`, and a factor from another ordering is invalidated before
+reuse. Ordering does not change the true residual gate, iteration limits,
+single-refresh policy or transactional rollback.
+
+Development sources also accept `linear_ordering='GEOMETRIC_ND'` with
+`linear_solver='reused_gmres'` and `electrostatic_backend='coupled'`.
+This constructs a deterministic nested-dissection permutation from the sheet
+and free dielectric node coordinates, permutes both rows and columns, and
+uses SuperLU `NATURAL` ordering on that permuted system. The returned solution
+is mapped back before checking the original equations. The immutable
+permutation is shared across device copies; the cache identity also includes
+its contents. Harmonic initialization keeps its existing sparse solve.
+See the [y33 matrix study](optimization/20261107-geometric-ordering/README.md)
+for targeted tests, captured-system measurements and remaining device checks.
+This option is unreleased and does not imply a completed finer-y trajectory.
+The [same-ordering y probe study](optimization/20261107-geometric-probes/README.md)
+adds independently audited y9/y17/y33 initial and first-BE probes, with 26/26
+original prefix metrics passing. Complete finer-y pulses and joint qualification remain open.
+
+The [complete geometric y9 control](optimization/20261107-geometric-full-y9/README.md)
+extends that ordering to a fresh full 60 ps pulse with every-step physical
+and linear auditing. The y17 follow-up below adds the next full control.
+
+The [complete geometric y17 control](optimization/20261107-geometric-full-y17/README.md)
+adds a second full same-ordering pulse and descriptive y9/y17 increments.
+The full y33 verdict follows below; fine-grid temporal and joint qualification remain open.
+
+The [full geometric y33 and y-sequence study](optimization/20261107-geometric-full-y33/README.md)
+adds the third full same-ordering pulse and passes all 54 original phase-end y metrics.
+This verdict covers saved phase endpoints at fixed x65/z113; fine-grid time
+and joint space/time qualification remain open.
+
+The [full y33 half-dt study](optimization/20261107-geometric-time256/README.md)
+adds the second complete time resolution at fixed x65/y33/z113, with 768
+BE steps, full-field increments and interval-matched current traces.
+These two-time increments do not establish an observed order; the three-resolution
+follow-up is linked below.
+
+The [full y33 three-resolution time study](optimization/20261107-geometric-time512/README.md)
+adds the third complete time resolution at fixed x65/y33/z113, with 1536
+BE steps, full-field increments and interval-matched current traces.
+Bulk-potential observed orders are 1.010-1.014. Interval-averaged total terminal
+current orders are 0.984-0.987, while conduction-current orders are about 0.86.
+These observations establish no asymptotic error bound or joint qualification.
+
+The [y/time matrix study](optimization/20261107-geometric-y-time256/README.md)
+completes y9/y17/y33 at n128/n256 with two new full 60 ps controls and 1536
+new BE steps, original y endpoint gates and signed space/time interactions.
+All 54 original y endpoint gates pass at the finer dt. The largest normalized
+mixed increment is 2.02e-9, below the inherited 1e-8 analysis floor: these
+interactions are unresolved, which establishes no decoupling or joint qualification.
+
+The [matched x/time study](optimization/20261107-geometric-x-time/README.md)
+adds two x69 full pulses (1152 new BE steps), completing x65/69 at
+n128/256 with the same candidate and ND ordering. Both physical audits
+pass. Signed four-corner field differences and interval-matched temporal
+traces are descriptive; spatial order and joint qualification remain open.
+
+The [three-x/two-time matrix](optimization/20261107-geometric-x75-time/README.md)
+adds two x75 full pulses (1152 new BE steps), completing x65/69/75 at
+n128/256. Original x endpoint metrics pass 52/54 and 52/54;
+40 signed field interactions and interval-matched temporal traces are
+reported without asserting a spatial order or joint qualification.
+
+The [three-x/two-time matrix](optimization/20261107-geometric-x83-time/README.md)
+adds two x83 full pulses (1152 new BE steps), completing x69/75/83 at
+n128/256. Original x endpoint metrics pass 54/54 and 54/54;
+the coarser sequence remains 52/54, with both failed metrics retained.
+These local results establish no spatial order or joint qualification.
+
+The [three-z/two-time matrix](optimization/20261108-geometric-z-time/README.md)
+adds four full pulses (2304 new BE steps) at x83/y9, completing
+z113/121/129 at n128/256. Original z gates: 54/54 and 54/54 passed.
+The two z113 controls are inherited; no global or joint claim is made.
+
+The [refined-grid three-time study](optimization/20261108-geometric-fine-time512/README.md)
+adds one complete x83/y9/z129 n512 pulse (1536 new BE steps). Full-field
+and interval-matched trace orders, plus original-support spatial/time
+increments, are descriptive; joint error bounds remain open.
+
+The [complete z/time matrix](optimization/20261108-geometric-z-time512/README.md)
+fills the two missing n512 pulses (3072 fresh BE steps), providing original
+54 spatial gates at all three dt, field/trace temporal orders on each z mesh
+and eighty signed mixed metrics. Joint error bounds remain open.
+
+On one captured 37,737-row phase-two system, the alternative reduced LU fill
+and peak process RSS while satisfying the same `1e-14` true max-norm bound.
+Fresh complete 60 ps controls are documented in the
+[full-pulse follow-up](optimization/20261106-full-pulse/README.md).
+Neither measurement guarantees the same savings on other grids.
+To compare on the included fixture, run each ordering in a fresh process with
+the same thread limits:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python benchmarks/sheet_linear_ordering.py --ordering COLAMD
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python benchmarks/sheet_linear_ordering.py --ordering MMD_AT_PLUS_A
+```
+
 `gmres_corrections` and each attempt's correction record distinguish residual
 correction from a LU refresh. Unrecoverable residual failures attach the
 attempt records as `linear_solver_attempts` on the exception.

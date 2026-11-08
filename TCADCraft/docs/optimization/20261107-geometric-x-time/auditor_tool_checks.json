@@ -1,0 +1,99 @@
+{
+  "status": "passed_accepted_128_256_and_original_x69_physics_replays",
+  "inherited": {
+    "status": "passed_exact_y9_y17_128_and_y33_256_physics_replays",
+    "coarse_summaries": {
+      "9": {
+        "expected_newton_dimension": 65385,
+        "accepted_diagnostics": 385,
+        "linear_solves": 894,
+        "factorizations": 2,
+        "gmres_iterations": 5965,
+        "gmres_corrections": 645,
+        "refreshes": 0,
+        "checkpoints": 4,
+        "steps": 384,
+        "full_pulse_completed": true,
+        "independent_physics_and_ledger_checks": 780479
+      },
+      "17": {
+        "expected_newton_dimension": 123505,
+        "accepted_diagnostics": 385,
+        "linear_solves": 887,
+        "factorizations": 2,
+        "gmres_iterations": 6016,
+        "gmres_corrections": 649,
+        "refreshes": 0,
+        "checkpoints": 4,
+        "steps": 384,
+        "full_pulse_completed": true,
+        "independent_physics_and_ledger_checks": 1496479
+      }
+    },
+    "half_dt_summary": {
+      "expected_newton_dimension": 239745,
+      "accepted_diagnostics": 769,
+      "linear_solves": 1654,
+      "factorizations": 2,
+      "gmres_iterations": 10812,
+      "gmres_corrections": 1148,
+      "refreshes": 0,
+      "checkpoints": 4,
+      "steps": 768,
+      "full_pulse_completed": true,
+      "independent_physics_and_ledger_checks": 2933087
+    },
+    "tamper_rejections": [
+      "interior_trace_charge",
+      "wrong_dt",
+      "linear_residual",
+      "bulk_field",
+      "gate_drive",
+      "x_geometry",
+      "y_geometry",
+      "cache_flag",
+      "wrong_ordering",
+      "late_fine_trace_charge",
+      "late_fine_linear_residual",
+      "truncated_tail",
+      "wrong_cadence"
+    ],
+    "physical_oracle_sha256": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+    "derived_guard_sha256": "ecce04c897460419570436bf5b95901d8e91665825dc1e5db648fc4f49189963",
+    "new_simulation_steps": 0,
+    "new_physics_credit": 0
+  },
+  "x69_summary": {
+    "expected_newton_dimension": 69453,
+    "accepted_diagnostics": 385,
+    "linear_solves": 894,
+    "factorizations": 2,
+    "gmres_iterations": 6072,
+    "gmres_corrections": 683,
+    "refreshes": 0,
+    "checkpoints": 4,
+    "steps": 384,
+    "full_pulse_completed": true,
+    "independent_physics_and_ledger_checks": 828463
+  },
+  "metadata_only_ND_label_replay": true,
+  "tamper_rejections": [
+    "interior_trace_charge",
+    "wrong_dt",
+    "linear_residual",
+    "bulk_field",
+    "gate_drive",
+    "x_geometry",
+    "y_geometry",
+    "cache_flag",
+    "wrong_ordering",
+    "late_fine_trace_charge",
+    "late_fine_linear_residual",
+    "truncated_tail",
+    "wrong_cadence"
+  ],
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0,
+  "physical_oracle_sha256": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "derived_guard_sha256": "ecce04c897460419570436bf5b95901d8e91665825dc1e5db648fc4f49189963"
+}

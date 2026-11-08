@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-06",
+  "base_commit": "8647c2cf1edfebb1a996d0a1cd335ea2511085cc",
+  "branch": "optimization/sheet-ordering-20261106",
+  "status": "validated_development_change_not_new_release",
+  "ordering_candidate": {
+    "tcad/solver/_sheet_linear.py": "121c44e896645b50a7586c0e467a45f03a78a2c9e8dcd4126197bdc4261b4bce",
+    "tcad/solver/sheet_dielectric.py": "7bddc38bf30416c8fb144a6271794aea41c2b73ce9a393deed010550b7084c1c",
+    "tests/test_sheet_linear_ordering.py": "9c3fb832a4d7ff3ca57358b89e50a578d02cdf4b8bd64accc3f595574a46ac80"
+  },
+  "native_binary_sha256": "318988172b59c2ea14f627ecc9aa422ae86c2f4984784002a20475cb9a5d13b4",
+  "source_manifest_sha256": {
+    "sheet_directional_probe_20261106": "e3cbcfbb526e6af91de3ab9337f0e0c8b044c199a85ee225bcefd9a134457e11",
+    "sheet_linear_ordering_20261106_attempt1": "466644ac99706608611974dbfe20a040ee9af0c26c13451b5133544950d6c4f0"
+  },
+  "benchmark_script_sha256": "b5b64c2dfbe2676847ebc0e8f6f19fe155385faabd6633ff1311b0f3ef43b1fc",
+  "benchmark_measurement": "Single sequential run per ordering in fresh single-threaded processes; peak RSS sampled after solve and before L/U statistics extraction. Includes interpreter/runtime memory; not LU allocation size.",
+  "exploratory_measurement": "An earlier instrumented exploratory script extracted L/U inside the solve, increasing measured peak RSS; the public API benchmark above is the final reported performance comparison.",
+  "benchmark_statistics": {
+    "lu_nnz_reduction": 0.5775222380572227,
+    "peak_rss_reduction": 0.40295752557960884,
+    "elapsed_ratio": 0.3876176129553743,
+    "elapsed_speedup": 2.5798621284918966
+  },
+  "independent_new_physics_checks": 1781039,
+  "physical_parity_constraints": 1315764,
+  "targeted_tests_passed": 215,
+  "original_frozen_sources_modified": false,
+  "production_deployment_changed": false,
+  "published_wheel_changed": false,
+  "limitations": [
+    "No new full pulse with alternative ordering",
+    "Single-axis initial/BE probes do not close spatial convergence",
+    "No fine-grid temporal/joint spacetime qualification",
+    "No full-suite rerun",
+    "No material calibration or quantum transport qualification"
+  ]
+}

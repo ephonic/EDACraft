@@ -1,0 +1,21 @@
+{
+  "auditor_tool_checks.json": "521bab6b7604e8cb8f1e0caa06d6edf95052dd2621a1684695153dd80484dc01",
+  "baseline_two_time_fields.json": "5aa80ce06280a6e08d7b314ac98b9c2889fdf235c539447e558649df804de7e2",
+  "derived/derived_case_guard.py": "ecce04c897460419570436bf5b95901d8e91665825dc1e5db648fc4f49189963",
+  "derived/derived_field_order_formula.py": "fc1c410958bfaaf557b7af84d83177d3b1bb9ea35827d24ffb811c85577b372d",
+  "derived/derived_physical_oracle.py": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "diagnostic_tool_checks.json": "900021ab2b242259ba73b51c074e9cdd28ddddfd4fd52e764024491590c2a1a7",
+  "independent_audit.json": "728cfeb197d5b911e5da1ef64af34110a2525bc5bc154ac2f8c84cc857f26666",
+  "observable_increment_inventory.json": "aa7ad2e4a4a0dc944ba9184cc8021c15f15ecea9fcb0c732b6fe2e5a8560d4df",
+  "policy.json": "0708c4d5f8a47857dbf4815d93b9e853ec335281f5e5221a2b87fccdeca0846c",
+  "PROVENANCE.json": "20fab7b356b659e99c741562800d618fb2664c1c79953ab9d69fa314b1de5ee8",
+  "README.md": "2f262524831b815582ea1d30daa7ee593b5a8272c381858e00f3c649a3d183ea",
+  "reproduction/geometric_z129_n512.py": "b17e999410912b35546ed6c1814c40b32d10e734ee3931472dec03caddc84ddb",
+  "reproduction/meshes.npz": "49f4fba29b92d7ec81408dac2781d0474fd1e801471f87d6b7f3ae8d4d992342",
+  "reproduction/README.md": "6be2028f6d690f8687250a4a2982718b0ea6ff36da4d46c6c13e1418fc8f1286",
+  "reproduction/sheet_electrode_convergence.py": "44e4991a6c54837c6ac2705522d698df925b0f72bc1289e5a8a10d0be40a80c1",
+  "reproduction/sheet_trap_convergence.py": "140d5eb5ac98b8bb3cf6b1a43b522f2d1e049cb9f548e3d7ab7d635e82d8ddda",
+  "temporal_diagnostics.json": "fee847dedc469edee4d4f710682448628fe1d2a631b778bf5c792cd99f60bdb0",
+  "three_time_fields.json": "66460c6c21fcecbc22cbd07de787bcaecd2cba63c7a502f2420ed198fc131d47",
+  "three_time_trace.json": "f5d9c3aa8ea2421807203e21199b27b46771f642a5f03efb9d9012e3930cf2cb"
+}

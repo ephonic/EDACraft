@@ -1,0 +1,19 @@
+{
+  "auditor_tool_checks.json": "8309c683c6241e8dcb88f5feb4971eff7bc150ccf3e5ed621c01ec089bc94105",
+  "derived/derived_case_guard.py": "ecce04c897460419570436bf5b95901d8e91665825dc1e5db648fc4f49189963",
+  "derived/derived_physical_oracle.py": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "diagnostic_tool_checks.json": "83d19ff720a1ebd829cb04677f94683b6627229483538ba12db1de49caa5c5e3",
+  "independent_audit.json": "070a3f8d2e0a4d79e2b73fb80b1af6dd9503ea5b276c3a54e0007a53c27cb4c1",
+  "linear_records.json": "7e80c4cac73357d20ce90e3b8cf984dd1dc9d0828970e69992e3cf1a76823239",
+  "policy.json": "8849b650eca7d9fd862aa0307615a981825a252fc820cc2d1b323bd888342e6e",
+  "PROVENANCE.json": "f69fcb1250fc2fd4e175f4e05897a9edc20fa54d7ba900d1aa9a6b181fc410b5",
+  "README.md": "785edafcd5e9270437472fc5c7c31206b22e58295860175b2e998697a2e193fe",
+  "reproduction/geometric_y33_n256.py": "c3ab87d1b90d586e715ef90460ba5c6634c46d59202be8158342a7d01e467e1d",
+  "reproduction/meshes.npz": "49f4fba29b92d7ec81408dac2781d0474fd1e801471f87d6b7f3ae8d4d992342",
+  "reproduction/README.md": "952e37f377784a996918500b51f74a65f7f5ddf886ce3c2982c38cc0f829c64d",
+  "reproduction/sheet_electrode_convergence.py": "44e4991a6c54837c6ac2705522d698df925b0f72bc1289e5a8a10d0be40a80c1",
+  "reproduction/sheet_trap_convergence.py": "140d5eb5ac98b8bb3cf6b1a43b522f2d1e049cb9f548e3d7ab7d635e82d8ddda",
+  "temporal_diagnostics.json": "4ff8db300543b8bc3ffd29efd87d004ffde2dc4d63f94a2feb9b38a06664898c",
+  "two_time_fields.json": "ece2a5639d90cd9fb228559740639e6216f7e1b6f723c05c51886f97d6be9a1c",
+  "two_time_trace.json": "c34db5b216a32281fc9f69ae813da7c1c1ef76da6db6bfd902ee234ca4d5379f"
+}

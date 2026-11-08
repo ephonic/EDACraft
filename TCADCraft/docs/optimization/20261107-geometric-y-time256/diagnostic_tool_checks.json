@@ -1,0 +1,44 @@
+{
+  "status": "passed_exact_original_y_verdict_and_trace_replays_and_mixed_increment_checks",
+  "spatial": {
+    "status": "passed_exact_sealed_54_pass_and_26_failure_and_dense_replays",
+    "original_54_metric_verdict_reproduced": true,
+    "original_failed_probe_verdict_reproduced": true,
+    "metric_function_sha256": "c4e3dd3f06968cb25dca1b72c3c1bb464f58c9775a5e308053fb16c3d20e1b7b",
+    "dense_function_sha256": "aba098a50d54b3ba692f325b220aaeb0564a2868edcf2bcc6a5b453807208416",
+    "acceptance_policy_changed": false,
+    "new_simulation_steps": 0,
+    "new_physics_credit": 0
+  },
+  "trace": {
+    "status": "passed_exact_sealed_three_time_trace_replay",
+    "trace_source_sha256": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+    "trace_tests_inherited": 25,
+    "trace_tests_rerun": 0,
+    "files": {
+      "benchmarks/sheet_refinement_trace.py": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+      "tests/test_sheet_refinement_trace.py": "693467a143e48dd9a53e9399aeb94a607b0af17ed1a4b9b6cbd2081a5decac2b"
+    },
+    "new_simulation_steps": 0,
+    "new_physics_credit": 0,
+    "replay_input_files_rehashed": 6,
+    "roundoff_time_gate_changed": false,
+    "new_acceptance_gate": false
+  },
+  "exact_original_y_54_verdict": true,
+  "exact_original_y_dense_projection": true,
+  "mixed_analytic_checks": 3,
+  "mixed_input_fault_rejections": [
+    "shape",
+    "nonfinite",
+    "scale",
+    "clock",
+    "non_nested_support"
+  ],
+  "metric_function_sha256": "c4e3dd3f06968cb25dca1b72c3c1bb464f58c9775a5e308053fb16c3d20e1b7b",
+  "dense_function_sha256": "aba098a50d54b3ba692f325b220aaeb0564a2868edcf2bcc6a5b453807208416",
+  "interaction_source_sha256": "921708542ab5d4c380a01e6ae1352d9302508a4076d691a21252329bbbb6ab4b",
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0,
+  "new_acceptance_gate": false
+}

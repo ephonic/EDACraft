@@ -90,6 +90,22 @@ class SheetTransient:
     def state(self):
         return copy.deepcopy(self._state)
 
+    def clear_linear_cache(self):
+        """Release this driver's optional Newton preconditioner between steps.
+
+        Return whether a cached factor was released. Accepted state, time and
+        drive are unchanged; the next linear solve rebuilds its preconditioner
+        with the same tolerances. This can avoid retaining the DC factor while
+        building the first BE factor, or an old factor when changing dt.
+        Other driver copies may still share the immutable factor, and Python's
+        allocator need not immediately return freed memory to the OS. The
+        dielectric Schur factor is required model data and is never cleared.
+        """
+        if getattr(self._device,'_linear_factor',None) is None:
+            return False
+        self._device._linear_factor=None
+        return True
+
     def step(self,*,dt_s,max_iter=80,tolerance=1e-10,**drive):
         dt=_positive_scalar(dt_s,'dt_s')
         if dt<1/np.finfo(float).max:

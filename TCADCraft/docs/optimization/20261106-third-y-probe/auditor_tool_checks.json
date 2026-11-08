@@ -1,0 +1,25 @@
+{
+  "status": "passed_sealed_y17_physics_and_26_metric_replay",
+  "inherited_physical_audit": {
+    "field_physics_checks": 745923,
+    "expected_newton_dimension": 123505,
+    "full_pulse_completed": false,
+    "spatial_convergence_qualified": false,
+    "independent_physics_and_ledger_checks": 745923
+  },
+  "tamper_rejections": [
+    "trace_charge",
+    "wrong_dt",
+    "linear_residual",
+    "bulk_field",
+    "gate_drive",
+    "x_geometry",
+    "y_geometry",
+    "cache_flag"
+  ],
+  "metric_function_sha256": "c4e3dd3f06968cb25dca1b72c3c1bb464f58c9775a5e308053fb16c3d20e1b7b",
+  "derived_oracle_sha256": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "dense_function_sha256": "aba098a50d54b3ba692f325b220aaeb0564a2868edcf2bcc6a5b453807208416",
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0
+}

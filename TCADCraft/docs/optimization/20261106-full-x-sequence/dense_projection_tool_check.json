@@ -1,0 +1,9 @@
+{
+  "status": "passed_exact_inherited_dense_projection_replay",
+  "new_simulation_steps": 0,
+  "only_AST_change": "Phase loop covers every saved checkpoint rather than fixed phases 0/1.",
+  "derived_dense_function_sha256": "aba098a50d54b3ba692f325b220aaeb0564a2868edcf2bcc6a5b453807208416",
+  "diagnostic_script_sha256": "494c24cca5ba4cac4bd0c3ffcc81aa36ac64d22cd2364dcb838735dee614e14a",
+  "new_acceptance_gate": false,
+  "acceptance_policy_changed": false
+}

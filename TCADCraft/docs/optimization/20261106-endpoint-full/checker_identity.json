@@ -1,0 +1,19 @@
+{
+  "status": "passed_inventory_only_checker_changes_and_sealed_physics_dependencies",
+  "allowed_check_case_changes": [
+    "restrict count to 128",
+    "full inventory 512/1536 to 128/384"
+  ],
+  "original_physical_equations_and_acceptance_gates_preserved": true,
+  "files": {
+    "audit_sheet_contact_z_probe.py": "1f7a312bb5fc377232ef66d0050b6a6736bf72a1c2c479b939ebe12cf62720c2",
+    "audit_sheet_refinement_20261106.py": "382f904453c6d7df4b4e3c4d0e44e9cddd205ebda0d07deabf31745f9aa1072d",
+    "audit_sheet_endpoint_full_20261106.py": "aa0f18cb82f1c1138322db24b2c0ea595aee12d3b3aaf9727acff490e3ce26ef"
+  },
+  "inherited_manifests": {
+    "sheet_temporal_endpoint_20261106_attempt1": "8ed0a66bb8971673ec6242e4efa518fa63f80f7c674f3dab34fc12d2dfb53601",
+    "sheet_contact_z_probe_pipeline_20261105": "465df9b967204877a0dca0bb6873fa184bdbe19d9fa3eae07f301daf3eb66ad8",
+    "sheet_contact_z_time_20261106": "d3567394745bae2f77c24a784f3ae4badfd03c8a7885f054c6a787e0f36f58e1"
+  },
+  "new_simulation_steps": 0
+}

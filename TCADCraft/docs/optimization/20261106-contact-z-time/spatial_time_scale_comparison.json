@@ -1,0 +1,23 @@
+[
+  {
+    "phase": 1,
+    "time_ps": 20,
+    "spatial_increment_normalized": 0.0326476713319126,
+    "dt_change_normalized": 0.0002492845777974928,
+    "ratio_spatial_to_dt": 130.96546774118553
+  },
+  {
+    "phase": 2,
+    "time_ps": 40,
+    "spatial_increment_normalized": 0.025385605567369574,
+    "dt_change_normalized": 0.00041249211840543865,
+    "ratio_spatial_to_dt": 61.542037858813224
+  },
+  {
+    "phase": 3,
+    "time_ps": 60,
+    "spatial_increment_normalized": 0.02891587128859996,
+    "dt_change_normalized": 0.0002648640067048902,
+    "ratio_spatial_to_dt": 109.17252082808609
+  }
+]

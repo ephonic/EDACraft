@@ -1,0 +1,9 @@
+{
+  "status": "passed_postprocessing_source_and_resource_checks",
+  "tests": 25,
+  "new_tests": 11,
+  "script_sha256": "2140be5a900f7b7582c289358a08c48f7c48b21536f94b65861192083eb6fe09",
+  "analysis_source_sha256": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+  "summaries_match_all_linear_solve_counts": true,
+  "cli_ran_on_full_three_trajectory_data": true
+}

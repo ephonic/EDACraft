@@ -1,0 +1,158 @@
+{
+  "status": "failed_frozen_y_RSS_budget_completed_fields_physically_audited",
+  "cohort_accepted": false,
+  "frozen_acceptance_auditor_unchanged": true,
+  "supplementary_resource_failure_auditor_sha256": "cbc86ec3a15a282274e6650ca1bfd0bb182794691d8671dd4f3702ceaf9a0d95",
+  "new_complete_pulses": 0,
+  "new_probe_dynamic_steps": 2,
+  "new_field_checkpoints": 4,
+  "new_physics_and_ledger_checks": 1241810,
+  "cases": {
+    "endpoint_x3_probe": {
+      "field_physics_checks": 495887,
+      "expected_newton_dimension": 83691,
+      "full_pulse_completed": false,
+      "spatial_convergence_qualified": false,
+      "independent_physics_and_ledger_checks": 495887
+    },
+    "independent_y1_probe": {
+      "field_physics_checks": 745923,
+      "expected_newton_dimension": 123505,
+      "full_pulse_completed": false,
+      "spatial_convergence_qualified": false,
+      "independent_physics_and_ledger_checks": 745923
+    }
+  },
+  "resources": {
+    "endpoint_x3_probe": {
+      "mode": "probe",
+      "contact": "thermionic",
+      "family": "space",
+      "level": 3,
+      "count": 128,
+      "checkpoints": 2,
+      "dynamic_steps": 1,
+      "sheet_nodes": 747,
+      "total_nodes": 84411,
+      "seconds": 208.96657700196374,
+      "peak_rss_MiB": 2462.29296875,
+      "max_residual_scaled_linf": 3.1590685855403864e-15,
+      "total_newton_iterations": 11
+    },
+    "independent_y1_probe": {
+      "mode": "probe",
+      "contact": "thermionic",
+      "family": "space",
+      "level": 3,
+      "count": 128,
+      "checkpoints": 2,
+      "dynamic_steps": 1,
+      "sheet_nodes": 1105,
+      "total_nodes": 124865,
+      "seconds": 668.007330036955,
+      "peak_rss_MiB": 6311.33984375,
+      "max_residual_scaled_linf": 2.470599553810942e-15,
+      "total_newton_iterations": 11
+    }
+  },
+  "resource_verdicts": {
+    "endpoint_x3_probe": {
+      "peak_rss_MiB": 2462.29296875,
+      "limit_MiB": 6144,
+      "peak_rss_passed": true,
+      "wall_time_passed": true
+    },
+    "independent_y1_probe": {
+      "peak_rss_MiB": 6311.33984375,
+      "limit_MiB": 6144,
+      "peak_rss_passed": false,
+      "wall_time_passed": true
+    }
+  },
+  "worker_failure": {
+    "status": "failed_preserved",
+    "traceback": "Traceback (most recent call last):\n  File \"/tmp/tcad_sheet_xy_probes_20261106_run0/input/run_sheet_temporal_endpoint_20261106.remote.py\", line 38, in <module>\n    assert q['max_residual_scaled_linf']<=p['nonlinear_limit'] and q['peak_rss_MiB']<p['peak_RSS_limit_MiB']\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+  },
+  "physics_maxima": {
+    "top_boundary": 0.0,
+    "bottom_boundary": 0.0,
+    "dielectric_edge_flux": 1.822820149526044e-16,
+    "body_potential": 0.0,
+    "body_potential_export": 0.0,
+    "body_charge_export": 9.867078567605778e-20,
+    "bulk_Gauss": 2.090917993820591e-15,
+    "dielectric_node_flux_export": 2.0685812606081742e-15,
+    "dielectric_energy": 5.450313862894062e-16,
+    "top_charge_export": 3.095554060425342e-20,
+    "bottom_charge_export": 0.0,
+    "DOS_n": 8.837647584299577e-16,
+    "DOS_p": 7.353802080292991e-15,
+    "DOS_charge": 8.90127963566742e-16,
+    "quantum_capacitance": 8.274115549778693e-16,
+    "thermal_common_F": 1.1958826280980535e-16,
+    "trap_occupancy": 4.996003610813204e-16,
+    "trap_capture_reference": 5.405530807226084e-15,
+    "trap_charge_density": 6.819575741574082e-16,
+    "thermal_initial_zero_net_capture": 1.3212547614140793e-14,
+    "edge_flux": 1.300736604509529e-15,
+    "contact_voltage": 0.0,
+    "Gauss": 2.670591434448561e-15,
+    "sheet_terminal_export": 7.559294248204391e-13,
+    "contact_drop_export": 0.0,
+    "contact_injection_export": 1.0180799161200803e-15,
+    "sheet_dissipation_export": 9.49408142670288e-16,
+    "contact_dissipation_export": 1.8422355160346465e-16,
+    "trap_charge_sum": 1.3065988287683312e-16,
+    "untrapped_charge_export": 0.0,
+    "continuity_0": 4.120126114391126e-16,
+    "continuity_1": 3.685800405571435e-15,
+    "terminal_flux": 3.138217540812552e-16,
+    "KCL": 2.0520972682625746e-09,
+    "KCL_export": 3.141448335991723e-16,
+    "dissipation_export": 3.740196057155355e-16,
+    "power_balance": 1.928504412391215e-23,
+    "power_export": 1.1688112678610484e-17,
+    "sheet_contact_charge_export": 4.424130419788744e-18,
+    "charge_export": 1.268994271670497e-17,
+    "contact_charge_export": 2.379364259382182e-17,
+    "Gauss_ledger": 2.787579703770215e-15,
+    "Gauss_ledger_export": 2.22073997542337e-17,
+    "trap_BE": 4.428211573918703e-14,
+    "carrier_rate_export": 0.0,
+    "trap_rate_export": 0.0,
+    "trap_rate_sum_export": 0.0,
+    "free_rate_sum_export": 0.0,
+    "sheet_rate_export": 0.0,
+    "sheet_charge_difference": 4.8692449207871695e-14,
+    "contact_displacement_export": 0.0,
+    "gate_displacement_export": 0.0,
+    "total_terminal_export": 0.0,
+    "total_terminal_KCL": 3.919633708474876e-12,
+    "total_terminal_sum_export": 0.0,
+    "continuity_defect_export": 0.0
+  },
+  "tamper_rejections": {
+    "endpoint_x3_probe": [
+      "trace_charge",
+      "wrong_dt",
+      "linear_residual",
+      "bulk_field",
+      "gate_drive",
+      "geometry"
+    ],
+    "independent_y1_probe": [
+      "trace_charge",
+      "wrong_dt",
+      "linear_residual",
+      "bulk_field",
+      "gate_drive",
+      "geometry"
+    ]
+  },
+  "all_owned_workers_exited": true,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "sentaurus_equivalence": false,
+  "production_deployed": false,
+  "seconds": 14.415783999953419
+}

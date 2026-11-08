@@ -1,0 +1,22 @@
+{
+  "auditor_tool_checks.json": "09c6e1241c96488e6e09aa0ba63228f40d30478aa5d790a40ad66ff231b90d42",
+  "convergence_tool_checks.json": "cb435d5a8c3c907858f253fc4f19054e45589940945455b61d4db2f6ab716dde",
+  "derived/derived_case_guard.py": "975740892a7a1cf0b35c2b6a1a2646d40e6607842f6cf36425b04cd602ef3b6e",
+  "derived/derived_dense_projection.py": "aba098a50d54b3ba692f325b220aaeb0564a2868edcf2bcc6a5b453807208416",
+  "derived/derived_physical_oracle.py": "605cfb08b1dfd494e9303dbf69c3424430f7fbaf192d7ade4cec155c9e7d7b1c",
+  "derived/inherited_metric_function.py": "c4e3dd3f06968cb25dca1b72c3c1bb464f58c9775a5e308053fb16c3d20e1b7b",
+  "independent_audit.json": "196be6fd356fee546f4b30181323a2687e1b78ad7e60b03bc0b9dca91af704a9",
+  "linear_records.json": "085c5bc9cc81a9df2876a0ed6cb13347d8ffea70bb6b819097fb8d9a3b5cc64f",
+  "ordering_control_differences.json": "28801cff3e86eecaa882629dd0b9d588a0ef57bbed9fd0656ed3912155d3e47b",
+  "policy.json": "0e778524ad95764d91893b6e8db80c9c0d6b9cb1b84d1e6cac44edff8e58f82b",
+  "PROVENANCE.json": "835b264ddc365c2bd807d0bddefbe0f0f7d6588831bbb490520ea5feb7c5269d",
+  "README.md": "c28eec397be01ce699fd46420626fbd5db336f7783927323f33d6d70d0fa866c",
+  "reproduction/geometric_y33_full.py": "c3ab87d1b90d586e715ef90460ba5c6634c46d59202be8158342a7d01e467e1d",
+  "reproduction/meshes.npz": "49f4fba29b92d7ec81408dac2781d0474fd1e801471f87d6b7f3ae8d4d992342",
+  "reproduction/README.md": "643c43ffbdc81f6381a43977ca41e01cc236ba6e4dcde4d7a4523a608f5f7c1a",
+  "reproduction/sheet_electrode_convergence.py": "44e4991a6c54837c6ac2705522d698df925b0f72bc1289e5a8a10d0be40a80c1",
+  "reproduction/sheet_trap_convergence.py": "140d5eb5ac98b8bb3cf6b1a43b522f2d1e049cb9f548e3d7ab7d635e82d8ddda",
+  "sequence_audit.json": "23eb6125bf4a6a8592a52435be9e1b39c7ac67ab9ff64e077da8a371b5179855",
+  "spatial_diagnostics.json": "b5c175304e0c7609cf2871e8806916e3ea672d0967789c555f5763b0c6e9b22b",
+  "wrapper_derivation.json": "f9f6fccc96e8298bbf0e8db4076779c88450af0953248d3c392989c9d18c5ec8"
+}

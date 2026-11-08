@@ -1,0 +1,24 @@
+{
+  "status": "passed_parameterized_inventory_and_sealed_gate_tool_check",
+  "new_simulated_steps": 0,
+  "inherited_ledger_rechecked": {
+    "checkpoints": 4,
+    "steps": 384,
+    "expected_newton_dimension": 46953,
+    "accepted_diagnostics": 385,
+    "linear_solves": 894,
+    "factorizations": 2,
+    "gmres_iterations": 5933,
+    "gmres_corrections": 641,
+    "refreshes": 0,
+    "independent_physics_and_ledger_checks": 4620
+  },
+  "corruptions_rejected": [
+    "wrong_256_inventory",
+    "interior_trace_charge",
+    "wrong_dt",
+    "linear_residual"
+  ],
+  "derived_oracle_utf8_sha256": "de3ba8cb182a8b872b6f5d17b10966e01ef72f828df8fe4f63e20ba7de9a8035",
+  "derived_linear_guard_utf8_sha256": "6180548e19f2cd67f7b91a406ec4269bb62b156fc81f3e6caa805db868c19361"
+}

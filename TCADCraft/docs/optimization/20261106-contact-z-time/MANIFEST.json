@@ -1,0 +1,20 @@
+{
+  "auditor_tool_checks.json": "edd015de29c71b7eecb11925dcdde9673eba10b36be9432533734559639b0bba",
+  "derived_full_pulse_oracle.py": "de3ba8cb182a8b872b6f5d17b10966e01ef72f828df8fe4f63e20ba7de9a8035",
+  "derived_linear_guard.py": "6180548e19f2cd67f7b91a406ec4269bb62b156fc81f3e6caa805db868c19361",
+  "independent_audit.json": "58d6302f8f80d7e62570d9e864c89b5949e11963c4dd638c0b263a25ca8a64c4",
+  "policy.json": "9c3e53dbd1255571be1f7522977420f6bda1807f98051ade9bf38100ab7e73b2",
+  "PROVENANCE.json": "291a22c84d2b8b409360f84a6c2284ded7664bb4a9ce0442f5c3cf46758a515c",
+  "README.md": "c9a32d6e2ab3744771f3182389469713dfac001a876927509b2c99e7f6929091",
+  "reproduction/local_z1_n256.py": "2cc721a38e87d09f6abccdf705676d5167d7e407ea447305bf8c9e8a7512d3dd",
+  "reproduction/local_z2_n128.py": "ce684c945cf6c64071b300f03b7e8b5dd94ddc5d67f47c1edb64e599f361cbd3",
+  "reproduction/local_z2_n256.py": "ce684c945cf6c64071b300f03b7e8b5dd94ddc5d67f47c1edb64e599f361cbd3",
+  "reproduction/meshes.npz": "a8a2a9de43cc530b7d2557456c90f71f9dfe06b309b3191bb1887c6f0f2406aa",
+  "reproduction/README.md": "2d81f93edf0632648c0da29d90a329c2fdf5cf2fc32b06a5a743ee6b1d22d990",
+  "resources.json": "92de04a9d135e11100508e9cfc4f4d8bd0c24437660bde9fe794e22c1dae9520",
+  "spatial_hotspots.json": "0ce649985cce44e170477f8d3b904ec6e55ca27aebfb37dfc7406943659d985b",
+  "spatial_time_scale_comparison.json": "ac2c64474c93e6507d69b16cfadc6814b309c6a098749c71e84c5e546b7bfbf5",
+  "trace_analysis_tests.json": "22d7deb3500709307fdb04ae7d584f72171e317f2721fa86033209e859cff3f1",
+  "trace_analysis_tests.log": "bf88f676a42aeb30762cf76004434eab11238ca8eac3df8f6ab7ab0851b72155",
+  "trace_temporal_comparison.json": "4a96198fff4b699567930e7f62908ef1f64883965e2ad4f4f57524ea7cc31347"
+}

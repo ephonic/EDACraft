@@ -1,0 +1,47 @@
+{
+  "base_colamd": {
+    "mode": "full",
+    "contact": "thermionic",
+    "family": "space",
+    "level": 3,
+    "count": 128,
+    "checkpoints": 4,
+    "dynamic_steps": 384,
+    "sheet_nodes": 585,
+    "total_nodes": 38025,
+    "seconds": 326.08492805296555,
+    "peak_rss_MiB": 668.5390625,
+    "max_residual_scaled_linf": 9.933788822922485e-13,
+    "total_newton_iterations": 894
+  },
+  "base_mmd": {
+    "mode": "full",
+    "contact": "thermionic",
+    "family": "space",
+    "level": 3,
+    "count": 128,
+    "checkpoints": 4,
+    "dynamic_steps": 384,
+    "sheet_nodes": 585,
+    "total_nodes": 38025,
+    "seconds": 210.22712049097754,
+    "peak_rss_MiB": 416.99609375,
+    "max_residual_scaled_linf": 9.926180993785004e-13,
+    "total_newton_iterations": 894
+  },
+  "local_z1_mmd": {
+    "mode": "full",
+    "contact": "thermionic",
+    "family": "space",
+    "level": 3,
+    "count": 128,
+    "checkpoints": 4,
+    "dynamic_steps": 384,
+    "sheet_nodes": 585,
+    "total_nodes": 47385,
+    "seconds": 312.81049472501036,
+    "peak_rss_MiB": 704.46484375,
+    "max_residual_scaled_linf": 9.918761147104746e-13,
+    "total_newton_iterations": 894
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "status": "failed_frozen_wall_budget_initial_checkpoint_bitwise_verified",
+  "cohort_accepted": false,
+  "resource_budget_passed": false,
+  "wall_timeout_seconds": 1800,
+  "first_BE_completed": false,
+  "new_complete_pulses": 0,
+  "new_probe_dynamic_steps": 0,
+  "new_initial_checkpoints": 1,
+  "initial_checkpoint_bitwise_equal": true,
+  "bitwise_comparison": {
+    "arrays": 39,
+    "array_bytes": 11897640,
+    "scalars": 159
+  },
+  "new_independent_physics_checks_credited": 0,
+  "initial_physical_evidence": "Exact byte parity to the previously independently audited initial checkpoint; no new independent physics-check credit.",
+  "full_physical_record_bitwise_equal": false,
+  "final_peak_RSS_available": false,
+  "worker_failure": {
+    "status": "failed_preserved",
+    "traceback": "Traceback (most recent call last):\n  File \"/tmp/tcad_sheet_cache_release_20261106_run0/input/run_sheet_temporal_endpoint_20261106.remote.py\", line 31, in <module>\n    result=subprocess.run([p['remote_python'],'-B',str(I/(label+'.py')),'thermionic','space','3',\n        str(case['steps_per_phase']),case['mode'],str(A/label)],env=env,cwd=I,\n        stdout=log,stderr=subprocess.STDOUT,timeout=case['timeout_seconds'],preexec_fn=limits)\n  File \"/apps/anaconda3/lib/python3.13/subprocess.py\", line 556, in run\n    stdout, stderr = process.communicate(input, timeout=timeout)\n                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/apps/anaconda3/lib/python3.13/subprocess.py\", line 1222, in communicate\n    stdout, stderr = self._communicate(input, endtime, timeout)\n                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/apps/anaconda3/lib/python3.13/subprocess.py\", line 2154, in _communicate\n    self.wait(timeout=self._remaining_time(endtime))\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/apps/anaconda3/lib/python3.13/subprocess.py\", line 1280, in wait\n    return self._wait(timeout=timeout)\n           ~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"/apps/anaconda3/lib/python3.13/subprocess.py\", line 2058, in _wait\n    raise TimeoutExpired(self.args, timeout)\nsubprocess.TimeoutExpired: Command '['/tmp/tcadcraft_release_0_3_0rc1_20261105_run2/venv/bin/python', '-B', '/tmp/tcad_sheet_cache_release_20261106_run0/input/independent_y1_probe.py', 'thermionic', 'space', '3', '128', 'probe', '/tmp/tcad_sheet_cache_release_20261106_run0/artifacts/independent_y1_probe']' timed out after 1800 seconds\n"
+  },
+  "tests_passed": 223,
+  "new_cache_release_tests": 8,
+  "all_owned_workers_exited": true,
+  "prior_resource_failure_retained": true,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "production_deployed": false,
+  "new_version_published": false
+}

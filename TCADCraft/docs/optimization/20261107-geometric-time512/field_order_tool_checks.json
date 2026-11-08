@@ -1,0 +1,11 @@
+{
+  "status": "passed_new_field_order_formula_replay_against_sealed_old_report",
+  "matching_metric_values": 144,
+  "field_metrics": 20,
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0,
+  "diagnostic_source_sha256": "f3ad69c612e7b28c135b568e29efab3f62b656ee92067d8fe965a35907f54aa7",
+  "verification_script_sha256": "1b2a978a7045ea8a0e2dc10819ad0b746e1e9aa5ddb4ac8cc8d774fa8c7dd393",
+  "post_launch_check": true,
+  "new_acceptance_gate": false
+}

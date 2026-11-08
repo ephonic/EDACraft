@@ -1,0 +1,13 @@
+{
+  "status": "passed_new_trace_postprocessing_tests",
+  "tests": 14,
+  "failures": 0,
+  "errors": 0,
+  "no_solver_or_native_import": true,
+  "cli_help_passed": true,
+  "files": {
+    "benchmarks/sheet_refinement_trace.py": "ee31783b6f55e917d6990b7f0d5b4d89e6ca173a98a3e0fc1c1c7d78c90304bb",
+    "tests/test_sheet_refinement_trace.py": "2faf87833da99777e9175dc61856b5f034af369e59ca485d151844973d4c0984"
+  },
+  "scope": "Postprocessing only; 215 solver tests inherited, not rerun; no PDE simulation steps credited"
+}

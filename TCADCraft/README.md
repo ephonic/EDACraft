@@ -14,6 +14,117 @@ equivalence and complete 2D logic/memory-device qualification are not claimed.
 See [release notes](RELEASE_NOTES.md), [validation and open gaps](docs/releases/0.3.0rc1/VALIDATION.md)
 and [numerical provenance](docs/releases/0.3.0rc1/validation_summary.json).
 
+Development sources additionally offer an optional lower-fill LU ordering.
+See the [2026-11-06 optimization results](docs/optimization/20261106/README.md)
+for usage, measurements and validation scope. This unreleased option requires
+installing the development sources; the tagged `0.3.0rc1` artifacts are unchanged.
+
+The [complete-pulse follow-up](docs/optimization/20261106-full-pulse/README.md)
+adds fresh 60 ps ordering controls and local contact-z refinement acceptance.
+
+The [contact-z/time study](docs/optimization/20261106-contact-z-time/README.md)
+adds a second full local refinement, half-dt controls, interval-current analysis and exact replay inputs.
+
+The [third-time-step and endpoint study](docs/optimization/20261106-temporal-endpoint/README.md)
+adds fixed-support temporal orders and narrowly localized z/x probes; global spatial acceptance remains open.
+
+The [complete endpoint-pulse study](docs/optimization/20261106-endpoint-full/README.md)
+extends endpoint-z refinement to full 60 ps pulses and adds a second independent x probe.
+
+The [independent x/y probe study](docs/optimization/20261106-independent-xy-probes/README.md)
+adds a third consecutive x refinement and a first independent y sensitivity measurement;
+the y probe exceeds the frozen memory budget, so the cohort is not accepted.
+
+The [explicit linear-cache release update](docs/optimization/20261106-linear-cache-release/README.md)
+adds an opt-in API with 223 passing regressions; the large y17 replay times out before its first BE step.
+
+The [profiled y17 replay](docs/optimization/20261106-cache-profile/README.md)
+completes under a separately declared wall budget and passes physical parity and the memory gate.
+
+The [first complete x pulse](docs/optimization/20261106-first-full-x-pulse/README.md)
+adds an independently audited 60 ps x69 trajectory; full x/y convergence remains open.
+
+The [complete x sequence](docs/optimization/20261106-full-x-sequence/README.md)
+adds full x75/x83 pulses and the original 54-metric endpoint verdict; y and joint studies remain open.
+
+The [first complete y pulse](docs/optimization/20261106-first-full-y-pulse/README.md)
+adds a full y17 trajectory and y9/y17 field/ledger comparisons; a complete third-y trajectory and joint studies remain open.
+
+The [bounded uniform third-y probe](docs/optimization/20261106-third-y-probe/README.md)
+retains a passing fresh MMD y9 control and the failed y33 capacity outcome; the three-grid y metrics remain unevaluated.
+
+The [geometric ordering update](docs/optimization/20261107-geometric-ordering/README.md)
+adds an opt-in `GEOMETRIC_ND` preconditioner ordering and a captured y33 matrix
+check; full y33 and joint convergence qualification remain open.
+
+The [same-ordering y probe study](docs/optimization/20261107-geometric-probes/README.md)
+completes fresh y9/y17/y33 initial and first-BE probes with 26/26 initial-prefix metrics passing;
+a complete y33 pulse and joint qualification remain open.
+
+The [complete geometric y9 control](docs/optimization/20261107-geometric-full-y9/README.md)
+adds a fresh independently audited 60 ps trajectory with the same geometric ordering;
+This established the first full control; the y17 follow-up is linked below.
+
+The [complete geometric y17 control](docs/optimization/20261107-geometric-full-y17/README.md)
+adds a second audited 60 ps trajectory and same-ordering y9/y17 diagnostics.
+The full y33 trajectory and three-grid verdict are reported below.
+
+The [full geometric y33 and y-sequence study](docs/optimization/20261107-geometric-full-y33/README.md)
+completes the third full 60 ps pulse and passes all 54 original phase-end y metrics;
+fine-grid temporal, global spatial and joint qualification remain open.
+
+The [full y33 half-dt study](docs/optimization/20261107-geometric-time256/README.md)
+adds an audited 768-step pulse on the same x65/y33/z113 grid and compares
+complete fields and current traces; the third-resolution follow-up is linked below.
+
+The [full y33 three-resolution time study](docs/optimization/20261107-geometric-time512/README.md)
+adds an audited 1536-step pulse on the same x65/y33/z113 grid and compares
+complete fields and current traces across three time resolutions. Bulk-potential
+observed orders are 1.010-1.014; joint space/time qualification remains open.
+
+The [y/time matrix study](docs/optimization/20261107-geometric-y-time256/README.md)
+adds two audited half-dt pulses, completing three y grids at two time steps;
+all 54 original y endpoint gates pass at the finer dt. The 40 signed field
+interactions fall below the inherited normalized analysis floor; general
+joint space/time qualification remains open.
+
+The [matched x/time study](docs/optimization/20261107-geometric-x-time/README.md)
+adds two full x69 pulses to complete x65/69 at n128/256 with one frozen
+candidate and GEOMETRIC_ND ordering. Independent physical audits pass;
+signed mixed increments and interval-matched traces are reported.
+A two-mesh result establishes no spatial order or joint qualification.
+
+The [three-x/two-time study](docs/optimization/20261107-geometric-x75-time/README.md)
+adds full x75 pulses, completing x65/69/75 at n128/256. The original x
+endpoint gates pass 52/54 and 52/54 at the two time resolutions;
+signed field interactions and interval-matched traces remain scoped
+numerical evidence, with no global or joint qualification.
+
+The [three-x/two-time study](docs/optimization/20261107-geometric-x83-time/README.md)
+adds full x83 pulses, completing refined x69/75/83 at n128/256. The original x
+endpoint gates pass 54/54 and 54/54 at the two time resolutions;
+the coarser x65/69/75 result remains 52/54. Interval-matched traces and
+signed interactions establish no global or joint qualification.
+
+The [three-z/two-time study](docs/optimization/20261108-geometric-z-time/README.md)
+adds four full pulses, completing z113/121/129 at x83/y9 and n128/256.
+Original z endpoint gates: 54/54 and 54/54 passed at the two dt.
+Full signed interactions and interval-matched traces remain descriptive;
+global spatial convergence and joint qualification remain open.
+
+The [refined-grid three-time study](docs/optimization/20261108-geometric-fine-time512/README.md)
+adds a full n512 pulse at x83/y9/z129, comparing three complete time
+resolutions with unchanged field-order and interval-current diagnostics.
+Measured spatial/time components are recorded; joint qualification remains open.
+
+The [complete z/time matrix](docs/optimization/20261108-geometric-z-time512/README.md)
+adds full n512 controls on z113 and z121, completing three z meshes by
+three time steps at x83/y9. It preserves original spatial gates and
+reports matched spatial/time and signed mixed increments. Joint bounds remain open.
+
+The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
+adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
+
 ## Capabilities and limits
 
 | Area | Available implementation | Qualification boundary |

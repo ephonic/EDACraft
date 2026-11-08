@@ -1,0 +1,28 @@
+{
+  "source": "Transcribed read-only status_sheet_cache_release_20261106.py tool outputs from this session; sampled observations, not final whole-process resource acceptance.",
+  "samples": [
+    {
+      "elapsed_s": 1195.5,
+      "cpu_s": 453.11,
+      "VmRSS_kB": 2585008,
+      "VmHWM_kB": 2964588,
+      "saved_checkpoints": 0
+    },
+    {
+      "elapsed_s": 1268.8199999999488,
+      "cpu_s": 480.1,
+      "VmRSS_kB": 699712,
+      "VmHWM_kB": 2964588,
+      "saved_checkpoints": 1
+    },
+    {
+      "elapsed_s": 1728.219999999972,
+      "cpu_s": 656.35,
+      "VmRSS_kB": 1999268,
+      "VmHWM_kB": 2964588,
+      "saved_checkpoints": 1
+    }
+  ],
+  "final_peak_RSS_available": false,
+  "resource_budget_passed": false
+}

@@ -1,0 +1,858 @@
+{
+  "status": "descriptive_three_resolution_BE_orders_on_fixed_coarse_support",
+  "phases": 3,
+  "steps": [
+    384,
+    768,
+    1536
+  ],
+  "refinement_ratio": 2,
+  "common_accepted_ending_times": 384,
+  "time_steps_s": [
+    1.5625e-13,
+    7.8125e-14,
+    3.90625e-14
+  ],
+  "adjacent_time_atol_s": 1e-24,
+  "adjacent_max_time_differences_s": [
+    9.17653492051015e-25,
+    4.588267460255075e-25
+  ],
+  "max_three_way_accumulated_time_spread_s": 1.3764802380765226e-24,
+  "time_matching": "Prescribed uniform-step indices; adjacent physical-clock gates unchanged",
+  "normalized_roundoff_floor": 1e-08,
+  "normalization": {
+    "charge_scale_C": 1e-18,
+    "energy_scale_J": 2.5e-20,
+    "current_scale_A": 1e-07
+  },
+  "state_at_common_times": {
+    "sheet_charge_C": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 1.1033677135162537e-20,
+        "max_normalized": 0.011033677135162536,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": -1.396629628700148e-17,
+        "fine_value": -1.3955262609866318e-17
+      },
+      "middle_to_fine": {
+        "max_absolute": 5.604959976591984e-21,
+        "max_normalized": 0.005604959976591984,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": -1.40001127871772e-17,
+        "fine_value": -1.3994507827200607e-17
+      },
+      "increment_ratio": 0.5079865857892367,
+      "observed_order": 0.9771376940924054,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "trap_charge_C": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 9.795888825846653e-24,
+        "max_normalized": 9.795888825846654e-06,
+        "coarse_step": 147,
+        "phase": 2,
+        "step_in_phase": 19,
+        "time_s": 2.2968749999999953e-11,
+        "coarse_value": 2.7374587273081183e-19,
+        "fine_value": 2.73736076841986e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 4.9445812490090684e-24,
+        "max_normalized": 4.944581249009068e-06,
+        "coarse_step": 147,
+        "phase": 2,
+        "step_in_phase": 19,
+        "time_s": 2.2968749999999953e-11,
+        "coarse_value": 2.73736076841986e-19,
+        "fine_value": 2.7373113226073697e-19
+      },
+      "increment_ratio": 0.5047608580410478,
+      "observed_order": 0.986328054811571,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "untrapped_sheet_charge_C": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 1.1043158912611967e-20,
+        "max_normalized": 0.011043158912611966,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": -1.4240171213126002e-17,
+        "fine_value": -1.422912805421339e-17
+      },
+      "middle_to_fine": {
+        "max_absolute": 5.609783324583506e-21,
+        "max_normalized": 0.005609783324583506,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": -1.4273953753154805e-17,
+        "fine_value": -1.426834396983022e-17
+      },
+      "increment_ratio": 0.5079871954189474,
+      "observed_order": 0.9771359627293,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "contact_charge_C/drain": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 1.840267691431853e-21,
+        "max_normalized": 0.001840267691431853,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -3.598767410003321e-19,
+        "fine_value": -3.5803647330890026e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 8.68815250593013e-22,
+        "max_normalized": 0.0008688152505930128,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -3.5803647330890026e-19,
+        "fine_value": -3.5716765805830725e-19
+      },
+      "increment_ratio": 0.47211351622274894,
+      "observed_order": 1.0827943081784632,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "contact_charge_C/source": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 1.876083973534602e-21,
+        "max_normalized": 0.0018760839735346016,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -3.766614642333815e-19,
+        "fine_value": -3.747853802598469e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 8.927245584928373e-22,
+        "max_normalized": 0.0008927245584928372,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -3.747853802598469e-19,
+        "fine_value": -3.7389265570135404e-19
+      },
+      "increment_ratio": 0.4758446695810294,
+      "observed_order": 1.0714373847928935,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "sheet_contact_charge_C/drain": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 3.1153234387220273e-22,
+        "max_normalized": 0.0003115323438722027,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -8.008493903706811e-22,
+        "fine_value": -4.893170464984784e-22
+      },
+      "middle_to_fine": {
+        "max_absolute": 1.3355446094541585e-22,
+        "max_normalized": 0.00013355446094541585,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -4.893170464984784e-22,
+        "fine_value": -3.557625855530625e-22
+      },
+      "increment_ratio": 0.42870174982602377,
+      "observed_order": 1.2219537890919943,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "sheet_contact_charge_C/source": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 3.1036375363404497e-22,
+        "max_normalized": 0.00031036375363404495,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -1.6271922579915891e-21,
+        "fine_value": -1.3168285043575441e-21
+      },
+      "middle_to_fine": {
+        "max_absolute": 1.3414300637398178e-22,
+        "max_normalized": 0.00013414300637398178,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -1.3168285043575441e-21,
+        "fine_value": -1.1826854979835624e-21
+      },
+      "increment_ratio": 0.43221221809345695,
+      "observed_order": 1.2101882389470204,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "dielectric_contact_charge_C/drain": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 1.5287353475596272e-21,
+        "max_normalized": 0.0015287353475596272,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -3.5907589160996143e-19,
+        "fine_value": -3.575471562624018e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 7.352607896476346e-22,
+        "max_normalized": 0.0007352607896476346,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -3.575471562624018e-19,
+        "fine_value": -3.5681189547275417e-19
+      },
+      "increment_ratio": 0.4809601549551116,
+      "observed_order": 1.0560107157147773,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "dielectric_contact_charge_C/source": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 1.5657202199005336e-21,
+        "max_normalized": 0.0015657202199005334,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -3.750342719753899e-19,
+        "fine_value": -3.7346855175548934e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 7.585815521188638e-22,
+        "max_normalized": 0.0007585815521188637,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -3.7346855175548934e-19,
+        "fine_value": -3.727099702033705e-19
+      },
+      "increment_ratio": 0.48449368059323816,
+      "observed_order": 1.0454502466592954,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "gates/bottom_gate": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 5.27580322737594e-21,
+        "max_normalized": 0.00527580322737594,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": 8.061896192306991e-18,
+        "fine_value": 8.056620389079615e-18
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.6800245061887116e-21,
+        "max_normalized": 0.002680024506188711,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": 8.078067156913853e-18,
+        "fine_value": 8.075387132407665e-18
+      },
+      "increment_ratio": 0.507984166710799,
+      "observed_order": 0.9771445643540876,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "gates/top_gate": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 5.275803227369007e-21,
+        "max_normalized": 0.005275803227369006,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": 6.7266232595515555e-18,
+        "fine_value": 6.7213474563241865e-18
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.680024506179467e-21,
+        "max_normalized": 0.002680024506179467,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": 6.7427942241584214e-18,
+        "fine_value": 6.740114199652242e-18
+      },
+      "increment_ratio": 0.5079841667097145,
+      "observed_order": 0.977144564357168,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "dielectric_energy_J": {
+      "unit": "J",
+      "coarse_to_middle": {
+        "max_absolute": 8.6091136251566e-22,
+        "max_normalized": 0.03443645450062641,
+        "coarse_step": 150,
+        "phase": 2,
+        "step_in_phase": 22,
+        "time_s": 2.343749999999995e-11,
+        "coarse_value": 6.360648610405865e-19,
+        "fine_value": 6.3520394967807085e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 4.375797686820106e-22,
+        "max_normalized": 0.017503190747280423,
+        "coarse_step": 150,
+        "phase": 2,
+        "step_in_phase": 22,
+        "time_s": 2.343749999999995e-11,
+        "coarse_value": 6.3520394967807085e-19,
+        "fine_value": 6.347663699093888e-19
+      },
+      "increment_ratio": 0.5082750533148538,
+      "observed_order": 0.976318671384416,
+      "roundoff_resolved": true,
+      "decreasing": true
+    }
+  },
+  "interval_average_currents_and_rates": {
+    "conduction/drain": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 9.544842339794896e-09,
+        "max_normalized": 0.09544842339794897,
+        "coarse_step": 130,
+        "phase": 2,
+        "step_in_phase": 2,
+        "time_s": 2.0312499999999962e-11,
+        "coarse_value": 4.194621226430599e-07,
+        "fine_value": 4.290069649828548e-07
+      },
+      "middle_to_fine": {
+        "max_absolute": 5.246996470946698e-09,
+        "max_normalized": 0.052469964709466986,
+        "coarse_step": 130,
+        "phase": 2,
+        "step_in_phase": 2,
+        "time_s": 2.0312499999999962e-11,
+        "coarse_value": 4.290069649828548e-07,
+        "fine_value": 4.342539614538015e-07
+      },
+      "increment_ratio": 0.5497206013629606,
+      "observed_order": 0.8632295479707569,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "conduction/source": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 9.144642713837696e-09,
+        "max_normalized": 0.09144642713837697,
+        "coarse_step": 130,
+        "phase": 2,
+        "step_in_phase": 2,
+        "time_s": 2.0312499999999962e-11,
+        "coarse_value": 3.81057344387544e-07,
+        "fine_value": 3.902019871013817e-07
+      },
+      "middle_to_fine": {
+        "max_absolute": 5.042711584907046e-09,
+        "max_normalized": 0.05042711584907046,
+        "coarse_step": 130,
+        "phase": 2,
+        "step_in_phase": 2,
+        "time_s": 2.0312499999999962e-11,
+        "coarse_value": 3.902019871013817e-07,
+        "fine_value": 3.9524469868628873e-07
+      },
+      "increment_ratio": 0.5514388853351703,
+      "observed_order": 0.858727090683617,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "total/bottom_gate": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 1.5764121510515754e-08,
+        "max_normalized": 0.15764121510515755,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 1.2755958251089193e-05,
+        "fine_value": 1.2740194129578677e-05
+      },
+      "middle_to_fine": {
+        "max_absolute": 7.963401476060762e-09,
+        "max_normalized": 0.07963401476060762,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 1.2740194129578677e-05,
+        "fine_value": 1.2732230728102617e-05
+      },
+      "increment_ratio": 0.5051598638559481,
+      "observed_order": 0.985188076736237,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "total/drain": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 1.5947899088648704e-08,
+        "max_normalized": 0.15947899088648704,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 1.5059088035821362e-06,
+        "fine_value": 1.521856702670785e-06
+      },
+      "middle_to_fine": {
+        "max_absolute": 8.064655955946117e-09,
+        "max_normalized": 0.08064655955946118,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 1.521856702670785e-06,
+        "fine_value": 1.529921358626731e-06
+      },
+      "increment_ratio": 0.505687671530749,
+      "observed_order": 0.9836814883388334,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "total/source": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 1.558034393234723e-08,
+        "max_normalized": 0.1558034393234723,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 1.4679972596880068e-06,
+        "fine_value": 1.483577603620354e-06
+      },
+      "middle_to_fine": {
+        "max_absolute": 7.862146996169265e-09,
+        "max_normalized": 0.07862146996169266,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 1.483577603620354e-06,
+        "fine_value": 1.4914397506165233e-06
+      },
+      "increment_ratio": 0.5046196046960311,
+      "observed_order": 0.9867318381404896,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "total/top_gate": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 1.576412151051406e-08,
+        "max_normalized": 0.15764121510514062,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -1.5729864314360013e-05,
+        "fine_value": -1.5745628435870528e-05
+      },
+      "middle_to_fine": {
+        "max_absolute": 7.963401476069232e-09,
+        "max_normalized": 0.07963401476069232,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -1.5745628435870528e-05,
+        "fine_value": -1.5753591837346597e-05
+      },
+      "increment_ratio": 0.5051598638565398,
+      "observed_order": 0.9851880767345474,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "trap_charge_rate_A": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 5.691429611347658e-12,
+        "max_normalized": 5.691429611347658e-05,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -1.5284163649476676e-10,
+        "fine_value": -1.5853306610611442e-10
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.951763421293261e-12,
+        "max_normalized": 2.951763421293261e-05,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": -1.5853306610611442e-10,
+        "fine_value": -1.6148482952740768e-10
+      },
+      "increment_ratio": 0.5186330364884054,
+      "observed_order": 0.9472139873078835,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "free_carrier_charge_rate_A": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 1.8694446634987247e-08,
+        "max_normalized": 0.18694446634987247,
+        "coarse_step": 130,
+        "phase": 2,
+        "step_in_phase": 2,
+        "time_s": 2.0312499999999962e-11,
+        "coarse_value": 8.006498998438929e-07,
+        "fine_value": 8.193443464788801e-07
+      },
+      "middle_to_fine": {
+        "max_absolute": 1.0292259336498566e-08,
+        "max_normalized": 0.10292259336498566,
+        "coarse_step": 130,
+        "phase": 2,
+        "step_in_phase": 2,
+        "time_s": 2.0312499999999962e-11,
+        "coarse_value": 8.193443464788801e-07,
+        "fine_value": 8.296366058153787e-07
+      },
+      "increment_ratio": 0.5505516979163362,
+      "observed_order": 0.8610500527587474,
+      "roundoff_resolved": true,
+      "decreasing": true
+    }
+  },
+  "conduction_at_common_ending_times": {
+    "conduction/drain": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 2.541842971178184e-08,
+        "max_normalized": 0.2541842971178184,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 4.130861356083324e-07,
+        "fine_value": 4.3850456532011424e-07
+      },
+      "middle_to_fine": {
+        "max_absolute": 1.0407865509004422e-08,
+        "max_normalized": 0.10407865509004421,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 4.3850456532011424e-07,
+        "fine_value": 4.4891243082911866e-07
+      },
+      "increment_ratio": 0.40946138793854026,
+      "observed_order": 1.2882006822298817,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "conduction/source": {
+      "unit": "A",
+      "coarse_to_middle": {
+        "max_absolute": 2.4850257493749898e-08,
+        "max_normalized": 0.248502574937499,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 3.7297688237832945e-07,
+        "fine_value": 3.9782713987207935e-07
+      },
+      "middle_to_fine": {
+        "max_absolute": 1.024789545394996e-08,
+        "max_normalized": 0.10247895453949961,
+        "coarse_step": 129,
+        "phase": 2,
+        "step_in_phase": 1,
+        "time_s": 2.0156249999999963e-11,
+        "coarse_value": 3.9782713987207935e-07,
+        "fine_value": 4.080750353260293e-07
+      },
+      "increment_ratio": 0.41238588600248566,
+      "observed_order": 1.27793313789101,
+      "roundoff_resolved": true,
+      "decreasing": true
+    }
+  },
+  "cumulative_current_and_rate_integrals": {
+    "conduction/drain": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 5.5510043743369824e-21,
+        "max_normalized": 0.0055510043743369816,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": 4.343241945846158e-19,
+        "fine_value": 4.398751989589528e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.8194387673257888e-21,
+        "max_normalized": 0.0028194387673257885,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": 4.15283941397244e-19,
+        "fine_value": 4.181033801645698e-19
+      },
+      "increment_ratio": 0.5079150685523546,
+      "observed_order": 0.9773408191935752,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "conduction/source": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 5.482672712616784e-21,
+        "max_normalized": 0.005482672712616783,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": -2.4358593013342883e-19,
+        "fine_value": -2.3810325742081204e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.785521213508682e-21,
+        "max_normalized": 0.0027855212135086817,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": -2.5836217716998487e-19,
+        "fine_value": -2.555766559564762e-19
+      },
+      "increment_ratio": 0.5080589996004341,
+      "observed_order": 0.9769320516527639,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "total/bottom_gate": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 5.27580322737594e-21,
+        "max_normalized": 0.00527580322737594,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": 7.209406294420397e-19,
+        "fine_value": 7.156648262146638e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.680024506188519e-21,
+        "max_normalized": 0.0026800245061885187,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": 7.371115940489018e-19,
+        "fine_value": 7.344315695427133e-19
+      },
+      "increment_ratio": 0.5079841667107626,
+      "observed_order": 0.9771445643541912,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "total/drain": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 5.3102942854984406e-21,
+        "max_normalized": 0.00531029428549844,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": 5.166912745079405e-19,
+        "fine_value": 5.220015687934389e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.6971120678439472e-21,
+        "max_normalized": 0.002697112067843947,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": 4.983834610536196e-19,
+        "fine_value": 5.010805731214635e-19
+      },
+      "increment_ratio": 0.5079025611083978,
+      "observed_order": 0.9773763460969185,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "total/source": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 5.24131212105283e-21,
+        "max_normalized": 0.00524131212105283,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": -1.7820862294985299e-19,
+        "fine_value": -1.7296731082880016e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.662936947987896e-21,
+        "max_normalized": 0.002662936947987896,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": -1.9224273875743126e-19,
+        "fine_value": -1.8957980180944336e-19
+      },
+      "increment_ratio": 0.5080668516747269,
+      "observed_order": 0.9769097549094446,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "total/top_gate": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 5.275803227369007e-21,
+        "max_normalized": 0.005275803227369006,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": -1.0594232808985459e-18,
+        "fine_value": -1.0646990841259149e-18
+      },
+      "middle_to_fine": {
+        "max_absolute": 2.680024506179082e-21,
+        "max_normalized": 0.0026800245061790818,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": -1.04325231629168e-18,
+        "fine_value": -1.045932340797859e-18
+      },
+      "increment_ratio": 0.5079841667096414,
+      "observed_order": 0.9771445643573753,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "trap_charge_rate_A": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 9.795888825785716e-24,
+        "max_normalized": 9.795888825785715e-06,
+        "coarse_step": 147,
+        "phase": 2,
+        "step_in_phase": 19,
+        "time_s": 2.2968749999999953e-11,
+        "coarse_value": -3.4804573733033405e-21,
+        "fine_value": -3.490253262129126e-21
+      },
+      "middle_to_fine": {
+        "max_absolute": 4.94458124901283e-24,
+        "max_normalized": 4.944581249012829e-06,
+        "coarse_step": 147,
+        "phase": 2,
+        "step_in_phase": 19,
+        "time_s": 2.2968749999999953e-11,
+        "coarse_value": -3.490253262129126e-21,
+        "fine_value": -3.495197843378139e-21
+      },
+      "increment_ratio": 0.5047608580445717,
+      "observed_order": 0.9863280548014988,
+      "roundoff_resolved": true,
+      "decreasing": true
+    },
+    "free_carrier_charge_rate_A": {
+      "unit": "C",
+      "coarse_to_middle": {
+        "max_absolute": 1.1043158912612786e-20,
+        "max_normalized": 0.011043158912612785,
+        "coarse_step": 153,
+        "phase": 2,
+        "step_in_phase": 25,
+        "time_s": 2.390624999999995e-11,
+        "coarse_value": 1.9408966832911607e-19,
+        "fine_value": 2.0513282724172886e-19
+      },
+      "middle_to_fine": {
+        "max_absolute": 5.609783324585745e-21,
+        "max_normalized": 0.005609783324585745,
+        "coarse_step": 152,
+        "phase": 2,
+        "step_in_phase": 24,
+        "time_s": 2.374999999999995e-11,
+        "coarse_value": 1.6030712830031247e-19,
+        "fine_value": 1.6591691162489822e-19
+      },
+      "increment_ratio": 0.5079871954191125,
+      "observed_order": 0.9771359627288313,
+      "roundoff_resolved": true,
+      "decreasing": true
+    }
+  },
+  "asymptotic_regime_established": false,
+  "joint_spacetime_qualified": false,
+  "physical_device_qualified": false,
+  "input_sha256": {
+    "G:\\vibe-codeing\\tcad\\EDACraft\\TCADCraft\\docs\\validation\\sheet_ordering_full_pulse_20261106_attempt1\\results\\local_z1_mmd.json": "d68168ff94fad85272e1ef217644702a80cc8b4c7f45107083fdf2d3259f3049",
+    "G:\\vibe-codeing\\tcad\\EDACraft\\TCADCraft\\docs\\validation\\sheet_ordering_full_pulse_20261106_attempt1\\results\\local_z1_mmd.npz": "689adabbee8387dfbd226839e096049ee3141d9cac6b32044623c0589415b009",
+    "G:\\vibe-codeing\\tcad\\EDACraft\\TCADCraft\\docs\\validation\\sheet_contact_z_time_20261106\\results\\local_z1_n256.json": "e05054c8f37bfbf7fb0e9a97d70323cb2edd6bed0e47140f2a21ea7ddfdf2a68",
+    "G:\\vibe-codeing\\tcad\\EDACraft\\TCADCraft\\docs\\validation\\sheet_contact_z_time_20261106\\results\\local_z1_n256.npz": "5b2bc30bfb663f721fa73661041a744f85f4ef4b21be8996c4b15e9398859c2e",
+    "G:\\vibe-codeing\\tcad\\EDACraft\\TCADCraft\\docs\\validation\\sheet_temporal_endpoint_20261106_attempt1\\results\\local_z1_n512.json": "934fc61e6b1226c1c2302bdd9ec51d4ed32328207a5b7c8fd5bace3e76495b03",
+    "G:\\vibe-codeing\\tcad\\EDACraft\\TCADCraft\\docs\\validation\\sheet_temporal_endpoint_20261106_attempt1\\results\\local_z1_n512.npz": "4c88bf2db284aae09c92679015e4935f915c9fa669b04cd8c0a1f5a4fbcbfdcd"
+  }
+}

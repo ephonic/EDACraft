@@ -1,0 +1,20 @@
+{
+  "status": "preempted_resource_forecast_partial_evidence_sealed",
+  "logged_partial_steps": 176,
+  "new_complete_pulses": 0,
+  "new_audited_dynamic_steps": 0,
+  "physical_qualification": false,
+  "resource_forecast": {
+    "status": "preempted_preserving_partial_evidence_before_predicted_budget_exhaustion",
+    "worker_pid": 481701,
+    "child_pid": 482302,
+    "logged_steps": 176,
+    "elapsed_s": 538.5999999999767,
+    "cpu_s": 247.62,
+    "reason": "Measured throughput predicts exceeding frozen 2400 s wall budget; restart in separately frozen attempt with larger budget. No physical tolerance change; no complete-pulse credit."
+  },
+  "owned_worker_exited": true,
+  "production_unchanged": true,
+  "archive_sha256": "d3dd00787145bb057050224ce9515b830b3ab3cb566d12e51914c7175ed4b187",
+  "failure_preserved": true
+}

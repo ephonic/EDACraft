@@ -1,0 +1,558 @@
+{
+  "status": "descriptive_signed_four_corner_increments_on_six_full_pulses",
+  "common_support_xyz": [
+    65,
+    9,
+    113
+  ],
+  "y_nodes": [
+    9,
+    17,
+    33
+  ],
+  "steps_per_phase": [
+    128,
+    256
+  ],
+  "phase_times_ps": [
+    0,
+    20,
+    40,
+    60
+  ],
+  "metrics": {
+    "0_0_phi_V": {
+      "spatial_at_coarse_dt": 1.1641476940771334e-07,
+      "spatial_at_fine_dt": 1.1641476940771334e-07,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_0_Fn_eV": {
+      "spatial_at_coarse_dt": 1.161161701729537e-16,
+      "spatial_at_fine_dt": 1.161161701729537e-16,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_0_Fp_eV": {
+      "spatial_at_coarse_dt": 0.0,
+      "spatial_at_fine_dt": 0.0,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_0_trap_occupancy": {
+      "spatial_at_coarse_dt": 6.769752321500455e-07,
+      "spatial_at_fine_dt": 6.769752321500455e-07,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_0_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 2.0584860974115493e-07,
+      "spatial_at_fine_dt": 2.0584860974115493e-07,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105
+    },
+    "0_1_phi_V": {
+      "spatial_at_coarse_dt": 1.0308781173140602e-07,
+      "spatial_at_fine_dt": 1.0307428478795178e-07,
+      "temporal_at_coarse_y": 6.232114443713299e-06,
+      "temporal_at_fine_y": 6.232111897486181e-06,
+      "mixed_absolute": 1.4830470185245304e-11,
+      "mixed_normalized": 5.932188074098121e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_1_Fn_eV": {
+      "spatial_at_coarse_dt": 5.199684486797973e-09,
+      "spatial_at_fine_dt": 5.201015399174808e-09,
+      "temporal_at_coarse_y": 7.970969904765165e-06,
+      "temporal_at_fine_y": 7.970967577415698e-06,
+      "mixed_absolute": 1.780517486921207e-11,
+      "mixed_normalized": 7.122069947684828e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_1_Fp_eV": {
+      "spatial_at_coarse_dt": 1.1843396055533084e-08,
+      "spatial_at_fine_dt": 1.1866514970084938e-08,
+      "temporal_at_coarse_y": 1.0403295698655207e-05,
+      "temporal_at_fine_y": 1.040327726046196e-05,
+      "mixed_absolute": 4.833618531471795e-11,
+      "mixed_normalized": 1.933447412588718e-09,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_1_trap_occupancy": {
+      "spatial_at_coarse_dt": 6.624162241508635e-07,
+      "spatial_at_fine_dt": 6.624341679084544e-07,
+      "temporal_at_coarse_y": 1.20785745103269e-05,
+      "temporal_at_fine_y": 1.2078600880094381e-05,
+      "mixed_absolute": 2.6895985438812886e-11,
+      "mixed_normalized": 2.6895985438812886e-11,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_1_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 1.953907570392821e-07,
+      "spatial_at_fine_dt": 1.9538470132779429e-07,
+      "temporal_at_coarse_y": 6.232114443713299e-06,
+      "temporal_at_fine_y": 6.232111897486181e-06,
+      "mixed_absolute": 1.4830470185245304e-11,
+      "mixed_normalized": 5.932188074098121e-10,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105
+    },
+    "0_2_phi_V": {
+      "spatial_at_coarse_dt": 1.2358763605557765e-07,
+      "spatial_at_fine_dt": 1.2361239677682878e-07,
+      "temporal_at_coarse_y": 1.031230296257013e-05,
+      "temporal_at_fine_y": 1.0312296289130551e-05,
+      "mixed_absolute": 2.8900742909954147e-11,
+      "mixed_normalized": 1.1560297163981659e-09,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_2_Fn_eV": {
+      "spatial_at_coarse_dt": 6.641133914065539e-09,
+      "spatial_at_fine_dt": 6.635595589925963e-09,
+      "temporal_at_coarse_y": 1.3877735535130662e-05,
+      "temporal_at_fine_y": 1.3877730158980183e-05,
+      "mixed_absolute": 3.5769919578404474e-11,
+      "mixed_normalized": 1.430796783136179e-09,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_2_Fp_eV": {
+      "spatial_at_coarse_dt": 1.5266486478194424e-08,
+      "spatial_at_fine_dt": 1.5283596904551444e-08,
+      "temporal_at_coarse_y": 1.2492309971162251e-05,
+      "temporal_at_fine_y": 1.2492319588013837e-05,
+      "mixed_absolute": 5.04372895445554e-11,
+      "mixed_normalized": 2.017491581782216e-09,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_2_trap_occupancy": {
+      "spatial_at_coarse_dt": 6.738184098464828e-07,
+      "spatial_at_fine_dt": 6.737737624773477e-07,
+      "temporal_at_coarse_y": 1.5633464062830837e-05,
+      "temporal_at_fine_y": 1.5633501037115582e-05,
+      "mixed_absolute": 4.6269710285429255e-11,
+      "mixed_normalized": 4.6269710285429255e-11,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_2_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 2.1132648961308398e-07,
+      "spatial_at_fine_dt": 2.113364869771317e-07,
+      "temporal_at_coarse_y": 1.031230296257013e-05,
+      "temporal_at_fine_y": 1.0312296289130551e-05,
+      "mixed_absolute": 2.8900742909954147e-11,
+      "mixed_normalized": 1.1560297163981659e-09,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105
+    },
+    "0_3_phi_V": {
+      "spatial_at_coarse_dt": 1.133320196994303e-07,
+      "spatial_at_fine_dt": 1.1331910927669941e-07,
+      "temporal_at_coarse_y": 6.621600167733277e-06,
+      "temporal_at_fine_y": 6.621595343148101e-06,
+      "mixed_absolute": 1.625881373978899e-11,
+      "mixed_normalized": 6.503525495915596e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_3_Fn_eV": {
+      "spatial_at_coarse_dt": 5.610339852196375e-09,
+      "spatial_at_fine_dt": 5.609203190034412e-09,
+      "temporal_at_coarse_y": 8.64133674088538e-06,
+      "temporal_at_fine_y": 8.64133450475678e-06,
+      "mixed_absolute": 2.134413435925242e-11,
+      "mixed_normalized": 8.537653743700968e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_3_Fp_eV": {
+      "spatial_at_coarse_dt": 1.2784305896676104e-08,
+      "spatial_at_fine_dt": 1.2757826473855025e-08,
+      "temporal_at_coarse_y": 1.4163121514711033e-05,
+      "temporal_at_fine_y": 1.4163131902254723e-05,
+      "mixed_absolute": 5.025507668430379e-11,
+      "mixed_normalized": 2.0102030673721516e-09,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_3_trap_occupancy": {
+      "spatial_at_coarse_dt": 6.707427163965551e-07,
+      "spatial_at_fine_dt": 6.707202029887505e-07,
+      "temporal_at_coarse_y": 7.583103353414611e-06,
+      "temporal_at_fine_y": 7.583087786422471e-06,
+      "mixed_absolute": 4.0016101543471905e-11,
+      "mixed_normalized": 4.0016101543471905e-11,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "0_3_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 2.040046706147658e-07,
+      "spatial_at_fine_dt": 2.0400128643294213e-07,
+      "temporal_at_coarse_y": 6.621600167733277e-06,
+      "temporal_at_fine_y": 6.621595343148101e-06,
+      "mixed_absolute": 1.625881373978899e-11,
+      "mixed_normalized": 6.503525495915596e-10,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105
+    },
+    "1_0_phi_V": {
+      "spatial_at_coarse_dt": 7.111904645751288e-08,
+      "spatial_at_fine_dt": 7.111904645751288e-08,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_0_Fn_eV": {
+      "spatial_at_coarse_dt": 1.1833034629014516e-16,
+      "spatial_at_fine_dt": 1.1833034629014516e-16,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_0_Fp_eV": {
+      "spatial_at_coarse_dt": 0.0,
+      "spatial_at_fine_dt": 0.0,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_0_trap_occupancy": {
+      "spatial_at_coarse_dt": 3.740672969432257e-07,
+      "spatial_at_fine_dt": 3.740672969432257e-07,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_0_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 8.197873854753901e-08,
+      "spatial_at_fine_dt": 8.197873854753901e-08,
+      "temporal_at_coarse_y": 0.0,
+      "temporal_at_fine_y": 0.0,
+      "mixed_absolute": 0.0,
+      "mixed_normalized": 0.0,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105
+    },
+    "1_1_phi_V": {
+      "spatial_at_coarse_dt": 6.478982959856605e-08,
+      "spatial_at_fine_dt": 6.478624026140523e-08,
+      "temporal_at_coarse_y": 6.232111897486181e-06,
+      "temporal_at_fine_y": 6.232110558321291e-06,
+      "mixed_absolute": 4.800451702813291e-12,
+      "mixed_normalized": 1.9201806811253164e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_1_Fn_eV": {
+      "spatial_at_coarse_dt": 1.296911393165387e-09,
+      "spatial_at_fine_dt": 1.2972596115812945e-09,
+      "temporal_at_coarse_y": 7.970967577415698e-06,
+      "temporal_at_fine_y": 7.97096697967509e-06,
+      "mixed_absolute": 5.510837012417946e-12,
+      "mixed_normalized": 2.2043348049671785e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_1_Fp_eV": {
+      "spatial_at_coarse_dt": 2.9474472717106598e-09,
+      "spatial_at_fine_dt": 2.9533183171139704e-09,
+      "temporal_at_coarse_y": 1.040327726046196e-05,
+      "temporal_at_fine_y": 1.040327287431253e-05,
+      "mixed_absolute": 1.1910835382225593e-11,
+      "mixed_normalized": 4.764334152890237e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_1_trap_occupancy": {
+      "spatial_at_coarse_dt": 3.7080446990689353e-07,
+      "spatial_at_fine_dt": 3.7082286197254177e-07,
+      "temporal_at_coarse_y": 1.2078600880094381e-05,
+      "temporal_at_fine_y": 1.20786201240064e-05,
+      "mixed_absolute": 1.9580198573621033e-11,
+      "mixed_normalized": 1.9580198573621033e-11,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_1_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 7.653509880023446e-08,
+      "spatial_at_fine_dt": 7.653304595622856e-08,
+      "temporal_at_coarse_y": 6.232111897486181e-06,
+      "temporal_at_fine_y": 6.232110558321291e-06,
+      "mixed_absolute": 4.9353438003052474e-12,
+      "mixed_normalized": 1.974137520122099e-10,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105
+    },
+    "1_2_phi_V": {
+      "spatial_at_coarse_dt": 7.403462849719933e-08,
+      "spatial_at_fine_dt": 7.404085387852088e-08,
+      "temporal_at_coarse_y": 1.0312296289130551e-05,
+      "temporal_at_fine_y": 1.0312292548886326e-05,
+      "mixed_absolute": 9.281686530471234e-12,
+      "mixed_normalized": 3.7126746121884935e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_2_Fn_eV": {
+      "spatial_at_coarse_dt": 1.65199552995543e-09,
+      "spatial_at_fine_dt": 1.6514496051049654e-09,
+      "temporal_at_coarse_y": 1.3877730158980183e-05,
+      "temporal_at_fine_y": 1.3877728807093048e-05,
+      "mixed_absolute": 1.087052062948013e-11,
+      "mixed_normalized": 4.3482082517920517e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_2_Fp_eV": {
+      "spatial_at_coarse_dt": 3.80266296793122e-09,
+      "spatial_at_fine_dt": 3.807246936118891e-09,
+      "temporal_at_coarse_y": 1.2492319588013837e-05,
+      "temporal_at_fine_y": 1.2492322297109155e-05,
+      "mixed_absolute": 1.2263193065187306e-11,
+      "mixed_normalized": 4.905277226074922e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_2_trap_occupancy": {
+      "spatial_at_coarse_dt": 3.676982399947182e-07,
+      "spatial_at_fine_dt": 3.6767060915265937e-07,
+      "temporal_at_coarse_y": 1.5633501037115582e-05,
+      "temporal_at_fine_y": 1.5633526680464138e-05,
+      "mixed_absolute": 2.7630842058812277e-11,
+      "mixed_normalized": 2.7630842058812277e-11,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_2_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 8.412760518772266e-08,
+      "spatial_at_fine_dt": 8.413131549755981e-08,
+      "temporal_at_coarse_y": 1.0312296289130551e-05,
+      "temporal_at_fine_y": 1.0312292548886326e-05,
+      "mixed_absolute": 9.469564021813426e-12,
+      "mixed_normalized": 3.7878256087253703e-10,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105
+    },
+    "1_3_phi_V": {
+      "spatial_at_coarse_dt": 6.985612927001839e-08,
+      "spatial_at_fine_dt": 6.985390774150169e-08,
+      "temporal_at_coarse_y": 6.621595343148101e-06,
+      "temporal_at_fine_y": 6.621592180983127e-06,
+      "mixed_absolute": 5.276432069045711e-12,
+      "mixed_normalized": 2.1105728276182845e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_3_Fn_eV": {
+      "spatial_at_coarse_dt": 1.3972370946878365e-09,
+      "spatial_at_fine_dt": 1.396917325303254e-09,
+      "temporal_at_coarse_y": 8.64133450475678e-06,
+      "temporal_at_fine_y": 8.641333917969651e-06,
+      "mixed_absolute": 6.527776149484188e-12,
+      "mixed_normalized": 2.611110459793675e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_3_Fp_eV": {
+      "spatial_at_coarse_dt": 3.1798308153252464e-09,
+      "spatial_at_fine_dt": 3.173495926114822e-09,
+      "temporal_at_coarse_y": 1.4163131902254723e-05,
+      "temporal_at_fine_y": 1.416313470507585e-05,
+      "mixed_absolute": 1.2337247217754366e-11,
+      "mixed_normalized": 4.934898887101746e-10,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_3_trap_occupancy": {
+      "spatial_at_coarse_dt": 3.6969333688796624e-07,
+      "spatial_at_fine_dt": 3.6968424760308594e-07,
+      "temporal_at_coarse_y": 7.583087786422471e-06,
+      "temporal_at_fine_y": 7.58307791931534e-06,
+      "mixed_absolute": 1.4998086106388087e-11,
+      "mixed_normalized": 1.4998086106388087e-11,
+      "array_shape": [
+        9,
+        65
+      ],
+      "compared_values": 585
+    },
+    "1_3_dielectric_phi_V": {
+      "spatial_at_coarse_dt": 8.099872889077986e-08,
+      "spatial_at_fine_dt": 8.099832228547488e-08,
+      "temporal_at_coarse_y": 6.621595343148101e-06,
+      "temporal_at_fine_y": 6.621592180983127e-06,
+      "mixed_absolute": 5.621628162977288e-12,
+      "mixed_normalized": 2.2486512651909152e-10,
+      "array_shape": [
+        113,
+        9,
+        65
+      ],
+      "compared_values": 66105
+    }
+  },
+  "definition": "(u(y_fine,dt_fine)-u(y_coarse,dt_fine))-(u(y_fine,dt_coarse)-u(y_coarse,dt_coarse))",
+  "new_acceptance_gate": false,
+  "error_bound_established": false,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false
+}

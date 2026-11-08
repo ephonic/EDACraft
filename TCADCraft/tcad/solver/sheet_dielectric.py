@@ -17,6 +17,7 @@ from scipy.sparse.linalg import splu, spsolve
 from tcad.material.sheet import Q, _finite
 from .sheet_drift_diffusion import SheetDriftDiffusion
 from ._sheet_linear import _ReusedGMRES
+from ._sheet_ordering import _geometric_nd_permutation, _SymmetricPermutation
 
 
 @dataclass(frozen=True)
@@ -276,15 +277,23 @@ class DielectricSheetDriftDiffusion(SheetDriftDiffusion):
     'coupled' retains bulk potentials alongside independent sheet phi/Fn/Fp,
     using sparse Newton solves for DC and SheetTransient backward Euler.
     linear_solver='reused_gmres' opts into bounded preconditioned iteration
-    with a true row-scaled residual guard. No automatic mesh control.
+    with a true row-scaled residual guard. Its optional linear_ordering can
+    reduce LU fill for some grids; COLAMD remains the default. No automatic
+    mesh control.
     """
-    def __init__(self,x_m,y_m,z_m,material,*,sheet_index,permittivity_F_m,contact_z_bounds_m=None,schur_rhs_block_size=None,electrostatic_backend='schur',linear_solver='direct',**kwargs):
+    def __init__(self,x_m,y_m,z_m,material,*,sheet_index,permittivity_F_m,contact_z_bounds_m=None,schur_rhs_block_size=None,electrostatic_backend='schur',linear_solver='direct',linear_ordering='COLAMD',**kwargs):
         if not isinstance(linear_solver,str) or linear_solver not in ('direct','reused_gmres'):
             raise ValueError("linear_solver must be 'direct' or 'reused_gmres'")
         if linear_solver=='reused_gmres' and electrostatic_backend!='coupled':
             raise ValueError('reused_gmres requires the coupled electrostatic backend')
+        if not isinstance(linear_ordering,str) or linear_ordering not in ('COLAMD','MMD_AT_PLUS_A','GEOMETRIC_ND'):
+            raise ValueError("linear_ordering must be 'COLAMD', 'MMD_AT_PLUS_A' or 'GEOMETRIC_ND'")
+        if linear_solver!='reused_gmres' and linear_ordering!='COLAMD':
+            raise ValueError('nondefault linear_ordering requires reused_gmres')
         self.linear_solver=linear_solver
+        self.linear_ordering=linear_ordering
         self._linear_factor=None
+        self._geometric_permutation=None
         if 'gate_capacitance_F_m2' in kwargs:
             raise ValueError('explicit dielectric coupling cannot also use a local gate capacitor')
         self.dielectric=SheetDielectricPoisson(x_m,y_m,z_m,sheet_index=sheet_index,
@@ -298,7 +307,15 @@ class DielectricSheetDriftDiffusion(SheetDriftDiffusion):
         if self.linear_solver=='reused_gmres':
             storage=getattr(self,'_transient_storage',None)
             key=None if storage is None else ('backward_euler',float(storage[2]))
-            return _ReusedGMRES(self._linear_factor,tolerance,key)
+            permutation=None
+            if self.linear_ordering=='GEOMETRIC_ND':
+                if self._geometric_permutation is None:
+                    d=self.dielectric
+                    nodes=np.concatenate((np.tile(d.sheet_nodes,3),d.free_nodes))
+                    coordinates=np.column_stack(np.unravel_index(nodes,d.shape))
+                    self._geometric_permutation=_SymmetricPermutation(_geometric_nd_permutation(coordinates))
+                permutation=self._geometric_permutation
+            return _ReusedGMRES(self._linear_factor,tolerance,key,self.linear_ordering,permutation)
         return None
 
     def _finish_linear_context(self,context,result):

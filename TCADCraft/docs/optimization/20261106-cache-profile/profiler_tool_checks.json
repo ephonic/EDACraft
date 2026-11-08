@@ -1,0 +1,19 @@
+{
+  "result": {
+    "status": "passed_exact_fixture_and_small_trap_trajectory_parity",
+    "events": 441,
+    "new_large_grid_steps": 0,
+    "fixture_dimension": 37737,
+    "new_product_regression_tests": 0
+  },
+  "worker_state": "missing",
+  "check_source_sha256": "bf9cf24d1c2560848b7e7984e41894e9758fa8cc32360638e8615ff963279bd6",
+  "files": {
+    "profiler_tool_check.profile.jsonl": "118f4a23eb75dac329ab31bfbb799e2e6b457ba2bd94feb39fb7266ac84821a7",
+    "profiler_check_attempt0.py": "8d004535e151cc8c2c6a530d4b7f1d0192f98560e4c18d4c41d95125085503cb",
+    "profiler_check_attempt0.log": "458fbf1250fec0e04a918f52d6978419baf05878b7d4fe391781d21cd38f7600",
+    "profiler_check.log": "741abefcaa7ff916b2ac4f5fd22d00543a10b9de2dd93b58079da2005bfe68c0",
+    "profiler_tool_check_attempt1.profile.jsonl": "ab4d792ee12b1078d439cd92cf0b8c94f010f563badd481e9aca7736e18a9f19",
+    "profiler_tool_check.json": "ca6fc943939b777a2ac59d01728baf7979aaecda8738617ee97503e368049306"
+  }
+}
