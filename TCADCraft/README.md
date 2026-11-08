@@ -112,6 +112,11 @@ Original z endpoint gates: 54/54 and 54/54 passed at the two dt.
 Full signed interactions and interval-matched traces remain descriptive;
 global spatial convergence and joint qualification remain open.
 
+The [refined-grid three-time study](docs/optimization/20261108-geometric-fine-time512/README.md)
+adds a full n512 pulse at x83/y9/z129, comparing three complete time
+resolutions with unchanged field-order and interval-current diagnostics.
+Measured spatial/time components are recorded; joint qualification remains open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

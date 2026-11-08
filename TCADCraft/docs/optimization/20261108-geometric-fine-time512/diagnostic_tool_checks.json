@@ -1,0 +1,29 @@
+{
+  "status": "passed_exact_sealed_two_three_time_field_trace_replays",
+  "trace": {
+    "status": "passed_exact_sealed_three_time_trace_replay",
+    "trace_source_sha256": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+    "trace_tests_inherited": 25,
+    "trace_tests_rerun": 0,
+    "files": {
+      "benchmarks/sheet_refinement_trace.py": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+      "tests/test_sheet_refinement_trace.py": "693467a143e48dd9a53e9399aeb94a607b0af17ed1a4b9b6cbd2081a5decac2b"
+    },
+    "new_simulation_steps": 0,
+    "new_physics_credit": 0,
+    "replay_input_files_rehashed": 6,
+    "roundoff_time_gate_changed": false,
+    "new_acceptance_gate": false
+  },
+  "exact_three_time_field_metrics": 20,
+  "exact_three_time_fixed_support_metrics": 54,
+  "exact_two_time_field_metrics": 20,
+  "exact_two_time_fixed_support_metrics": 54,
+  "field_formula_sha256": "fc1c410958bfaaf557b7af84d83177d3b1bb9ea35827d24ffb811c85577b372d",
+  "field_formula_parent_sha256": "f3ad69c612e7b28c135b568e29efab3f62b656ee92067d8fe965a35907f54aa7",
+  "order_floor_analytic_checks": 4,
+  "inherited_z129_trace_reproduced_exactly": true,
+  "new_simulation_steps": 0,
+  "new_physics_credit": 0,
+  "new_acceptance_gate": false
+}

@@ -1,0 +1,88 @@
+{
+  "status": "refined_geometry_three_time_resolutions_descriptive_orders",
+  "mesh_xyz": [
+    83,
+    9,
+    129
+  ],
+  "new_complete_pulses": 1,
+  "inherited_complete_pulses": 2,
+  "steps_per_phase": [
+    128,
+    256,
+    512
+  ],
+  "new_dynamic_steps": 1536,
+  "new_field_checkpoints": 4,
+  "full_field_metrics": 20,
+  "fixed_support_metrics": 54,
+  "trace_summary": {
+    "state_at_common_times": {
+      "metrics": 12,
+      "resolved": 12,
+      "decreasing": 12,
+      "orders": {
+        "sheet_charge_C": 0.9771194244819782,
+        "trap_charge_C": 0.9863057926023818,
+        "untrapped_sheet_charge_C": 0.9771176606582794,
+        "contact_charge_C/drain": 1.0868815578197875,
+        "contact_charge_C/source": 1.0752474339183264,
+        "sheet_contact_charge_C/drain": 1.2234669084671672,
+        "sheet_contact_charge_C/source": 1.2114260081950206,
+        "dielectric_contact_charge_C/drain": 1.0616479585920218,
+        "dielectric_contact_charge_C/source": 1.050738383304065,
+        "gates/bottom_gate": 0.9771257305399418,
+        "gates/top_gate": 0.9771257305253709,
+        "dielectric_energy_J": 0.9763378991954581
+      }
+    },
+    "interval_average_currents_and_rates": {
+      "metrics": 8,
+      "resolved": 8,
+      "decreasing": 8,
+      "orders": {
+        "conduction/drain": 0.8646538596191754,
+        "conduction/source": 0.8601099713053222,
+        "total/bottom_gate": 0.9859856278386919,
+        "total/drain": 0.984433232573481,
+        "total/source": 0.98757671423449,
+        "total/top_gate": 0.9859856277592964,
+        "trap_charge_rate_A": 0.9469689206333798,
+        "free_carrier_charge_rate_A": 0.8624536696441788
+      }
+    },
+    "conduction_at_common_ending_times": {
+      "metrics": 2,
+      "resolved": 2,
+      "decreasing": 2,
+      "orders": {
+        "conduction/drain": 1.2928691873728497,
+        "conduction/source": 1.2823746388572406
+      }
+    },
+    "cumulative_current_and_rate_integrals": {
+      "metrics": 8,
+      "resolved": 8,
+      "decreasing": 8,
+      "orders": {
+        "conduction/drain": 0.9773199872944109,
+        "conduction/source": 0.9769163817217066,
+        "total/bottom_gate": 0.9771257305397348,
+        "total/drain": 0.9773546408503241,
+        "total/source": 0.9768938367377064,
+        "total/top_gate": 0.9771257305253709,
+        "trap_charge_rate_A": 0.986305792599765,
+        "free_carrier_charge_rate_A": 0.9771176606576613
+      }
+    }
+  },
+  "trace_source_sha256": "25a35337efc233c57a30739aff4b182cda536ad190367a81f82b60e05af034c0",
+  "inherited_trace_tests": 25,
+  "trace_tests_rerun": 0,
+  "observed_time_order_available": true,
+  "asymptotic_regime_established": false,
+  "fine_grid_temporal_qualified": false,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "new_acceptance_gate": false
+}

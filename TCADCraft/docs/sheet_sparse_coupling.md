@@ -156,6 +156,11 @@ adds four full pulses (2304 new BE steps) at x83/y9, completing
 z113/121/129 at n128/256. Original z gates: 54/54 and 54/54 passed.
 The two z113 controls are inherited; no global or joint claim is made.
 
+The [refined-grid three-time study](optimization/20261108-geometric-fine-time512/README.md)
+adds one complete x83/y9/z129 n512 pulse (1536 new BE steps). Full-field
+and interval-matched trace orders, plus original-support spatial/time
+increments, are descriptive; joint error bounds remain open.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

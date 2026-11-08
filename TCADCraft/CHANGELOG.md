@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Added a complete refined x83/y9/z129 n512 pulse (1536 BE steps), independent
+  physical auditing, three-time field/trace orders and measured spatial/time
+  components on original observable support; joint qualification remains open.
+
 - Added four independently audited z/time full pulses (2304 new BE steps),
   completing z113/121/129 at x83/y9 and n128/256 with original spatial
   gates, signed interactions and interval-matched terminal traces.

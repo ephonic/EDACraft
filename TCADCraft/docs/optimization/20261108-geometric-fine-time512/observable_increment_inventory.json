@@ -1,0 +1,248 @@
+{
+  "status": "descriptive_spatial_and_temporal_components_on_original_observable_support",
+  "metrics": {
+    "0_trap_occupancy": {
+      "last_z_increment_at_n256_normalized": 7.873727733986868e-05,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_phi_V": {
+      "last_z_increment_at_n256_normalized": 0.0005680217205732419,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_Fn_eV": {
+      "last_z_increment_at_n256_normalized": 6.905967722769504e-15,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_Fp_eV": {
+      "last_z_increment_at_n256_normalized": 0.0,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_dielectric_phi_V": {
+      "last_z_increment_at_n256_normalized": 0.006887683144577217,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_trap_charge_C": {
+      "last_z_increment_at_n256_normalized": 1.8730517593601448e-06,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_sheet_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.0003402346441738757,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.00047211301370908565,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_sheet_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 1.6198494723054443e-05,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_dielectric_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.0004883115084320933,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_gate_charges": {
+      "last_z_increment_at_n256_normalized": 0.0003055075024436249,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "0_dielectric_energy_J": {
+      "last_z_increment_at_n256_normalized": 0.0018514879912316928,
+      "last_time_increment_on_z129_normalized": 0.0
+    },
+    "1_trap_occupancy": {
+      "last_z_increment_at_n256_normalized": 8.40720086147384e-05,
+      "last_time_increment_on_z129_normalized": 6.051088584091424e-06
+    },
+    "1_phi_V": {
+      "last_z_increment_at_n256_normalized": 0.0006244274980353737,
+      "last_time_increment_on_z129_normalized": 0.000123491965047684
+    },
+    "1_Fn_eV": {
+      "last_z_increment_at_n256_normalized": 2.572462877437065e-06,
+      "last_time_increment_on_z129_normalized": 0.00015794485128577118
+    },
+    "1_Fp_eV": {
+      "last_z_increment_at_n256_normalized": 4.2029738546445206e-06,
+      "last_time_increment_on_z129_normalized": 0.00020666700326974624
+    },
+    "1_dielectric_phi_V": {
+      "last_z_increment_at_n256_normalized": 0.008334101183510967,
+      "last_time_increment_on_z129_normalized": 0.000123491965047684
+    },
+    "1_trap_charge_C": {
+      "last_z_increment_at_n256_normalized": 2.021527023721159e-06,
+      "last_time_increment_on_z129_normalized": 1.8527384500477417e-06
+    },
+    "1_sheet_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.00039781018708673344,
+      "last_time_increment_on_z129_normalized": 0.00047828856469323
+    },
+    "1_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.0005333707700186929,
+      "last_time_increment_on_z129_normalized": 1.108754443435167e-05
+    },
+    "1_sheet_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 1.800115527891312e-05,
+      "last_time_increment_on_z129_normalized": 1.0051962472789472e-06
+    },
+    "1_dielectric_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.000551371925297639,
+      "last_time_increment_on_z129_normalized": 1.00823481870016e-05
+    },
+    "1_gate_charges": {
+      "last_z_increment_at_n256_normalized": 0.0003537541664169197,
+      "last_time_increment_on_z129_normalized": 0.00022813137235999648
+    },
+    "1_dielectric_energy_J": {
+      "last_z_increment_at_n256_normalized": 0.0022465383550169804,
+      "last_time_increment_on_z129_normalized": 0.0016866507717310242
+    },
+    "1_terminal_currents_into_sheet_A": {
+      "last_z_increment_at_n256_normalized": 9.922291086136847e-06,
+      "last_time_increment_on_z129_normalized": 0.0005116268575301314
+    },
+    "1_terminal_total_currents_A": {
+      "last_z_increment_at_n256_normalized": 9.262088020448034e-06,
+      "last_time_increment_on_z129_normalized": 0.0004885396632001437
+    },
+    "2_trap_occupancy": {
+      "last_z_increment_at_n256_normalized": 7.819971415007343e-05,
+      "last_time_increment_on_z129_normalized": 7.920717781523257e-06
+    },
+    "2_phi_V": {
+      "last_z_increment_at_n256_normalized": 0.0005339242704014424,
+      "last_time_increment_on_z129_normalized": 0.00020416944061940612
+    },
+    "2_Fn_eV": {
+      "last_z_increment_at_n256_normalized": 3.166644173463462e-06,
+      "last_time_increment_on_z129_normalized": 0.00027476228759323873
+    },
+    "2_Fp_eV": {
+      "last_z_increment_at_n256_normalized": 5.5100681392722395e-06,
+      "last_time_increment_on_z129_normalized": 0.00024205182425246496
+    },
+    "2_dielectric_phi_V": {
+      "last_z_increment_at_n256_normalized": 0.006484004906619489,
+      "last_time_increment_on_z129_normalized": 0.00020416944061940612
+    },
+    "2_trap_charge_C": {
+      "last_z_increment_at_n256_normalized": 1.7910851884961332e-06,
+      "last_time_increment_on_z129_normalized": 2.3049504770944473e-06
+    },
+    "2_sheet_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.0002894950128045082,
+      "last_time_increment_on_z129_normalized": 0.0007693381487872131
+    },
+    "2_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.00043180158497369003,
+      "last_time_increment_on_z129_normalized": 1.6409343866430337e-05
+    },
+    "2_sheet_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 1.5099760750909505e-05,
+      "last_time_increment_on_z129_normalized": 1.5104660343011334e-06
+    },
+    "2_dielectric_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.00044690134572467066,
+      "last_time_increment_on_z129_normalized": 1.4898877832181245e-05
+    },
+    "2_gate_charges": {
+      "last_z_increment_at_n256_normalized": 0.00029154521526830735,
+      "last_time_increment_on_z129_normalized": 0.00036836411204621555
+    },
+    "2_dielectric_energy_J": {
+      "last_z_increment_at_n256_normalized": 0.0015640130369476424,
+      "last_time_increment_on_z129_normalized": 0.002181208873295759
+    },
+    "2_terminal_currents_into_sheet_A": {
+      "last_z_increment_at_n256_normalized": 1.0153805223928059e-05,
+      "last_time_increment_on_z129_normalized": 0.0008060241707812943
+    },
+    "2_terminal_total_currents_A": {
+      "last_z_increment_at_n256_normalized": 9.275669447764145e-06,
+      "last_time_increment_on_z129_normalized": 0.0007724151978857619
+    },
+    "3_trap_occupancy": {
+      "last_z_increment_at_n256_normalized": 7.990294056481329e-05,
+      "last_time_increment_on_z129_normalized": 3.832994251717903e-06
+    },
+    "3_phi_V": {
+      "last_z_increment_at_n256_normalized": 0.0005899878508364154,
+      "last_time_increment_on_z129_normalized": 0.00013146304165978506
+    },
+    "3_Fn_eV": {
+      "last_z_increment_at_n256_normalized": 2.6902020156885365e-06,
+      "last_time_increment_on_z129_normalized": 0.00017156111999556967
+    },
+    "3_Fp_eV": {
+      "last_z_increment_at_n256_normalized": 2.6919707681941074e-06,
+      "last_time_increment_on_z129_normalized": 0.000283466637445301
+    },
+    "3_dielectric_phi_V": {
+      "last_z_increment_at_n256_normalized": 0.007384554742757565,
+      "last_time_increment_on_z129_normalized": 0.00013146304165978506
+    },
+    "3_trap_charge_C": {
+      "last_z_increment_at_n256_normalized": 1.894121109402569e-06,
+      "last_time_increment_on_z129_normalized": 1.1581943795690997e-06
+    },
+    "3_sheet_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.00035970750354685777,
+      "last_time_increment_on_z129_normalized": 0.0005039062034217778
+    },
+    "3_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.0004931406981550923,
+      "last_time_increment_on_z129_normalized": 1.1308786172503638e-05
+    },
+    "3_sheet_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 1.6877178536810547e-05,
+      "last_time_increment_on_z129_normalized": 1.0298151062390626e-06
+    },
+    "3_dielectric_contact_charge_C": {
+      "last_z_increment_at_n256_normalized": 0.000510017876691915,
+      "last_time_increment_on_z129_normalized": 1.0278971066202125e-05
+    },
+    "3_gate_charges": {
+      "last_z_increment_at_n256_normalized": 0.0003176992886206875,
+      "last_time_increment_on_z129_normalized": 0.00024072113323470035
+    },
+    "3_dielectric_energy_J": {
+      "last_z_increment_at_n256_normalized": 0.0019358745285664725,
+      "last_time_increment_on_z129_normalized": 0.0016320536888301262
+    },
+    "3_terminal_currents_into_sheet_A": {
+      "last_z_increment_at_n256_normalized": 9.643072437948152e-06,
+      "last_time_increment_on_z129_normalized": 0.0005333818051297262
+    },
+    "3_terminal_total_currents_A": {
+      "last_z_increment_at_n256_normalized": 8.946951314980911e-06,
+      "last_time_increment_on_z129_normalized": 0.0005100570311262903
+    }
+  },
+  "fixed_support_xyz": [
+    65,
+    9,
+    65
+  ],
+  "spatial_pair_z_nodes": [
+    121,
+    129
+  ],
+  "spatial_steps_per_phase": 256,
+  "temporal_mesh_xyz": [
+    83,
+    9,
+    129
+  ],
+  "temporal_steps_per_phase": [
+    256,
+    512
+  ],
+  "spatial_source_sha256": "a008eb3b67d65bb61a5b8084e5964b710e42c006eff1b2899e2432345be83c0c",
+  "temporal_source_sha256": "66460c6c21fcecbc22cbd07de787bcaecd2cba63c7a502f2420ed198fc131d47",
+  "derivation_script_sha256": "5853d460963d44b7d4d32e173c2def940b022debb1b71fc0a6e252c77063172b",
+  "interpretation": "Measured adjacent increments on the same original observable support and scales. Spatial increment at n512 is unmeasured. Components are not summed or treated as absolute error bounds.",
+  "new_acceptance_gate": false,
+  "total_error_bound_established": false,
+  "joint_spacetime_qualified": false,
+  "new_physics_credit": 0
+}
