@@ -1,0 +1,46 @@
+{
+  "status": "passed_three_z_two_time_matrix_and_original_z_gates",
+  "new_complete_pulses": 4,
+  "inherited_matrix_pulses": 2,
+  "matrix_pulses": 6,
+  "new_dynamic_steps": 2304,
+  "new_field_checkpoints": 16,
+  "new_physics_and_ledger_checks": 4407452,
+  "x_nodes": 83,
+  "y_nodes": 9,
+  "z_nodes": [
+    113,
+    121,
+    129
+  ],
+  "steps_per_phase": [
+    128,
+    256
+  ],
+  "spatial_verdicts": {
+    "128": {
+      "passed_metrics": 54,
+      "total_metrics": 54,
+      "failures": {}
+    },
+    "256": {
+      "passed_metrics": 54,
+      "total_metrics": 54,
+      "failures": {}
+    }
+  },
+  "local_z_endpoint_sequence_at_each_dt_qualified": true,
+  "mixed_field_metrics": 40,
+  "resolved_mixed_metrics": 26,
+  "analysis_floor_normalized": 1e-08,
+  "inherited_solver_tests": 245,
+  "solver_tests_rerun": 0,
+  "inherited_trace_tests": 25,
+  "trace_tests_rerun": 0,
+  "spatial_order_available": false,
+  "temporal_order_available_on_x83": false,
+  "global_spatial_convergence_qualified": false,
+  "joint_spacetime_qualified": false,
+  "sentaurus_equivalence": false,
+  "new_acceptance_gate": false
+}

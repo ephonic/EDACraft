@@ -106,6 +106,12 @@ endpoint gates pass 54/54 and 54/54 at the two time resolutions;
 the coarser x65/69/75 result remains 52/54. Interval-matched traces and
 signed interactions establish no global or joint qualification.
 
+The [three-z/two-time study](docs/optimization/20261108-geometric-z-time/README.md)
+adds four full pulses, completing z113/121/129 at x83/y9 and n128/256.
+Original z endpoint gates: 54/54 and 54/54 passed at the two dt.
+Full signed interactions and interval-matched traces remain descriptive;
+global spatial convergence and joint qualification remain open.
+
 The [trace-analysis update](docs/optimization/20261106-trace-analysis/README.md)
 adds three-resolution observed orders and lower-memory loading while retaining initial-state and drive checks.
 

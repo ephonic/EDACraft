@@ -151,6 +151,11 @@ n128/256. Original x endpoint metrics pass 54/54 and 54/54;
 the coarser sequence remains 52/54, with both failed metrics retained.
 These local results establish no spatial order or joint qualification.
 
+The [three-z/two-time matrix](optimization/20261108-geometric-z-time/README.md)
+adds four full pulses (2304 new BE steps) at x83/y9, completing
+z113/121/129 at n128/256. Original z gates: 54/54 and 54/54 passed.
+The two z113 controls are inherited; no global or joint claim is made.
+
 On one captured 37,737-row phase-two system, the alternative reduced LU fill
 and peak process RSS while satisfying the same `1e-14` true max-norm bound.
 Fresh complete 60 ps controls are documented in the

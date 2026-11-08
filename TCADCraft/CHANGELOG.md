@@ -5,6 +5,10 @@ Semantic Versioning, and dates use ISO 8601.
 
 ## Unreleased
 
+- Added four independently audited z/time full pulses (2304 new BE steps),
+  completing z113/121/129 at x83/y9 and n128/256 with original spatial
+  gates, signed interactions and interval-matched terminal traces.
+
 - Added two independently audited x83 full pulses (1152 new BE steps),
   completing x69/75/83 at n128/256 with original 54-metric x gates at each
   dt, retaining the coarser x65/69/75 failures without waiver.
